@@ -9,6 +9,16 @@ echo "================================================"
 echo "OpenCode Ad Dashboard - WSL Setup"
 echo "================================================"
 
+# ============================================================
+# [0/6] Verify Linux environment (no Windows paths)
+# ============================================================
+if [[ "$PATH" == *"/mnt/c"* ]]; then
+  echo "WARNING: Windows paths detected in PATH."
+  echo "This will cause OpenCode CLI to install Windows binaries."
+  echo "Fix: Remove Windows paths or run: export PATH=\$(echo \"\$PATH\" | tr ':' '\n' | grep -v '/mnt/c' | tr '\n' ':')"
+  echo ""
+fi
+
 if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 not found. Install Python 3.10+ first."
   exit 1
@@ -19,22 +29,64 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+# Verify Linux npm (not Windows)
+NPM_PATH="$(which npm)"
+if [[ "$NPM_PATH" == *"/mnt/c"* ]]; then
+  echo "ERROR: Using Windows npm ($NPM_PATH)."
+  echo "Install Linux Node.js: curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt install -y nodejs"
+  exit 1
+fi
+echo "Using Linux npm: $NPM_PATH"
+
+# ============================================================
+# [1/6] Creating Python virtualenv
+# ============================================================
 if [[ ! -d "$VENV_DIR" ]]; then
-  echo "[1/5] Creating Python virtualenv"
+  echo "[1/6] Creating Python virtualenv"
   python3 -m venv "$VENV_DIR"
 else
-  echo "[1/5] Reusing existing Python virtualenv"
+  echo "[1/6] Reusing existing Python virtualenv"
 fi
 
-echo "[2/5] Installing Python dependencies"
+# ============================================================
+# [2/6] Installing Python dependencies + Playwright
+# ============================================================
+echo "[2/6] Installing Python dependencies"
 "$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
 "$VENV_DIR/bin/pip" install -r "$ROOT_DIR/requirements-dashboard.txt"
 
-echo "[3/5] Installing OpenCode CLI (opencode-ai)"
-npm install -g opencode-ai
-opencode --version || true
+echo "[2/6] Installing Playwright (for image generation)"
+"$VENV_DIR/bin/pip" install playwright >/dev/null
+if ! "$VENV_DIR/bin/python" -m playwright install --with-deps chromium 2>/dev/null; then
+  echo "Playwright browser install skipped (may require sudo for system deps)."
+  echo "Run manually: sudo $VENV_DIR/bin/python -m playwright install --with-deps chromium"
+fi
 
-echo "[4/5] Preparing storage folders"
+# ============================================================
+# [3/6] Checking OpenCode CLI
+# ============================================================
+echo "[3/6] Checking OpenCode CLI"
+if command -v opencode >/dev/null 2>&1; then
+  OC_PATH="$(which opencode)"
+  OC_VERSION="$(opencode --version 2>/dev/null || echo 'unknown')"
+  echo "OpenCode already installed: $OC_VERSION ($OC_PATH)"
+  
+  # Verify it's a Linux binary
+  if file "$OC_PATH" 2>/dev/null | grep -q "ELF"; then
+    echo "  -> Linux binary confirmed."
+  elif [[ "$OC_PATH" == *"/mnt/c"* ]] || file "$OC_PATH" 2>/dev/null | grep -q "PE32"; then
+    echo "  -> WARNING: Windows binary detected. Reinstall with: sudo npm install -g opencode-ai"
+  fi
+else
+  echo "Installing OpenCode CLI (opencode-ai)..."
+  sudo npm install -g opencode-ai
+  opencode --version || true
+fi
+
+# ============================================================
+# [4/6] Preparing storage folders
+# ============================================================
+echo "[4/6] Preparing storage folders"
 mkdir -p \
   "$ROOT_DIR/dashboard_storage/pids" \
   "$ROOT_DIR/dashboard_storage/logs" \
@@ -49,7 +101,10 @@ mkdir -p \
   "$ROOT_DIR/output" \
   "$ROOT_DIR/generated_images"
 
-echo "[5/5] Writing .env.dashboard (if missing)"
+# ============================================================
+# [5/6] Writing .env.dashboard (if missing)
+# ============================================================
+echo "[5/6] Checking .env.dashboard"
 if [[ ! -f "$ENV_FILE" ]]; then
   PASSWORD="$(python3 - <<'PY'
 import secrets
@@ -69,9 +124,31 @@ else
   echo "Keeping existing $ENV_FILE"
 fi
 
+# ============================================================
+# [6/6] Clear stale OpenCode state (prevents Session not found)
+# ============================================================
+echo "[6/6] Checking OpenCode local state"
+OC_STATE_DIR="${HOME}/.local/share/opencode"
+if [[ -d "$OC_STATE_DIR" ]]; then
+  echo "Existing OpenCode state found. Clearing to prevent session errors..."
+  rm -rf "$OC_STATE_DIR"
+  echo "Cleared $OC_STATE_DIR"
+else
+  echo "No stale state found."
+fi
+
+# ============================================================
+# Summary
+# ============================================================
 echo
-echo "Setup complete."
-echo "Next:"
-echo "  1) opencode providers login"
-echo "  2) opencode models"
-echo "  3) bash scripts/start_dashboard_stack.sh"
+echo "================================================"
+echo "Setup complete!"
+echo "================================================"
+echo
+echo "Next steps:"
+echo "  1) Configure AI provider: opencode providers login"
+echo "  2) Verify models: opencode models"
+echo "  3) Start dashboard: bash scripts/start_dashboard_stack.sh"
+echo "  4) Open browser: http://127.0.0.1:8787"
+echo
+echo "To stop: bash scripts/stop_dashboard_stack.sh"
