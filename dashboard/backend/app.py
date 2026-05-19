@@ -5628,6 +5628,38 @@ def api_launch_visible_browser() -> dict[str, Any]:
     before automation begins."""
     global _chrome_process
 
+    # Check if CDP is already responding
+    try:
+        resp = urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
+        if resp.status == 200:
+            return {
+                "status": "already_running",
+                "cdp_url": "http://127.0.0.1:9222",
+                "message": "Chrome with CDP is already running. Log in to ChatGPT if needed, then trigger generation.",
+            }
+    except Exception:
+        pass
+
+    # Kill any existing Chrome instances to prevent single-instance delegation
+    try:
+        subprocess.run(
+            ["taskkill.exe", "/F", "/IM", "chrome.exe"],
+            capture_output=True, timeout=10,
+        )
+        time.sleep(3)
+    except Exception:
+        pass
+
+    # Verify port 9222 is actually free
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 9222))
+        sock.close()
+    except OSError:
+        sock.close()
+        raise HTTPException(status_code=500, detail="Port 9222 is still in use. Wait 10 seconds and try again.")
+
     chrome_bin = None
     use_wsl_launch = False
     for candidate in [
@@ -5674,10 +5706,12 @@ def api_launch_visible_browser() -> dict[str, Any]:
             "--no-first-run",
             "--no-default-browser-check",
         ]
+        print(f"[chrome-launch] Command: {cmd}")
         _chrome_process = subprocess.Popen(
             cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             cwd="/mnt/c/Windows/System32",
         )
+        print(f"[chrome-launch] PID: {_chrome_process.pid}")
     else:
         cmd = [
             chrome_bin,
@@ -5687,9 +5721,10 @@ def api_launch_visible_browser() -> dict[str, Any]:
             "--no-default-browser-check",
         ]
         _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(2)
 
-    for attempt in range(10):
+    # Wait longer for Chrome to fully initialize CDP
+    time.sleep(8)
+    for attempt in range(20):
         try:
             resp = urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
             if resp.status == 200:
@@ -5698,10 +5733,16 @@ def api_launch_visible_browser() -> dict[str, Any]:
                     "cdp_url": "http://127.0.0.1:9222",
                     "message": "Chrome launched. Log in to ChatGPT, then trigger image generation.",
                 }
-        except Exception:
+        except Exception as e:
+            print(f"[chrome-launch] CDP attempt {attempt+1} failed: {e}")
             time.sleep(1)
 
-    raise HTTPException(status_code=500, detail="Chrome launched but CDP not responding on port 9222")
+    # Final diagnostic: check if Chrome process is still alive
+    proc_alive = _chrome_process.poll() is None if _chrome_process else False
+    raise HTTPException(
+        status_code=500,
+        detail=f"Chrome launched but CDP not responding on port 9222. Process alive: {proc_alive}. Close all Chrome windows and try again."
+    )
 
 
 def api_kill_chrome() -> dict[str, Any]:
