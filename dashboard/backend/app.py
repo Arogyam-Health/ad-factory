@@ -5629,25 +5629,54 @@ def api_launch_visible_browser() -> dict[str, Any]:
     global _chrome_process
 
     chrome_bin = None
+    use_wsl_launch = False
     for candidate in [
         "/usr/bin/google-chrome",
         "/usr/bin/google-chrome-stable",
+        "/snap/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
     ]:
         if Path(candidate).exists():
             chrome_bin = candidate
             break
 
     if not chrome_bin:
-        raise HTTPException(status_code=500, detail="Chrome binary not found on system")
+        wsl_candidates = [
+            "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+            "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+        ]
+        for candidate in wsl_candidates:
+            if Path(candidate).exists():
+                chrome_bin = candidate
+                use_wsl_launch = True
+                break
 
-    cmd = [
-        chrome_bin,
-        "--remote-debugging-port=9222",
-        f"--user-data-dir={os.path.expandvars('$HOME')}/.config/google-chrome-gemini-cdp",
-        "--no-first-run",
-        "--no-default-browser-check",
-    ]
-    _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not chrome_bin:
+        raise HTTPException(status_code=500, detail="Chrome binary not found on system (tried Linux and WSL paths)")
+
+    user_data_dir = os.path.expandvars("$HOME/.config/google-chrome-cdp")
+
+    if use_wsl_launch:
+        win_path = chrome_bin.replace("/", "\\").lstrip("\\")
+        cmd = [
+            "cmd.exe", "/c", "start", "ChromeCDP",
+            win_path,
+            "--remote-debugging-port=9222",
+            f"--user-data-dir=C:\\Users\\%USERNAME%\\.config\\google-chrome-cdp",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+        _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False)
+    else:
+        cmd = [
+            chrome_bin,
+            "--remote-debugging-port=9222",
+            f"--user-data-dir={user_data_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+        _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
 
     for attempt in range(10):
@@ -5657,7 +5686,7 @@ def api_launch_visible_browser() -> dict[str, Any]:
                 return {
                     "status": "launched",
                     "cdp_url": "http://127.0.0.1:9222",
-                    "message": "Chrome launched. Log in, then trigger generation.",
+                    "message": "Chrome launched. Log in to ChatGPT, then trigger image generation.",
                 }
         except Exception:
             time.sleep(1)
@@ -5704,7 +5733,21 @@ def api_kill_chrome() -> dict[str, Any]:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
-    return {"status": "killed", "chrome": killed, "gemini_processes": gemini_killed, "chatgpt_processes": chatgpt_killed}
+    # Also kill Windows Chrome CDP instances (when launched via WSL interop)
+    win_chrome_killed = 0
+    for candidate in ["taskkill.exe", "/mnt/c/Windows/System32/taskkill.exe"]:
+        if Path(candidate).exists() or shutil.which(candidate):
+            try:
+                subprocess.run(
+                    [candidate, "/F", "/IM", "chrome.exe", "/FI", "WINDOWTITLE eq ChromeCDP*"],
+                    capture_output=True, timeout=5,
+                )
+                win_chrome_killed = 1
+            except Exception:
+                pass
+            break
+
+    return {"status": "killed", "chrome": killed, "gemini_processes": gemini_killed, "chatgpt_processes": chatgpt_killed, "windows_chrome": win_chrome_killed}
 
 
 def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
