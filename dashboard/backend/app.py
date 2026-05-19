@@ -5658,16 +5658,17 @@ def api_launch_visible_browser() -> dict[str, Any]:
     user_data_dir = os.path.expandvars("$HOME/.config/google-chrome-cdp")
 
     if use_wsl_launch:
-        win_path = chrome_bin.replace("/", "\\").lstrip("\\")
         cmd = [
-            "cmd.exe", "/c", "start", "ChromeCDP",
-            win_path,
+            chrome_bin,
             "--remote-debugging-port=9222",
             f"--user-data-dir=C:\\Users\\%USERNAME%\\.config\\google-chrome-cdp",
             "--no-first-run",
             "--no-default-browser-check",
         ]
-        _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False)
+        _chrome_process = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            cwd="/mnt/c/Windows/System32",
+        )
     else:
         cmd = [
             chrome_bin,
