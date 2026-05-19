@@ -136,10 +136,34 @@ if (-not $OpenCodeRunning) {
     Write-Host ""
     Write-Host "Starting OpenCode server on $OpenCodeHost`:$OpenCodePort" -ForegroundColor Cyan
 
-    $openCodeArgs = "serve --hostname $OpenCodeHost --port $OpenCodePort --cors http://$DashboardHost`:$DashboardPort"
-    
-    # Run via cmd.exe to support the Node/NPM batch wrapper (.cmd) cleanly
-    $openCodeProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c opencode $openCodeArgs" -PassThru -WindowStyle Hidden -RedirectStandardOutput $OpenCodeLog -RedirectStandardError $OpenCodeErrorLog
+    # FIX: Resolve actual executable path to bypass PowerShell .ps1 execution policy issues with cmd.exe
+    $OpenCodeExe = $null
+    $npmGlobalPath = Join-Path $env:APPDATA "npm\node_modules\opencode-ai\bin\opencode.exe"
+    if (Test-Path $npmGlobalPath) {
+        $OpenCodeExe = $npmGlobalPath
+    } else {
+        $CmdPath = Get-Command opencode -ErrorAction SilentlyContinue
+        if ($CmdPath) {
+            $BaseDir = Split-Path $CmdPath.Source -Parent
+            $FallbackExe = Join-Path $BaseDir "node_modules\opencode-ai\bin\opencode.exe"
+            if (Test-Path $FallbackExe) { $OpenCodeExe = $FallbackExe }
+        }
+    }
+
+    if ($OpenCodeExe) {
+        $openCodeArgs = "serve --hostname $OpenCodeHost --port $OpenCodePort --cors http://$DashboardHost`:$DashboardPort"
+        $openCodeProc = Start-Process -FilePath $OpenCodeExe -ArgumentList $openCodeArgs -PassThru -WindowStyle Hidden -RedirectStandardOutput $OpenCodeLog -RedirectStandardError $OpenCodeErrorLog
+    } else {
+        # Fallback: Use PowerShell Bypass if .exe not found
+        $Ps1Path = (Get-Command opencode -ErrorAction SilentlyContinue).Source
+        if ($Ps1Path) {
+            $openCodeArgs = "-ExecutionPolicy Bypass -File `"$Ps1Path`" serve --hostname $OpenCodeHost --port $OpenCodePort --cors http://$DashboardHost`:$DashboardPort"
+            $openCodeProc = Start-Process -FilePath "powershell.exe" -ArgumentList $openCodeArgs -PassThru -WindowStyle Hidden -RedirectStandardOutput $OpenCodeLog -RedirectStandardError $OpenCodeErrorLog
+        } else {
+            Write-Host "ERROR: Could not resolve opencode executable." -ForegroundColor Red
+            exit 1
+        }
+    }
     
     $openCodeProc.Id | Set-Content -Path $OpenCodePidFile
     Write-Host "OpenCode started with pid $($openCodeProc.Id)" -ForegroundColor Green

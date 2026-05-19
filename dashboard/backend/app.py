@@ -1034,7 +1034,8 @@ def _opencode_queue_slot(label: str) -> Iterator[None]:
 
 def _run_opencode_queued(cmd: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     with _opencode_queue_slot("command"):
-        return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, check=False, env=env)
+        resolved = _resolve_opencode_cmd(cmd)
+        return subprocess.run(resolved, cwd=str(cwd), text=True, capture_output=True, check=False, env=env, encoding="utf-8", errors="replace")
 
 
 def run_cmd(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -1489,26 +1490,47 @@ def opencode_discovery_env() -> dict[str, str]:
     return env
 
 
-def run_opencode_discovery_cmd(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+def _resolve_opencode_cmd(cmd: list[str]) -> list[str]:
     if sys.platform == "win32" and cmd and cmd[0] == "opencode":
-        ps1_path = shutil.which("opencode.ps1") or shutil.which("opencode")
-        if ps1_path and ps1_path.lower().endswith(".ps1"):
-            cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", ps1_path] + cmd[1:]
-        elif ps1_path:
-            base_dir = Path(ps1_path).parent
-            exe = base_dir / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
-            if exe.exists():
-                cmd = [str(exe)] + cmd[1:]
+        candidates = [
+            shutil.which("opencode.cmd"),
+            shutil.which("opencode.ps1"),
+            shutil.which("opencode"),
+        ]
+        appdata = os.getenv("APPDATA", "")
+        if appdata:
+            candidates.extend([
+                str(Path(appdata) / "npm" / "opencode.cmd"),
+                str(Path(appdata) / "npm" / "opencode.ps1"),
+            ])
+        chosen = ""
+        for candidate in candidates:
+            if candidate and Path(candidate).exists():
+                chosen = candidate
+                break
+        if chosen.lower().endswith(".ps1"):
+            return ["powershell", "-ExecutionPolicy", "Bypass", "-File", chosen] + cmd[1:]
+        if chosen:
+            return [chosen] + cmd[1:]
+    return cmd
+
+
+def run_opencode_cmd(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    resolved = _resolve_opencode_cmd(cmd)
     return subprocess.run(
-        cmd,
-        cwd=str(ROOT),
+        resolved,
+        cwd=str(cwd) if cwd else str(ROOT),
         text=True,
         capture_output=True,
         check=False,
-        env=opencode_discovery_env(),
+        env=env or opencode_discovery_env(),
         encoding="utf-8",
         errors="replace",
     )
+
+
+def run_opencode_discovery_cmd(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    return run_opencode_cmd(cmd, env=opencode_discovery_env())
 
 
 def list_opencode_models() -> list[str]:
@@ -2457,7 +2479,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     def run_opencode(prompt: str, *, force_file: bool = False) -> tuple[dict[str, Any] | None, str, str, int]:
         use_session = bool(session_id) and not force_file
         cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=force_file or not use_session)
-        result = subprocess.run(cmd, cwd=str(ROOT), text=True, capture_output=True, check=False, env=env)
+        result = run_opencode_cmd(cmd, cwd=ROOT, env=env)
         stdout = result.stdout or ""
         stderr = result.stderr or ""
         if result.returncode != 0:
@@ -2477,7 +2499,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             f"{now_iso()} Starting OpenCode product-doc session ({reason}) with file: {product_file}",
         )
         bootstrap_cmd = build_cmd(build_product_doc_bootstrap_prompt(), use_session=False, attach_product_doc=True)
-        bootstrap = subprocess.run(bootstrap_cmd, cwd=str(ROOT), text=True, capture_output=True, check=False, env=env)
+        bootstrap = run_opencode_cmd(bootstrap_cmd, cwd=ROOT, env=env)
         append_run_log(
             run_dir,
             "opencode_session.log",
@@ -3724,7 +3746,16 @@ _opencode_catalog_lock = threading.Lock()
 
 def _build_opencode_catalog_cached():
     global _opencode_catalog_cache
-    catalog = build_opencode_catalog()
+    try:
+        catalog = build_opencode_catalog()
+    except Exception:
+        catalog = {
+            "api_url": DEFAULT_OPENCODE_API_URL,
+            "providers": [],
+            "provider_labels": [],
+            "models_by_provider": {},
+            "default_model": "",
+        }
     with _opencode_catalog_lock:
         _opencode_catalog_cache = catalog
 
@@ -3744,6 +3775,20 @@ def startup() -> None:
 def api_defaults() -> dict[str, Any]:
     personas = parse_persona_library(DEFAULT_PLAYBOOK)
     opencode = _get_opencode_catalog()
+    if not opencode.get("providers") and not opencode.get("models_by_provider"):
+        try:
+            opencode = build_opencode_catalog()
+            with _opencode_catalog_lock:
+                _opencode_catalog_cache.clear()
+                _opencode_catalog_cache.update(opencode)
+        except Exception:
+            opencode = {
+                "api_url": DEFAULT_OPENCODE_API_URL,
+                "providers": [],
+                "provider_labels": [],
+                "models_by_provider": {},
+                "default_model": "",
+            }
     return {
         "personas": personas,
         "formats": FORMATS,
@@ -3793,7 +3838,14 @@ def api_progress(batch_key: str) -> dict[str, Any]:
 
 
 def api_opencode_catalog() -> dict[str, Any]:
-    return build_opencode_catalog()
+    try:
+        catalog = build_opencode_catalog()
+        with _opencode_catalog_lock:
+            _opencode_catalog_cache.clear()
+            _opencode_catalog_cache.update(catalog)
+        return catalog
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to discover OpenCode catalog: {exc}") from exc
 
 
 def _extract_backfill_batch(run_id: str) -> str | None:

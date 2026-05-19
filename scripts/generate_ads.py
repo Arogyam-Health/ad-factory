@@ -13,10 +13,16 @@ What this script does:
 What this script explicitly does NOT do:
   - It does not call any LLM.
   - It does not invent persona fields or ad copy.
-  - It does not “freshen” text; freshness is enforced by strict uniqueness checks against registry.
+  - It does not "freshen" text; freshness is enforced by strict uniqueness checks against registry.
 """
 
 from __future__ import annotations
+
+import sys
+
+# FIX: Force UTF-8 on stdout to prevent Windows cp1252 encoding crashes
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import argparse
 import hashlib

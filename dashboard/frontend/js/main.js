@@ -175,7 +175,12 @@ async function initDefaults() {
     const imageCount = (data.input_images || []).length;
     defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}, input/images=${imageCount} file(s)`;
 
-    const opencode = data.opencode || {};
+    let opencode = data.opencode || {};
+    if (!Object.keys(opencode.models_by_provider || {}).length) {
+      try {
+        opencode = await fetchJSON("/api/opencode/catalog");
+      } catch {}
+    }
     state.modelsByProvider = opencode.models_by_provider || {};
     document.getElementById("opencodeApiUrl").value = opencode.api_url || "http://127.0.0.1:4090";
 

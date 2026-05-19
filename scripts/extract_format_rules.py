@@ -5,7 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
+
+# FIX: Force UTF-8 on stdout to prevent Windows cp1252 encoding crashes
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
 def extract_section(content: str, header: str) -> str:

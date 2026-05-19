@@ -291,6 +291,14 @@ foreach ($sub in @("opencode_queue", "gemini_selected_prompts", "chatgpt_selecte
     }
 }
 
+foreach ($sub in @("output", "generated_images")) {
+    $dir = Join-Path $RootDir $sub
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Write-Host "  Created $sub/" -ForegroundColor Gray
+    }
+}
+
 # ============================================================
 # Summary
 # ============================================================
