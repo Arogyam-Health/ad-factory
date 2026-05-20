@@ -5700,16 +5700,45 @@ def api_launch_visible_browser() -> dict[str, Any]:
             win_user = os.environ.get("USERNAME", "chrome-cdp-user")
         win_data_dir = f"C:\\Users\\{win_user}\\.config\\google-chrome-cdp"
 
-        # Ensure the directory exists on Windows side
-        subprocess.run(
-            ["cmd.exe", "/c", "mkdir", win_data_dir],
-            capture_output=True, timeout=5,
-        )
+        # Ensure the directory exists
+        import os as _os
+        _os.makedirs(win_data_dir.replace("\\", "/"), exist_ok=True)
 
-        print(f"[chrome-launch] Chrome: {chrome_bin}")
+        print(f"[chrome-launch] User: {win_user}")
         print(f"[chrome-launch] DataDir: {win_data_dir}")
+        print(f"[chrome-launch] Checking for existing Chrome processes...")
 
-        # Call chrome.exe directly via WSL interop — it auto-launches as a visible Windows window
+        # Check if any Chrome processes are running
+        chrome_check = subprocess.run(
+            ["powershell.exe", "-Command", "Get-Process chrome -ErrorAction SilentlyContinue | Select-Object Id, ProcessName"],
+            capture_output=True, text=True, timeout=10,
+        )
+        print(f"[chrome-launch] Existing Chrome processes: {chrome_check.stdout.strip()}")
+
+        # Kill ALL Chrome processes forcefully
+        print(f"[chrome-launch] Killing all Chrome processes...")
+        kill_result = subprocess.run(
+            ["taskkill.exe", "/F", "/IM", "chrome.exe"],
+            capture_output=True, text=True, timeout=10,
+        )
+        print(f"[chrome-launch] Kill result: {kill_result.stdout.strip()}")
+
+        # Wait for Chrome to fully exit and port to release
+        time.sleep(5)
+
+        # Verify port 9222 is free
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(("127.0.0.1", 9222))
+            sock.close()
+            print(f"[chrome-launch] Port 9222 is free")
+        except OSError as e:
+            sock.close()
+            print(f"[chrome-launch] ERROR: Port 9222 still in use: {e}")
+            raise HTTPException(status_code=500, detail="Port 9222 is still in use after killing Chrome. Wait 10 seconds and try again.")
+
+        # Launch Chrome
         cmd = [
             chrome_bin,
             "--remote-debugging-port=9222",
@@ -5718,9 +5747,57 @@ def api_launch_visible_browser() -> dict[str, Any]:
             "--no-default-browser-check",
             "--no-sandbox",
         ]
+        print(f"[chrome-launch] Launching Chrome: {' '.join(cmd)}")
+
+        env = os.environ.copy()
+        env["DISPLAY"] = ":0"
+
         _chrome_process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             cwd="/mnt/c/Windows/System32",
+            env=env,
+        )
+        print(f"[chrome-launch] Chrome PID: {_chrome_process.pid}")
+
+        # Wait for Chrome to initialize CDP
+        time.sleep(8)
+
+        # Check if Chrome is actually listening on port 9222
+        netstat_result = subprocess.run(
+            ["netstat.exe", "-ano"],
+            capture_output=True, text=True, timeout=10,
+        )
+        port_lines = [line for line in netstat_result.stdout.splitlines() if "9222" in line]
+        print(f"[chrome-launch] Netstat for port 9222: {port_lines}")
+
+        for attempt in range(25):
+            try:
+                resp = urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
+                if resp.status == 200:
+                    return {
+                        "status": "launched",
+                        "cdp_url": "http://127.0.0.1:9222",
+                        "message": "Chrome launched. Log in to ChatGPT, then trigger image generation.",
+                    }
+            except Exception as e:
+                print(f"[chrome-launch] CDP attempt {attempt+1} failed: {e}")
+                time.sleep(1)
+
+        # Check Chrome process status
+        proc_alive = _chrome_process.poll() is None if _chrome_process else False
+        print(f"[chrome-launch] Chrome process alive: {proc_alive}")
+
+        # Check Chrome stderr output
+        if _chrome_process and _chrome_process.stderr:
+            try:
+                stderr_output = _chrome_process.stderr.read().decode('utf-8', errors='replace')
+                print(f"[chrome-launch] Chrome stderr: {stderr_output[:500]}")
+            except Exception:
+                pass
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chrome launched but CDP not responding on port 9222. Process alive: {proc_alive}. Check dashboard logs for details."
         )
     else:
         cmd = [
