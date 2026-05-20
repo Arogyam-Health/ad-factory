@@ -1329,9 +1329,12 @@ def run_chatgpt_generation(
         cmd.extend(["--image-source-file", image_sources_file])
 
     # Pass CDP URL if running in WSL
+    cdp_url_for_log = ""
     if Path("/mnt/c").exists():
         cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
-        print(f"[debug] Running command: {' '.join(cmd)}")
+        cdp_url_for_log = "http://172.18.160.1:9223"
+    else:
+        cdp_url_for_log = "NOT WSL - /mnt/c not found"
 
     log_dir = RUNTIME_ROOT / "generation_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -1340,6 +1343,10 @@ def run_chatgpt_generation(
     env = dashboard_subprocess_env()
 
     with open(log_path, "w") as log_file:
+        log_file.write(f"[DEBUG] CDP URL: {cdp_url_for_log}\n")
+        log_file.write(f"[DEBUG] Command: {' '.join(cmd)}\n")
+        log_file.write(f"[DEBUG] /mnt/c exists: {Path('/mnt/c').exists()}\n")
+        log_file.flush()
         result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=log_file, stderr=subprocess.STDOUT, check=False, env=env)
 
     full_output = log_path.read_text() if log_path.exists() else ""
