@@ -53,33 +53,27 @@ opencode models
 
 ### Windows PowerShell (Run as Administrator)
 
-Run these **once** in an elevated PowerShell window. Navigate to your `ad-factory` folder first:
+**Important:** The project lives inside WSL (`~/ad-factory`), so Windows can't directly access the script files. Run these commands directly in PowerShell instead:
 
 ```powershell
-cd C:\path\to\your\ad-factory
-
 # 1) Configure port proxy (WSL2 -> Windows Chrome CDP)
-powershell -ExecutionPolicy Bypass -File ".\scripts\setup_cdp_proxy.ps1"
-
-# 2) Add firewall rule for CDP port
-powershell -ExecutionPolicy Bypass -File ".\scripts\add_cdp_firewall_rule.ps1"
-```
-
-**Or run the commands directly** (no script files needed):
-
-```powershell
-# Port proxy
 netsh interface portproxy delete v4tov4 listenport=9223 listenaddress=0.0.0.0 2>$null
 netsh interface portproxy add v4tov4 listenport=9223 listenaddress=0.0.0.0 connectport=9222 connectaddress=127.0.0.1
 
-# Firewall rule
+# 2) Add firewall rule for CDP port
 New-NetFirewallRule -DisplayName "CDP Port Proxy 9223" -Direction Inbound -Protocol TCP -LocalPort 9223 -Action Allow
 ```
 
-These scripts:
+**Verify it worked:**
+```powershell
+netsh interface portproxy show v4tov4
+# Should show: 0.0.0.0:9223 -> 127.0.0.1:9222
+```
+
+These commands:
 - Forward port `9223` on Windows to Chrome's CDP port `9222` on localhost
 - Allow inbound TCP traffic on port `9223` through Windows Firewall
-- Persist across reboots (no need to run again)
+- Persist across reboots (run once only)
 
 ### WSL (every session)
 
@@ -148,8 +142,8 @@ curl -s http://172.18.160.1:9223/json/version
 # Should return Chrome version info
 
 # If not working, re-run port proxy setup (Windows PowerShell as Admin)
-cd C:\path\to\your\ad-factory
-powershell -ExecutionPolicy Bypass -File ".\scripts\setup_cdp_proxy.ps1"
+netsh interface portproxy delete v4tov4 listenport=9223 listenaddress=0.0.0.0 2>$null
+netsh interface portproxy add v4tov4 listenport=9223 listenaddress=0.0.0.0 connectport=9222 connectaddress=127.0.0.1
 ```
 
 ### Port already in use
