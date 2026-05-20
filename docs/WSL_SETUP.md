@@ -53,14 +53,27 @@ opencode models
 
 ### Windows PowerShell (Run as Administrator)
 
-Run these **once** in an elevated PowerShell window:
+Run these **once** in an elevated PowerShell window. Navigate to your `ad-factory` folder first:
 
 ```powershell
+cd C:\path\to\your\ad-factory
+
 # 1) Configure port proxy (WSL2 -> Windows Chrome CDP)
-powershell -ExecutionPolicy Bypass -File "C:\Users\jadam\ad-factory\scripts\setup_cdp_proxy.ps1"
+powershell -ExecutionPolicy Bypass -File ".\scripts\setup_cdp_proxy.ps1"
 
 # 2) Add firewall rule for CDP port
-powershell -ExecutionPolicy Bypass -File "C:\Users\jadam\ad-factory\scripts\add_cdp_firewall_rule.ps1"
+powershell -ExecutionPolicy Bypass -File ".\scripts\add_cdp_firewall_rule.ps1"
+```
+
+**Or run the commands directly** (no script files needed):
+
+```powershell
+# Port proxy
+netsh interface portproxy delete v4tov4 listenport=9223 listenaddress=0.0.0.0 2>$null
+netsh interface portproxy add v4tov4 listenport=9223 listenaddress=0.0.0.0 connectport=9222 connectaddress=127.0.0.1
+
+# Firewall rule
+New-NetFirewallRule -DisplayName "CDP Port Proxy 9223" -Direction Inbound -Protocol TCP -LocalPort 9223 -Action Allow
 ```
 
 These scripts:
@@ -135,7 +148,8 @@ curl -s http://172.18.160.1:9223/json/version
 # Should return Chrome version info
 
 # If not working, re-run port proxy setup (Windows PowerShell as Admin)
-powershell -ExecutionPolicy Bypass -File "C:\Users\jadam\ad-factory\scripts\setup_cdp_proxy.ps1"
+cd C:\path\to\your\ad-factory
+powershell -ExecutionPolicy Bypass -File ".\scripts\setup_cdp_proxy.ps1"
 ```
 
 ### Port already in use
