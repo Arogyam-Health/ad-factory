@@ -5699,16 +5699,29 @@ def api_launch_visible_browser() -> dict[str, Any]:
         except Exception:
             win_user = os.environ.get("USERNAME", "chrome-cdp-user")
         win_data_dir = f"C:\\Users\\{win_user}\\.config\\google-chrome-cdp"
+
         # Ensure the directory exists on Windows side
         subprocess.run(
             ["cmd.exe", "/c", "mkdir", win_data_dir],
             capture_output=True, timeout=5,
         )
-        # Use cmd.exe /c start to properly detach the process
-        cmd_line = f'start "" "{chrome_bin}" --remote-debugging-port=9222 --user-data-dir="{win_data_dir}" --no-first-run --no-default-browser-check --no-sandbox'
-        print(f"[chrome-launch] Launching via cmd: {cmd_line}")
+
+        # Convert Linux path to Windows path for cmd.exe
+        win_chrome_path = chrome_bin.replace("/mnt/c/", "C:\\").replace("/", "\\")
+
+        # Write a temporary batch file to avoid quoting issues with cmd.exe /c start
+        import tempfile
+        batch_content = f'@echo off\r\nstart "" "{win_chrome_path}" --remote-debugging-port=9222 --user-data-dir="{win_data_dir}" --no-first-run --no-default-browser-check --no-sandbox\r\n'
+        batch_path = os.path.join(tempfile.gettempdir(), "launch_chrome_cdp.bat")
+        with open(batch_path, "w") as f:
+            f.write(batch_content)
+
+        print(f"[chrome-launch] Batch: {batch_path}")
+        print(f"[chrome-launch] Chrome: {win_chrome_path}")
+        print(f"[chrome-launch] DataDir: {win_data_dir}")
+
         _chrome_process = subprocess.Popen(
-            ["cmd.exe", "/c", cmd_line],
+            ["cmd.exe", "/c", batch_path],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             cwd="/mnt/c/Windows/System32",
         )
