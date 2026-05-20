@@ -10,7 +10,6 @@
 
 2. **Disable Windows PATH in WSL** (prevents npm/CLI conflicts):
    ```powershell
-   # Run in PowerShell (Admin)
    wsl --shutdown
    ```
    Then in WSL, create `/etc/wsl.conf`:
@@ -50,10 +49,43 @@ opencode providers login
 opencode models
 ```
 
+## Chrome CDP Setup (for visible browser image generation)
+
+### Windows PowerShell (Run as Administrator)
+
+Run these **once** in an elevated PowerShell window:
+
+```powershell
+# 1) Configure port proxy (WSL2 -> Windows Chrome CDP)
+powershell -ExecutionPolicy Bypass -File "C:\Users\jadam\ad-factory\scripts\setup_cdp_proxy.ps1"
+
+# 2) Add firewall rule for CDP port
+powershell -ExecutionPolicy Bypass -File "C:\Users\jadam\ad-factory\scripts\add_cdp_firewall_rule.ps1"
+```
+
+These scripts:
+- Forward port `9223` on Windows to Chrome's CDP port `9222` on localhost
+- Allow inbound TCP traffic on port `9223` through Windows Firewall
+- Persist across reboots (no need to run again)
+
+### WSL (every session)
+
+```bash
+cd ~/ad-factory
+git pull origin windows-setup
+
+# Start the dashboard stack
+export OPENCODE_SERVER_PASSWORD="$(grep OPENCODE_SERVER_PASSWORD .env.dashboard | cut -d'=' -f2)"
+bash scripts/start_dashboard_stack.sh
+```
+
 ## Daily Usage
 
 ```bash
 cd ~/ad-factory
+
+# Pull latest changes
+git pull origin windows-setup
 
 # Start stack
 export OPENCODE_SERVER_PASSWORD="$(grep OPENCODE_SERVER_PASSWORD .env.dashboard | cut -d'=' -f2)"
@@ -65,6 +97,22 @@ bash scripts/start_dashboard_stack.sh
 bash scripts/stop_dashboard_stack.sh
 ```
 
+## Image Generation Workflow
+
+1. **Launch visible Chrome browser** from dashboard UI
+   - Click "Launch Visible Browser" button
+   - Chrome opens on Windows with CDP debugging enabled
+   - Log in to ChatGPT manually in the Chrome window
+
+2. **Trigger image generation** from dashboard
+   - Select prompts and click generate
+   - Backend connects to Chrome via CDP on port 9223
+   - Images are uploaded and generated automatically
+
+3. **Kill Chrome** when done
+   - Click "Kill Chrome" button in dashboard
+   - Or close Chrome window manually
+
 ## Troubleshooting
 
 ### "Session not found" errors
@@ -75,21 +123,19 @@ opencode providers login
 bash scripts/start_dashboard_stack.sh
 ```
 
-### Playwright image generation fails
+### Chrome CDP connection fails
 ```bash
-source .venv/bin/activate
-pip install playwright
-sudo python -m playwright install --with-deps chromium
-```
+# Verify port proxy is active (Windows PowerShell as Admin)
+netsh interface portproxy show v4tov4
 
-### OpenCode CLI shows Windows binary
-```bash
-# Check which npm you're using
-which npm
-# If it shows /mnt/c/..., fix PATH:
-export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/mnt/c' | tr '\n' ':')
-hash -r
-sudo npm install -g opencode-ai
+# Should show: 0.0.0.0:9223 -> 127.0.0.1:9222
+
+# Test CDP from WSL
+curl -s http://172.18.160.1:9223/json/version
+# Should return Chrome version info
+
+# If not working, re-run port proxy setup (Windows PowerShell as Admin)
+powershell -ExecutionPolicy Bypass -File "C:\Users\jadam\ad-factory\scripts\setup_cdp_proxy.ps1"
 ```
 
 ### Port already in use
@@ -100,12 +146,18 @@ pkill -f opencode
 pkill -f uvicorn
 ```
 
+### Image upload shows broken thumbnail
+- Images are automatically copied to `C:\Users\jadam\.ad-factory-upload-temp\` before upload
+- If upload fails, ensure Chrome has access to this Windows path
+- Check that the image file exists in `~/ad-factory/input/images/`
+
 ## Architecture Notes
 
 - **OpenCode CLI**: Runs in WSL Linux, communicates with local server
 - **Dashboard Backend**: Python FastAPI in WSL, serves UI on port 8787
 - **OpenCode Server**: Node.js in WSL, listens on port 4090
-- **Playwright**: Headless browser in WSL for image generation
-- **Windows Browser**: Just for viewing dashboard UI (no interaction with WSL processes)
+- **Chrome CDP**: Windows Chrome instance controlled via CDP protocol
+- **Port Proxy**: Windows `netsh` forwards WSL requests (port 9223) to Chrome (port 9222)
+- **Image Upload**: Images copied from WSL filesystem to Windows temp folder before CDP upload
 
-All components run inside WSL. Windows is only used for the browser UI and file editing.
+All backend components run inside WSL. Windows hosts Chrome browser and handles port forwarding.
