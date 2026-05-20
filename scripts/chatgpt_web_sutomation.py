@@ -1425,9 +1425,11 @@ def _find_file_input_anywhere(page: Page) -> Locator | None:
 
 
 def _upload_with_playwright_input(page: Page, file_paths: list[str]) -> bool:
+    print(f"  [upload] Trying Playwright input upload with paths: {file_paths}")
     try:
         loc = _find_file_input_anywhere(page)
         if loc is None:
+            print("  [upload] No file input found")
             return False
         loc.set_input_files(file_paths, timeout=0)
         print(f"  [upload] set_input_files accepted {len(file_paths)} file(s).")
@@ -1438,11 +1440,13 @@ def _upload_with_playwright_input(page: Page, file_paths: list[str]) -> bool:
 
 
 def _upload_with_cdp_dom(page: Page, file_paths: list[str]) -> bool:
+    print(f"  [upload] Trying CDP DOM upload with paths: {file_paths}")
     try:
         session = page.context.new_cdp_session(page)
         doc = session.send("DOM.getDocument", {"depth": -1, "pierce": True})
         root_id = doc["root"]["nodeId"]
         node_ids = session.send("DOM.querySelectorAll", {"nodeId": root_id, "selector": "input[type='file']"}).get("nodeIds", [])
+        print(f"  [upload] Found {len(node_ids)} file input nodes via CDP")
         if not node_ids:
             return False
         for node_id in reversed(node_ids):
@@ -1681,6 +1685,8 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
             raise ValueError(f"Upload path is not a supported image: {p}")
 
     file_paths = [wsl_to_windows_path(str(p)) for p in image_paths]
+    print(f"  [upload] WSL paths: {[str(p) for p in image_paths]}")
+    print(f"  [upload] Windows paths: {file_paths}")
     before_srcs = get_all_image_srcs(page)
     print(f"  [upload] Uploading {len(file_paths)} image(s). Existing page images={len(before_srcs)}")
 
