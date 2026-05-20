@@ -1331,6 +1331,7 @@ def run_chatgpt_generation(
     # Pass CDP URL if running in WSL
     if Path("/mnt/c").exists():
         cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
+        print(f"[debug] Running command: {' '.join(cmd)}")
 
     log_dir = RUNTIME_ROOT / "generation_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
