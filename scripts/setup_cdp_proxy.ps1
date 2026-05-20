@@ -2,7 +2,8 @@
 # Run this ONCE as Administrator to allow WSL2 to access Chrome's CDP endpoint
 # Chrome binds CDP to 127.0.0.1, but WSL2 needs to access via the Windows host IP
 
-$Port = 9222
+$ListenPort = 9223
+$ConnectPort = 9222
 
 # Check if running as admin
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
@@ -15,11 +16,12 @@ if (-not $isAdmin) {
 
 # Remove existing port proxy if any
 Write-Host "Removing existing port proxy (if any)..."
-netsh interface portproxy delete v4tov4 listenport=$Port listenaddress=0.0.0.0 2>$null | Out-Null
+netsh interface portproxy delete v4tov4 listenport=9222 listenaddress=0.0.0.0 2>$null | Out-Null
+netsh interface portproxy delete v4tov4 listenport=$ListenPort listenaddress=0.0.0.0 2>$null | Out-Null
 
 # Add port proxy
-Write-Host "Adding port proxy: 0.0.0.0:$Port -> 127.0.0.1:$Port"
-$result = netsh interface portproxy add v4tov4 listenport=$Port listenaddress=0.0.0.0 connectport=$Port connectaddress=127.0.0.1 2>&1
+Write-Host "Adding port proxy: 0.0.0.0:$ListenPort -> 127.0.0.1:$ConnectPort"
+$result = netsh interface portproxy add v4tov4 listenport=$ListenPort listenaddress=0.0.0.0 connectport=$ConnectPort connectaddress=127.0.0.1 2>&1
 
 if ($result -and $result -notmatch "Ok$") {
     Write-Host "ERROR: Failed to add port proxy: $result" -ForegroundColor Red

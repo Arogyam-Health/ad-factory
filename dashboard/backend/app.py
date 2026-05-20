@@ -1330,19 +1330,7 @@ def run_chatgpt_generation(
 
     # Pass CDP URL if running in WSL
     if Path("/mnt/c").exists():
-        try:
-            # Start CDP proxy in WSL to forward to Windows localhost
-            proxy_script = ROOT / "scripts" / "cdp_proxy.py"
-            if proxy_script.exists():
-                subprocess.Popen(
-                    [sys.executable, str(proxy_script)],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    cwd=str(ROOT),
-                )
-                time.sleep(1)  # Wait for proxy to start
-            cmd.extend(["--cdp-url", "http://127.0.0.1:9223"])
-        except Exception:
-            pass
+        cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
 
     log_dir = RUNTIME_ROOT / "generation_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
