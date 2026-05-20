@@ -8,7 +8,7 @@ param(
 
 # Kill existing Chrome
 Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 5
 
 # Ensure data dir exists
 if (!(Test-Path $UserDataDir)) {
@@ -24,15 +24,14 @@ $arguments = @(
 )
 Start-Process $ChromePath -ArgumentList $arguments -WindowStyle Normal
 
-# Wait for CDP
-$cdpUrl = "http://127.0.0.1:$Port/json/version"
+# Wait for CDP using TCP socket check (avoids CLOSE_WAIT connection leak)
 for ($i = 0; $i -lt 30; $i++) {
     try {
-        $response = Invoke-WebRequest -Uri $cdpUrl -TimeoutSec 2 -UseBasicParsing
-        if ($response.StatusCode -eq 200) {
-            Write-Output "SUCCESS"
-            exit 0
-        }
+        $tcpClient = New-Object System.Net.Sockets.TcpClient
+        $tcpClient.Connect("127.0.0.1", $Port)
+        $tcpClient.Close()
+        Write-Output "SUCCESS"
+        exit 0
     } catch {
         Start-Sleep -Seconds 1
     }
