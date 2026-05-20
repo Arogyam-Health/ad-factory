@@ -5628,13 +5628,28 @@ def api_launch_visible_browser() -> dict[str, Any]:
     before automation begins."""
     global _chrome_process
 
+    # Determine CDP URL based on whether we're in WSL
+    is_wsl = Path("/mnt/c").exists()
+    if is_wsl:
+        try:
+            ip_route = subprocess.run(["ip", "route"], capture_output=True, text=True, timeout=5)
+            gw_line = [l for l in ip_route.stdout.splitlines() if "default" in l]
+            win_host_ip = gw_line[0].split()[2] if gw_line else "127.0.0.1"
+        except Exception:
+            win_host_ip = "127.0.0.1"
+    else:
+        win_host_ip = "127.0.0.1"
+
+    cdp_base_url = f"http://{win_host_ip}:9222"
+    cdp_url = f"{cdp_base_url}/json/version"
+
     # Check if CDP is already responding
     try:
-        resp = urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
+        resp = urllib.request.urlopen(cdp_url, timeout=2)
         if resp.status == 200:
             return {
                 "status": "already_running",
-                "cdp_url": "http://127.0.0.1:9222",
+                "cdp_url": cdp_base_url,
                 "message": "Chrome with CDP is already running. Log in to ChatGPT if needed, then trigger generation.",
             }
     except Exception:
@@ -5742,6 +5757,7 @@ def api_launch_visible_browser() -> dict[str, Any]:
         cmd = [
             chrome_bin,
             "--remote-debugging-port=9222",
+            "--remote-debugging-address=0.0.0.0",
             f"--user-data-dir={win_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
@@ -5762,6 +5778,17 @@ def api_launch_visible_browser() -> dict[str, Any]:
         # Wait for Chrome to initialize CDP
         time.sleep(8)
 
+        # Get Windows host IP (WSL2 default gateway) since 127.0.0.1 is not reachable from WSL2
+        try:
+            ip_route = subprocess.run(["ip", "route"], capture_output=True, text=True, timeout=5)
+            gw_line = [l for l in ip_route.stdout.splitlines() if "default" in l]
+            win_host_ip = gw_line[0].split()[2] if gw_line else "127.0.0.1"
+        except Exception:
+            win_host_ip = "127.0.0.1"
+
+        cdp_url = f"http://{win_host_ip}:9222/json/version"
+        print(f"[chrome-launch] CDP URL: {cdp_url}")
+
         # Check if Chrome is actually listening on port 9222
         netstat_result = subprocess.run(
             ["netstat.exe", "-ano"],
@@ -5772,11 +5799,11 @@ def api_launch_visible_browser() -> dict[str, Any]:
 
         for attempt in range(25):
             try:
-                resp = urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
+                resp = urllib.request.urlopen(cdp_url, timeout=5)
                 if resp.status == 200:
                     return {
                         "status": "launched",
-                        "cdp_url": "http://127.0.0.1:9222",
+                        "cdp_url": cdp_url,
                         "message": "Chrome launched. Log in to ChatGPT, then trigger image generation.",
                     }
             except Exception as e:
