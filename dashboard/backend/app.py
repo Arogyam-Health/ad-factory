@@ -1328,6 +1328,16 @@ def run_chatgpt_generation(
     if image_sources_file:
         cmd.extend(["--image-source-file", image_sources_file])
 
+    # Pass CDP URL if running in WSL
+    if Path("/mnt/c").exists():
+        try:
+            ip_route = subprocess.run(["ip", "route"], capture_output=True, text=True, timeout=5)
+            gw_line = [l for l in ip_route.stdout.splitlines() if "default" in l]
+            win_host_ip = gw_line[0].split()[2] if gw_line else "127.0.0.1"
+            cmd.extend(["--cdp-url", f"http://{win_host_ip}:9222"])
+        except Exception:
+            pass
+
     log_dir = RUNTIME_ROOT / "generation_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"gen_{batch}_{aspect_folder}_chatgpt.log"
@@ -4935,6 +4945,15 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
             "--upload-dir",
             str(INPUT_IMAGES_DIR),
         ]
+        # Pass CDP URL if running in WSL
+        if Path("/mnt/c").exists():
+            try:
+                ip_route = subprocess.run(["ip", "route"], capture_output=True, text=True, timeout=5)
+                gw_line = [l for l in ip_route.stdout.splitlines() if "default" in l]
+                win_host_ip = gw_line[0].split()[2] if gw_line else "127.0.0.1"
+                cmd.extend(["--cdp-url", f"http://{win_host_ip}:9222"])
+            except Exception:
+                pass
     else:
         cmd = [
             sys.executable,

@@ -171,6 +171,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--send-confirm-timeout", type=float, default=35.0)
     parser.add_argument("--continue-on-error", action="store_true")
+    parser.add_argument("--cdp-url", default="", help="CDP URL for connecting to existing Chrome (e.g. http://172.18.160.1:9222)")
     return parser.parse_args()
 
 
@@ -510,15 +511,28 @@ def resolve_browser_binary() -> str:
     return ""
 
 
-def _debug_port_available(port: int = 9222) -> bool:
+def _debug_port_available(cdp_url: str = "") -> tuple[bool, str]:
+    """Check if CDP endpoint is reachable. Returns (is_available, cdp_url)."""
+    if cdp_url and cdp_url.strip():
+        url = cdp_url.strip().rstrip("/")
+        try:
+            import urllib.request
+            resp = urllib.request.urlopen(f"{url}/json/version", timeout=3)
+            if resp.status == 200:
+                return True, url
+        except Exception:
+            pass
+        return False, url
+
+    # Default: check localhost:9222
     try:
         sock = socket.socket()
         sock.settimeout(1)
-        sock.connect(("127.0.0.1", port))
+        sock.connect(("127.0.0.1", 9222))
         sock.close()
-        return True
+        return True, "http://127.0.0.1:9222"
     except Exception:
-        return False
+        return False, "http://127.0.0.1:9222"
 
 
 def grant_chatgpt_permissions(context: BrowserContext) -> None:
@@ -532,9 +546,10 @@ def build_browser_context(args: argparse.Namespace, download_dir: Path):
     p = sync_playwright().start()
     download_dir.mkdir(parents=True, exist_ok=True)
 
-    if _debug_port_available(9222):
-        print("  [connect] Connecting to existing Chrome via CDP on port 9222...")
-        browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
+    cdp_available, cdp_url = _debug_port_available(getattr(args, "cdp_url", ""))
+    if cdp_available:
+        print(f"  [connect] Connecting to existing Chrome via CDP: {cdp_url}")
+        browser = p.chromium.connect_over_cdp(cdp_url)
         context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
         context.set_default_timeout(30000)
         grant_chatgpt_permissions(context)
