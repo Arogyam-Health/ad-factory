@@ -4949,13 +4949,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
         ]
         # Pass CDP URL if running in WSL
         if Path("/mnt/c").exists():
-            try:
-                ip_route = subprocess.run(["ip", "route"], capture_output=True, text=True, timeout=5)
-                gw_line = [l for l in ip_route.stdout.splitlines() if "default" in l]
-                win_host_ip = gw_line[0].split()[2] if gw_line else "127.0.0.1"
-                cmd.extend(["--cdp-url", f"http://{win_host_ip}:9222"])
-            except Exception:
-                pass
+            cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
     else:
         cmd = [
             sys.executable,
