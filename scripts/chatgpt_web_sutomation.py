@@ -56,14 +56,23 @@ DOWNLOAD_TEMP_EXTS = {".crdownload", ".tmp", ".part"}
 
 def wsl_to_windows_path(path: str) -> str:
     """Convert WSL path to Windows path for CDP-connected Chrome."""
-    if not path.startswith("/mnt/"):
-        return path
-    parts = path.lstrip("/").split("/", 1)
-    if len(parts) != 2:
-        return path
-    drive = parts[0].upper()
-    rest = parts[1].replace("/", "\\")
-    return f"{drive}:\\{rest}"
+    if path.startswith("/mnt/c/") or path.startswith("/mnt/C/"):
+        rest = path[7:]
+        return f"C:\\{rest.replace('/', '\\')}"
+    return path
+
+
+def copy_to_windows_temp(image_paths: list[Path]) -> list[str]:
+    """Copy images from WSL filesystem to Windows-accessible temp dir."""
+    import shutil
+    win_temp = Path("/mnt/c/Users/jadam/.ad-factory-upload-temp")
+    win_temp.mkdir(parents=True, exist_ok=True)
+    windows_paths = []
+    for p in image_paths:
+        dest = win_temp / p.name
+        shutil.copy2(str(p), str(dest))
+        windows_paths.append(str(dest))
+    return [wsl_to_windows_path(p) for p in windows_paths]
 
 UNSAFE_CLICK_WORDS = (
     "share conversation",
@@ -1684,9 +1693,8 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
         if p.suffix.lower() not in IMAGE_EXTS:
             raise ValueError(f"Upload path is not a supported image: {p}")
 
-    file_paths = [wsl_to_windows_path(str(p)) for p in image_paths]
-    print(f"  [upload] WSL paths: {[str(p) for p in image_paths]}")
-    print(f"  [upload] Windows paths: {file_paths}")
+    file_paths = copy_to_windows_temp(image_paths)
+    print(f"  [upload] Copied to Windows temp: {file_paths}")
     before_srcs = get_all_image_srcs(page)
     print(f"  [upload] Uploading {len(file_paths)} image(s). Existing page images={len(before_srcs)}")
 
