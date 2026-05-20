@@ -5699,19 +5699,19 @@ def api_launch_visible_browser() -> dict[str, Any]:
         except Exception:
             win_user = os.environ.get("USERNAME", "chrome-cdp-user")
         win_data_dir = f"C:\\Users\\{win_user}\\.config\\google-chrome-cdp"
-        cmd = [
-            chrome_bin,
-            "--remote-debugging-port=9222",
-            f"--user-data-dir={win_data_dir}",
-            "--no-first-run",
-            "--no-default-browser-check",
-        ]
-        print(f"[chrome-launch] Command: {cmd}")
+        # Ensure the directory exists on Windows side
+        subprocess.run(
+            ["cmd.exe", "/c", "mkdir", win_data_dir],
+            capture_output=True, timeout=5,
+        )
+        # Use cmd.exe /c start to properly detach the process
+        cmd_line = f'start "" "{chrome_bin}" --remote-debugging-port=9222 --user-data-dir="{win_data_dir}" --no-first-run --no-default-browser-check --no-sandbox'
+        print(f"[chrome-launch] Launching via cmd: {cmd_line}")
         _chrome_process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            ["cmd.exe", "/c", cmd_line],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             cwd="/mnt/c/Windows/System32",
         )
-        print(f"[chrome-launch] PID: {_chrome_process.pid}")
     else:
         cmd = [
             chrome_bin,
@@ -5722,8 +5722,8 @@ def api_launch_visible_browser() -> dict[str, Any]:
         ]
         _chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # Wait longer for Chrome to fully initialize CDP
-    time.sleep(8)
+    # Wait for Chrome to initialize
+    time.sleep(5)
     for attempt in range(20):
         try:
             resp = urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2)
@@ -5737,7 +5737,6 @@ def api_launch_visible_browser() -> dict[str, Any]:
             print(f"[chrome-launch] CDP attempt {attempt+1} failed: {e}")
             time.sleep(1)
 
-    # Final diagnostic: check if Chrome process is still alive
     proc_alive = _chrome_process.poll() is None if _chrome_process else False
     raise HTTPException(
         status_code=500,
