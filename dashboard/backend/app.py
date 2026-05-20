@@ -5706,10 +5706,10 @@ def api_launch_visible_browser() -> dict[str, Any]:
             capture_output=True, timeout=5,
         )
 
-        # Convert Linux path to Windows path for cmd.exe
+        # Convert Linux path to Windows path
         win_chrome_path = chrome_bin.replace("/mnt/c/", "C:\\").replace("/", "\\")
 
-        # Write a temporary batch file to avoid quoting issues with cmd.exe /c start
+        # Write a batch file that launches Chrome detached via start ""
         import tempfile
         batch_content = f'@echo off\r\nstart "" "{win_chrome_path}" --remote-debugging-port=9222 --user-data-dir="{win_data_dir}" --no-first-run --no-default-browser-check --no-sandbox\r\n'
         batch_path = os.path.join(tempfile.gettempdir(), "launch_chrome_cdp.bat")
@@ -5720,11 +5720,20 @@ def api_launch_visible_browser() -> dict[str, Any]:
         print(f"[chrome-launch] Chrome: {win_chrome_path}")
         print(f"[chrome-launch] DataDir: {win_data_dir}")
 
+        # Launch the batch file (start "" detaches Chrome as a GUI process)
         _chrome_process = subprocess.Popen(
             ["cmd.exe", "/c", batch_path],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             cwd="/mnt/c/Windows/System32",
         )
+        # Wait for the batch to finish (it returns immediately after start "")
+        stdout, stderr = _chrome_process.communicate(timeout=10)
+        if stdout:
+            print(f"[chrome-launch] stdout: {stdout.decode('utf-8', errors='replace')}")
+        if stderr:
+            print(f"[chrome-launch] stderr: {stderr.decode('utf-8', errors='replace')}")
+        # Reset _chrome_process to None since the batch file exited
+        _chrome_process = None
     else:
         cmd = [
             chrome_bin,
