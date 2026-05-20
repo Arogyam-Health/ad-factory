@@ -5706,40 +5706,22 @@ def api_launch_visible_browser() -> dict[str, Any]:
             capture_output=True, timeout=5,
         )
 
-        # Convert Linux path to Windows path
-        win_chrome_path = chrome_bin.replace("/mnt/c/", "C:\\").replace("/", "\\")
-
-        # Write batch file to Windows-accessible temp dir (WSL /tmp is NOT visible to Windows)
-        win_temp_dir = f"C:\\Users\\{win_user}\\AppData\\Local\\Temp"
-        win_batch_path = f"{win_temp_dir}\\launch_chrome_cdp.bat"
-        wsl_batch_path = f"/mnt/c/Users/{win_user}/AppData/Local/Temp/launch_chrome_cdp.bat"
-
-        # Ensure Windows temp dir exists
-        subprocess.run(
-            ["cmd.exe", "/c", "mkdir", win_temp_dir],
-            capture_output=True, timeout=5,
-        )
-
-        batch_content = f'@echo off\r\nstart "" "{win_chrome_path}" --remote-debugging-port=9222 --user-data-dir="{win_data_dir}" --no-first-run --no-default-browser-check --no-sandbox\r\n'
-        with open(wsl_batch_path, "w") as f:
-            f.write(batch_content)
-
-        print(f"[chrome-launch] Batch: {wsl_batch_path}")
-        print(f"[chrome-launch] Chrome: {win_chrome_path}")
+        print(f"[chrome-launch] Chrome: {chrome_bin}")
         print(f"[chrome-launch] DataDir: {win_data_dir}")
 
-        # Launch the batch file
+        # Call chrome.exe directly via WSL interop — it auto-launches as a visible Windows window
+        cmd = [
+            chrome_bin,
+            "--remote-debugging-port=9222",
+            f"--user-data-dir={win_data_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--no-sandbox",
+        ]
         _chrome_process = subprocess.Popen(
-            ["cmd.exe", "/c", wsl_batch_path],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             cwd="/mnt/c/Windows/System32",
         )
-        stdout, stderr = _chrome_process.communicate(timeout=10)
-        if stdout:
-            print(f"[chrome-launch] stdout: {stdout.decode('utf-8', errors='replace')}")
-        if stderr:
-            print(f"[chrome-launch] stderr: {stderr.decode('utf-8', errors='replace')}")
-        _chrome_process = None
     else:
         cmd = [
             chrome_bin,
