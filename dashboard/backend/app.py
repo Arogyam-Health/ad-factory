@@ -5760,7 +5760,7 @@ def api_launch_visible_browser() -> dict[str, Any]:
         except Exception:
             win_host_ip = "127.0.0.1"
 
-        cdp_url = f"http://{win_host_ip}:9222/json/version"
+        cdp_url = f"http://{win_host_ip}:9223/json/version"
         print(f"[chrome-launch] CDP URL: {cdp_url}")
 
         # Verify CDP is reachable from WSL
@@ -5769,7 +5769,7 @@ def api_launch_visible_browser() -> dict[str, Any]:
             if resp.status == 200:
                 return {
                     "status": "launched",
-                    "cdp_url": f"http://{win_host_ip}:9222",
+                    "cdp_url": f"http://{win_host_ip}:9223",
                     "message": "Chrome launched. Log in to ChatGPT, then trigger image generation.",
                 }
         except Exception as e:
@@ -5778,7 +5778,7 @@ def api_launch_visible_browser() -> dict[str, Any]:
         # If direct CDP fails, Chrome is still running - user can proceed manually
         return {
             "status": "launched",
-            "cdp_url": f"http://{win_host_ip}:9222",
+            "cdp_url": f"http://{win_host_ip}:9223",
             "message": "Chrome launched. Log in to ChatGPT, then trigger image generation.",
         }
     else:
