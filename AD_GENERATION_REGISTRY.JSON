@@ -9139,6 +9139,98 @@
       "test_group": "",
       "variant_variable": "",
       "variant_value": ""
+    },
+    {
+      "id": "entry_195",
+      "timestamp": "2026-05-19T06:48:22Z",
+      "format": "UGC",
+      "persona_number": 12,
+      "persona_name": "Metabolism-Worry Buyer",
+      "headline_angle": "pas",
+      "awareness_stage": "solution_aware",
+      "concept_angle": "desired_outcome",
+      "concept_structure": "pas",
+      "visual_archetype": "ugc_morning_routine",
+      "headline_en": "My Slow Metabolism Kept Blocking Weight Loss",
+      "headline_hi": "रात की लालसा नियंत्रित करना आसान लग सकता है।",
+      "support_line_en": "Lost 3 kg in 15 days — OK Liquid controls cravings without hunger, no gym, doctor-formulated ayurveda with homemade food.",
+      "support_line_hi": "एक सरल पहला कदम रात के वजन-नियंत्रण को व्यावहारिक रखता है।",
+      "cta_en": "It worked for me",
+      "cta_hi": "मेरी दिनचर्या देखें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-127",
+      "background_name": "Warm amber night desk",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v1; aspect_ratio=4:5; seed=694319118; visual_archetype=ugc_morning_routine",
+      "opening_pattern_4tok_en": "my_slow_metabolism_kept",
+      "opening_pattern_4tok_hi": "रात_की_लालसा_नियंत्रित",
+      "copy_skeleton": "proof_time_cta",
+      "hook_structure_class": "confession_led",
+      "proof_style_class": "authority_anchor",
+      "cta_voice_class": "guided_next_step",
+      "headline_word_count": 7,
+      "support_line_word_count": 20,
+      "has_protocol_mechanics": true,
+      "has_social_proof_number": true,
+      "background_scene_category": "office",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_196",
+      "timestamp": "2026-05-19T06:50:16Z",
+      "format": "UGC",
+      "persona_number": 15,
+      "persona_name": "Wedding/Event Deadline Persona",
+      "headline_angle": "event deadline weight loss tension",
+      "awareness_stage": "solution_aware",
+      "concept_angle": "desired_outcome",
+      "concept_structure": "pas",
+      "visual_archetype": "ugc_selfie_hold",
+      "headline_en": "My Wedding Is Too Close for Slow Weight Loss?",
+      "headline_hi": "रात की लालसा नियंत्रित करना आसान लग सकता है।",
+      "support_line_en": "I'm using this Ayurvedic system from Dr. Arun Tyagi to drop 3-5 kg in 15 days—hunger controlled, no crash diet needed.",
+      "support_line_hi": "एक सरल पहला कदम रात के वजन-नियंत्रण को व्यावहारिक रखता है।",
+      "cta_en": "See how →",
+      "cta_hi": "मेरी दिनचर्या देखें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-402",
+      "background_name": "Evening study lamp glow",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v2; aspect_ratio=4:5; seed=1915766086; visual_archetype=ugc_selfie_hold",
+      "opening_pattern_4tok_en": "my_wedding_is_too",
+      "opening_pattern_4tok_hi": "रात_की_लालसा_नियंत्रित",
+      "copy_skeleton": "proof_time_cta",
+      "hook_structure_class": "confession_led",
+      "proof_style_class": "authority_anchor",
+      "cta_voice_class": "discovery_action",
+      "headline_word_count": 9,
+      "support_line_word_count": 21,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": true,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
     }
   ],
   "indexes": {
@@ -9990,11 +10082,11 @@
           "BG-460",
           "BG-114",
           "BG-319",
-          "BG-187"
+          "BG-187",
+          "BG-127",
+          "BG-402"
         ],
         "remaining": [
-          "BG-127",
-          "BG-402",
           "BG-428",
           "BG-456",
           "BG-365",
@@ -11350,6 +11442,18 @@
           "entry_id": "entry_161",
           "timestamp": "2026-05-18T13:17:30Z",
           "background_slot": "BG-187",
+          "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_195",
+          "timestamp": "2026-05-19T06:48:22Z",
+          "background_slot": "BG-127",
+          "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_196",
+          "timestamp": "2026-05-19T06:50:16Z",
+          "background_slot": "BG-402",
           "background_source": "catalog"
         }
       ]
@@ -13101,6 +13205,24 @@
           "awareness_stage": "problem_aware",
           "concept_angle": "desired_outcome",
           "concept_structure": "four_us"
+        },
+        {
+          "entry_id": "entry_195",
+          "timestamp": "2026-05-19T06:48:22Z",
+          "format": "UGC",
+          "persona_number": 12,
+          "awareness_stage": "solution_aware",
+          "concept_angle": "desired_outcome",
+          "concept_structure": "pas"
+        },
+        {
+          "entry_id": "entry_196",
+          "timestamp": "2026-05-19T06:50:16Z",
+          "format": "UGC",
+          "persona_number": 15,
+          "awareness_stage": "solution_aware",
+          "concept_angle": "desired_outcome",
+          "concept_structure": "pas"
         }
       ]
     },
@@ -13299,7 +13421,9 @@
         "I lose weight, then regain it.",
         "After 40, weight loss feels unfair.",
         "Weight loss gets harder after 40.",
-        "Why did weight loss slow after 40?"
+        "Why did weight loss slow after 40?",
+        "My Slow Metabolism Kept Blocking Weight Loss",
+        "My Wedding Is Too Close for Slow Weight Loss?"
       ],
       "cta_en": [
         "See If You’re Eligible",
@@ -13495,7 +13619,9 @@
         "See how it’s designed to last",
         "See the 15-day routine",
         "See the 15-day routine",
-        "See the simple 15-day plan"
+        "See the simple 15-day plan",
+        "It worked for me",
+        "See how →"
       ],
       "support_line_en": [
         "Obesity Killer Kit is a doctor-formulated Ayurvedic 15-day system designed for 3 to 5 kg loss, with a simple daily routine, homemade-food compatibility, and coach support via a daily tracker.",
@@ -13668,7 +13794,9 @@
         "Crash plans end in regain; a 15-day doctor-formulated routine keeps you nourished; OK Liquid supports eating less, aiming 3–5 kg in 15 days + maintenance guidance.",
         "Old diets fail after 40 because hunger and low energy spike; this 15-day doctor-formulated routine uses OK Liquid for satiety, fits homemade food, targets 3–5 kg loss.",
         "Old strict diets break on hunger and low energy; this 15-day doctor-formulated routine uses OK Liquid for satiety, fits homemade food, targets 3–5 kg loss.",
-        "Because strict diets trigger hunger and fatigue; morning OK Liquid supports satiety so you eat less on homemade food; targets 3–5 kg loss in 15 days."
+        "Because strict diets trigger hunger and fatigue; morning OK Liquid supports satiety so you eat less on homemade food; targets 3–5 kg loss in 15 days.",
+        "Lost 3 kg in 15 days — OK Liquid controls cravings without hunger, no gym, doctor-formulated ayurveda with homemade food.",
+        "I'm using this Ayurvedic system from Dr. Arun Tyagi to drop 3-5 kg in 15 days—hunger controlled, no crash diet needed."
       ],
       "bullets_en": [
         "Strict diets: hunger, cravings, quitting again",

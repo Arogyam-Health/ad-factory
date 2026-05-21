@@ -1187,6 +1187,7 @@ def run_gemini_generation(
     headless: bool = False,
     run_dir: Path | None = None,
     prepend_starting_prompt: bool = True,
+    first_tab_mode: str = "reuse-blank",
 ) -> subprocess.CompletedProcess[str]:
     aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     prompt_work_dir = RUNTIME_ROOT / "gemini_selected_prompts" / f"{batch}_{aspect_folder}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -1247,6 +1248,8 @@ def run_gemini_generation(
     ]
     if headless:
         cmd.append("--headless")
+    if first_tab_mode and first_tab_mode != "reuse-blank":
+        cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_source_arg:
         cmd.extend(["--image-source-file", image_source_arg])
     if run_dir is not None:
@@ -1278,6 +1281,7 @@ def run_chatgpt_generation(
     headless: bool = False,
     run_dir: Path | None = None,
     prepend_starting_prompt: bool = True,
+    first_tab_mode: str = "reuse-blank",
 ) -> subprocess.CompletedProcess[str]:
     aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     prompt_work_dir = RUNTIME_ROOT / "chatgpt_selected_prompts" / f"{batch}_{aspect_folder}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -1324,6 +1328,8 @@ def run_chatgpt_generation(
     ]
     if headless:
         cmd.append("--headless")
+    if first_tab_mode and first_tab_mode != "reuse-blank":
+        cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_sources_file:
         cmd.extend(["--image-source-file", image_sources_file])
 
@@ -5058,6 +5064,7 @@ def run_916_conversion_from_45_for_batch(
                 headless=headless,
                 run_dir=run_dir,
                 prepend_starting_prompt=False,
+                first_tab_mode="new",
             )
         else:
             result = run_gemini_generation(
@@ -5068,6 +5075,7 @@ def run_916_conversion_from_45_for_batch(
                 headless=headless,
                 run_dir=run_dir,
                 prepend_starting_prompt=False,
+                first_tab_mode="new",
             )
 
         if result.returncode != 0:
