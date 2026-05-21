@@ -18,10 +18,10 @@
         }
       },
       "pas": {
-        "template": "Structure: headline names only the sharp weight-loss problem or tension as a finished ad line. Do not complete the full PAS arc in the headline. Put consequence and solution in the support line so the headline stays punchy and human.",
+        "template": "Structure: headline names only the sharp weight-loss problem or tension as a finished ad line or natural ad question. The subject and blocker must logically match: cravings, hunger, strict diets, workdays, family meals, or stalled routines can block weight loss; do not make weight loss itself quit, sabotage, or need accountability. Do not complete the full PAS arc in the headline. Put consequence and solution in the support line so the headline stays punchy and human.",
         "examples": [
           "Cravings Keep Blocking Weight Loss?",
-          "Diet Plans Keep Breaking Weight Loss?"
+          "Strict Diets Keep Breaking at Dinner?"
         ],
         "support_strategy": {
           "direction": "Add consequence and product-led solution after the headline names the problem.",
@@ -30,7 +30,7 @@
         }
       },
       "bab": {
-        "template": "Structure: headline shows the before/after weight-loss contrast in the fewest words possible, as a complete ad line. Keep the bridge mechanism for the support line. Use a natural contrast word such as without, instead, still, or but.",
+        "template": "Structure: headline shows one before/after weight-loss contrast in the fewest words possible, as a complete ad line. Both sides of the contrast must belong to the same idea: old friction versus better path, not two unrelated benefits. Keep the bridge mechanism for the support line. Use a natural contrast word such as without, instead, still, or but.",
         "examples": [
           "Less Hunger, More Progress",
           "Lose Weight, Keep Homemade Food"
@@ -69,15 +69,15 @@
 
     "hook_structure": {
       "question_led": {
-        "template": "Structure: Open with one weight-loss question the persona would actually ask themselves. Keep it short and specific; do not answer the question inside the headline. The support line gives the answer.",
+        "template": "Structure: Open with one weight-loss question the persona would actually ask themselves. Keep it short and specific; do not answer the question inside the headline. The question must have a clear object and a real-world blocker, so it never reads vague or incomplete.",
         "examples": [
           "What If Weight Loss Didn't Mean Cooking Separately?",
           "Tired of Plans That Don't Survive Your Real Schedule?"
         ],
         "support_strategy": {
-          "direction": "Answer the headline question directly, then add mechanism and proof.",
-          "must_include": ["direct answer", "mechanism", "proof or ease detail"],
-          "avoid": "Do not ask another question in the support line."
+          "direction": "Resolve the headline question with mechanism and proof, but write it as standalone ad copy rather than an FAQ answer.",
+          "must_include": ["mechanism", "proof or ease detail", "weight-loss link"],
+          "avoid": "Do not ask another question in the support line. Do not begin with Because, It can, You can, Yes, No, or Many do."
         }
       },
       "proof_led": {
@@ -135,7 +135,7 @@
         "template": "Structure: Open with one specific, concrete weight-loss friction. Name the exact struggle the persona feels in a short line. Do not explain the fix inside the headline.",
         "examples": [
           "Weight Loss Gets Harder When Cravings Control Your Day",
-          "PCOD Can Slow Progress"
+          "PCOD Can Slow Weight Loss"
         ],
         "support_strategy": {
           "direction": "Resolve the pain named or implied by the headline with persona friction, mechanism, and proof.",
@@ -186,9 +186,9 @@
           "The 5-Minute Weight-Loss Routine Gap"
         ],
         "support_strategy": {
-          "direction": "Answer the curiosity gap with a clear mechanism and weight-loss link.",
-          "must_include": ["direct answer", "mechanism", "result link"],
-          "avoid": "Do not create a second mystery. The support line should satisfy the question."
+          "direction": "Resolve the curiosity gap with a clear mechanism and weight-loss link, without sounding like an FAQ answer.",
+          "must_include": ["mechanism", "result link", "proof or routine detail"],
+          "avoid": "Do not create a second mystery. Do not begin with Because, It can, You can, Yes, No, or Many do."
         }
       },
       "comparison": {
@@ -246,7 +246,7 @@
         "template": "Structure: Assume the reader has tried weight-loss fixes before. Headline names the failed-pattern tension; support line shows why this system is easier, safer, or more guided.",
         "examples": [
           "Tried Diets That Didn't Stick?",
-          "Weight Loss, More Guided This Time"
+          "This Weight-Loss Plan Comes Guided"
         ],
         "support_strategy": {
           "direction": "Differentiate from previous attempts with guidance, easier adherence, or safer-feeling support.",
@@ -374,7 +374,7 @@
 
   "support_line_architectures": {
     "_rotation": "Deterministically rotate across personas using (persona_number + format_index). Each persona gets the architecture at index (persona_number + format_index) % len(rotation_order).",
-    "composition_rule": "Final support line = active support_strategy meaning from the selected headline/hypothesis architecture + assigned support_line_architecture sentence shape. The support line must complete the headline, not repeat it. Keep it as short ad copy: one compact line, ideally 14-24 words, maximum 28 words.",
+    "composition_rule": "Final support line = active support_strategy meaning from the selected headline/hypothesis architecture + assigned support_line_architecture sentence shape. The support line must complete the headline, not repeat it, and prove the exact relationship named in the headline. Keep it as short ad copy: one compact sentence, ideally 12-22 words, maximum 24 words for HERO/UGC.",
     "rotation_order": [
       "pain_first",
       "result_first",
@@ -385,39 +385,39 @@
     ],
     "definitions": {
       "pain_first": {
-        "template": "Structure: Support line completes what the short headline leaves out in one compact ad line, ideally 14-24 words. Open with the persona's specific friction, then explain the product bridge and one credibility anchor. Flow: [headline context] → [mechanism] → [proof]. Avoid generic reassurance.",
+        "template": "Structure: Support line completes what the short headline leaves out in one compact sentence, ideally 12-22 words. Open with the persona's specific friction, then explain the product bridge and one credibility anchor. Flow: [headline context] → [mechanism] → [proof]. Avoid generic reassurance.",
         "examples": [
-          "For PCOD-linked weight struggles, the kit supports hunger control and guided eating with a doctor-formulated routine. Built for weight loss, not cure claims."
+          "For PCOD-linked weight struggles, OK Liquid supports hunger control while tracker guidance keeps the 15-day plan practical."
         ]
       },
       "result_first": {
-        "template": "Structure: Support line adds the measurable outcome if the headline only hooks, in one compact ad line, ideally 14-24 words. Then explain the mechanism and what the persona does not sacrifice. Flow: [outcome detail] → [mechanism] → [no-sacrifice point].",
+        "template": "Structure: Support line adds the measurable outcome if the headline only hooks, in one compact sentence, ideally 12-22 words. Then explain the mechanism and what the persona does not sacrifice. Flow: [outcome detail] → [mechanism] → [no-sacrifice point].",
         "examples": [
           "Target 3 to 5 kg in 15 days with craving support, a simple routine, and homemade food."
         ]
       },
       "contrast": {
-        "template": "Structure: Support line explains the contrast promised by the headline in one compact ad line, ideally 14-24 words. Name what usually fails, why it fails for this persona, and what this system does instead. Flow: [failed approach] → [why] → [different system].",
+        "template": "Structure: Support line explains the contrast promised by the headline in one compact sentence, ideally 12-22 words. Name what usually fails, why it fails for this persona, and what this system does instead. Flow: [failed approach] → [why] → [different system].",
         "examples": [
           "Most strict diets collapse at home; this 5-minute routine supports weight loss with homemade food."
         ]
       },
       "simple_facts": {
-        "template": "Structure: One compact ad line with 2-3 concrete facts removed from the headline. Each phrase is one fact: mechanism, proof, routine, or constraint. No fluff. Maximum 28 words.",
+        "template": "Structure: One compact sentence with 2 concrete facts removed from the headline. Each phrase must support the headline: mechanism, proof, routine, or constraint. No fluff. Maximum 24 words for HERO/UGC.",
         "examples": [
-          "31 unique ingredients. Doctor-formulated routine. Trained coach support for the 15-day weight-loss plan."
+          "31 ingredients, doctor-formulated routine, and trained coach support keep the 15-day weight-loss plan clear."
         ]
       },
       "question_led": {
-        "template": "Structure: If the headline is a question, answer like an ad line, not yes/no or blog copy. Do not start with 'Yes:' or 'No:'. Use the system's specific mechanism and one proof point. Flow: [direct answer] → [mechanism] → [proof/detail]. Maximum 28 words.",
+        "template": "Structure: If the headline is a question, support it like an ad line, not an FAQ answer. Do not start with Because, Yes, No, It can, You can, Many do, or The answer is. Use the exact blocker from the headline, then the system's specific mechanism and one proof/detail. Flow: [headline blocker] → [mechanism] → [proof/detail]. Maximum 24 words for HERO/UGC.",
         "examples": [
-          "The system supports craving control with Ayurvedic ingredients and a guided routine, so weight loss fits your existing kitchen instead of fighting it."
+          "Craving control starts with morning OK Liquid, while tracker guidance keeps the 15-day weight-loss routine practical."
         ]
       },
       "bridge": {
-        "template": "Structure: Show progression from the headline hook to mechanism to outcome in three connected phrases. Each phrase adds new payload, not a repeat. Flow: [hook context] → [system step] → [measurable result].",
+        "template": "Structure: Show progression from the headline hook to mechanism to outcome in one compact sentence with three connected phrases. Each phrase adds new payload, not a repeat. Flow: [hook context] → [system step] → [measurable result]. Maximum 24 words for HERO/UGC.",
         "examples": [
-          "Late-day cravings keep you from seeing progress. The kit's hunger-control ingredients help you eat less without fighting yourself. Real users report 3 to 5 kg loss in 15 days."
+          "Late-day cravings break consistency, morning OK Liquid supports eating less, and tracker guidance keeps the 15-day goal visible."
         ]
       }
     }

@@ -1726,9 +1726,6 @@ def strip_internal_markers_from_payload(payload: dict[str, Any]) -> dict[str, An
     return payload
 
 
-CTA_VARIANTS: dict[str, dict[str, list[str]]] = {}
-
-
 def registry_banlist_values(context: dict[str, Any]) -> set[str]:
     banlist = context.get("banlist") if isinstance(context.get("banlist"), dict) else {}
     buckets = banlist.get("buckets") if isinstance(banlist.get("buckets"), dict) else {}
@@ -1779,6 +1776,11 @@ def enforce_unique_ctas(payload: dict[str, Any], context: dict[str, Any]) -> dic
                 if candidate not in seen and candidate not in blocked:
                     chosen = candidate
                     break
+            if not chosen:
+                for candidate in variants:
+                    if candidate not in seen:
+                        chosen = candidate
+                        break
             if not chosen:
                 # Keep CTA natural if uniqueness pool is exhausted.
                 chosen = current or (variants[0] if variants else "See Details")
@@ -5314,11 +5316,11 @@ async def api_run_execute(
         # Inject hypothesis directive if active
         hyp_meta = item.get("hypothesis")
         concept = {}
-        if isinstance(hyp_meta, dict) and hyp_meta.get("type") != "none":
+        hyp_type = str(hyp_meta.get("type") or "").strip().lower() if isinstance(hyp_meta, dict) else ""
+        variant = str(hyp_meta.get("variant") or "").strip() if isinstance(hyp_meta, dict) else ""
+        if isinstance(hyp_meta, dict) and hyp_type and hyp_type != "none":
             copy_req["hypothesis"] = hyp_meta
             concept = copy_req.get("concept_variation") or {}
-            hyp_type = hyp_meta.get("type")
-            variant = hyp_meta.get("variant")
             if hyp_type == "awareness_stage" and variant:
                 concept["audience_stage"] = _framework_item("audience_stage", variant)
                 _set_active_support_line_strategy(copy_req, "by_awareness_stage", variant)

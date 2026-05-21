@@ -1,12 +1,12 @@
-# Graph Report - info  (2026-05-16)
+# Graph Report - info  (2026-05-21)
 
 ## Corpus Check
-- 33 files · ~16,893,033 words
+- 34 files · ~3,433,935 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 904 nodes · 1331 edges · 284 communities detected
-- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 74 edges (avg confidence: 0.8)
+- 1050 nodes · 1589 edges · 337 communities detected
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 127 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -21,8 +21,8 @@
 - [[_COMMUNITY_Community 8|Community 8]]
 - [[_COMMUNITY_Community 9|Community 9]]
 - [[_COMMUNITY_Community 10|Community 10]]
-- [[_COMMUNITY_Community 18|Community 18]]
-- [[_COMMUNITY_Community 19|Community 19]]
+- [[_COMMUNITY_Community 11|Community 11]]
+- [[_COMMUNITY_Community 12|Community 12]]
 - [[_COMMUNITY_Community 20|Community 20]]
 - [[_COMMUNITY_Community 21|Community 21]]
 - [[_COMMUNITY_Community 22|Community 22]]
@@ -294,18 +294,71 @@
 - [[_COMMUNITY_Community 288|Community 288]]
 - [[_COMMUNITY_Community 289|Community 289]]
 - [[_COMMUNITY_Community 290|Community 290]]
+- [[_COMMUNITY_Community 291|Community 291]]
+- [[_COMMUNITY_Community 292|Community 292]]
+- [[_COMMUNITY_Community 293|Community 293]]
+- [[_COMMUNITY_Community 294|Community 294]]
+- [[_COMMUNITY_Community 295|Community 295]]
+- [[_COMMUNITY_Community 296|Community 296]]
+- [[_COMMUNITY_Community 297|Community 297]]
+- [[_COMMUNITY_Community 298|Community 298]]
+- [[_COMMUNITY_Community 299|Community 299]]
+- [[_COMMUNITY_Community 300|Community 300]]
+- [[_COMMUNITY_Community 301|Community 301]]
+- [[_COMMUNITY_Community 302|Community 302]]
+- [[_COMMUNITY_Community 303|Community 303]]
+- [[_COMMUNITY_Community 304|Community 304]]
+- [[_COMMUNITY_Community 305|Community 305]]
+- [[_COMMUNITY_Community 306|Community 306]]
+- [[_COMMUNITY_Community 307|Community 307]]
+- [[_COMMUNITY_Community 308|Community 308]]
+- [[_COMMUNITY_Community 309|Community 309]]
+- [[_COMMUNITY_Community 310|Community 310]]
+- [[_COMMUNITY_Community 311|Community 311]]
+- [[_COMMUNITY_Community 312|Community 312]]
+- [[_COMMUNITY_Community 313|Community 313]]
+- [[_COMMUNITY_Community 314|Community 314]]
+- [[_COMMUNITY_Community 315|Community 315]]
+- [[_COMMUNITY_Community 316|Community 316]]
+- [[_COMMUNITY_Community 317|Community 317]]
+- [[_COMMUNITY_Community 318|Community 318]]
+- [[_COMMUNITY_Community 319|Community 319]]
+- [[_COMMUNITY_Community 320|Community 320]]
+- [[_COMMUNITY_Community 321|Community 321]]
+- [[_COMMUNITY_Community 322|Community 322]]
+- [[_COMMUNITY_Community 323|Community 323]]
+- [[_COMMUNITY_Community 324|Community 324]]
+- [[_COMMUNITY_Community 325|Community 325]]
+- [[_COMMUNITY_Community 326|Community 326]]
+- [[_COMMUNITY_Community 327|Community 327]]
+- [[_COMMUNITY_Community 328|Community 328]]
+- [[_COMMUNITY_Community 329|Community 329]]
+- [[_COMMUNITY_Community 330|Community 330]]
+- [[_COMMUNITY_Community 331|Community 331]]
+- [[_COMMUNITY_Community 332|Community 332]]
+- [[_COMMUNITY_Community 333|Community 333]]
+- [[_COMMUNITY_Community 334|Community 334]]
+- [[_COMMUNITY_Community 335|Community 335]]
+- [[_COMMUNITY_Community 336|Community 336]]
+- [[_COMMUNITY_Community 337|Community 337]]
+- [[_COMMUNITY_Community 338|Community 338]]
+- [[_COMMUNITY_Community 339|Community 339]]
+- [[_COMMUNITY_Community 340|Community 340]]
+- [[_COMMUNITY_Community 341|Community 341]]
+- [[_COMMUNITY_Community 342|Community 342]]
+- [[_COMMUNITY_Community 343|Community 343]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `run()` - 33 edges
-2. `main()` - 33 edges
-3. `api_run_execute()` - 31 edges
-4. `run()` - 29 edges
-5. `call_opencode_compatible()` - 19 edges
-6. `load_manifest_for_run()` - 17 edges
-7. `api_run_generate_916_selected()` - 13 edges
-8. `initDefaults()` - 13 edges
-9. `run_cmd()` - 12 edges
-10. `click_send_and_confirm()` - 12 edges
+1. `Path()` - 47 edges
+2. `api_run_execute()` - 36 edges
+3. `run()` - 34 edges
+4. `main()` - 34 edges
+5. `run()` - 30 edges
+6. `load_manifest_for_run()` - 20 edges
+7. `parse_prompt_filename()` - 19 edges
+8. `api_regenerate_queued_images()` - 19 edges
+9. `call_opencode_compatible()` - 18 edges
+10. `collect_run_result()` - 14 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `_run_opencode_queued()` --calls--> `run()`  [INFERRED]
@@ -323,7 +376,7 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.03
-Nodes (168): api_batch_generate_images_45(), api_batch_generate_images_916(), api_defaults(), api_export_on_image_copy(), api_import_on_image_copy(), api_progress(), api_run(), api_run_execute() (+160 more)
+Nodes (163): api_batch_generate_images_45(), api_batch_generate_images_916(), api_export_on_image_copy(), api_file_content(), api_import_on_image_copy(), api_mark_images_to_regenerate(), api_progress(), api_regenerate_queued_images() (+155 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.03
@@ -331,159 +384,159 @@ Nodes (137): _active_window_title(), assert_not_temporary_chat(), _attachment_sp
 
 ### Community 2 - "Community 2"
 Cohesion: 0.05
-Nodes (101): _attachment_spinner_count(), build_browser_context(), build_image_metadata(), build_local_image_paths(), build_test_variables(), _capture_download_from_click(), chatgpt_app_ready(), clear_composer_keyboard() (+93 more)
+Nodes (102): _attachment_spinner_count(), build_browser_context(), build_image_metadata(), build_local_image_paths(), build_test_variables(), _capture_download_from_click(), chatgpt_app_ready(), clear_composer_keyboard() (+94 more)
 
 ### Community 3 - "Community 3"
+Cohesion: 0.06
+Nodes (39): cacheKey(), clearCache(), fetchJSON(), invalidateDefaults(), invalidateRuns(), hideChromeKillButton(), killChrome(), stopProgressPolling() (+31 more)
+
+### Community 4 - "Community 4"
+Cohesion: 0.05
+Nodes (53): api_defaults(), api_run_execute(), apply_visual_pattern_reuse_to_plan(), assembler_language_mode(), build_copy_requirements(), build_persona_payload(), _build_persona_payload_field(), _build_support_line_strategy() (+45 more)
+
+### Community 5 - "Community 5"
 Cohesion: 0.07
 Nodes (53): add_used_text(), append_background_index(), append_concept_combo_index(), aspect_ratio_folder(), base_layout_lines_for_format(), build_seeded_background_sentence(), build_ugc_subject_line(), classify_cta_voice() (+45 more)
 
-### Community 4 - "Community 4"
-Cohesion: 0.07
-Nodes (32): cacheKey(), clearCache(), fetchJSON(), invalidateDefaults(), invalidateRuns(), hideChromeKillButton(), killChrome(), stopProgressPolling() (+24 more)
-
-### Community 5 - "Community 5"
-Cohesion: 0.06
-Nodes (37): api_delete_image(), api_delete_prompt(), api_download_batch_images(), api_download_batches(), api_download_single_image(), api_edit_prompt(), api_file_content(), api_replace_image() (+29 more)
-
 ### Community 6 - "Community 6"
-Cohesion: 0.09
-Nodes (20): enhanceSelect(), optionLabel(), refreshSelect(), sync(), renderHypothesisUI(), updateHypothesisSummary(), updateHypothesisVariantOptions(), buildImageGallery() (+12 more)
+Cohesion: 0.07
+Nodes (34): api_delete_image(), api_delete_prompt(), api_download_batch_images(), api_download_batches(), api_download_single_image(), api_edit_prompt(), _build_persona_name_map(), _clean_metadata_for_download() (+26 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.2
-Nodes (10): api_delete_input_image(), api_opencode_catalog(), api_product_doc(), api_save_product_doc(), default_product_doc_info(), _defaults(), _delete_input_image(), _opencode_catalog() (+2 more)
+Cohesion: 0.07
+Nodes (31): api_delete_input_image(), api_input_prompt(), api_opencode_catalog(), api_product_doc(), api_prompt_file_content(), api_save_input_prompt(), api_save_product_doc(), api_save_prompt_file_content() (+23 more)
 
 ### Community 8 - "Community 8"
+Cohesion: 0.11
+Nodes (17): buildImageGallery(), buildPromptCard(), buildPromptEditor(), mkBtn(), batchSortValue(), buildPromptFileSummary(), compareBatchesLatestFirst(), getSelectedBatchValues() (+9 more)
+
+### Community 9 - "Community 9"
+Cohesion: 0.18
+Nodes (19): aspect_ratio_folder(), base_layout_lines_for_format(), build_seeded_background_sentence(), build_ugc_subject_line(), load_backgrounds(), main(), make_run_id(), next_batch_name() (+11 more)
+
+### Community 10 - "Community 10"
 Cohesion: 0.39
 Nodes (6): bullets(), extract_section(), main(), load_json(), main(), parse_args()
 
-### Community 9 - "Community 9"
+### Community 11 - "Community 11"
 Cohesion: 0.29
 Nodes (6): api_kill_chrome(), api_launch_visible_browser(), Launch a visible Chrome instance with CDP enabled so the user can log in     bef, Kill the Chrome process started by launch-visible-browser and stop any running a, _kill_chrome(), _launch_visible_browser()
 
-### Community 10 - "Community 10"
+### Community 12 - "Community 12"
 Cohesion: 1.0
 Nodes (2): applyTheme(), initTheme()
 
-### Community 18 - "Community 18"
-Cohesion: 1.0
-Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
-
-### Community 19 - "Community 19"
-Cohesion: 1.0
-Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
-
 ### Community 20 - "Community 20"
 Cohesion: 1.0
-Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
+Nodes (1): Parse the xlsx and return rows as dicts.
 
 ### Community 21 - "Community 21"
 Cohesion: 1.0
-Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
+Nodes (1): Classify headline opening pattern into hook_structure_class.
 
 ### Community 22 - "Community 22"
 Cohesion: 1.0
-Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
+Nodes (1): Classify trust framing into proof_style_class.
 
 ### Community 23 - "Community 23"
 Cohesion: 1.0
-Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
+Nodes (1): Classify CTA tone into cta_voice_class.
 
 ### Community 24 - "Community 24"
 Cohesion: 1.0
-Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
+Nodes (1): Extract first 4 normalized tokens from headline.
 
 ### Community 25 - "Community 25"
 Cohesion: 1.0
-Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
+Nodes (1): Derive high-level copy structure tag.
 
 ### Community 26 - "Community 26"
 Cohesion: 1.0
-Nodes (1): Delete a generated image and its metadata JSON.
+Nodes (1): Infer scene category from background metadata.
 
 ### Community 27 - "Community 27"
 Cohesion: 1.0
-Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
+Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
 
 ### Community 28 - "Community 28"
 Cohesion: 1.0
-Nodes (1): Delete a prompt file and remove it from the run manifest.
+Nodes (1): Map generated images to prompts.      Precedence:       1. Sidecar metadata (the
 
 ### Community 29 - "Community 29"
 Cohesion: 1.0
-Nodes (1): Delete a generated image and its metadata JSON.
+Nodes (1): Sort key: aspect (4:5 before 9:16), persona number, creative index.
 
 ### Community 30 - "Community 30"
 Cohesion: 1.0
-Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
 
 ### Community 31 - "Community 31"
 Cohesion: 1.0
-Nodes (1): Map persona number (P01) to persona name from run's copy_batch.json.
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
 
 ### Community 32 - "Community 32"
 Cohesion: 1.0
-Nodes (1): Strip excessive internal keys from image metadata and enrich with     hypothesis
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
 
 ### Community 33 - "Community 33"
 Cohesion: 1.0
-Nodes (1): Return a zip containing the image file and its metadata JSON.
+Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
 
 ### Community 34 - "Community 34"
 Cohesion: 1.0
-Nodes (1): Return a zip of all images grouped by VN subfolders with metadata.     Always sc
+Nodes (1): Get the template/definition for a concept_variation field from copy_architecture
 
 ### Community 35 - "Community 35"
 Cohesion: 1.0
-Nodes (1): Return a zip of all images for given batch names, grouped by VN folder.
+Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
 
 ### Community 36 - "Community 36"
 Cohesion: 1.0
-Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 37 - "Community 37"
 Cohesion: 1.0
-Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
+Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
 
 ### Community 38 - "Community 38"
 Cohesion: 1.0
-Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
+Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
 
 ### Community 39 - "Community 39"
 Cohesion: 1.0
-Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 40 - "Community 40"
 Cohesion: 1.0
-Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 41 - "Community 41"
 Cohesion: 1.0
-Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
+Nodes (1): Move bad generated images out of the active gallery before regeneration.
 
 ### Community 42 - "Community 42"
 Cohesion: 1.0
-Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
+Nodes (1): Move images from to_be_regenerated back to their original location.
 
 ### Community 43 - "Community 43"
 Cohesion: 1.0
-Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
+Nodes (1): Find a prompt path in prompt_files whose filename matches prompt_name.
 
 ### Community 44 - "Community 44"
 Cohesion: 1.0
-Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
+Nodes (1): Build the deterministic output stem for a generated image.      Example:  prompt
 
 ### Community 45 - "Community 45"
 Cohesion: 1.0
-Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
+Nodes (1): Compute the expected full output path for a generated image.
 
 ### Community 46 - "Community 46"
 Cohesion: 1.0
-Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
+Nodes (1): Find the 4:5 reference image for a given prompt.
 
 ### Community 47 - "Community 47"
 Cohesion: 1.0
-Nodes (1): Delete a prompt file and remove it from the run manifest.
+Nodes (1): Regenerate images already in the to_be_regenerated queue.      Single endpoint t
 
 ### Community 48 - "Community 48"
 Cohesion: 1.0
@@ -511,499 +564,499 @@ Nodes (1): Return a zip of all images for given batch names, grouped by VN folde
 
 ### Community 54 - "Community 54"
 Cohesion: 1.0
-Nodes (1): Classify headline opening pattern into hook_structure_class.
+Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
 
 ### Community 55 - "Community 55"
 Cohesion: 1.0
-Nodes (1): Classify trust framing into proof_style_class.
+Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
 
 ### Community 56 - "Community 56"
 Cohesion: 1.0
-Nodes (1): Classify CTA tone into cta_voice_class.
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
 
 ### Community 57 - "Community 57"
 Cohesion: 1.0
-Nodes (1): Extract first 4 normalized tokens from headline.
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
 
 ### Community 58 - "Community 58"
 Cohesion: 1.0
-Nodes (1): Derive high-level copy structure tag.
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
 
 ### Community 59 - "Community 59"
 Cohesion: 1.0
-Nodes (1): Infer scene category from background metadata.
+Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
 
 ### Community 60 - "Community 60"
 Cohesion: 1.0
-Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 61 - "Community 61"
 Cohesion: 1.0
-Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
+Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
 
 ### Community 62 - "Community 62"
 Cohesion: 1.0
-Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
+Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
 
 ### Community 63 - "Community 63"
 Cohesion: 1.0
-Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 64 - "Community 64"
 Cohesion: 1.0
-Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 65 - "Community 65"
 Cohesion: 1.0
-Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
+Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
 
 ### Community 66 - "Community 66"
 Cohesion: 1.0
-Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
+Nodes (1): Map persona number (P01) to persona name from run's copy_batch.json.
 
 ### Community 67 - "Community 67"
 Cohesion: 1.0
-Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
+Nodes (1): Strip excessive internal keys from image metadata and enrich with     hypothesis
 
 ### Community 68 - "Community 68"
 Cohesion: 1.0
-Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
+Nodes (1): Return a zip containing the image file and its metadata JSON.
 
 ### Community 69 - "Community 69"
 Cohesion: 1.0
-Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
+Nodes (1): Return a zip of all images grouped by VN subfolders with metadata.     Always sc
 
 ### Community 70 - "Community 70"
 Cohesion: 1.0
-Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
+Nodes (1): Return a zip of all images for given batch names, grouped by VN folder.
 
 ### Community 71 - "Community 71"
 Cohesion: 1.0
-Nodes (1): Delete a prompt file and remove it from the run manifest.
+Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
 
 ### Community 72 - "Community 72"
 Cohesion: 1.0
-Nodes (1): Delete a generated image and its metadata JSON.
+Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
 
 ### Community 73 - "Community 73"
 Cohesion: 1.0
-Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
 
 ### Community 74 - "Community 74"
 Cohesion: 1.0
-Nodes (1): Map persona number (P01) to persona name from run's copy_batch.json.
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
 
 ### Community 75 - "Community 75"
 Cohesion: 1.0
-Nodes (1): Strip excessive internal keys from image metadata and enrich with     hypothesis
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
 
 ### Community 76 - "Community 76"
 Cohesion: 1.0
-Nodes (1): Return a zip containing the image file and its metadata JSON.
+Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
 
 ### Community 77 - "Community 77"
 Cohesion: 1.0
-Nodes (1): Return a zip of all images grouped by VN subfolders with metadata.     Always sc
+Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
 
 ### Community 78 - "Community 78"
 Cohesion: 1.0
-Nodes (1): Return a zip of all images for given batch names, grouped by VN folder.
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 79 - "Community 79"
 Cohesion: 1.0
-Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 80 - "Community 80"
 Cohesion: 1.0
-Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
+Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
 
 ### Community 81 - "Community 81"
 Cohesion: 1.0
-Nodes (1): Open/switch to the tab that will own this prompt.
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 82 - "Community 82"
 Cohesion: 1.0
-Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 83 - "Community 83"
 Cohesion: 1.0
-Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
+Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
 
 ### Community 84 - "Community 84"
 Cohesion: 1.0
-Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
+Nodes (1): Map persona number (P01) to persona name from run's copy_batch.json.
 
 ### Community 85 - "Community 85"
 Cohesion: 1.0
-Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
+Nodes (1): Strip excessive internal keys from image metadata and enrich with     hypothesis
 
 ### Community 86 - "Community 86"
 Cohesion: 1.0
-Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
+Nodes (1): Return a zip containing the image file and its metadata JSON.
 
 ### Community 87 - "Community 87"
 Cohesion: 1.0
-Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
+Nodes (1): Return a zip of all images grouped by VN subfolders with metadata.     Always sc
 
 ### Community 88 - "Community 88"
 Cohesion: 1.0
-Nodes (1): Click the visible attachment/add-files control closest to the composer.
+Nodes (1): Return a zip of all images for given batch names, grouped by VN folder.
 
 ### Community 89 - "Community 89"
 Cohesion: 1.0
-Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
+Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
 
 ### Community 90 - "Community 90"
 Cohesion: 1.0
-Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
+Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
 
 ### Community 91 - "Community 91"
 Cohesion: 1.0
-Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
+Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
 
 ### Community 92 - "Community 92"
 Cohesion: 1.0
-Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
 
 ### Community 93 - "Community 93"
 Cohesion: 1.0
-Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
 
 ### Community 94 - "Community 94"
 Cohesion: 1.0
-Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
 
 ### Community 95 - "Community 95"
 Cohesion: 1.0
-Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
+Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
 
 ### Community 96 - "Community 96"
 Cohesion: 1.0
-Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
+Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
 
 ### Community 97 - "Community 97"
 Cohesion: 1.0
-Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 98 - "Community 98"
 Cohesion: 1.0
-Nodes (1): Mark the best visible output image with a data attribute and return its src.
+Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
 
 ### Community 99 - "Community 99"
 Cohesion: 1.0
-Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
+Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
 
 ### Community 100 - "Community 100"
 Cohesion: 1.0
-Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 101 - "Community 101"
 Cohesion: 1.0
-Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
+Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
 
 ### Community 102 - "Community 102"
 Cohesion: 1.0
-Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
+Nodes (1): Map persona number (P01) to persona name from run's copy_batch.json.
 
 ### Community 103 - "Community 103"
 Cohesion: 1.0
-Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
+Nodes (1): Strip excessive internal keys from image metadata and enrich with     hypothesis
 
 ### Community 104 - "Community 104"
 Cohesion: 1.0
-Nodes (1): Open/switch to the tab that will own this prompt.
+Nodes (1): Return a zip containing the image file and its metadata JSON.
 
 ### Community 105 - "Community 105"
 Cohesion: 1.0
-Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
+Nodes (1): Return a zip of all images grouped by VN subfolders with metadata.     Always sc
 
 ### Community 106 - "Community 106"
 Cohesion: 1.0
-Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
+Nodes (1): Return a zip of all images for given batch names, grouped by VN folder.
 
 ### Community 107 - "Community 107"
 Cohesion: 1.0
-Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
+Nodes (1): Classify headline opening pattern into hook_structure_class.
 
 ### Community 108 - "Community 108"
 Cohesion: 1.0
-Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
+Nodes (1): Classify trust framing into proof_style_class.
 
 ### Community 109 - "Community 109"
 Cohesion: 1.0
-Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
+Nodes (1): Classify CTA tone into cta_voice_class.
 
 ### Community 110 - "Community 110"
 Cohesion: 1.0
-Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
+Nodes (1): Extract first 4 normalized tokens from headline.
 
 ### Community 111 - "Community 111"
 Cohesion: 1.0
-Nodes (1): Click the visible attachment/add-files control closest to the composer.
+Nodes (1): Derive high-level copy structure tag.
 
 ### Community 112 - "Community 112"
 Cohesion: 1.0
-Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
+Nodes (1): Infer scene category from background metadata.
 
 ### Community 113 - "Community 113"
 Cohesion: 1.0
-Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
+Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
 
 ### Community 114 - "Community 114"
 Cohesion: 1.0
-Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
+Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
 
 ### Community 115 - "Community 115"
 Cohesion: 1.0
-Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
+Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
 
 ### Community 116 - "Community 116"
 Cohesion: 1.0
-Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
 
 ### Community 117 - "Community 117"
 Cohesion: 1.0
-Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
 
 ### Community 118 - "Community 118"
 Cohesion: 1.0
-Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
 
 ### Community 119 - "Community 119"
 Cohesion: 1.0
-Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
+Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
 
 ### Community 120 - "Community 120"
 Cohesion: 1.0
-Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
+Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
 
 ### Community 121 - "Community 121"
 Cohesion: 1.0
-Nodes (1): Mark the best visible output image with a data attribute and return its src.
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 122 - "Community 122"
 Cohesion: 1.0
-Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
+Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
 
 ### Community 123 - "Community 123"
 Cohesion: 1.0
-Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
+Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
 
 ### Community 124 - "Community 124"
 Cohesion: 1.0
-Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 125 - "Community 125"
 Cohesion: 1.0
-Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 126 - "Community 126"
 Cohesion: 1.0
-Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
+Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
 
 ### Community 127 - "Community 127"
 Cohesion: 1.0
-Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
+Nodes (1): Map persona number (P01) to persona name from run's copy_batch.json.
 
 ### Community 128 - "Community 128"
 Cohesion: 1.0
-Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
+Nodes (1): Strip excessive internal keys from image metadata and enrich with     hypothesis
 
 ### Community 129 - "Community 129"
 Cohesion: 1.0
-Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
+Nodes (1): Return a zip containing the image file and its metadata JSON.
 
 ### Community 130 - "Community 130"
 Cohesion: 1.0
-Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
+Nodes (1): Return a zip of all images grouped by VN subfolders with metadata.     Always sc
 
 ### Community 131 - "Community 131"
 Cohesion: 1.0
-Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
+Nodes (1): Return a zip of all images for given batch names, grouped by VN folder.
 
 ### Community 132 - "Community 132"
 Cohesion: 1.0
-Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
+Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
 
 ### Community 133 - "Community 133"
 Cohesion: 1.0
-Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
+Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
 
 ### Community 134 - "Community 134"
 Cohesion: 1.0
-Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
+Nodes (1): Open/switch to the tab that will own this prompt.
 
 ### Community 135 - "Community 135"
 Cohesion: 1.0
-Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
+Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
 
 ### Community 136 - "Community 136"
 Cohesion: 1.0
-Nodes (1): Delete a prompt file and remove it from the run manifest.
+Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
 
 ### Community 137 - "Community 137"
 Cohesion: 1.0
-Nodes (1): Delete a generated image and its metadata JSON.
+Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
 
 ### Community 138 - "Community 138"
 Cohesion: 1.0
-Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
+Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
 
 ### Community 139 - "Community 139"
 Cohesion: 1.0
-Nodes (1): Return a zip containing the image file and its metadata JSON.
+Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
 
 ### Community 140 - "Community 140"
 Cohesion: 1.0
-Nodes (1): Return a zip containing all images in a run with their metadata.
+Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
 
 ### Community 141 - "Community 141"
 Cohesion: 1.0
-Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
+Nodes (1): Click the visible attachment/add-files control closest to the composer.
 
 ### Community 142 - "Community 142"
 Cohesion: 1.0
-Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
+Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
 
 ### Community 143 - "Community 143"
 Cohesion: 1.0
-Nodes (1): Open/switch to the tab that will own this prompt.
+Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
 
 ### Community 144 - "Community 144"
 Cohesion: 1.0
-Nodes (1): Small diagnostic report used before upload/send.
+Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
 
 ### Community 145 - "Community 145"
 Cohesion: 1.0
-Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
+Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
 
 ### Community 146 - "Community 146"
 Cohesion: 1.0
-Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
+Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
 
 ### Community 147 - "Community 147"
 Cohesion: 1.0
-Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
+Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
 
 ### Community 148 - "Community 148"
 Cohesion: 1.0
-Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
+Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
 
 ### Community 149 - "Community 149"
 Cohesion: 1.0
-Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
+Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
 
 ### Community 150 - "Community 150"
 Cohesion: 1.0
-Nodes (1): Click the visible attachment/add-files control closest to the composer.
+Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
 
 ### Community 151 - "Community 151"
 Cohesion: 1.0
-Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
+Nodes (1): Mark the best visible output image with a data attribute and return its src.
 
 ### Community 152 - "Community 152"
 Cohesion: 1.0
-Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
+Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
 
 ### Community 153 - "Community 153"
 Cohesion: 1.0
-Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
+Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
 
 ### Community 154 - "Community 154"
 Cohesion: 1.0
-Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
+Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
 
 ### Community 155 - "Community 155"
 Cohesion: 1.0
-Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
+Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
 
 ### Community 156 - "Community 156"
 Cohesion: 1.0
-Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
+Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
 
 ### Community 157 - "Community 157"
 Cohesion: 1.0
-Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
+Nodes (1): Open/switch to the tab that will own this prompt.
 
 ### Community 158 - "Community 158"
 Cohesion: 1.0
-Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
+Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
 
 ### Community 159 - "Community 159"
 Cohesion: 1.0
-Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
+Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
 
 ### Community 160 - "Community 160"
 Cohesion: 1.0
-Nodes (1): Mark the best visible output image with a data attribute and return its src.
+Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
 
 ### Community 161 - "Community 161"
 Cohesion: 1.0
-Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
+Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
 
 ### Community 162 - "Community 162"
 Cohesion: 1.0
-Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
+Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
 
 ### Community 163 - "Community 163"
 Cohesion: 1.0
-Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
+Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
 
 ### Community 164 - "Community 164"
 Cohesion: 1.0
-Nodes (1): Classify headline opening pattern into hook_structure_class.
+Nodes (1): Click the visible attachment/add-files control closest to the composer.
 
 ### Community 165 - "Community 165"
 Cohesion: 1.0
-Nodes (1): Classify trust framing into proof_style_class.
+Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
 
 ### Community 166 - "Community 166"
 Cohesion: 1.0
-Nodes (1): Classify CTA tone into cta_voice_class.
+Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
 
 ### Community 167 - "Community 167"
 Cohesion: 1.0
-Nodes (1): Extract first 4 normalized tokens from headline.
+Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
 
 ### Community 168 - "Community 168"
 Cohesion: 1.0
-Nodes (1): Derive high-level copy structure tag.
+Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
 
 ### Community 169 - "Community 169"
 Cohesion: 1.0
-Nodes (1): Infer scene category from background metadata.
+Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
 
 ### Community 170 - "Community 170"
 Cohesion: 1.0
-Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
+Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
 
 ### Community 171 - "Community 171"
 Cohesion: 1.0
-Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
+Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
 
 ### Community 172 - "Community 172"
 Cohesion: 1.0
-Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
+Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
 
 ### Community 173 - "Community 173"
 Cohesion: 1.0
-Nodes (1): Delete a prompt file and remove it from the run manifest.
+Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
 
 ### Community 174 - "Community 174"
 Cohesion: 1.0
-Nodes (1): Delete a generated image and its metadata JSON.
+Nodes (1): Mark the best visible output image with a data attribute and return its src.
 
 ### Community 175 - "Community 175"
 Cohesion: 1.0
-Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
+Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
 
 ### Community 176 - "Community 176"
 Cohesion: 1.0
-Nodes (1): Return a zip containing the image file and its metadata JSON.
+Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
 
 ### Community 177 - "Community 177"
 Cohesion: 1.0
-Nodes (1): Return a zip containing all images in a run with their metadata.
+Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
 
 ### Community 178 - "Community 178"
 Cohesion: 1.0
@@ -1071,456 +1124,664 @@ Nodes (1): Return a zip containing all images in a run with their metadata.
 
 ### Community 194 - "Community 194"
 Cohesion: 1.0
-Nodes (1): # IMPORTANT: LOGO PLACEMENT INSTRUCTIONS REMOVED.
+Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
 
 ### Community 195 - "Community 195"
 Cohesion: 1.0
-Nodes (1): Single source of truth mode:     - Do NOT merge from legacy product files.     -
+Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
 
 ### Community 196 - "Community 196"
 Cohesion: 1.0
-Nodes (1): Extract an explicit priority block only when the master doc defines one.
+Nodes (1): Open/switch to the tab that will own this prompt.
 
 ### Community 197 - "Community 197"
 Cohesion: 1.0
-Nodes (1): Preserve explicit interpretation rules from the master doc. Do not synthesize st
+Nodes (1): Small diagnostic report used before upload/send.
 
 ### Community 198 - "Community 198"
 Cohesion: 1.0
-Nodes (1): Preserve explicit theme/reference lines from the master doc. Do not synthesize l
+Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
 
 ### Community 199 - "Community 199"
 Cohesion: 1.0
-Nodes (1): Return only source lines containing explicit rule/strategy language.
+Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
 
 ### Community 200 - "Community 200"
 Cohesion: 1.0
-Nodes (1): Extract source sections exactly as written in the master doc.
+Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
 
 ### Community 201 - "Community 201"
 Cohesion: 1.0
-Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
+Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
 
 ### Community 202 - "Community 202"
 Cohesion: 1.0
-Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
+Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
 
 ### Community 203 - "Community 203"
 Cohesion: 1.0
-Nodes (1): Open/switch to the tab that will own this prompt.
+Nodes (1): Click the visible attachment/add-files control closest to the composer.
 
 ### Community 204 - "Community 204"
 Cohesion: 1.0
-Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
+Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
 
 ### Community 205 - "Community 205"
 Cohesion: 1.0
-Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
+Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
 
 ### Community 206 - "Community 206"
 Cohesion: 1.0
-Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
+Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
 
 ### Community 207 - "Community 207"
 Cohesion: 1.0
-Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
+Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
 
 ### Community 208 - "Community 208"
 Cohesion: 1.0
-Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
+Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
 
 ### Community 209 - "Community 209"
 Cohesion: 1.0
-Nodes (1): Click the visible attachment/add-files control closest to the composer.
+Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
 
 ### Community 210 - "Community 210"
 Cohesion: 1.0
-Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
+Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
 
 ### Community 211 - "Community 211"
 Cohesion: 1.0
-Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
+Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
 
 ### Community 212 - "Community 212"
 Cohesion: 1.0
-Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
+Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
 
 ### Community 213 - "Community 213"
 Cohesion: 1.0
-Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
+Nodes (1): Mark the best visible output image with a data attribute and return its src.
 
 ### Community 214 - "Community 214"
 Cohesion: 1.0
-Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
+Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
 
 ### Community 215 - "Community 215"
 Cohesion: 1.0
-Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
+Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
 
 ### Community 216 - "Community 216"
 Cohesion: 1.0
-Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
+Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
 
 ### Community 217 - "Community 217"
 Cohesion: 1.0
-Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
+Nodes (1): Classify headline opening pattern into hook_structure_class.
 
 ### Community 218 - "Community 218"
 Cohesion: 1.0
-Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
+Nodes (1): Classify trust framing into proof_style_class.
 
 ### Community 219 - "Community 219"
 Cohesion: 1.0
-Nodes (1): Mark the best visible output image with a data attribute and return its src.
+Nodes (1): Classify CTA tone into cta_voice_class.
 
 ### Community 220 - "Community 220"
 Cohesion: 1.0
-Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
+Nodes (1): Extract first 4 normalized tokens from headline.
 
 ### Community 221 - "Community 221"
 Cohesion: 1.0
-Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
+Nodes (1): Derive high-level copy structure tag.
 
 ### Community 222 - "Community 222"
 Cohesion: 1.0
-Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
+Nodes (1): Infer scene category from background metadata.
 
 ### Community 223 - "Community 223"
 Cohesion: 1.0
-Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 224 - "Community 224"
 Cohesion: 1.0
-Nodes (1): Call Blackbox server via HTTP API
+Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
 
 ### Community 225 - "Community 225"
 Cohesion: 1.0
-Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
+Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
 
 ### Community 226 - "Community 226"
 Cohesion: 1.0
-Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 227 - "Community 227"
 Cohesion: 1.0
-Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 228 - "Community 228"
 Cohesion: 1.0
-Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
+Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
 
 ### Community 229 - "Community 229"
 Cohesion: 1.0
-Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
+Nodes (1): Return a zip containing the image file and its metadata JSON.
 
 ### Community 230 - "Community 230"
 Cohesion: 1.0
-Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
+Nodes (1): Return a zip containing all images in a run with their metadata.
 
 ### Community 231 - "Community 231"
 Cohesion: 1.0
-Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
+Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
 
 ### Community 232 - "Community 232"
 Cohesion: 1.0
-Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
+Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
 
 ### Community 233 - "Community 233"
 Cohesion: 1.0
-Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
+Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
 
 ### Community 234 - "Community 234"
 Cohesion: 1.0
-Nodes (1): Edit a prompt file in-place.
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
 
 ### Community 235 - "Community 235"
 Cohesion: 1.0
-Nodes (1): Delete a prompt file and remove it from the run manifest.
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
 
 ### Community 236 - "Community 236"
 Cohesion: 1.0
-Nodes (1): Delete a generated image and its metadata JSON.
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
 
 ### Community 237 - "Community 237"
 Cohesion: 1.0
-Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
+Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
 
 ### Community 238 - "Community 238"
 Cohesion: 1.0
-Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
+Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
 
 ### Community 239 - "Community 239"
 Cohesion: 1.0
-Nodes (1): Open/switch to the tab that will own this prompt.
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 240 - "Community 240"
 Cohesion: 1.0
-Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
+Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
 
 ### Community 241 - "Community 241"
 Cohesion: 1.0
-Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
+Nodes (1): Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.
 
 ### Community 242 - "Community 242"
 Cohesion: 1.0
-Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 243 - "Community 243"
 Cohesion: 1.0
-Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 244 - "Community 244"
 Cohesion: 1.0
-Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
+Nodes (1): Extract format, persona, language from an image's companion JSON metadata     an
 
 ### Community 245 - "Community 245"
 Cohesion: 1.0
-Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
+Nodes (1): Return a zip containing the image file and its metadata JSON.
 
 ### Community 246 - "Community 246"
 Cohesion: 1.0
-Nodes (1): Click the visible attachment/add-files control closest to the composer.
+Nodes (1): Return a zip containing all images in a run with their metadata.
 
 ### Community 247 - "Community 247"
 Cohesion: 1.0
-Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
+Nodes (1): # IMPORTANT: LOGO PLACEMENT INSTRUCTIONS REMOVED.
 
 ### Community 248 - "Community 248"
 Cohesion: 1.0
-Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
+Nodes (1): Single source of truth mode:     - Do NOT merge from legacy product files.     -
 
 ### Community 249 - "Community 249"
 Cohesion: 1.0
-Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
+Nodes (1): Extract an explicit priority block only when the master doc defines one.
 
 ### Community 250 - "Community 250"
 Cohesion: 1.0
-Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
+Nodes (1): Preserve explicit interpretation rules from the master doc. Do not synthesize st
 
 ### Community 251 - "Community 251"
 Cohesion: 1.0
-Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
+Nodes (1): Preserve explicit theme/reference lines from the master doc. Do not synthesize l
 
 ### Community 252 - "Community 252"
 Cohesion: 1.0
-Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
+Nodes (1): Return only source lines containing explicit rule/strategy language.
 
 ### Community 253 - "Community 253"
 Cohesion: 1.0
-Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
+Nodes (1): Extract source sections exactly as written in the master doc.
 
 ### Community 254 - "Community 254"
 Cohesion: 1.0
-Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
+Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
 
 ### Community 255 - "Community 255"
 Cohesion: 1.0
-Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
+Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
 
 ### Community 256 - "Community 256"
 Cohesion: 1.0
-Nodes (1): Mark the best visible output image with a data attribute and return its src.
+Nodes (1): Open/switch to the tab that will own this prompt.
 
 ### Community 257 - "Community 257"
 Cohesion: 1.0
-Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
+Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
 
 ### Community 258 - "Community 258"
 Cohesion: 1.0
-Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
+Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
 
 ### Community 259 - "Community 259"
 Cohesion: 1.0
-Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
+Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
 
 ### Community 260 - "Community 260"
 Cohesion: 1.0
-Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
+Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
 
 ### Community 261 - "Community 261"
 Cohesion: 1.0
-Nodes (1): Call Blackbox server via HTTP API
+Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
 
 ### Community 262 - "Community 262"
 Cohesion: 1.0
-Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
+Nodes (1): Click the visible attachment/add-files control closest to the composer.
 
 ### Community 263 - "Community 263"
 Cohesion: 1.0
-Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
+Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
 
 ### Community 264 - "Community 264"
 Cohesion: 1.0
-Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
+Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
 
 ### Community 265 - "Community 265"
 Cohesion: 1.0
-Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
+Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
 
 ### Community 266 - "Community 266"
 Cohesion: 1.0
-Nodes (1): Trigger Gemini's Ctrl+Shift+O new-chat shortcut in the active tab.
+Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
 
 ### Community 267 - "Community 267"
 Cohesion: 1.0
-Nodes (1): True when the page already contains visible prior-turn content.
+Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
 
 ### Community 268 - "Community 268"
 Cohesion: 1.0
-Nodes (1): Hard guard: no upload is allowed unless the current tab is a clean /app chat.
+Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
 
 ### Community 269 - "Community 269"
 Cohesion: 1.0
-Nodes (1): Open a new tab directly at /app and switch to it. Previous tabs stay open.
+Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
 
 ### Community 270 - "Community 270"
 Cohesion: 1.0
-Nodes (1): Force the active tab to /app using browser navigation, not keyboard shortcuts.
+Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
 
 ### Community 271 - "Community 271"
 Cohesion: 1.0
-Nodes (1): Final guard before Send: never submit unless the active tab URL is exactly /app.
+Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
 
 ### Community 272 - "Community 272"
 Cohesion: 1.0
-Nodes (1): Click only a real New chat button/link. Never click history rows or 3-dot menus.
+Nodes (1): Mark the best visible output image with a data attribute and return its src.
 
 ### Community 273 - "Community 273"
 Cohesion: 1.0
-Nodes (1): Open/switch to the tab that will own this prompt.
+Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
 
 ### Community 274 - "Community 274"
 Cohesion: 1.0
-Nodes (1): Guarantee a clean fresh Gemini chat before upload.      This intentionally does
+Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
 
 ### Community 275 - "Community 275"
 Cohesion: 1.0
-Nodes (1): Read text from Gemini's real composer, not old messages or upload chips.
+Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
 
 ### Community 276 - "Community 276"
 Cohesion: 1.0
-Nodes (1): Use Chrome DevTools Input.insertText so newlines are inserted as text, not Enter
+Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
 
 ### Community 277 - "Community 277"
 Cohesion: 1.0
-Nodes (1): Paste through the browser clipboard; this updates Gemini like a real user paste.
+Nodes (1): Call Blackbox server via HTTP API
 
 ### Community 278 - "Community 278"
 Cohesion: 1.0
-Nodes (1): Last-resort DOM insertion. It is verified strictly before Send is allowed.
+Nodes (1): Collect generated image paths for a specific aspect ratio.      Searches both le
 
 ### Community 279 - "Community 279"
 Cohesion: 1.0
-Nodes (1): Return a short list of visible composer-area buttons for debugging.
+Nodes (1): Write generation_metadata.json alongside generated images with persona,     form
 
 ### Community 280 - "Community 280"
 Cohesion: 1.0
-Nodes (1): Find Gemini's actual composer Send/Submit control.      The earlier versions loo
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
 
 ### Community 281 - "Community 281"
 Cohesion: 1.0
-Nodes (1): Count text-node matches for the prompt outside the editable composer.
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
 
 ### Community 282 - "Community 282"
 Cohesion: 1.0
-Nodes (1): Confirm Gemini accepted the prompt.      Important: an empty composer alone is N
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
 
 ### Community 283 - "Community 283"
 Cohesion: 1.0
-Nodes (1): Focus Gemini composer and perform a real Selenium Enter keypress.
+Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
 
 ### Community 284 - "Community 284"
 Cohesion: 1.0
-Nodes (1): Return True if the URL is a blank new-chat (no conversation ID).      Fresh chat
+Nodes (1): For a single run, build the list of {prompt_96, image_sources} entries for 9:16
 
 ### Community 285 - "Community 285"
 Cohesion: 1.0
-Nodes (1): Open Gemini in a new browser tab/window for each prompt, then ensure composer is
+Nodes (1): Launch a visible Chrome instance with CDP enabled so the user can log in     bef
 
 ### Community 286 - "Community 286"
 Cohesion: 1.0
-Nodes (1): Send Ctrl+Shift+O to the page, with a JS fallback.
+Nodes (1): Kill the Chrome process started by launch-visible-browser and stop any running a
 
 ### Community 287 - "Community 287"
 Cohesion: 1.0
-Nodes (1): Collect all candidate generated-image URLs from the current tab.
+Nodes (1): Edit a prompt file in-place.
 
 ### Community 288 - "Community 288"
 Cohesion: 1.0
-Nodes (1): Best-effort check that uploads have been attached in Gemini UI.      We look for
+Nodes (1): Delete a prompt file and remove it from the run manifest.
 
 ### Community 289 - "Community 289"
 Cohesion: 1.0
-Nodes (1): Wait until a new image appears in the page that wasn't there before sending.
+Nodes (1): Delete a generated image and its metadata JSON.
 
 ### Community 290 - "Community 290"
+Cohesion: 1.0
+Nodes (1): Best-effort permissions needed for clipboard paste in CDP/visible Chrome.
+
+### Community 291 - "Community 291"
+Cohesion: 1.0
+Nodes (1): Best-effort configure Chrome's download directory.      This matters when attach
+
+### Community 292 - "Community 292"
+Cohesion: 1.0
+Nodes (1): Open/switch to the tab that will own this prompt.
+
+### Community 293 - "Community 293"
+Cohesion: 1.0
+Nodes (1): Navigate to Gemini without failing only because the SPA never fires full load.
+
+### Community 294 - "Community 294"
+Cohesion: 1.0
+Nodes (1): Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con
+
+### Community 295 - "Community 295"
+Cohesion: 1.0
+Nodes (1): Insert text without synthesizing Enter key presses.      keyboard.type() is unsa
+
+### Community 296 - "Community 296"
+Cohesion: 1.0
+Nodes (1): Return visible signs that Gemini accepted the prompt.      Gemini often clears t
+
+### Community 297 - "Community 297"
+Cohesion: 1.0
+Nodes (1): Return stable prompt snippets used to confirm the prompt left composer.
+
+### Community 298 - "Community 298"
+Cohesion: 1.0
+Nodes (1): Find an existing file input. Hidden inputs are OK for set_input_files().
+
+### Community 299 - "Community 299"
+Cohesion: 1.0
+Nodes (1): Click the visible attachment/add-files control closest to the composer.
+
+### Community 300 - "Community 300"
+Cohesion: 1.0
+Nodes (1): Click the Upload files item inside Gemini's opened attach menu.
+
+### Community 301 - "Community 301"
+Cohesion: 1.0
+Nodes (1): Click only the composer + / Add files button, never the Upload files menu item.
+
+### Community 302 - "Community 302"
+Cohesion: 1.0
+Nodes (1): Open the + / attachment menu only.      Important: do NOT click the "Upload file
+
+### Community 303 - "Community 303"
+Cohesion: 1.0
+Nodes (1): Assign files to an existing Gemini file input through CDP.      Gemini usually c
+
+### Community 304 - "Community 304"
+Cohesion: 1.0
+Nodes (1): Assign files to any existing file input using Playwright, without opening OS dia
+
+### Community 305 - "Community 305"
+Cohesion: 1.0
+Nodes (1): Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T
+
+### Community 306 - "Community 306"
+Cohesion: 1.0
+Nodes (1): Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t
+
+### Community 307 - "Community 307"
+Cohesion: 1.0
+Nodes (1): Upload files one at a time through Gemini's Upload files menu.      This avoids
+
+### Community 308 - "Community 308"
+Cohesion: 1.0
+Nodes (1): Return visible generated-image candidates.      Use an arrow function for Playwr
+
+### Community 309 - "Community 309"
+Cohesion: 1.0
+Nodes (1): Mark the best visible output image with a data attribute and return its src.
+
+### Community 310 - "Community 310"
+Cohesion: 1.0
+Nodes (1): Save the actual visible/generated image resource, not a screenshot.      This is
+
+### Community 311 - "Community 311"
+Cohesion: 1.0
+Nodes (1): Return likely places Chrome may save files during CDP-attached sessions.
+
+### Community 312 - "Community 312"
+Cohesion: 1.0
+Nodes (1): Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its
+
+### Community 313 - "Community 313"
+Cohesion: 1.0
+Nodes (1): Classify a headline opening pattern for hypothesis sanity checks.      The class
+
+### Community 314 - "Community 314"
+Cohesion: 1.0
+Nodes (1): Call Blackbox server via HTTP API
+
+### Community 315 - "Community 315"
+Cohesion: 1.0
+Nodes (1): Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa
+
+### Community 316 - "Community 316"
+Cohesion: 1.0
+Nodes (1): Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE
+
+### Community 317 - "Community 317"
+Cohesion: 1.0
+Nodes (1): Expand ad plan to include hypothesis style.      When a hypothesis is active, ge
+
+### Community 318 - "Community 318"
+Cohesion: 1.0
+Nodes (1): Preserve EXACT headline value text as written in the exact block.      We intent
+
+### Community 319 - "Community 319"
+Cohesion: 1.0
+Nodes (1): Trigger Gemini's Ctrl+Shift+O new-chat shortcut in the active tab.
+
+### Community 320 - "Community 320"
+Cohesion: 1.0
+Nodes (1): True when the page already contains visible prior-turn content.
+
+### Community 321 - "Community 321"
+Cohesion: 1.0
+Nodes (1): Hard guard: no upload is allowed unless the current tab is a clean /app chat.
+
+### Community 322 - "Community 322"
+Cohesion: 1.0
+Nodes (1): Open a new tab directly at /app and switch to it. Previous tabs stay open.
+
+### Community 323 - "Community 323"
+Cohesion: 1.0
+Nodes (1): Force the active tab to /app using browser navigation, not keyboard shortcuts.
+
+### Community 324 - "Community 324"
+Cohesion: 1.0
+Nodes (1): Final guard before Send: never submit unless the active tab URL is exactly /app.
+
+### Community 325 - "Community 325"
+Cohesion: 1.0
+Nodes (1): Click only a real New chat button/link. Never click history rows or 3-dot menus.
+
+### Community 326 - "Community 326"
+Cohesion: 1.0
+Nodes (1): Open/switch to the tab that will own this prompt.
+
+### Community 327 - "Community 327"
+Cohesion: 1.0
+Nodes (1): Guarantee a clean fresh Gemini chat before upload.      This intentionally does
+
+### Community 328 - "Community 328"
+Cohesion: 1.0
+Nodes (1): Read text from Gemini's real composer, not old messages or upload chips.
+
+### Community 329 - "Community 329"
+Cohesion: 1.0
+Nodes (1): Use Chrome DevTools Input.insertText so newlines are inserted as text, not Enter
+
+### Community 330 - "Community 330"
+Cohesion: 1.0
+Nodes (1): Paste through the browser clipboard; this updates Gemini like a real user paste.
+
+### Community 331 - "Community 331"
+Cohesion: 1.0
+Nodes (1): Last-resort DOM insertion. It is verified strictly before Send is allowed.
+
+### Community 332 - "Community 332"
+Cohesion: 1.0
+Nodes (1): Return a short list of visible composer-area buttons for debugging.
+
+### Community 333 - "Community 333"
+Cohesion: 1.0
+Nodes (1): Find Gemini's actual composer Send/Submit control.      The earlier versions loo
+
+### Community 334 - "Community 334"
+Cohesion: 1.0
+Nodes (1): Count text-node matches for the prompt outside the editable composer.
+
+### Community 335 - "Community 335"
+Cohesion: 1.0
+Nodes (1): Confirm Gemini accepted the prompt.      Important: an empty composer alone is N
+
+### Community 336 - "Community 336"
+Cohesion: 1.0
+Nodes (1): Focus Gemini composer and perform a real Selenium Enter keypress.
+
+### Community 337 - "Community 337"
+Cohesion: 1.0
+Nodes (1): Return True if the URL is a blank new-chat (no conversation ID).      Fresh chat
+
+### Community 338 - "Community 338"
+Cohesion: 1.0
+Nodes (1): Open Gemini in a new browser tab/window for each prompt, then ensure composer is
+
+### Community 339 - "Community 339"
+Cohesion: 1.0
+Nodes (1): Send Ctrl+Shift+O to the page, with a JS fallback.
+
+### Community 340 - "Community 340"
+Cohesion: 1.0
+Nodes (1): Collect all candidate generated-image URLs from the current tab.
+
+### Community 341 - "Community 341"
+Cohesion: 1.0
+Nodes (1): Best-effort check that uploads have been attached in Gemini UI.      We look for
+
+### Community 342 - "Community 342"
+Cohesion: 1.0
+Nodes (1): Wait until a new image appears in the page that wasn't there before sending.
+
+### Community 343 - "Community 343"
 Cohesion: 1.0
 Nodes (1): Save the generated image to out_path_no_ext + inferred extension.      Strategy
 
 ## Knowledge Gaps
-- **320 isolated node(s):** `Classify a headline opening pattern for hypothesis sanity checks.      The class`, `Collect generated image paths for a specific aspect ratio.      Searches both le`, `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`, `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`, `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge` (+315 more)
+- **387 isolated node(s):** `Classify a headline opening pattern for hypothesis sanity checks.      The class`, `Return the full text of a prompt file.`, `Save full content of a prompt file.`, `Return the content of an input prompt file.`, `Save an input prompt file.` (+382 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 10`** (3 nodes): `theme.js`, `applyTheme()`, `initTheme()`
+- **Thin community `Community 12`** (3 nodes): `theme.js`, `applyTheme()`, `initTheme()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 18`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
+- **Thin community `Community 20`** (1 nodes): `Parse the xlsx and return rows as dicts.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 19`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
+- **Thin community `Community 21`** (1 nodes): `Classify headline opening pattern into hook_structure_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 20`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
+- **Thin community `Community 22`** (1 nodes): `Classify trust framing into proof_style_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 21`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
+- **Thin community `Community 23`** (1 nodes): `Classify CTA tone into cta_voice_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 22`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
+- **Thin community `Community 24`** (1 nodes): `Extract first 4 normalized tokens from headline.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 23`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
+- **Thin community `Community 25`** (1 nodes): `Derive high-level copy structure tag.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 24`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
+- **Thin community `Community 26`** (1 nodes): `Infer scene category from background metadata.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 25`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
+- **Thin community `Community 27`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 26`** (1 nodes): `Delete a generated image and its metadata JSON.`
+- **Thin community `Community 28`** (1 nodes): `Map generated images to prompts.      Precedence:       1. Sidecar metadata (the`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 27`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
+- **Thin community `Community 29`** (1 nodes): `Sort key: aspect (4:5 before 9:16), persona number, creative index.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 28`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
+- **Thin community `Community 30`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 29`** (1 nodes): `Delete a generated image and its metadata JSON.`
+- **Thin community `Community 31`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 30`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
+- **Thin community `Community 32`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 31`** (1 nodes): `Map persona number (P01) to persona name from run's copy_batch.json.`
+- **Thin community `Community 33`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 32`** (1 nodes): `Strip excessive internal keys from image metadata and enrich with     hypothesis`
+- **Thin community `Community 34`** (1 nodes): `Get the template/definition for a concept_variation field from copy_architecture`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 33`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
+- **Thin community `Community 35`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 34`** (1 nodes): `Return a zip of all images grouped by VN subfolders with metadata.     Always sc`
+- **Thin community `Community 36`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 35`** (1 nodes): `Return a zip of all images for given batch names, grouped by VN folder.`
+- **Thin community `Community 37`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 36`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
+- **Thin community `Community 38`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 37`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
+- **Thin community `Community 39`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 38`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
+- **Thin community `Community 40`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 39`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
+- **Thin community `Community 41`** (1 nodes): `Move bad generated images out of the active gallery before regeneration.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 40`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
+- **Thin community `Community 42`** (1 nodes): `Move images from to_be_regenerated back to their original location.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 41`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
+- **Thin community `Community 43`** (1 nodes): `Find a prompt path in prompt_files whose filename matches prompt_name.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 42`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
+- **Thin community `Community 44`** (1 nodes): `Build the deterministic output stem for a generated image.      Example:  prompt`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 43`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
+- **Thin community `Community 45`** (1 nodes): `Compute the expected full output path for a generated image.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 44`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
+- **Thin community `Community 46`** (1 nodes): `Find the 4:5 reference image for a given prompt.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 45`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 46`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 47`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
+- **Thin community `Community 47`** (1 nodes): `Regenerate images already in the to_be_regenerated queue.      Single endpoint t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 48`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -1534,253 +1795,253 @@ Nodes (1): Save the generated image to out_path_no_ext + inferred extension.    
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 53`** (1 nodes): `Return a zip of all images for given batch names, grouped by VN folder.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 54`** (1 nodes): `Classify headline opening pattern into hook_structure_class.`
+- **Thin community `Community 54`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 55`** (1 nodes): `Classify trust framing into proof_style_class.`
+- **Thin community `Community 55`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 56`** (1 nodes): `Classify CTA tone into cta_voice_class.`
+- **Thin community `Community 56`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 57`** (1 nodes): `Extract first 4 normalized tokens from headline.`
+- **Thin community `Community 57`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 58`** (1 nodes): `Derive high-level copy structure tag.`
+- **Thin community `Community 58`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (1 nodes): `Infer scene category from background metadata.`
+- **Thin community `Community 59`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
+- **Thin community `Community 60`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
+- **Thin community `Community 61`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
+- **Thin community `Community 62`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
+- **Thin community `Community 63`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
+- **Thin community `Community 64`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
+- **Thin community `Community 65`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
+- **Thin community `Community 66`** (1 nodes): `Map persona number (P01) to persona name from run's copy_batch.json.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
+- **Thin community `Community 67`** (1 nodes): `Strip excessive internal keys from image metadata and enrich with     hypothesis`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
+- **Thin community `Community 68`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
+- **Thin community `Community 69`** (1 nodes): `Return a zip of all images grouped by VN subfolders with metadata.     Always sc`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
+- **Thin community `Community 70`** (1 nodes): `Return a zip of all images for given batch names, grouped by VN folder.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
+- **Thin community `Community 71`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `Delete a generated image and its metadata JSON.`
+- **Thin community `Community 72`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
+- **Thin community `Community 73`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `Map persona number (P01) to persona name from run's copy_batch.json.`
+- **Thin community `Community 74`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `Strip excessive internal keys from image metadata and enrich with     hypothesis`
+- **Thin community `Community 75`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
+- **Thin community `Community 76`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `Return a zip of all images grouped by VN subfolders with metadata.     Always sc`
+- **Thin community `Community 77`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `Return a zip of all images for given batch names, grouped by VN folder.`
+- **Thin community `Community 78`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
+- **Thin community `Community 79`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
+- **Thin community `Community 80`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+- **Thin community `Community 81`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
+- **Thin community `Community 82`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
+- **Thin community `Community 83`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
+- **Thin community `Community 84`** (1 nodes): `Map persona number (P01) to persona name from run's copy_batch.json.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
+- **Thin community `Community 85`** (1 nodes): `Strip excessive internal keys from image metadata and enrich with     hypothesis`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
+- **Thin community `Community 86`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
+- **Thin community `Community 87`** (1 nodes): `Return a zip of all images grouped by VN subfolders with metadata.     Always sc`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
+- **Thin community `Community 88`** (1 nodes): `Return a zip of all images for given batch names, grouped by VN folder.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
+- **Thin community `Community 89`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
+- **Thin community `Community 90`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
+- **Thin community `Community 91`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
+- **Thin community `Community 92`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
+- **Thin community `Community 93`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
+- **Thin community `Community 94`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
+- **Thin community `Community 95`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
+- **Thin community `Community 96`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
+- **Thin community `Community 97`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
+- **Thin community `Community 98`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
+- **Thin community `Community 99`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
+- **Thin community `Community 100`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
+- **Thin community `Community 101`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
+- **Thin community `Community 102`** (1 nodes): `Map persona number (P01) to persona name from run's copy_batch.json.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
+- **Thin community `Community 103`** (1 nodes): `Strip excessive internal keys from image metadata and enrich with     hypothesis`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+- **Thin community `Community 104`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
+- **Thin community `Community 105`** (1 nodes): `Return a zip of all images grouped by VN subfolders with metadata.     Always sc`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
+- **Thin community `Community 106`** (1 nodes): `Return a zip of all images for given batch names, grouped by VN folder.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 107`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
+- **Thin community `Community 107`** (1 nodes): `Classify headline opening pattern into hook_structure_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 108`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
+- **Thin community `Community 108`** (1 nodes): `Classify trust framing into proof_style_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 109`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
+- **Thin community `Community 109`** (1 nodes): `Classify CTA tone into cta_voice_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
+- **Thin community `Community 110`** (1 nodes): `Extract first 4 normalized tokens from headline.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
+- **Thin community `Community 111`** (1 nodes): `Derive high-level copy structure tag.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 112`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
+- **Thin community `Community 112`** (1 nodes): `Infer scene category from background metadata.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 113`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
+- **Thin community `Community 113`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 114`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
+- **Thin community `Community 114`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 115`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
+- **Thin community `Community 115`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 116`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
+- **Thin community `Community 116`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 117`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
+- **Thin community `Community 117`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 118`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
+- **Thin community `Community 118`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 119`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
+- **Thin community `Community 119`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 120`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
+- **Thin community `Community 120`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 121`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
+- **Thin community `Community 121`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 122`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
+- **Thin community `Community 122`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 123`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
+- **Thin community `Community 123`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 124`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
+- **Thin community `Community 124`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 125`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
+- **Thin community `Community 125`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 126`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
+- **Thin community `Community 126`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 127`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
+- **Thin community `Community 127`** (1 nodes): `Map persona number (P01) to persona name from run's copy_batch.json.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 128`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
+- **Thin community `Community 128`** (1 nodes): `Strip excessive internal keys from image metadata and enrich with     hypothesis`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 129`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
+- **Thin community `Community 129`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 130`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
+- **Thin community `Community 130`** (1 nodes): `Return a zip of all images grouped by VN subfolders with metadata.     Always sc`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 131`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
+- **Thin community `Community 131`** (1 nodes): `Return a zip of all images for given batch names, grouped by VN folder.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 132`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
+- **Thin community `Community 132`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 133`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
+- **Thin community `Community 133`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 134`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
+- **Thin community `Community 134`** (1 nodes): `Open/switch to the tab that will own this prompt.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 135`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
+- **Thin community `Community 135`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 136`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
+- **Thin community `Community 136`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 137`** (1 nodes): `Delete a generated image and its metadata JSON.`
+- **Thin community `Community 137`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 138`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
+- **Thin community `Community 138`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 139`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
+- **Thin community `Community 139`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 140`** (1 nodes): `Return a zip containing all images in a run with their metadata.`
+- **Thin community `Community 140`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 141`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
+- **Thin community `Community 141`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 142`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
+- **Thin community `Community 142`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 143`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+- **Thin community `Community 143`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 144`** (1 nodes): `Small diagnostic report used before upload/send.`
+- **Thin community `Community 144`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 145`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
+- **Thin community `Community 145`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 146`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
+- **Thin community `Community 146`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 147`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
+- **Thin community `Community 147`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 148`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
+- **Thin community `Community 148`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 149`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
+- **Thin community `Community 149`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 150`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
+- **Thin community `Community 150`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 151`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
+- **Thin community `Community 151`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 152`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
+- **Thin community `Community 152`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 153`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
+- **Thin community `Community 153`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 154`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
+- **Thin community `Community 154`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 155`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
+- **Thin community `Community 155`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 156`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
+- **Thin community `Community 156`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 157`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
+- **Thin community `Community 157`** (1 nodes): `Open/switch to the tab that will own this prompt.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 158`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
+- **Thin community `Community 158`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 159`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
+- **Thin community `Community 159`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 160`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
+- **Thin community `Community 160`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 161`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
+- **Thin community `Community 161`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 162`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
+- **Thin community `Community 162`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 163`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
+- **Thin community `Community 163`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 164`** (1 nodes): `Classify headline opening pattern into hook_structure_class.`
+- **Thin community `Community 164`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 165`** (1 nodes): `Classify trust framing into proof_style_class.`
+- **Thin community `Community 165`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 166`** (1 nodes): `Classify CTA tone into cta_voice_class.`
+- **Thin community `Community 166`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 167`** (1 nodes): `Extract first 4 normalized tokens from headline.`
+- **Thin community `Community 167`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 168`** (1 nodes): `Derive high-level copy structure tag.`
+- **Thin community `Community 168`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 169`** (1 nodes): `Infer scene category from background metadata.`
+- **Thin community `Community 169`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 170`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
+- **Thin community `Community 170`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 171`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
+- **Thin community `Community 171`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 172`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
+- **Thin community `Community 172`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 173`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
+- **Thin community `Community 173`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 174`** (1 nodes): `Delete a generated image and its metadata JSON.`
+- **Thin community `Community 174`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 175`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
+- **Thin community `Community 175`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 176`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
+- **Thin community `Community 176`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 177`** (1 nodes): `Return a zip containing all images in a run with their metadata.`
+- **Thin community `Community 177`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 178`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -1814,215 +2075,321 @@ Nodes (1): Save the generated image to out_path_no_ext + inferred extension.    
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 193`** (1 nodes): `Return a zip containing all images in a run with their metadata.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 194`** (1 nodes): `# IMPORTANT: LOGO PLACEMENT INSTRUCTIONS REMOVED.`
+- **Thin community `Community 194`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 195`** (1 nodes): `Single source of truth mode:     - Do NOT merge from legacy product files.     -`
+- **Thin community `Community 195`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 196`** (1 nodes): `Extract an explicit priority block only when the master doc defines one.`
+- **Thin community `Community 196`** (1 nodes): `Open/switch to the tab that will own this prompt.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 197`** (1 nodes): `Preserve explicit interpretation rules from the master doc. Do not synthesize st`
+- **Thin community `Community 197`** (1 nodes): `Small diagnostic report used before upload/send.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 198`** (1 nodes): `Preserve explicit theme/reference lines from the master doc. Do not synthesize l`
+- **Thin community `Community 198`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 199`** (1 nodes): `Return only source lines containing explicit rule/strategy language.`
+- **Thin community `Community 199`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 200`** (1 nodes): `Extract source sections exactly as written in the master doc.`
+- **Thin community `Community 200`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 201`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
+- **Thin community `Community 201`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 202`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
+- **Thin community `Community 202`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 203`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+- **Thin community `Community 203`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 204`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
+- **Thin community `Community 204`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 205`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
+- **Thin community `Community 205`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 206`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
+- **Thin community `Community 206`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 207`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
+- **Thin community `Community 207`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 208`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
+- **Thin community `Community 208`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 209`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
+- **Thin community `Community 209`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 210`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
+- **Thin community `Community 210`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 211`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
+- **Thin community `Community 211`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 212`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
+- **Thin community `Community 212`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 213`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
+- **Thin community `Community 213`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 214`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
+- **Thin community `Community 214`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 215`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
+- **Thin community `Community 215`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 216`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
+- **Thin community `Community 216`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 217`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
+- **Thin community `Community 217`** (1 nodes): `Classify headline opening pattern into hook_structure_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 218`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
+- **Thin community `Community 218`** (1 nodes): `Classify trust framing into proof_style_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 219`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
+- **Thin community `Community 219`** (1 nodes): `Classify CTA tone into cta_voice_class.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 220`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
+- **Thin community `Community 220`** (1 nodes): `Extract first 4 normalized tokens from headline.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 221`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
+- **Thin community `Community 221`** (1 nodes): `Derive high-level copy structure tag.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 222`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
+- **Thin community `Community 222`** (1 nodes): `Infer scene category from background metadata.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 223`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
+- **Thin community `Community 223`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 224`** (1 nodes): `Call Blackbox server via HTTP API`
+- **Thin community `Community 224`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 225`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
+- **Thin community `Community 225`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 226`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
+- **Thin community `Community 226`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 227`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
+- **Thin community `Community 227`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 228`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
+- **Thin community `Community 228`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 229`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
+- **Thin community `Community 229`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 230`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
+- **Thin community `Community 230`** (1 nodes): `Return a zip containing all images in a run with their metadata.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 231`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
+- **Thin community `Community 231`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 232`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
+- **Thin community `Community 232`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 233`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
+- **Thin community `Community 233`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 234`** (1 nodes): `Edit a prompt file in-place.`
+- **Thin community `Community 234`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 235`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
+- **Thin community `Community 235`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 236`** (1 nodes): `Delete a generated image and its metadata JSON.`
+- **Thin community `Community 236`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 237`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
+- **Thin community `Community 237`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 238`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
+- **Thin community `Community 238`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 239`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+- **Thin community `Community 239`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 240`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
+- **Thin community `Community 240`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 241`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
+- **Thin community `Community 241`** (1 nodes): `Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 242`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
+- **Thin community `Community 242`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 243`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
+- **Thin community `Community 243`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 244`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
+- **Thin community `Community 244`** (1 nodes): `Extract format, persona, language from an image's companion JSON metadata     an`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 245`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
+- **Thin community `Community 245`** (1 nodes): `Return a zip containing the image file and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 246`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
+- **Thin community `Community 246`** (1 nodes): `Return a zip containing all images in a run with their metadata.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 247`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
+- **Thin community `Community 247`** (1 nodes): `# IMPORTANT: LOGO PLACEMENT INSTRUCTIONS REMOVED.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 248`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
+- **Thin community `Community 248`** (1 nodes): `Single source of truth mode:     - Do NOT merge from legacy product files.     -`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 249`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
+- **Thin community `Community 249`** (1 nodes): `Extract an explicit priority block only when the master doc defines one.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 250`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
+- **Thin community `Community 250`** (1 nodes): `Preserve explicit interpretation rules from the master doc. Do not synthesize st`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 251`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
+- **Thin community `Community 251`** (1 nodes): `Preserve explicit theme/reference lines from the master doc. Do not synthesize l`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 252`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
+- **Thin community `Community 252`** (1 nodes): `Return only source lines containing explicit rule/strategy language.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 253`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
+- **Thin community `Community 253`** (1 nodes): `Extract source sections exactly as written in the master doc.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 254`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
+- **Thin community `Community 254`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 255`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
+- **Thin community `Community 255`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 256`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
+- **Thin community `Community 256`** (1 nodes): `Open/switch to the tab that will own this prompt.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 257`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
+- **Thin community `Community 257`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 258`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
+- **Thin community `Community 258`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 259`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
+- **Thin community `Community 259`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 260`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
+- **Thin community `Community 260`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 261`** (1 nodes): `Call Blackbox server via HTTP API`
+- **Thin community `Community 261`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 262`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
+- **Thin community `Community 262`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 263`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
+- **Thin community `Community 263`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 264`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
+- **Thin community `Community 264`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 265`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
+- **Thin community `Community 265`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 266`** (1 nodes): `Trigger Gemini's Ctrl+Shift+O new-chat shortcut in the active tab.`
+- **Thin community `Community 266`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 267`** (1 nodes): `True when the page already contains visible prior-turn content.`
+- **Thin community `Community 267`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 268`** (1 nodes): `Hard guard: no upload is allowed unless the current tab is a clean /app chat.`
+- **Thin community `Community 268`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 269`** (1 nodes): `Open a new tab directly at /app and switch to it. Previous tabs stay open.`
+- **Thin community `Community 269`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 270`** (1 nodes): `Force the active tab to /app using browser navigation, not keyboard shortcuts.`
+- **Thin community `Community 270`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 271`** (1 nodes): `Final guard before Send: never submit unless the active tab URL is exactly /app.`
+- **Thin community `Community 271`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 272`** (1 nodes): `Click only a real New chat button/link. Never click history rows or 3-dot menus.`
+- **Thin community `Community 272`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 273`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+- **Thin community `Community 273`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 274`** (1 nodes): `Guarantee a clean fresh Gemini chat before upload.      This intentionally does`
+- **Thin community `Community 274`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 275`** (1 nodes): `Read text from Gemini's real composer, not old messages or upload chips.`
+- **Thin community `Community 275`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 276`** (1 nodes): `Use Chrome DevTools Input.insertText so newlines are inserted as text, not Enter`
+- **Thin community `Community 276`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 277`** (1 nodes): `Paste through the browser clipboard; this updates Gemini like a real user paste.`
+- **Thin community `Community 277`** (1 nodes): `Call Blackbox server via HTTP API`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 278`** (1 nodes): `Last-resort DOM insertion. It is verified strictly before Send is allowed.`
+- **Thin community `Community 278`** (1 nodes): `Collect generated image paths for a specific aspect ratio.      Searches both le`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 279`** (1 nodes): `Return a short list of visible composer-area buttons for debugging.`
+- **Thin community `Community 279`** (1 nodes): `Write generation_metadata.json alongside generated images with persona,     form`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 280`** (1 nodes): `Find Gemini's actual composer Send/Submit control.      The earlier versions loo`
+- **Thin community `Community 280`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 281`** (1 nodes): `Count text-node matches for the prompt outside the editable composer.`
+- **Thin community `Community 281`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 282`** (1 nodes): `Confirm Gemini accepted the prompt.      Important: an empty composer alone is N`
+- **Thin community `Community 282`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 283`** (1 nodes): `Focus Gemini composer and perform a real Selenium Enter keypress.`
+- **Thin community `Community 283`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 284`** (1 nodes): `Return True if the URL is a blank new-chat (no conversation ID).      Fresh chat`
+- **Thin community `Community 284`** (1 nodes): `For a single run, build the list of {prompt_96, image_sources} entries for 9:16`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 285`** (1 nodes): `Open Gemini in a new browser tab/window for each prompt, then ensure composer is`
+- **Thin community `Community 285`** (1 nodes): `Launch a visible Chrome instance with CDP enabled so the user can log in     bef`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 286`** (1 nodes): `Send Ctrl+Shift+O to the page, with a JS fallback.`
+- **Thin community `Community 286`** (1 nodes): `Kill the Chrome process started by launch-visible-browser and stop any running a`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 287`** (1 nodes): `Collect all candidate generated-image URLs from the current tab.`
+- **Thin community `Community 287`** (1 nodes): `Edit a prompt file in-place.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 288`** (1 nodes): `Best-effort check that uploads have been attached in Gemini UI.      We look for`
+- **Thin community `Community 288`** (1 nodes): `Delete a prompt file and remove it from the run manifest.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 289`** (1 nodes): `Wait until a new image appears in the page that wasn't there before sending.`
+- **Thin community `Community 289`** (1 nodes): `Delete a generated image and its metadata JSON.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 290`** (1 nodes): `Save the generated image to out_path_no_ext + inferred extension.      Strategy`
+- **Thin community `Community 290`** (1 nodes): `Best-effort permissions needed for clipboard paste in CDP/visible Chrome.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 291`** (1 nodes): `Best-effort configure Chrome's download directory.      This matters when attach`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 292`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 293`** (1 nodes): `Navigate to Gemini without failing only because the SPA never fires full load.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 294`** (1 nodes): `Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 295`** (1 nodes): `Insert text without synthesizing Enter key presses.      keyboard.type() is unsa`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 296`** (1 nodes): `Return visible signs that Gemini accepted the prompt.      Gemini often clears t`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 297`** (1 nodes): `Return stable prompt snippets used to confirm the prompt left composer.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 298`** (1 nodes): `Find an existing file input. Hidden inputs are OK for set_input_files().`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 299`** (1 nodes): `Click the visible attachment/add-files control closest to the composer.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 300`** (1 nodes): `Click the Upload files item inside Gemini's opened attach menu.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 301`** (1 nodes): `Click only the composer + / Add files button, never the Upload files menu item.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 302`** (1 nodes): `Open the + / attachment menu only.      Important: do NOT click the "Upload file`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 303`** (1 nodes): `Assign files to an existing Gemini file input through CDP.      Gemini usually c`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 304`** (1 nodes): `Assign files to any existing file input using Playwright, without opening OS dia`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 305`** (1 nodes): `Drive the Linux Open Files dialog with xdotool when Playwright misses it.      T`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 306`** (1 nodes): `Open Gemini's Upload files chooser.      Returns a Playwright FileChooser when t`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 307`** (1 nodes): `Upload files one at a time through Gemini's Upload files menu.      This avoids`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 308`** (1 nodes): `Return visible generated-image candidates.      Use an arrow function for Playwr`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 309`** (1 nodes): `Mark the best visible output image with a data attribute and return its src.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 310`** (1 nodes): `Save the actual visible/generated image resource, not a screenshot.      This is`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 311`** (1 nodes): `Return likely places Chrome may save files during CDP-attached sessions.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 312`** (1 nodes): `Poll multiple download dirs.      Chrome sometimes shows a valid 6MB file in its`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 313`** (1 nodes): `Classify a headline opening pattern for hypothesis sanity checks.      The class`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 314`** (1 nodes): `Call Blackbox server via HTTP API`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 315`** (1 nodes): `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 316`** (1 nodes): `Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 317`** (1 nodes): `Expand ad plan to include hypothesis style.      When a hypothesis is active, ge`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 318`** (1 nodes): `Preserve EXACT headline value text as written in the exact block.      We intent`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 319`** (1 nodes): `Trigger Gemini's Ctrl+Shift+O new-chat shortcut in the active tab.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 320`** (1 nodes): `True when the page already contains visible prior-turn content.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 321`** (1 nodes): `Hard guard: no upload is allowed unless the current tab is a clean /app chat.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 322`** (1 nodes): `Open a new tab directly at /app and switch to it. Previous tabs stay open.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 323`** (1 nodes): `Force the active tab to /app using browser navigation, not keyboard shortcuts.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 324`** (1 nodes): `Final guard before Send: never submit unless the active tab URL is exactly /app.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 325`** (1 nodes): `Click only a real New chat button/link. Never click history rows or 3-dot menus.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 326`** (1 nodes): `Open/switch to the tab that will own this prompt.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 327`** (1 nodes): `Guarantee a clean fresh Gemini chat before upload.      This intentionally does`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 328`** (1 nodes): `Read text from Gemini's real composer, not old messages or upload chips.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 329`** (1 nodes): `Use Chrome DevTools Input.insertText so newlines are inserted as text, not Enter`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 330`** (1 nodes): `Paste through the browser clipboard; this updates Gemini like a real user paste.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 331`** (1 nodes): `Last-resort DOM insertion. It is verified strictly before Send is allowed.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 332`** (1 nodes): `Return a short list of visible composer-area buttons for debugging.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 333`** (1 nodes): `Find Gemini's actual composer Send/Submit control.      The earlier versions loo`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 334`** (1 nodes): `Count text-node matches for the prompt outside the editable composer.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 335`** (1 nodes): `Confirm Gemini accepted the prompt.      Important: an empty composer alone is N`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 336`** (1 nodes): `Focus Gemini composer and perform a real Selenium Enter keypress.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 337`** (1 nodes): `Return True if the URL is a blank new-chat (no conversation ID).      Fresh chat`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 338`** (1 nodes): `Open Gemini in a new browser tab/window for each prompt, then ensure composer is`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 339`** (1 nodes): `Send Ctrl+Shift+O to the page, with a JS fallback.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 340`** (1 nodes): `Collect all candidate generated-image URLs from the current tab.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 341`** (1 nodes): `Best-effort check that uploads have been attached in Gemini UI.      We look for`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 342`** (1 nodes): `Wait until a new image appears in the page that wasn't there before sending.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 343`** (1 nodes): `Save the generated image to out_path_no_ext + inferred extension.      Strategy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `run()` connect `Community 1` to `Community 0`?**
-  _High betweenness centrality (0.120) - this node is a cross-community bridge._
-- **Why does `run()` connect `Community 2` to `Community 0`?**
-  _High betweenness centrality (0.102) - this node is a cross-community bridge._
-- **Why does `call_opencode_compatible()` connect `Community 0` to `Community 1`, `Community 2`?**
-  _High betweenness centrality (0.041) - this node is a cross-community bridge._
-- **Are the 5 inferred relationships involving `run()` (e.g. with `_run_opencode_queued()` and `run_cmd()`) actually correct?**
-  _`run()` has 5 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 6 inferred relationships involving `run()` (e.g. with `_run_opencode_queued()` and `run_cmd()`) actually correct?**
+- **Why does `Path()` connect `Community 0` to `Community 1`, `Community 2`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`?**
+  _High betweenness centrality (0.255) - this node is a cross-community bridge._
+- **Why does `run()` connect `Community 1` to `Community 0`, `Community 7`?**
+  _High betweenness centrality (0.092) - this node is a cross-community bridge._
+- **Why does `main()` connect `Community 5` to `Community 0`?**
+  _High betweenness centrality (0.066) - this node is a cross-community bridge._
+- **Are the 46 inferred relationships involving `Path()` (e.g. with `store_uploaded_input_images()` and `_is_opencode_run_cmd()`) actually correct?**
+  _`Path()` has 46 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 6 inferred relationships involving `run()` (e.g. with `Path()` and `_run_opencode_queued()`) actually correct?**
   _`run()` has 6 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 2 inferred relationships involving `call_opencode_compatible()` (e.g. with `run()` and `run()`) actually correct?**
-  _`call_opencode_compatible()` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `Classify a headline opening pattern for hypothesis sanity checks.      The class`, `Collect generated image paths for a specific aspect ratio.      Searches both le`, `Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa` to the rest of the system?**
-  _320 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Are the 7 inferred relationships involving `run()` (e.g. with `_run_opencode_queued()` and `run_cmd()`) actually correct?**
+  _`run()` has 7 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `Classify a headline opening pattern for hypothesis sanity checks.      The class`, `Return the full text of a prompt file.`, `Save full content of a prompt file.` to the rest of the system?**
+  _387 weakly-connected nodes found - possible documentation gaps or missing edges._

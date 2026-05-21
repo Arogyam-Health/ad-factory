@@ -227,7 +227,8 @@ def safezone_enforcement_block(aspect_ratio: str) -> str:
         "- Restricted bands: top 10% (0-135px), bottom 15% (1148-1350px), side edges outer 8% (0-86px and 994-1080px).\n"
         "- Keep all products and all on-image text fully inside the central safe field: x=86-994 and y=135-1148.\n"
         "- Product cluster may be centered or left/right weighted according to the selected archetype, with mild upward bias allowed, but must not touch any restricted band.\n"
-        "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones."
+        "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.\n"
+        "- HARD DIMENSION LOCK: output must be exactly 1080×1350 pixels. If the generated image is any other size or aspect ratio, reject and regenerate until it matches exactly 1080×1350."
     )
 
 
