@@ -17,6 +17,8 @@ from dashboard.backend.app import (
     api_download_single_image,
     api_download_batch_images,
     api_download_batches,
+    signal_cancel_run,
+    signal_cancel_current_run,
 )
 
 router = APIRouter()
@@ -81,3 +83,15 @@ def _download_batch_images(run_id: str) -> StreamingResponse:
 @router.post("/api/runs/download-batches")
 def _download_batches(payload: dict[str, Any] = Body(...)) -> StreamingResponse:
     return api_download_batches(payload.get("batch_ids", []))
+
+
+@router.post("/api/runs/{run_id}/cancel")
+def _cancel_run(run_id: str) -> dict[str, Any]:
+    signal_cancel_run(run_id)
+    return {"status": "ok", "run_id": run_id}
+
+
+@router.post("/api/runs/cancel-current")
+def _cancel_current_run() -> dict[str, Any]:
+    signal_cancel_current_run()
+    return {"status": "ok"}

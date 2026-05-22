@@ -106,8 +106,66 @@
       "Support line must be one compact ad line, ideally 12-24 words, maximum 28 words.",
       "Support line must add new payload: mechanism, proof, ease, consequence, or persona-specific context.",
       "Do not start support line with 'Yes:', 'No:', 'Because', 'It can', or 'You can'.",
-      "Do not return framework labels, rationale, explanations, copy_requirements, disclaimers, or extra keys."
+      "Do not return framework labels, rationale, explanations, copy_requirements, disclaimers, or extra keys.",
+      "Think for yourself. Invent your own creative angles and routes. Do not follow or echo any route labels, creative direction labels, or framework names from the context above.",
+      "Write like a real person talking to another person, not like an ad copy generator. No formulaic patterns, no buzzwords, no frameworks showing through."
     ]
+  },
+  "response_skeleton": {
+    "_description": "Exact JSON skeleton the LLM must fill. Shown at end of prompt_tail to enforce structure. Placeholders in angle brackets are replaced by the LLM.",
+    "default": {
+      "default_aspect_ratio": "1:1",
+      "ads": [
+        {
+          "format": "{format}",
+          "headline_angle": "<creative angle describing this ad>",
+          "awareness_stage": "<from context>",
+          "concept_angle": "<from context>",
+          "concept_structure": "<from context>",
+          "persona": "<persona name>",
+          "copy": {
+            "headline": "<your headline>",
+            "cta": "<your CTA>"
+          }
+        }
+      ]
+    },
+    "HERO": {
+      "copy": {
+        "headline": "<your headline, 4-10 words, weight-loss meaning>",
+        "support_line": "<your support line, 12-24 words, adds mechanism/proof/ease>",
+        "cta": "<your CTA>"
+      }
+    },
+    "UGC": {
+      "copy": {
+        "headline": "<your headline, 4-10 words, weight-loss meaning>",
+        "support_line": "<your support line, 12-24 words, adds mechanism/proof/ease>",
+        "cta": "<your CTA>"
+      }
+    },
+    "TEST": {
+      "copy": {
+        "headline": "<first-person quote, 4-10 words, obvious weight-loss meaning>",
+        "attribution": "<role/source label, no personal names>",
+        "trust_line": "<doctor-formulated / system proof>",
+        "cta": "<your CTA>"
+      }
+    },
+    "BA": {
+      "copy": {
+        "headline": "<your headline, 4-10 words, weight-loss meaning>",
+        "bullets": ["<struggle/friction bullet 1 or 2>", "<struggle/friction bullet 2 or 4>"],
+        "cta": "<your CTA>"
+      }
+    },
+    "FEAT": {
+      "copy": {
+        "headline": "<your headline, 4-10 words, weight-loss meaning>",
+        "bullets": ["<distinct feature bullet 1>", "<distinct feature bullet 2>", "<distinct feature bullet 3>"],
+        "cta": "<your CTA>"
+      }
+    }
   },
   "strict_schema_note": {
     "intro": "STRICT_SCHEMA: Return JSON only. Do not include copy_requirements, disclaimers, or extra keys.",

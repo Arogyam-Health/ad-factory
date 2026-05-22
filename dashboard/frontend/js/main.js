@@ -255,8 +255,17 @@ async function runPipeline() {
     runBtn.disabled = true;
     runBtn.classList.add("is-loading");
   }
+  const cancelBtn = document.getElementById("cancelRunBtn");
+  if (cancelBtn) {
+    cancelBtn.style.display = "inline-block";
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "Cancel";
+  }
   try {
     const data = await fetchJSON("/api/runs/execute", { method: "POST", body: form });
+    if (cancelBtn) {
+      cancelBtn.style.display = "none";
+    }
     const fallbackLine = data.copy_generation_failures
       ? `\nCopy fallbacks: ${data.copy_generation_failures} failed ad(s); log: ${data.copy_fallback_log || "run logs"}`
       : "";
@@ -280,6 +289,9 @@ async function runPipeline() {
   } catch (err) {
     setStatus(`Failed: ${String(err)}`);
   } finally {
+    if (cancelBtn) {
+      cancelBtn.style.display = "none";
+    }
     stopProgressPolling();
     if (runBtn) {
       runBtn.disabled = false;
@@ -287,6 +299,22 @@ async function runPipeline() {
     }
   }
 }
+
+
+document.getElementById("cancelRunBtn")?.addEventListener("click", async () => {
+  const cancelBtn = document.getElementById("cancelRunBtn");
+  if (!cancelBtn) return;
+  cancelBtn.disabled = true;
+  cancelBtn.textContent = "Cancelling...";
+  try {
+    await fetchJSON("/api/runs/cancel-current", { method: "POST" });
+    setStatus("Cancelling pipeline... will stop after current ad and keep generated results.");
+  } catch (err) {
+    setStatus(`Cancel failed: ${String(err)}`);
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "Cancel";
+  }
+});
 
 document.getElementById("serverType")?.addEventListener("change", () => {
   state.currentServerType = "opencode";

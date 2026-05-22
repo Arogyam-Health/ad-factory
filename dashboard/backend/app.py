@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import random
@@ -16,6 +17,7 @@ import hashlib
 import importlib.util
 import mimetypes
 import uuid
+import asyncio
 import psutil
 
 if sys.platform == "win32":
@@ -54,9 +56,30 @@ STARTING_PROMPT_PATH = ROOT / "input" / "startingprompt.txt"
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
 DEFAULT_OPENCODE_API_URL = os.getenv("OPENCODE_API_URL", "http://127.0.0.1:4090")
 OPENCODE_ADS_PER_SESSION_SCHEDULE = [25, 15, 10, 5, 2, 1]
+OPENCODE_AD_TIMEOUT_SECONDS = 600
 OPENCODE_MAX_CONCURRENT = 2
 OPENCODE_QUEUE_DIR = RUNTIME_ROOT / "opencode_queue"
 OPENCODE_QUEUE_LOG = OPENCODE_QUEUE_DIR / "queue.log"
+
+# Pipeline cancellation signal, keyed by run_id.
+_cancel_events: dict[str, threading.Event] = {}
+_cancel_current_run: threading.Event = threading.Event()
+
+
+def signal_cancel_run(run_id: str) -> None:
+    ev = _cancel_events.get(run_id)
+    if ev:
+        ev.set()
+
+
+def signal_cancel_current_run() -> None:
+    _cancel_current_run.set()
+
+
+def cancel_event_for_run(run_id: str) -> threading.Event:
+    if run_id not in _cancel_events:
+        _cancel_events[run_id] = threading.Event()
+    return _cancel_events[run_id]
 
 
 def load_format_visual_archetypes() -> dict[str, list[dict[str, str]]]:
@@ -563,26 +586,6 @@ def _persona_theme(persona_seed: dict[str, Any]) -> str:
     return ""
 
 
-def _creative_routes_for_persona(persona_seed: dict[str, Any], creative_direction: dict[str, Any]) -> list[str]:
-    routes_cfg = COPY_PROMPTS.get("creative_routes", {})
-    routes: list[str] = []
-    for route in routes_cfg.get("default", []):
-        if isinstance(route, str) and route not in routes:
-            routes.append(route)
-    theme = _persona_theme(persona_seed)
-    by_theme = routes_cfg.get("by_persona_theme", {}) if isinstance(routes_cfg.get("by_persona_theme"), dict) else {}
-    for route in by_theme.get(theme, []):
-        if isinstance(route, str) and route not in routes:
-            routes.append(route)
-    for entry in creative_direction.values():
-        if not isinstance(entry, dict):
-            continue
-        for route in entry.get("route_bias", []):
-            if isinstance(route, str) and route not in routes:
-                routes.append(route)
-    return routes[:12]
-
-
 def _compact_product_truth() -> dict[str, list[str]]:
     return {
         "allowed_proof_mechanism_examples": [
@@ -637,7 +640,6 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
         "hierarchy_rule": prompts.get("hierarchy_rule", "Use the assigned concept_structure flow to shape headline and support line. Do not output framework labels."),
         "format_specific_rule": format_specific.get(fmt, prompts.get("default_format_rule", "")),
         "creative_direction": creative_direction,
-        "creative_routes_to_explore": _creative_routes_for_persona(persona_seed, creative_direction),
         "hard_rules": [
             "headline must be clear and complete",
             "headline must connect to weight loss or appetite/craving control",
@@ -702,7 +704,22 @@ def build_ad_prompt_tail(fmt: str) -> str:
     support_map = tail.get("support_target_map", {})
     support_target = support_map.get(fmt, tail.get("default_support_target", "support line"))
     lines = [line.format(fmt=fmt or "ad", support_target=support_target) for line in tail.get("lines", [])]
+    skeleton = build_response_skeleton(fmt)
+    if skeleton:
+        lines.append(f"\nReturn your response using exactly this JSON skeleton (replace placeholder values with your actual copy):\n{skeleton}")
     return "\n".join(lines)
+
+
+def build_response_skeleton(fmt: str) -> str:
+    fmt = fmt.strip().upper()
+    skeletons = COPY_PROMPTS.get("response_skeleton", {})
+    base = copy.deepcopy(skeletons.get("default", {}))
+    fmt_override = skeletons.get(fmt, {})
+    if fmt_override and "copy" in fmt_override:
+        if "copy" in base.get("ads", [{}])[0]:
+            base["ads"][0]["copy"] = copy.deepcopy(fmt_override["copy"])
+    raw = json.dumps(base, ensure_ascii=False, indent=2)
+    return raw.replace("{format}", fmt)
 
 
 def build_generation_payload_for_llm(context: dict[str, Any]) -> dict[str, Any]:
@@ -982,9 +999,17 @@ def hydrate_generated_ad_candidate(candidate: dict[str, Any], planned_ad: dict[s
 
     copy_payload = hydrated.get("copy") if isinstance(hydrated.get("copy"), dict) else {}
     normalized_copy: dict[str, Any] = {}
-    for lang in ["EN", "HI"]:
-        lang_block = copy_payload.get(lang)
-        normalized_copy[lang] = lang_block if isinstance(lang_block, dict) else {}
+    if copy_payload:
+        has_lang_keys = any(k in copy_payload for k in ["EN", "HI"])
+        if has_lang_keys:
+            for lang in ["EN", "HI"]:
+                lang_block = copy_payload.get(lang)
+                normalized_copy[lang] = lang_block if isinstance(lang_block, dict) else {}
+        else:
+            normalized_copy["EN"] = copy_payload
+            normalized_copy["HI"] = {}
+    else:
+        normalized_copy = {"EN": {}, "HI": {}}
     hydrated["copy"] = normalized_copy
 
     return hydrated
@@ -2409,14 +2434,17 @@ def normalize_generated_copy(
                 base_lang["cta"] = cta
 
             if fmt == "TEST":
-                base_lang["headline"] = ensure_testimonial_headline(base_lang.get("headline", ""), lang, persona)
-                base_lang["attribution"] = ensure_testimonial_attribution(
-                    _clean_str(src_lang.get("attribution")),
-                    lang,
-                    persona,
-                    base_lang.get("headline", ""),
-                    _clean_str(src_lang.get("trust_line")) or base_lang.get("trust_line", ""),
-                )
+                if not _clean_str(src_lang.get("headline")):
+                    base_lang["headline"] = ensure_testimonial_headline(base_lang.get("headline", ""), lang, persona)
+                llm_attribution = _clean_str(src_lang.get("attribution"))
+                if llm_attribution:
+                    base_lang["attribution"] = llm_attribution
+                else:
+                    base_lang["attribution"] = ensure_testimonial_attribution(
+                        llm_attribution, lang, persona,
+                        base_lang.get("headline", ""),
+                        _clean_str(src_lang.get("trust_line")) or base_lang.get("trust_line", ""),
+                    )
 
             if fmt in {"HERO", "UGC"}:
                 support = _clean_str(src_lang.get("support_line"))
@@ -2658,7 +2686,11 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     def run_opencode(prompt: str, *, force_file: bool = False) -> tuple[dict[str, Any] | None, str, str, int]:
         use_session = bool(session_id) and not force_file
         cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=force_file or not use_session)
-        result = subprocess.run(cmd, cwd=str(ROOT), text=True, capture_output=True, check=False, env=env)
+        try:
+            result = subprocess.run(cmd, cwd=str(ROOT), text=True, capture_output=True, check=False, env=env, timeout=OPENCODE_AD_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s on ad prompt")
+            return None, "", f"TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s", -1
         stdout = result.stdout or ""
         stderr = result.stderr or ""
         if result.returncode != 0:
@@ -2721,9 +2753,18 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
 
     with _opencode_queue_slot(f"copy_session {run_dir.name}"):
+        _cancel_current_run.clear()
+        cancel_event_for_run(run_dir.name).clear()
         bootstrap_product_doc_session("initial")
 
         for index, ad_item in enumerate(context.get("ads") or [], start=1):
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                if not cancel_event_for_run(run_dir.name).is_set():
+                    cancel_event_for_run(run_dir.name).set()
+                warnings.append(f"Run cancelled by user after {index - 1} ads")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED by user after {index - 1} ads")
+                break
+
             if session_id and session_request_count >= current_session_limit():
                 bootstrap_product_doc_session(f"rollover_before_ad_{index}")
 
@@ -2776,6 +2817,17 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 errors.append(f"Ad {index}: launch failed: {exc}")
                 continue
 
+            if last_code == -1:  # timeout
+                warning = f"Ad {index}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
+                warnings.append(warning)
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
+                bootstrap_product_doc_session("timeout_retry")
+                try:
+                    candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
+                except OSError as exc:
+                    errors.append(f"Ad {index}: retry launch failed after timeout: {exc}")
+                    continue
+
             if last_code != 0 and session_id:
                 session_id = None
                 session_fallback_used = True
@@ -2826,6 +2878,14 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                     if session_id:
                         session_request_count += 1
                     continue
+            if last_stdout:
+                raw_dir = run_dir / "logs" / "opencode_raw"
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                (raw_dir / f"ad_{index:02d}_stdout.ndjson").write_text(last_stdout, encoding="utf-8")
+                (raw_dir / f"ad_{index:02d}_candidate.json").write_text(
+                    json.dumps({"candidate": candidate, "ad_item": ad_item}, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
             generated_ads.append(hydrate_generated_ad_candidate(candidate, ad_item))
             if session_id:
                 session_request_count += 1
@@ -5605,7 +5665,6 @@ async def api_run_execute(
                 concept["cta_voice_override"] = variant
             copy_req["concept_variation"] = concept
             direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
-            copy_req["creative_routes_to_explore"] = _creative_routes_for_persona(PERSONA_SEED_INPUTS.get(persona_no, {}), direction)
 
         ads_context.append(
             {
@@ -5659,7 +5718,7 @@ async def api_run_execute(
     )
 
     llm_mode = "opencode"
-    copy_json = call_opencode_compatible(cfg, full_context, run_dir)
+    copy_json = await asyncio.to_thread(call_opencode_compatible, cfg, full_context, run_dir)
     used_template_fallback = False
     if not copy_json:
         llm_mode = "fallback_template"
