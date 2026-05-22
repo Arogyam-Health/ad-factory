@@ -660,6 +660,252 @@
       "test_group": "",
       "variant_variable": "",
       "variant_value": ""
+    },
+    {
+      "id": "entry_015",
+      "timestamp": "2026-05-22T12:11:48Z",
+      "format": "UGC",
+      "persona_number": 13,
+      "persona_name": "Digestion-Issue + Weight Combo Seeker",
+      "headline_angle": "When gut issues keep derailing weight loss",
+      "awareness_stage": "solution_aware",
+      "concept_angle": "pain_point",
+      "concept_structure": "pas",
+      "visual_archetype": "ugc_desk_review",
+      "headline_en": "I needed weight loss without gut drama",
+      "headline_hi": "रात की लालसा नियंत्रित करना आसान लग सकता है।",
+      "support_line_en": "Most plans flared my bloating and acidity, so I quit. This guided Ayurvedic kit kept hunger calmer and digestion supported.",
+      "support_line_hi": "एक सरल पहला कदम रात के वजन-नियंत्रण को व्यावहारिक रखता है।",
+      "cta_en": "Learn more",
+      "cta_hi": "मेरी दिनचर्या देखें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-228",
+      "background_name": "Kitchen fruit bowl nearby",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v28; aspect_ratio=4:5; seed=420582953; visual_archetype=ugc_desk_review",
+      "opening_pattern_4tok_en": "i_needed_weight_loss",
+      "opening_pattern_4tok_hi": "रात_की_लालसा_नियंत्रित",
+      "copy_skeleton": "contrast_mechanism_cta",
+      "hook_structure_class": "contrast_loop",
+      "proof_style_class": "authority_anchor",
+      "cta_voice_class": "discovery_action",
+      "headline_word_count": 7,
+      "support_line_word_count": 20,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": false,
+      "background_scene_category": "kitchen",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_016",
+      "timestamp": "2026-05-22T12:11:48Z",
+      "format": "FEAT",
+      "persona_number": 11,
+      "persona_name": "Festive/Travel Weight Regainer",
+      "headline_angle": "Post-event reset without punishment",
+      "awareness_stage": "solution_aware",
+      "concept_angle": "desired_outcome",
+      "concept_structure": "fab",
+      "visual_archetype": "feat_bullet_panel",
+      "headline_en": "A reset to lose weight again",
+      "headline_hi": "तीन किट कदम 15 दिन के वजन-सपोर्ट में मदद करते हैं।",
+      "support_line_en": "",
+      "support_line_hi": "",
+      "cta_en": "See how it works",
+      "cta_hi": "किट कदम देखें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [
+        "Structured day-wise routine: less guesswork when travel breaks your discipline",
+        "Works with homemade food guidance: no separate meal prep after functions",
+        "Daily tracker + coach support: keeps you accountable when motivation drops"
+      ],
+      "bullets_hi": [
+        "सुबह का OK Liquid वजन घटाने के लिए भूख और अचानक खाने की आदत कम करने में सहायक है।",
+        "रात का Tablet + Powder मोटापा-नियंत्रण दिनचर्या में पाचन-सपोर्ट देता है।",
+        "कठोर डाईट दबाव के बिना 15 दिन के वजन-सपोर्ट के लिए बनाया गया।"
+      ],
+      "background_slot": "BG-475",
+      "background_name": "Pale dusty blue studio",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v28; aspect_ratio=4:5; seed=420582953; visual_archetype=feat_bullet_panel",
+      "opening_pattern_4tok_en": "a_reset_to_lose",
+      "opening_pattern_4tok_hi": "तीन_किट_कदम_दिन",
+      "copy_skeleton": "problem_reframe_then_next_step",
+      "hook_structure_class": "proof_led",
+      "proof_style_class": "mechanism_explainer",
+      "cta_voice_class": "discovery_action",
+      "headline_word_count": 6,
+      "support_line_word_count": 0,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": false,
+      "background_scene_category": "studio",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_017",
+      "timestamp": "2026-05-22T12:11:48Z",
+      "format": "TEST",
+      "persona_number": 8,
+      "persona_name": "No-Weakness Skeptic",
+      "headline_angle": "Weight loss without the drained feeling",
+      "awareness_stage": "solution_aware",
+      "concept_angle": "pain_point",
+      "concept_structure": "bab",
+      "visual_archetype": "test_minimal_review_poster",
+      "headline_en": "“I ate less without feeling weak.”",
+      "headline_hi": "मैंने 15 दिन की किट पर भरोसा किया क्योंकि वजन-घटाने के कदम साफ लगे।",
+      "support_line_en": "Doctor-formulated, guided 15-day Ayurvedic system designed for 3 to 5 kg progress without hunger or weakness.",
+      "support_line_hi": "सुबह-रात के स्पष्ट कदमों से वजन घटाने और मोटापा नियंत्रण का भरोसेमंड सपोर्ट।",
+      "cta_en": "See the routine",
+      "cta_hi": "प्रमाण देखें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-458",
+      "background_name": "Clean nursing station",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v28; aspect_ratio=4:5; seed=420582953; visual_archetype=test_minimal_review_poster",
+      "opening_pattern_4tok_en": "i_ate_less_without",
+      "opening_pattern_4tok_hi": "मैंने_दिन_की_किट",
+      "copy_skeleton": "proof_time_cta",
+      "hook_structure_class": "contrast_loop",
+      "proof_style_class": "authority_anchor",
+      "cta_voice_class": "guided_next_step",
+      "headline_word_count": 6,
+      "support_line_word_count": 16,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": true,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_018",
+      "timestamp": "2026-05-22T12:11:48Z",
+      "format": "BA",
+      "persona_number": 6,
+      "persona_name": "Thyroid Weight-Gain Struggler",
+      "headline_angle": "Stuck progress with thyroid challenges",
+      "awareness_stage": "solution_aware",
+      "concept_angle": "pain_point",
+      "concept_structure": "bab",
+      "visual_archetype": "ba_emotion_to_control",
+      "headline_en": "My weight loss finally moved again",
+      "headline_hi": "साफ किट दिनचर्या अनियमित डाइटिंग से बेहतर है।",
+      "support_line_en": "",
+      "support_line_hi": "",
+      "cta_en": "See The Shift",
+      "cta_hi": "बदलाव देखें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [
+        "Tried hard, still felt puffy and stuck on the scale",
+        "Switched to a guided Ayurvedic system that helps reduce hunger, with tracker sharing and coach support"
+      ],
+      "bullets_hi": [
+        "रोज की वजन-घटाने की दिनचर्या टूटना आसान है",
+        "पहले के प्लान बहुत सख्त और मुश्किल थे",
+        "लगातार वजन-सपोर्ट के लिए व्यवस्थित सिस्टम",
+        "बेहतर दैनिक वजन-प्रबंधन के लिए लालसा कम करने में सहायक"
+      ],
+      "background_slot": "BG-012",
+      "background_name": "Kitchen windowsill bright",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v28; aspect_ratio=4:5; seed=420582953; visual_archetype=ba_emotion_to_control",
+      "opening_pattern_4tok_en": "my_weight_loss_finally",
+      "opening_pattern_4tok_hi": "साफ_किट_दिनचर्या_अनियमित",
+      "copy_skeleton": "problem_reframe_then_next_step",
+      "hook_structure_class": "confession_led",
+      "proof_style_class": "mechanism_explainer",
+      "cta_voice_class": "guided_next_step",
+      "headline_word_count": 6,
+      "support_line_word_count": 0,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": false,
+      "background_scene_category": "kitchen",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_019",
+      "timestamp": "2026-05-22T12:11:48Z",
+      "format": "HERO",
+      "persona_number": 3,
+      "persona_name": "Emotional Eater / Stress Snacker",
+      "headline_angle": "Stress snacking to steadier weight loss",
+      "awareness_stage": "solution_aware",
+      "concept_angle": "desired_outcome",
+      "concept_structure": "pab",
+      "visual_archetype": "hero_center_stage",
+      "headline_en": "Less stress snacking, more weight loss",
+      "headline_hi": "structured_system का desired_outcome सिस्टम जो Stress, loneliness, and burnout turn eating into relief for a few minutes and guilt for the rest of the time. को संभालने में मदद करता है।",
+      "support_line_en": "A guided Ayurvedic system designed to reduce hunger and cravings, with daily tracker sharing and coach support.",
+      "support_line_hi": "सरल कदम, जो structured_system और cravings_down पर आधारित हैं।",
+      "cta_en": "Get the plan",
+      "cta_hi": "आज शुरू करें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-075",
+      "background_name": "Warm walnut tabletop",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v28; aspect_ratio=4:5; seed=420582953; visual_archetype=hero_center_stage",
+      "opening_pattern_4tok_en": "less_stress_snacking_more",
+      "opening_pattern_4tok_hi": "structured_system_का_desired",
+      "copy_skeleton": "proof_time_cta",
+      "hook_structure_class": "proof_led",
+      "proof_style_class": "authority_anchor",
+      "cta_voice_class": "guided_next_step",
+      "headline_word_count": 6,
+      "support_line_word_count": 17,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": false,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
     }
   ],
   "indexes": {
@@ -678,7 +924,12 @@
         "Busy schedule, still seeing weight loss",
         "I ate less and lost weight",
         "When weight loss plateaus, add structure",
-        "Weight loss felt possible with PCOD"
+        "Weight loss felt possible with PCOD",
+        "I needed weight loss without gut drama",
+        "A reset to lose weight again",
+        "“I ate less without feeling weak.”",
+        "My weight loss finally moved again",
+        "Less stress snacking, more weight loss"
       ],
       "cta_en": [
         "Get the 15-day guided kit",
@@ -694,7 +945,12 @@
         "See If It Fits Your Routine",
         "Check If You’re Eligible",
         "See How The System Works",
-        "See The Routine"
+        "See The Routine",
+        "Learn more",
+        "See how it works",
+        "See the routine",
+        "See The Shift",
+        "Get the plan"
       ],
       "support_line_en": [
         "Strict diets flare acidity and constipation; this doctor-formulated Ayurvedic system supports 3–5 kg loss in 15 days with digestion support and homemade-food fit.",
@@ -708,14 +964,22 @@
         "A doctor-formulated Ayurvedic 15-day routine that supports eating less, works with homemade food, and includes coach guidance.",
         "Doctor-formulated Ayurvedic 15-day kit with a guided routine and tracker support to help you eat less consistently.",
         "Doctor-formulated Ayurvedic weight-loss system with a structured 15-day course and trained coach guidance.",
-        "Not a cure claim, just a doctor-formulated Ayurvedic system with a guided routine, tracker, and coach support."
+        "Not a cure claim, just a doctor-formulated Ayurvedic system with a guided routine, tracker, and coach support.",
+        "Most plans flared my bloating and acidity, so I quit. This guided Ayurvedic kit kept hunger calmer and digestion supported.",
+        "Doctor-formulated, guided 15-day Ayurvedic system designed for 3 to 5 kg progress without hunger or weakness.",
+        "A guided Ayurvedic system designed to reduce hunger and cravings, with daily tracker sharing and coach support."
       ],
       "bullets_en": [
         "Meetings, travel, late lunches and your plan collapses by day 3",
         "A guided 15-day Ayurvedic routine that supports eating less and fits homemade food, with tracker-based coach support",
         "Day-wise 15-day course: one clear step each day, less guesswork and decision fatigue",
         "Morning nutrition pouch (350–400 kcal) designed to reduce hunger and cravings so eating less feels steadier",
-        "Daily tracker + trained coach support on WhatsApp to keep you consistent when the scale goes flat"
+        "Daily tracker + trained coach support on WhatsApp to keep you consistent when the scale goes flat",
+        "Structured day-wise routine: less guesswork when travel breaks your discipline",
+        "Works with homemade food guidance: no separate meal prep after functions",
+        "Daily tracker + coach support: keeps you accountable when motivation drops",
+        "Tried hard, still felt puffy and stuck on the scale",
+        "Switched to a guided Ayurvedic system that helps reduce hunger, with tracker sharing and coach support"
       ]
     },
     "slot_exhaustion_tracker": {
@@ -726,10 +990,10 @@
           "BG-329",
           "BG-326",
           "BG-115",
-          "BG-004"
+          "BG-004",
+          "BG-075"
         ],
         "remaining": [
-          "BG-075",
           "BG-407",
           "BG-479",
           "BG-177",
@@ -911,10 +1175,10 @@
           "BG-172",
           "BG-105",
           "BG-011",
-          "BG-107"
+          "BG-107",
+          "BG-458"
         ],
         "remaining": [
-          "BG-458",
           "BG-031",
           "BG-149",
           "BG-327",
@@ -1099,10 +1363,10 @@
       "BA": {
         "cycle_number": 1,
         "used": [
-          "BG-172"
+          "BG-172",
+          "BG-012"
         ],
         "remaining": [
-          "BG-012",
           "BG-292",
           "BG-391",
           "BG-302",
@@ -1331,10 +1595,10 @@
       "FEAT": {
         "cycle_number": 1,
         "used": [
-          "BG-369"
+          "BG-369",
+          "BG-475"
         ],
         "remaining": [
-          "BG-475",
           "BG-167",
           "BG-163",
           "BG-037",
@@ -1559,10 +1823,10 @@
       "UGC": {
         "cycle_number": 1,
         "used": [
-          "BG-482"
+          "BG-482",
+          "BG-228"
         ],
         "remaining": [
-          "BG-228",
           "BG-434",
           "BG-437",
           "BG-370",
@@ -1797,6 +2061,12 @@
           "timestamp": "2026-05-22T11:21:25Z",
           "background_slot": "BG-004",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_019",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "background_slot": "BG-075",
+          "background_source": "catalog"
         }
       ],
       "TEST": [
@@ -1823,6 +2093,12 @@
           "timestamp": "2026-05-22T11:21:25Z",
           "background_slot": "BG-107",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_017",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "background_slot": "BG-458",
+          "background_source": "catalog"
         }
       ],
       "BA": [
@@ -1830,6 +2106,12 @@
           "entry_id": "entry_011",
           "timestamp": "2026-05-22T11:21:25Z",
           "background_slot": "BG-172",
+          "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_018",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "background_slot": "BG-012",
           "background_source": "catalog"
         }
       ],
@@ -1839,6 +2121,12 @@
           "timestamp": "2026-05-22T11:21:25Z",
           "background_slot": "BG-369",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_016",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "background_slot": "BG-475",
+          "background_source": "catalog"
         }
       ],
       "UGC": [
@@ -1846,6 +2134,12 @@
           "entry_id": "entry_014",
           "timestamp": "2026-05-22T11:21:25Z",
           "background_slot": "BG-482",
+          "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_015",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "background_slot": "BG-228",
           "background_source": "catalog"
         }
       ]
@@ -1977,6 +2271,51 @@
           "awareness_stage": "solution_aware",
           "concept_angle": "desired_outcome",
           "concept_structure": "pas"
+        },
+        {
+          "entry_id": "entry_015",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "format": "UGC",
+          "persona_number": 13,
+          "awareness_stage": "solution_aware",
+          "concept_angle": "pain_point",
+          "concept_structure": "pas"
+        },
+        {
+          "entry_id": "entry_016",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "format": "FEAT",
+          "persona_number": 11,
+          "awareness_stage": "solution_aware",
+          "concept_angle": "desired_outcome",
+          "concept_structure": "fab"
+        },
+        {
+          "entry_id": "entry_017",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "format": "TEST",
+          "persona_number": 8,
+          "awareness_stage": "solution_aware",
+          "concept_angle": "pain_point",
+          "concept_structure": "bab"
+        },
+        {
+          "entry_id": "entry_018",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "format": "BA",
+          "persona_number": 6,
+          "awareness_stage": "solution_aware",
+          "concept_angle": "pain_point",
+          "concept_structure": "bab"
+        },
+        {
+          "entry_id": "entry_019",
+          "timestamp": "2026-05-22T12:11:48Z",
+          "format": "HERO",
+          "persona_number": 3,
+          "awareness_stage": "solution_aware",
+          "concept_angle": "desired_outcome",
+          "concept_structure": "pab"
         }
       ]
     },

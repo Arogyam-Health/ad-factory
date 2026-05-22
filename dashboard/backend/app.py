@@ -448,7 +448,7 @@ def _entry_direction(entry: dict[str, Any]) -> str:
 
 
 def _compact_creative_entry(entry_id: str, entry: dict[str, Any]) -> dict[str, Any]:
-    allowed_keys = ["intent", "headline_role", "support_role", "route_bias", "avoid_skeletons", "avoid"]
+    allowed_keys = ["intent", "headline_role", "support_role", "avoid_skeletons", "avoid"]
     out: dict[str, Any] = {"id": entry_id}
     for key in allowed_keys:
         value = entry.get(key)
@@ -586,20 +586,10 @@ def _persona_theme(persona_seed: dict[str, Any]) -> str:
     return ""
 
 
-def _compact_product_truth() -> dict[str, list[str]]:
+def _compact_product_truth() -> dict[str, Any]:
     return {
-        "allowed_proof_mechanism_examples": [
-            "Ayurvedic weight-loss kit",
-            "doctor-formulated",
-            "supports appetite/craving control",
-            "supports digestion/gut comfort",
-            "guided daily routine",
-            "15-day course or visible progress only if approved by product doc",
-            "70,000+ users only if approved by product doc",
-            "7-day money-back guarantee only if approved by product doc",
-            "homemade food or no separate meal prep only if approved by product doc",
-            "avoid crash-diet pressure only if approved by product doc",
-        ],
+        "source": "attached_product_master_doc",
+        "instruction": "Use the attached product master doc as the only source for product claims. Do not treat the request JSON as a product-claim source.",
         "hard_bans": [
             "no fat burner",
             "no metabolism boost",
@@ -615,31 +605,31 @@ def _compact_product_truth() -> dict[str, list[str]]:
 
 def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index: int, variation_seed: str = "") -> dict[str, Any]:
     persona_seed = PERSONA_SEED_INPUTS.get(persona_number, {})
-    audience_id = persona_seed.get("awareness_stage", "unaware")
-
-    fmt_defaults = COPY_PROMPTS.get("format_defaults", {})
-    structure_by_fmt = fmt_defaults.get("structure_by_fmt", {"HERO": "pab"})
-    concept_structure_id = structure_by_fmt.get(fmt, "pab")
-
-    concept_angle = fmt_defaults.get("default_concept_angle", "desired_outcome")
-
-    support_line_arch = _select_support_line_architecture(persona_number, fmt, format_sequence_index)
-    creative_direction = _creative_direction(audience_id, concept_angle, concept_structure_id)
 
     prompts = COPY_PROMPTS.get("copy_requirements", {})
     format_specific = prompts.get("format_specific", {})
 
     return {
-        "must_mention": prompts.get("must_mention", "Headline or paired support must ensure the copy is clearly about weight loss \u2014 directly or indirectly."),
-        "variation_rule": prompts.get("variation_rule", "Do not reuse the same headline skeleton, support-line skeleton, or persuasion angle as other ads in the same format for this batch."),
-        "concept_variation": {
-            "audience_stage": _framework_item("audience_stage", audience_id),
-            "concept_angle": _framework_item("concept_angle", concept_angle),
-            "message_structure": _framework_item("message_structure", concept_structure_id),
+        "selection_mode": "llm_choose",
+        "allowed_axes": {
+            "concept_angle": ["pain_point", "desired_outcome", "social_proof", "authority", "curiosity", "comparison", "offer"],
+            "concept_structure": ["four_us", "pas", "bab", "fab", "pab"],
+            "awareness_stage": ["problem_aware", "solution_aware", "product_aware"],
         },
-        "hierarchy_rule": prompts.get("hierarchy_rule", "Use the assigned concept_structure flow to shape headline and support line. Do not output framework labels."),
+        "headline_rules": [
+            "4-10 words",
+            "must clearly signal weight loss or a strong proxy (kg loss, eating less, craving control, slimming, clothes fit)",
+            "must sound like a human ad line, not a framework",
+            "avoid generic skeletons and fill-in-the-blank patterns",
+        ],
+        "support_rules": [
+            "12-24 words",
+            "make the headline believable using one persona friction and one product truth",
+            "do not list more than two proof/mechanism cues",
+            "do not sound like a product feature list or colon-led spec sheet",
+            "avoid protocol timing (morning/night/step 1/step 2) unless the persona specifically needs it",
+        ],
         "format_specific_rule": format_specific.get(fmt, prompts.get("default_format_rule", "")),
-        "creative_direction": creative_direction,
         "hard_rules": [
             "headline must be clear and complete",
             "headline must connect to weight loss or appetite/craving control",
@@ -647,12 +637,6 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
             "do not use price",
             "do not use banned claims",
         ],
-        "support_line_architecture": {
-            "intent": support_line_arch.get("intent", ""),
-            "avoid": support_line_arch.get("avoid", ""),
-            "variant": support_line_arch.get("variant", ""),
-        },
-        "support_line_strategy": _build_support_line_strategy(audience_id, concept_angle, concept_structure_id),
     }
 
 
@@ -957,6 +941,39 @@ def extract_generated_ad_candidate(payload: dict[str, Any]) -> dict[str, Any] | 
                 return normalize_candidate(item)
     if payload.get("format") and payload.get("copy"):
         return normalize_candidate(payload)
+    return None
+
+
+def detect_template_leakage(candidate: dict[str, Any] | None) -> str | None:
+    if not isinstance(candidate, dict):
+        return None
+    copy_raw = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
+    texts: list[str] = []
+    for lang in ("EN", "HI"):
+        block = copy_raw.get(lang) if isinstance(copy_raw.get(lang), dict) else copy_raw if lang == "EN" else {}
+        for key in ("headline", "support_line", "trust_line"):
+            val = block.get(key) if isinstance(block, dict) else None
+            if isinstance(val, str) and val.strip():
+                texts.append(val.strip())
+        bullets = block.get("bullets") if isinstance(block, dict) and isinstance(block.get("bullets"), list) else []
+        for b in bullets:
+            if isinstance(b, str) and b.strip():
+                texts.append(b.strip())
+
+    for text in texts:
+        low = text.lower()
+        if any(label in low for label in ("structured_system", "cravings_down", "desired_outcome")):
+            return f"Template label leaked into copy: {text!r}"
+        if re.search(r"\ba\s+clear\s+.{1,30}\s+system\s+for\b", low):
+            return f"Template sentence pattern detected: {text!r}"
+        if "simple steps rooted in" in low:
+            return f"Template sentence pattern detected: {text!r}"
+        if re.match(r"^a\s+doctor-formulated\s+ayurvedic\s+kit:", low):
+            return f"Colon-led feature list support line: {text!r}"
+    if len(texts) >= 2:
+        sup = texts[1] if len(texts) > 1 else ""
+        if sup.count(",") >= 3 and sum(1 for kw in ("appetite", "digestion", "coach", "tracker", "15-day", "morning", "night") if kw in sup.lower()) >= 3:
+            return f"Support line has stacked feature list: {sup!r}"
     return None
 
 
@@ -2878,6 +2895,9 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                     if session_id:
                         session_request_count += 1
                     continue
+            template_leak = detect_template_leakage(candidate)
+            if template_leak:
+                warnings.append(f"Ad {index}: {template_leak}")
             if last_stdout:
                 raw_dir = run_dir / "logs" / "opencode_raw"
                 raw_dir.mkdir(parents=True, exist_ok=True)
@@ -5664,6 +5684,7 @@ async def api_run_execute(
             elif hyp_type == "cta_voice" and variant:
                 concept["cta_voice_override"] = variant
             copy_req["concept_variation"] = concept
+            copy_req["selection_mode"] = "locked"
             direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
 
         ads_context.append(

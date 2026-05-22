@@ -40,53 +40,6 @@
       "Headline should usually be 4-10 words. Support line should usually be 12-24 words."
     ]
   },
-  "creative_routes": {
-    "_description": "Routes the LLM should silently explore before choosing final copy. These are not output requirements unless creative_route is explicitly requested.",
-    "default": [
-      "specific_lived_moment",
-      "pain_moment",
-      "desired_outcome",
-      "objection_flip",
-      "daily_life_scene",
-      "failed_attempt_contrast",
-      "proof_or_authority",
-      "simple_routine_ease"
-    ],
-    "by_persona_theme": {
-      "cravings": [
-        "one_bite_loss_of_control",
-        "evening_cravings",
-        "food_noise",
-        "willpower_fatigue",
-        "failed_appetite_suppression",
-        "easier_eating_less_routine"
-      ],
-      "digestion": [
-        "stomach_and_scale",
-        "diet_discomfort",
-        "bloating_blocks_consistency",
-        "gut_comfort_plus_weight_loss",
-        "lighter_after_meals",
-        "no_digestive_drama"
-      ],
-      "event_deadline": [
-        "outfit_deadline",
-        "visible_progress_before_event",
-        "no_crash_plan",
-        "confidence_in_photos",
-        "fit_clothes_without_weakness",
-        "guided_short_timeline"
-      ],
-      "busy_life": [
-        "workday_survival",
-        "late_lunches",
-        "travel_routine",
-        "no_separate_meal_prep",
-        "simple_steps",
-        "weight_loss_without_rebuilding_day"
-      ]
-    }
-  },
   "prompt_tail": {
     "support_target_map": {
       "BA": "right-side shift",
@@ -99,8 +52,8 @@
       "Return one ad only. You may return either a single ad object or an object with default_aspect_ratio and a one-item ads array.",
       "Use the already-loaded product master doc as the source of truth.",
       "Treat already_used_ads_DO_NOT_REUSE as a ban list for headline, {support_target}, skeleton, and persuasion angle.",
-      "Silently generate at least 6 different creative routes before selecting the final copy. Do not output the drafts.",
-      "Prefer a specific lived moment, objection, contrast, or persona tension over generic product claims.",
+      "Silently consider at least 8 genuinely different ad ideas from the persona and product doc. Vary the human situation, emotional entry point, objection, proof style, and wording rhythm. Do not output drafts.",
+      "Prefer a specific human situation or persona tension over generic product claims.",
       "Final headline must be a complete, clear ad line, usually 4-10 words, with obvious weight-loss meaning.",
       "Reject vague headlines where the reader cannot tell what is being lost, controlled, fixed, or improved.",
       "Support line must be one compact ad line, ideally 12-24 words, maximum 28 words.",
@@ -114,56 +67,71 @@
   "response_skeleton": {
     "_description": "Exact JSON skeleton the LLM must fill. Shown at end of prompt_tail to enforce structure. Placeholders in angle brackets are replaced by the LLM.",
     "default": {
-      "default_aspect_ratio": "1:1",
+      "default_aspect_ratio": "4:5",
       "ads": [
         {
           "format": "{format}",
-          "headline_angle": "<creative angle describing this ad>",
-          "awareness_stage": "<from context>",
-          "concept_angle": "<from context>",
-          "concept_structure": "<from context>",
-          "persona": "<persona name>",
+          "headline_angle": "<short natural description>",
+          "awareness_stage": "<chosen or locked id>",
+          "concept_angle": "<chosen or locked id>",
+          "concept_structure": "<chosen or locked id>",
+          "persona": {
+            "persona_number": "<number>",
+            "persona_name": "<name>"
+          },
           "copy": {
-            "headline": "<your headline>",
-            "cta": "<your CTA>"
+            "EN": {
+              "headline": "<headline>",
+              "cta": "<cta>"
+            }
           }
         }
       ]
     },
     "HERO": {
       "copy": {
-        "headline": "<your headline, 4-10 words, weight-loss meaning>",
-        "support_line": "<your support line, 12-24 words, adds mechanism/proof/ease>",
-        "cta": "<your CTA>"
+        "EN": {
+          "headline": "<your headline, 4-10 words, weight-loss meaning>",
+          "support_line": "<your support line, 12-24 words, adds mechanism/proof/ease>",
+          "cta": "<your CTA>"
+        }
       }
     },
     "UGC": {
       "copy": {
-        "headline": "<your headline, 4-10 words, weight-loss meaning>",
-        "support_line": "<your support line, 12-24 words, adds mechanism/proof/ease>",
-        "cta": "<your CTA>"
+        "EN": {
+          "headline": "<your headline, 4-10 words, weight-loss meaning>",
+          "support_line": "<your support line, 12-24 words, adds mechanism/proof/ease>",
+          "cta": "<your CTA>"
+        }
       }
     },
     "TEST": {
       "copy": {
-        "headline": "<first-person quote, 4-10 words, obvious weight-loss meaning>",
-        "attribution": "<role/source label, no personal names>",
-        "trust_line": "<doctor-formulated / system proof>",
-        "cta": "<your CTA>"
+        "EN": {
+          "headline": "<first-person quote, 4-10 words, obvious weight-loss meaning>",
+          "attribution": "<role/source label, no personal names>",
+          "trust_line": "<doctor-formulated / system proof>",
+          "cta": "<your CTA>"
+        }
       }
     },
     "BA": {
       "copy": {
-        "headline": "<your headline, 4-10 words, weight-loss meaning>",
-        "bullets": ["<struggle/friction bullet 1 or 2>", "<struggle/friction bullet 2 or 4>"],
-        "cta": "<your CTA>"
+        "EN": {
+          "headline": "<your headline, 4-10 words, weight-loss meaning>",
+          "bullets": ["<struggle/friction bullet 1 or 2>", "<struggle/friction bullet 2 or 4>"],
+          "cta": "<your CTA>"
+        }
       }
     },
     "FEAT": {
       "copy": {
-        "headline": "<your headline, 4-10 words, weight-loss meaning>",
-        "bullets": ["<distinct feature bullet 1>", "<distinct feature bullet 2>", "<distinct feature bullet 3>"],
-        "cta": "<your CTA>"
+        "EN": {
+          "headline": "<your headline, 4-10 words, weight-loss meaning>",
+          "bullets": ["<distinct feature bullet 1>", "<distinct feature bullet 2>", "<distinct feature bullet 3>"],
+          "cta": "<your CTA>"
+        }
       }
     }
   },
