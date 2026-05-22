@@ -311,7 +311,6 @@ def _load_persona_seeds() -> dict[int, dict[str, str]]:
         if pn < 1:
             continue
         seeds[pn] = {
-            "persona_name": str(entry.get("persona_name", "")),
             "pain": str(entry.get("pain", "")),
             "desire": str(entry.get("desire", "")),
             "friction": str(entry.get("friction", "")),
@@ -448,41 +447,6 @@ def _hypothesis_guidance(hyp_type: str, variant: str) -> str:
     return ""
 
 
-def build_hypothesis_payload(hyp_meta: dict[str, Any]) -> dict[str, Any]:
-    hyp_type = str(hyp_meta.get("type") or "").strip().lower()
-    variant = str(hyp_meta.get("variant") or "").strip()
-    variable_def = HYPOTHESIS_VARIABLES.get(hyp_type, {})
-
-    headline_group = _headline_architecture_group(hyp_type)
-    variant_def = COPY_ARCH.get("headline_architectures", {}).get(headline_group, {}).get(variant)
-    if not isinstance(variant_def, dict):
-        variant_def = COPY_ARCH.get("non_headline_hypotheses", {}).get(hyp_type, {}).get(variant)
-    if not isinstance(variant_def, dict):
-        variant_def = {}
-
-    payload = dict(hyp_meta)
-    payload["variable_definition"] = {
-        "type": hyp_type,
-        "label": variable_def.get("label", hyp_meta.get("variable_label", "")),
-        "description": variable_def.get("description", ""),
-    }
-    payload["variant_definition"] = {
-        "id": variant,
-        "label": _hypothesis_variant_label(variant),
-        "definition": _entry_direction(variant_def),
-    }
-
-    examples = variant_def.get("examples")
-    if isinstance(examples, list) and examples:
-        payload["variant_definition"]["examples"] = examples
-
-    support_strategy = variant_def.get("support_strategy")
-    if isinstance(support_strategy, dict) and support_strategy:
-        payload["variant_definition"]["support_strategy"] = support_strategy
-
-    return payload
-
-
 def _support_line_strategy_item(group: str, item_id: str) -> dict[str, Any]:
     source_map = {
         "by_concept_angle": ("headline_architectures", "concept_angle"),
@@ -555,17 +519,65 @@ def _select_support_line_architecture(persona_number: int, fmt: str, format_sequ
 
 
 def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index: int, variation_seed: str = "") -> dict[str, Any]:
-    return {}
+    persona_seed = PERSONA_SEED_INPUTS.get(persona_number, {})
+    audience_id = persona_seed.get("awareness_stage", "unaware")
+
+    fmt_defaults = COPY_PROMPTS.get("format_defaults", {})
+    structure_by_fmt = fmt_defaults.get("structure_by_fmt", {"HERO": "pab"})
+    concept_structure_id = structure_by_fmt.get(fmt, "pab")
+
+    concept_angle = fmt_defaults.get("default_concept_angle", "desired_outcome")
+
+    headline_arch = _select_headline_architecture(persona_number, fmt, concept_structure_id)
+    support_line_arch = _select_support_line_architecture(persona_number, fmt, format_sequence_index)
+
+    prompts = COPY_PROMPTS.get("copy_requirements", {})
+    format_specific = prompts.get("format_specific", {})
+
+    return {
+        "must_mention": prompts.get("must_mention", "Headline or paired support must ensure the copy is clearly about weight loss \u2014 directly or indirectly."),
+        "variation_rule": prompts.get("variation_rule", "Do not reuse the same headline skeleton, support-line skeleton, or persuasion angle as other ads in the same format for this batch."),
+        "concept_variation": {
+            "audience_stage": _framework_item("audience_stage", audience_id),
+            "concept_angle": _framework_item("concept_angle", concept_angle),
+            "message_structure": _framework_item("message_structure", concept_structure_id),
+        },
+        "hierarchy_rule": prompts.get("hierarchy_rule", "Use the assigned concept_structure flow to shape headline and support line. Do not output framework labels."),
+        "format_specific_rule": format_specific.get(fmt, prompts.get("default_format_rule", "")),
+        "headline_architecture": {
+            "template": headline_arch.get("template", ""),
+            "examples": headline_arch.get("examples", []),
+            "source": headline_arch.get("source", ""),
+            "variant": headline_arch.get("variant", ""),
+        },
+        "support_line_architecture": {
+            "template": support_line_arch.get("template", ""),
+            "examples": support_line_arch.get("examples", []),
+            "variant": support_line_arch.get("variant", ""),
+        },
+        "support_line_strategy": _build_support_line_strategy(audience_id, concept_angle, concept_structure_id),
+    }
 
 
 def compact_format_rules_for_copy(fmt: str, format_rules: dict[str, Any]) -> dict[str, Any]:
     fmt = fmt.strip().upper()
-    schema = COPY_PROMPTS.get("strict_schema_note", {})
-    field_map = schema.get("field_map", {})
-    return {
-        "format": fmt or format_rules.get("format"),
-        "copy_fields": field_map.get(fmt, schema.get("default_fields", "headline, cta")),
-    }
+    prompts = COPY_PROMPTS
+    wanted = (prompts.get("format_copy_keywords") or {}).get(fmt, [])
+    blocked = (prompts.get("format_visual_keywords") or {}).get("blocklist", [])
+    out: list[str] = []
+    for raw_rule in format_rules.get("rules") or []:
+        rule = str(raw_rule).strip()
+        if not rule:
+            continue
+        lower = rule.lower()
+        if any(b in lower for b in blocked):
+            continue
+        if wanted and not any(k in lower for k in wanted):
+            continue
+        out.append(rule)
+        if len(out) >= 8:
+            break
+    return {"format": fmt or format_rules.get("format"), "rules": out}
 
 def build_ad_copy_system_prompt(fmt: str) -> str:
     fmt = fmt.strip().upper()
@@ -607,20 +619,37 @@ def build_generation_payload_for_llm(context: dict[str, Any]) -> dict[str, Any]:
         persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
         format_rules = item.get("format_rules") if isinstance(item.get("format_rules"), dict) else {}
         copy_requirements = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
-        ad_payload = {
-            "format": fmt,
-            "persona": persona,
-            "format_rules": compact_format_rules_for_copy(fmt, format_rules),
-        }
-        if copy_requirements:
-            ad_payload["hypothesis"] = copy_requirements.get("hypothesis", copy_requirements)
-        compact_ads.append(ad_payload)
+        compact_ads.append(
+            {
+                "format": fmt,
+                "persona": persona,
+                "format_rules": compact_format_rules_for_copy(fmt, format_rules),
+                "copy_requirements": copy_requirements,
+            }
+        )
+
+    requested_plan = []
+    for item in compact_ads:
+        persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
+        requested_plan.append(
+            {
+                "format": item.get("format"),
+                "persona_number": persona.get("persona_number"),
+                "persona_name": persona.get("persona_name"),
+            }
+        )
 
     return {
+        "generated_at": context.get("generated_at"),
+        "run_id": context.get("run_id"),
+        "language_mode": context.get("language_mode"),
+        "context_source": context.get("context_source"),
+        "requested_ad_count": len(compact_ads),
+        "requested_plan": requested_plan,
         "product_doc": {
             "attached_in_session": True,
             "source_file": context.get("product_file_path"),
-            "note": "Attached product doc.",
+            "instruction": "Read and use the attached product master doc as source of truth for all product claims.",
         },
         "ads": compact_ads,
     }
@@ -757,24 +786,36 @@ def _build_persona_payload_field(seed_field_value: Any, config: dict[str, Any]) 
     return seed_field_value
 
 def build_persona_payload(persona_number: int, personas: list[dict[str, Any]]) -> dict[str, Any]:
-    seed = PERSONA_SEED_INPUTS.get(persona_number, {})
-    persona_name = str(seed.get("persona_name") or "").strip() or f"Persona {persona_number}"
+    persona_name = f"Persona {persona_number}"
     for item in personas:
         if int(item.get("number") or 0) == persona_number:
             name = str(item.get("name") or "").strip()
             if name:
                 persona_name = name
             break
-    return {
+    seed = PERSONA_SEED_INPUTS.get(persona_number, {})
+    mapping = COPY_PROMPTS.get("persona_mapping", {})
+    seed_to_payload = mapping.get("seed_to_payload", {})
+    fallbacks = mapping.get("persona_fallbacks", {})
+
+    payload: dict[str, Any] = {
         "persona_number": persona_number,
         "persona_name": persona_name,
-        "pain": seed.get("pain", ""),
-        "desire": seed.get("desire", ""),
-        "friction": seed.get("friction", ""),
-        "proof": seed.get("proof", ""),
-        "tone": seed.get("tone", ""),
-        "awareness_stage": seed.get("awareness_stage", "unaware"),
     }
+
+    for seed_key, field_cfg in seed_to_payload.items():
+        raw = seed.get(seed_key, fallbacks.get(seed_key, ""))
+        payload[field_cfg["field"]] = _build_persona_payload_field(raw, field_cfg)
+
+    static = mapping.get("static_fields", {})
+    for key, val in static.items():
+        payload[key] = val
+
+    hindi_default = mapping.get("hindi_ready_default", "")
+    if hindi_default and payload.get("hindi_ready") in (None, []):
+        payload["hindi_ready"] = [hindi_default]
+
+    return payload
 
 
 def read_active_images(path: Path) -> list[str]:
@@ -2473,15 +2514,33 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             if session_id and session_request_count >= current_session_limit():
                 bootstrap_product_doc_session(f"rollover_before_ad_{index}")
 
+            previous_same_format: list[dict[str, Any]] = []
             target_format = str(ad_item.get("format") or "").strip().upper()
+            for prev in generated_ads:
+                if not isinstance(prev, dict):
+                    continue
+                if str(prev.get("format") or "").strip().upper() != target_format:
+                    continue
+                prev_copy = prev.get("copy") if isinstance(prev.get("copy"), dict) else {}
+                prev_en = prev_copy.get("EN") if isinstance(prev_copy.get("EN"), dict) else {}
+                previous_same_format.append(
+                    {
+                        "persona": (prev.get("persona") or {}).get("name") if isinstance(prev.get("persona"), dict) else "",
+                        "headline_angle": prev.get("headline_angle"),
+                        "headline": prev_en.get("headline"),
+                        "support_line": prev_en.get("support_line"),
+                        "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
+                    }
+                )
             single_context = {
                 **context,
                 "ads": [ad_item],
             }
             target_langs = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
             user_payload = {
-                "task": "Create an ad.",
+                "task": "Generate fresh ad copy JSON for provided context.",
                 "context": build_generation_payload_for_llm(single_context),
+                "already_used_ads_DO_NOT_REUSE": previous_same_format,
                 "constraints": {
                     "language": target_langs.get(language_mode, ["EN", "HI"]),
                     "language_mode": language_mode,
@@ -5254,28 +5313,93 @@ async def api_run_execute(
         format_payload = parse_json_stdout(format_result, f"extract_format_rules({fmt})")
         copy_req = build_copy_requirements(persona_no, fmt, format_seen_counts[fmt], run_id)
 
-        # Only pass hypothesis metadata when the run explicitly selected one.
+        # Inject hypothesis directive if active
         hyp_meta = item.get("hypothesis")
+        concept = {}
         hyp_type = str(hyp_meta.get("type") or "").strip().lower() if isinstance(hyp_meta, dict) else ""
+        variant = str(hyp_meta.get("variant") or "").strip() if isinstance(hyp_meta, dict) else ""
         if isinstance(hyp_meta, dict) and hyp_type and hyp_type != "none":
-            copy_req["hypothesis"] = build_hypothesis_payload(hyp_meta)
+            copy_req["hypothesis"] = hyp_meta
+            concept = copy_req.get("concept_variation") or {}
+            if hyp_type == "awareness_stage" and variant:
+                concept["audience_stage"] = _framework_item("audience_stage", variant)
+                _set_active_support_line_strategy(copy_req, "by_awareness_stage", variant)
+                strategy = copy_req.get("support_line_strategy")
+                if isinstance(strategy, dict):
+                    strategy["awareness_stage"] = _support_line_strategy_item("by_awareness_stage", variant)
+                guidance = _hypothesis_guidance("awareness_stage", variant)
+                if guidance:
+                    concept["awareness_stage_guidance"] = guidance
+            elif hyp_type == "concept_angle" and variant:
+                concept["concept_angle"] = _framework_item("concept_angle", variant)
+                _set_active_support_line_strategy(copy_req, "by_concept_angle", variant)
+                guidance = _hypothesis_guidance("concept_angle", variant)
+                if guidance:
+                    concept["concept_angle_guidance"] = guidance
+            elif hyp_type == "concept_structure" and variant:
+                concept["message_structure"] = _framework_item("message_structure", variant)
+                _set_active_support_line_strategy(copy_req, "by_concept_structure", variant)
+                strategy = copy_req.get("support_line_strategy")
+                if isinstance(strategy, dict):
+                    strategy["concept_structure"] = _support_line_strategy_item("by_concept_structure", variant)
+                guidance = _hypothesis_guidance("concept_structure", variant)
+                if guidance:
+                    concept["concept_structure_guidance"] = guidance
+            elif hyp_type == "hook_structure" and variant:
+                concept["hook_structure_override"] = variant
+                _set_active_support_line_strategy(copy_req, "by_hook_structure", variant)
+                guidance = _hypothesis_guidance("hook_structure", variant)
+                if guidance:
+                    concept["hook_structure_guidance"] = guidance
+            elif hyp_type == "proof_style" and variant:
+                concept["proof_style_override"] = variant
+                _set_active_support_line_strategy(copy_req, "by_proof_style", variant)
+                guidance = _hypothesis_guidance("proof_style", variant)
+                if guidance:
+                    concept["proof_style_guidance"] = guidance
+            elif hyp_type == "cta_voice" and variant:
+                concept["cta_voice_override"] = variant
+                guidance = _hypothesis_guidance("cta_voice", variant)
+                if guidance:
+                    concept["cta_voice_guidance"] = guidance
+            copy_req["concept_variation"] = concept
 
-        ad_context = {
-            "persona": persona_payload,
-            "format_rules": format_payload,
-            "format": fmt,
-            "copy_requirements": copy_req,
-            "visual_archetype": item.get("visual_archetype"),
-            "visual_pattern_reused_from_run_id": item.get("visual_pattern_reused_from_run_id"),
-            "visual_pattern_reuse_key": item.get("visual_pattern_reuse_key"),
-            "creative_index": item.get("creative_index", 1),
-            "creative_total": item.get("creative_total", 1),
-            "background_group_key": item.get("background_group_key"),
-            "share_background_across_personas": item.get("share_background_across_personas", False),
-        }
-        if copy_req:
-            ad_context["hypothesis"] = hyp_meta
-        ads_context.append(ad_context)
+            # Update headline_architecture if hypothesis changed the structural driver
+            arch_src = None
+            arch_variant = None
+            if hyp_type == "concept_structure" and variant:
+                arch_src = "concept_structure"
+                arch_variant = variant
+            elif hyp_type == "hook_structure" and variant:
+                arch_src = "hook_structure"
+                arch_variant = variant
+            if arch_src and arch_variant:
+                ha_group = COPY_ARCH.get("headline_architectures", {}).get(arch_src, {})
+                ha_entry = ha_group.get(arch_variant)
+                if ha_entry:
+                    copy_req["headline_architecture"] = {
+                        "template": ha_entry.get("template", ""),
+                        "examples": ha_entry.get("examples", []),
+                        "source": arch_src,
+                        "variant": arch_variant,
+                    }
+
+        ads_context.append(
+            {
+                "persona": persona_payload,
+                "format_rules": format_payload,
+                "format": fmt,
+                "copy_requirements": copy_req,
+                "hypothesis": hyp_meta,
+                "visual_archetype": item.get("visual_archetype"),
+                "visual_pattern_reused_from_run_id": item.get("visual_pattern_reused_from_run_id"),
+                "visual_pattern_reuse_key": item.get("visual_pattern_reuse_key"),
+                "creative_index": item.get("creative_index", 1),
+                "creative_total": item.get("creative_total", 1),
+                "background_group_key": item.get("background_group_key"),
+                "share_background_across_personas": item.get("share_background_across_personas", False),
+            }
+        )
 
     banlist_result = run_cmd(["python3", "scripts/registry_banlist.py", "--last", "150"], cwd=ROOT)
     banlist_payload = parse_json_stdout(banlist_result, "registry_banlist")
