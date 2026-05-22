@@ -51,8 +51,9 @@ info/
 │   └── v{N}/
 │       └── GEMINI_4_5/ or GEMINI_9_16/
 ├── dashboard/                           # Flask web UI
-│   ├── backend/                         # Flask routes + API
-│   └── frontend/                        # HTML/CSS/JS
+│   ├── backend/                         # Flask routes + API (includes prompt builder)
+│   ├── frontend/                        # HTML/CSS/JS
+│   └── test_outputs/                    # Sample copy JSON for acceptance checks
 ├── graphify-out/                        # Knowledge graph output (not code)
 └── docs/
     ├── AB_TESTING_PLAYBOOK.md           # A/B testing framework doc
@@ -62,7 +63,7 @@ info/
 
 ---
 
-## The 5 Key Data Files — What's Inside Each
+## The 7 Key Data Files — What's Inside Each
 
 ### 1. `persona_seeds.json`
 27 objects, one per persona. Each contains:
@@ -77,7 +78,32 @@ info/
 
 All fields are in English only. During prompt assembly, the Hindi/Hinglish versions are expected to be provided in the copy JSON (the `generate_ads.py` script does NOT translate).
 
-### 2. `background_variant.json`
+### 2. `dashboard/backend/copy_architecture.json`
+Creative direction metadata that controls LLM copy output. **No sentence templates or final-copy examples** — converted to intent-level guidance in May 2026 refactor.
+
+Each entry under `headline_architectures` now has:
+- `intent` — what the concept should feel like (not a sentence template)
+- `headline_role` — what the headline should do in human terms
+- `support_role` — what the support line should do
+- `route_bias` — which creative routes fit this concept
+- `avoid_skeletons` — literal sentence shapes the LLM must NOT produce
+
+Groups: `concept_structure` (pas/bab/fab/four_us/pab), `hook_structure` (question/proof/contrast/confession/command), `concept_angle` (pain_point/desired_outcome/authority etc.), `awareness_stage` (unaware/problem_aware/solution_aware/product_aware).
+
+Also includes `support_line_architectures` (rotation-order of support-line intents) and `non_headline_hypotheses` (proof_style and cta_voice preferences).
+
+### 3. `dashboard/backend/copy_prompt_templates.json`
+All prompt text templates the LLM sees. Controls:
+- `system_prompt_base_rules` — creative-first rules (refactored to remove template-binding)
+- `system_prompt_format_rules` — per-format rules (HERO/UGC now avoid headline architecture templates)
+- `creative_routes` — route options for silent exploration (default + by_persona_theme)
+- `prompt_tail` — final constraints (cleaned and shortened in refactor)
+- `strict_schema_note` — persona field requirements and JSON schema
+- `copy_requirements` — must_mention, hierarchy_rule, format_specific rules
+- `cta_variants` — CTA text options per format per language
+- `template_copy_*` — fallback template strings for when LLM fails
+
+### 4. `background_variant.json`
 500 background variants (BG-001 through BG-500). Each has:
 - `id` — e.g., "BG-001"
 - `title` — e.g., "Warm studio cream"
@@ -157,7 +183,7 @@ Top-level structure:
 }
 ```
 
-### 4. `AD_CREATIVE_SYSTEM_PLAYBOOK.md`
+### 6. `AD_CREATIVE_SYSTEM_PLAYBOOK.md`
 20 sections covering everything. The crucial ones:
 - **§6A** — Awareness stages (4 levels, how to infer them)
 - **§7** — Headline engine (8 concept angles, 4 concept structures, 4U writing lens, headline execution rules, support line rules, human editor pass)
@@ -167,7 +193,7 @@ Top-level structure:
 - **§12** — Prompt assembly template (9 mandatory sections, per-section depth minimums)
 - **§15** — Interactive ad request flow (step-by-step generation sequence, validation checklist with CHK-01 through CHK-29)
 
-### 5. `input/docs/product master doc.txt`
+### 7. `input/docs/product master doc.txt`
 The absolute source of truth. Contains:
 - What the product is and what problem it solves
 - Who it's for and who it's NOT for
@@ -222,13 +248,85 @@ The absolute source of truth. Contains:
 
 ---
 
-## Complete Headline Generation Pipeline
+## Complete Copy-Generation Pipeline
 
 Here is every step, every file touched, every rule enforced — from nothing to a written prompt.
 
-### Phase 0: External Copy Generation
+### Phase 0: LLM Copy Generation (Prompt Builder)
 
-**`generate_ads.py` does NOT write copy.** It assembles prompts from pre-generated copy. The copy is written by an external process (LLM agent or human) following the Playbook.
+**`generate_ads.py` does NOT write copy.** It assembles prompts from pre-generated copy. The copy is generated upstream by an LLM, driven by `dashboard/backend/app.py` and two JSON control files.
+
+**Key files controlling LLM copy output:**
+- `dashboard/backend/copy_prompt_templates.json` — system prompt rules, format rules, prompt tail, creative routes
+- `dashboard/backend/copy_architecture.json` — intent-level creative direction metadata (not sentence templates)
+- `persona_seeds.json` — 27 buyer personas with pain/desire/friction/proof/tone/awareness_stage
+
+**How the prompt is built (`app.py` functions):**
+
+1. `build_copy_requirements()` at line 521 constructs a `copy_requirements` dict for each ad. It now sends **compact creative direction** instead of binding sentence templates:
+
+```json
+{
+  "creative_direction": {
+    "concept_structure": {
+      "id": "pas",
+      "intent": "Start from a problem the persona already feels...",
+      "headline_role": "Name the tension in a human, specific way...",
+      "support_role": "Show the consequence or difficulty...",
+      "avoid_skeletons": ["{problem} keeps blocking weight loss", "weight loss stalls when {problem}", "diets fail because {problem}"]
+    },
+    "concept_angle": {"id": "pain_point", "intent": "...", "route_bias": ["pain_moment", "specific_lived_moment"]},
+    "awareness_stage": {"id": "problem_aware", "intent": "..."}
+  },
+  "creative_routes_to_explore": [
+    "one_bite_loss_of_control",
+    "evening_cravings",
+    "food_noise",
+    "willpower_fatigue",
+    "failed_appetite_suppression",
+    "easier_eating_less_routine"
+  ],
+  "hard_rules": [
+    "headline must be clear and complete",
+    "headline must connect to weight loss or appetite/craving control",
+    "support line adds new mechanism/proof/ease",
+    "do not use price",
+    "do not use banned claims"
+  ]
+}
+```
+
+2. The system prompt (`build_ad_copy_system_prompt()` at line 582) now uses **creative-first rules**:
+   - "Write like a human ad editor, not like a framework"
+   - "Before choosing the final copy, silently explore multiple different creative routes"
+   - No instructions to "follow headline_architecture template" — those were removed
+
+3. The prompt tail (`build_ad_prompt_tail()` at line 604) now says:
+   - "Silently generate at least 6 different creative routes before selecting the final copy"
+   - "Prefer a specific lived moment, objection, contrast, or persona tension over generic product claims"
+   - Replaced repetitive/hostile wording with clean constraints
+
+4. Hypothesis metadata is sent in compact form:
+```json
+"hypothesis": {
+  "type": "concept_structure",
+  "variant": "pas",
+  "hypothesis_id": "concept_structure-pas",
+  "intent": "Use problem-aware flow: headline names tension; support adds consequence and product-led relief.",
+  "do_not_force_template": true
+}
+```
+
+5. `build_generation_payload_for_llm()` at line 613 now injects `product_truth` — a compact summary of allowed proof/mechanism examples and hard bans (no fat burner, no cure claims, etc.)
+
+**Creative route exploration:**
+- `dashboard/backend/app.py` `_persona_theme()` at line 540 detects persona theme (cravings/digestion/event_deadline/busy_life) from seed text
+- `_creative_routes_for_persona()` at line 562 merges default routes + persona-theme routes + route_bias from the selected concept
+- These routes are sent as silent exploration instructions — the LLM outputs only the final JSON
+
+**Two-layer contract:**
+1. **Creative layer** — give persona, product truth, format rules, creative direction metadata, and route options. LLM silently explores multiple routes before choosing the final ad.
+2. **Packaging layer** — strict JSON output matching the schema expected by the downstream assembler.
 
 The copy comes in as a JSON file with this structure:
 
@@ -279,57 +377,25 @@ The copy comes in as a JSON file with this structure:
 }
 ```
 
-The external copy writer is instructed by Playbook §7:
+**Key copy-writing rules enforced in the prompt (not in the assembler):**
+- Headline must clearly signal weight loss, slimming, eating less, craving control, or visible progress
+- No price in on-image copy, no currency symbols or price words
+- No cure claims, fat-burner claims, metabolism-boosting claims, or medical-treatment claims
+- No product component names in headline
+- No protocol mechanics in headline
+- Support line must add mechanism, proof, ease, or consequence (not repeat the headline)
+- Do not start support line with "Yes:", "No:", "Because", "It can", or "You can"
 
-**Formula:**
-`Persona pain + Awareness stage + Concept angle + Copy structure + Approved mechanism/outcome`
+**Semantic preflight rejection (`semantic_copy_rejection()` at line 1322 in app.py):**
+Before accepting LLM output, the prompt builder checks:
+- Headline matches any `avoid_skeletons` from the creative direction metadata
+- Headline contains generic skeletons like "keeps blocking weight loss", "weight loss stalls when", "diets fail because"
+- Headline opening pattern repeats too often (checked against recent registry and current batch)
+- Support line starts with generic openers like "This doctor-formulated Ayurvedic kit supports..."
+- Support line is too generic for the persona (doesn't reference persona-specific terms)
+- CTA repeats too frequently in the same format
 
-**Construction sequence:**
-1. Select persona and load pain/desire/friction/proof/tone
-2. Select or infer `awareness_stage`
-3. Select `concept_angle` from the 8-angle menu
-4. Select `concept_structure` from PAS / BAB / FAB / 4U's
-5. Compose headline and support line as one hierarchy
-
-**8 Concept Angles:**
-- `pain_point` — open with the specific problem
-- `desired_outcome` — open with the result
-- `social_proof` — open with others' trust
-- `authority` — open with doctor/Ayurveda credibility
-- `story` — open with a real-life moment
-- `curiosity` — open with an information gap
-- `comparison` — contrast with harder alternatives
-- `offer` — open with result window/guarantee/kit completeness
-
-**4 Concept Structures:**
-- `pas` — Problem → Agitate → Solve
-- `bab` — Before → After → Bridge
-- `fab` — Feature → Advantage → Benefit
-- `four_us` — Useful, Urgent, Unique, Ultra-specific
-
-**Headline writing rules:**
-- 5-12 words
-- Sentence case
-- One strong idea only
-- No product component names (OK Liquid / OK Tablet / OK Powder / OKP) in headline
-- No AM/PM timing or protocol mechanics (4-hour, empty stomach, no solid) in headline
-- No instructional verb starts (Start, Begin, Kickstart, Follow)
-- No decorative symbols (*, -, _, |, ~, #, @, /, \\)
-- No emoji, no hashtag-style copy
-- No disclaimer line on-image by default
-
-**Support line role:**
-- Explains why the headline is believable
-- Adds second-lane reason to believe (simple routine, doctor credibility, 70K+ users, 15-day progress, reduced cravings, digestion support)
-- Must connect to weight-loss / excess-weight / obesity-reduction intent using compliant phrasing
-- Cannot be generic routine-only language
-
-**Human editor pass (mandated by playbook):**
-- Rewrite as a performance-ad editor
-- Remove generic AI phrases
-- Make it shorter and more spoken
-- Keep one central idea
-- Move extra explanation to support line or bullets
+If rejection triggers, the LLM is retried with a revision instruction. After one retry, the output is accepted with a warning.
 
 ### Phase 1: Loading into `generate_ads.py`
 
@@ -615,7 +681,8 @@ Alternate entry point. Reads an xlsx export from the Dashboard's "extract on-ima
 Exports a banlist from the registry for external LLM copy generation.
 - Reads `AD_GENERATION_REGISTRY.JSON` → `indexes.used_text`
 - Outputs last N strings per bucket as a clean JSON
-- Purpose: pass to an LLM when asking it to write new copy, so it knows what strings are forbidden
+- Also exports `derived_recent` — lightweight skeleton/opening metadata from recent entries (opening_pattern_4tok, copy_skeleton, hook_structure_class, proof_style_class, cta_voice_class)
+- Purpose: pass to an LLM when asking it to write new copy, so it knows what strings/patterns are forbidden
 
 ### `extract_format_rules.py` (53 lines)
 Utility. Parses `AD_CREATIVE_SYSTEM_PLAYBOOK.md` and extracts a specific format section (HERO/BA/TEST/FEAT/UGC) as a standalone text or JSON block.
@@ -636,6 +703,7 @@ Utility. Parses `AD_CREATIVE_SYSTEM_PLAYBOOK.md` and extracts a specific format 
 | Background exists for format | `pick_background_slot()` line 440 | No variants for this format in `background_variant.json` |
 | Visual archetype exists | `pick_visual_archetype()` line 828 | No archetypes configured for format |
 | Forced background invalid | `get_background_by_id()` line 472 | ID not found or not allowed for format |
+| Semantic copy rejection (upstream) | `semantic_copy_rejection()` in app.py at line 1322 | Headline matches avoid_skeleton, generic skeleton, repeated opening pattern, generic support opener, persona-generic support, or overused CTA |
 
 ---
 
@@ -651,13 +719,15 @@ Utility. Parses `AD_CREATIVE_SYSTEM_PLAYBOOK.md` and extracts a specific format 
 
 ## What NOT To Do
 
-1. **Do NOT modify `generate_ads.py` to write headlines.** It is an assembler, not a copy writer. Headlines come from upstream.
-2. **Do NOT delete entries from `AD_GENERATION_REGISTRY.JSON`.** It's append-only. If something is wrong, add a correction entry, don't delete history.
-3. **Do NOT overwrite existing batch folders.** Always write to `v{max+1}`.
-4. **Do NOT create alternate registry files.** Always update root `AD_GENERATION_REGISTRY.JSON`.
-5. **Do NOT skip the validation gate.** If CHK-* fails, the prompt cannot be written. Fix upstream copy and re-run.
-6. **Do NOT hardcode persona mappings.** Personas are selected randomly per format (from 1-27), not paired 1:1 with formats.
-7. **Do NOT translate copy in `generate_ads.py`.** The Hindi/Hinglish copy must come pre-written in the copy JSON.
+1. **Do NOT modify `generate_ads.py` to write headlines.** It is an assembler, not a copy writer. Headlines come from upstream LLM via the prompt builder.
+2. **Do NOT modify `generate_ads.py` to fix copy quality.** Fix the prompt templates (`copy_prompt_templates.json`, `copy_architecture.json`) or the prompt builder (`app.py`) instead.
+3. **Do NOT put sentence templates or final-copy examples back into `copy_architecture.json`.** The architecture file is now intent-level metadata only. Adding examples back will make the LLM imitate them instead of writing original copy.
+4. **Do NOT delete entries from `AD_GENERATION_REGISTRY.JSON`.** It's append-only. If something is wrong, add a correction entry, don't delete history.
+5. **Do NOT overwrite existing batch folders.** Always write to `v{max+1}`.
+6. **Do NOT create alternate registry files.** Always update root `AD_GENERATION_REGISTRY.JSON`.
+7. **Do NOT skip the validation gate.** If CHK-* fails, the prompt cannot be written. Fix upstream copy and re-run.
+8. **Do NOT hardcode persona mappings.** Personas are selected randomly per format (from 1-27), not paired 1:1 with formats.
+9. **Do NOT translate copy in `generate_ads.py`.** The Hindi/Hinglish copy must come pre-written in the copy JSON.
 
 ---
 

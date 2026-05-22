@@ -421,7 +421,17 @@ def _headline_architecture_group(group: str) -> str:
 
 
 def _entry_direction(entry: dict[str, Any]) -> str:
-    return str(entry.get("direction") or entry.get("template") or "")
+    return str(entry.get("intent") or entry.get("direction") or entry.get("template") or "")
+
+
+def _compact_creative_entry(entry_id: str, entry: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = ["intent", "headline_role", "support_role", "route_bias", "avoid_skeletons", "avoid"]
+    out: dict[str, Any] = {"id": entry_id}
+    for key in allowed_keys:
+        value = entry.get(key)
+        if value not in (None, "", []):
+            out[key] = value
+    return out
 
 
 def _framework_item(group: str, item_id: str) -> dict[str, str]:
@@ -457,10 +467,15 @@ def _support_line_strategy_item(group: str, item_id: str) -> dict[str, Any]:
     }
     root_key, arch_group = source_map.get(group, ("", ""))
     entry = COPY_ARCH.get(root_key, {}).get(arch_group, {}).get(item_id) if root_key else None
-    strategy = entry.get("support_strategy") if isinstance(entry, dict) else None
-    if not isinstance(strategy, dict):
-        return {"source": group, "variant": item_id, "direction": "", "must_include": [], "avoid": ""}
-    return {"source": group, "variant": item_id, **strategy}
+    if not isinstance(entry, dict):
+        return {"source": group, "variant": item_id, "intent": "", "avoid": ""}
+    strategy = entry.get("support_strategy") if isinstance(entry.get("support_strategy"), dict) else {}
+    return {
+        "source": group,
+        "variant": item_id,
+        "intent": entry.get("support_role") or entry.get("intent") or strategy.get("direction") or "",
+        "avoid": entry.get("avoid") or strategy.get("avoid") or "",
+    }
 
 
 def _build_support_line_strategy(audience_id: str, concept_angle: str, concept_structure_id: str) -> dict[str, Any]:
@@ -473,7 +488,7 @@ def _build_support_line_strategy(audience_id: str, concept_angle: str, concept_s
         "active": _support_line_strategy_item("by_concept_angle", concept_angle),
         "concept_structure": _support_line_strategy_item("by_concept_structure", concept_structure_id),
         "awareness_stage": _support_line_strategy_item("by_awareness_stage", audience_id),
-        "selection_note": "Use active as the main meaning strategy. Also satisfy concept_structure and awareness_stage when they add relevant constraints.",
+        "selection_note": "Use active as a support-line preference only. Do not turn it into a sentence template.",
     }
 
 
@@ -485,7 +500,7 @@ def _set_active_support_line_strategy(copy_req: dict[str, Any], group: str, vari
     strategy["active"] = active
     strategy["selection_note"] = (
         f"Active support strategy selected from {group}.{variant} because the current hypothesis/variant controls the headline. "
-        "Use this as the support line's main job, then apply support_line_architecture for sentence shape."
+        "Use this as support-line intent only; do not force a sentence template."
     )
 
 
@@ -518,6 +533,83 @@ def _select_support_line_architecture(persona_number: int, fmt: str, format_sequ
     return {"variant": arch_id, **entry}
 
 
+def _creative_direction(audience_id: str, concept_angle: str, concept_structure_id: str) -> dict[str, Any]:
+    arch = COPY_ARCH.get("headline_architectures", {})
+    direction: dict[str, Any] = {}
+    selections = {
+        "concept_structure": concept_structure_id,
+        "concept_angle": concept_angle,
+        "awareness_stage": audience_id,
+    }
+    for group, item_id in selections.items():
+        entry = arch.get(group, {}).get(item_id)
+        if isinstance(entry, dict):
+            direction[group] = _compact_creative_entry(item_id, entry)
+        else:
+            direction[group] = {"id": item_id}
+    return direction
+
+
+def _persona_theme(persona_seed: dict[str, Any]) -> str:
+    text = " ".join(str(persona_seed.get(key) or "").lower() for key in ["pain", "desire", "friction", "proof", "tone", "persona_name"])
+    if any(word in text for word in ["craving", "hunger", "snack", "food noise", "willpower"]):
+        return "cravings"
+    if any(word in text for word in ["digestion", "gut", "bloat", "stomach", "acidity"]):
+        return "digestion"
+    if any(word in text for word in ["event", "wedding", "outfit", "photo", "deadline"]):
+        return "event_deadline"
+    if any(word in text for word in ["busy", "professional", "work", "travel", "schedule", "office"]):
+        return "busy_life"
+    return ""
+
+
+def _creative_routes_for_persona(persona_seed: dict[str, Any], creative_direction: dict[str, Any]) -> list[str]:
+    routes_cfg = COPY_PROMPTS.get("creative_routes", {})
+    routes: list[str] = []
+    for route in routes_cfg.get("default", []):
+        if isinstance(route, str) and route not in routes:
+            routes.append(route)
+    theme = _persona_theme(persona_seed)
+    by_theme = routes_cfg.get("by_persona_theme", {}) if isinstance(routes_cfg.get("by_persona_theme"), dict) else {}
+    for route in by_theme.get(theme, []):
+        if isinstance(route, str) and route not in routes:
+            routes.append(route)
+    for entry in creative_direction.values():
+        if not isinstance(entry, dict):
+            continue
+        for route in entry.get("route_bias", []):
+            if isinstance(route, str) and route not in routes:
+                routes.append(route)
+    return routes[:12]
+
+
+def _compact_product_truth() -> dict[str, list[str]]:
+    return {
+        "allowed_proof_mechanism_examples": [
+            "Ayurvedic weight-loss kit",
+            "doctor-formulated",
+            "supports appetite/craving control",
+            "supports digestion/gut comfort",
+            "guided daily routine",
+            "15-day course or visible progress only if approved by product doc",
+            "70,000+ users only if approved by product doc",
+            "7-day money-back guarantee only if approved by product doc",
+            "homemade food or no separate meal prep only if approved by product doc",
+            "avoid crash-diet pressure only if approved by product doc",
+        ],
+        "hard_bans": [
+            "no fat burner",
+            "no metabolism boost",
+            "no cure claims",
+            "no guaranteed results",
+            "no disease treatment claims",
+            "no price in on-image copy",
+            "no product component names in headline",
+            "no protocol mechanics in headline",
+        ],
+    }
+
+
 def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index: int, variation_seed: str = "") -> dict[str, Any]:
     persona_seed = PERSONA_SEED_INPUTS.get(persona_number, {})
     audience_id = persona_seed.get("awareness_stage", "unaware")
@@ -528,8 +620,8 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
 
     concept_angle = fmt_defaults.get("default_concept_angle", "desired_outcome")
 
-    headline_arch = _select_headline_architecture(persona_number, fmt, concept_structure_id)
     support_line_arch = _select_support_line_architecture(persona_number, fmt, format_sequence_index)
+    creative_direction = _creative_direction(audience_id, concept_angle, concept_structure_id)
 
     prompts = COPY_PROMPTS.get("copy_requirements", {})
     format_specific = prompts.get("format_specific", {})
@@ -544,15 +636,18 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
         },
         "hierarchy_rule": prompts.get("hierarchy_rule", "Use the assigned concept_structure flow to shape headline and support line. Do not output framework labels."),
         "format_specific_rule": format_specific.get(fmt, prompts.get("default_format_rule", "")),
-        "headline_architecture": {
-            "template": headline_arch.get("template", ""),
-            "examples": headline_arch.get("examples", []),
-            "source": headline_arch.get("source", ""),
-            "variant": headline_arch.get("variant", ""),
-        },
+        "creative_direction": creative_direction,
+        "creative_routes_to_explore": _creative_routes_for_persona(persona_seed, creative_direction),
+        "hard_rules": [
+            "headline must be clear and complete",
+            "headline must connect to weight loss or appetite/craving control",
+            "support line adds new mechanism/proof/ease",
+            "do not use price",
+            "do not use banned claims",
+        ],
         "support_line_architecture": {
-            "template": support_line_arch.get("template", ""),
-            "examples": support_line_arch.get("examples", []),
+            "intent": support_line_arch.get("intent", ""),
+            "avoid": support_line_arch.get("avoid", ""),
             "variant": support_line_arch.get("variant", ""),
         },
         "support_line_strategy": _build_support_line_strategy(audience_id, concept_angle, concept_structure_id),
@@ -651,6 +746,7 @@ def build_generation_payload_for_llm(context: dict[str, Any]) -> dict[str, Any]:
             "source_file": context.get("product_file_path"),
             "instruction": "Read and use the attached product master doc as source of truth for all product claims.",
         },
+        "product_truth": _compact_product_truth(),
         "ads": compact_ads,
     }
 
@@ -696,6 +792,123 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
     missing = sorted(planned_keys - seen_keys)
     if missing:
         return "Generated payload is missing planned ads: " + ", ".join(f"{fmt}/P{persona}" for fmt, persona in missing)
+    return None
+
+
+GENERIC_HEADLINE_SKELETONS = [
+    "keeps blocking weight loss",
+    "keeps weight loss stuck",
+    "weight loss stalls when",
+    "diets fail because",
+    "finally a weight loss system",
+    "weight loss should not feel like",
+]
+
+GENERIC_SUPPORT_OPENERS = [
+    "this doctor-formulated ayurvedic kit supports",
+    "this guided ayurvedic system supports",
+    "a simple routine supports",
+]
+
+
+def _normalized_words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (text or "").lower().replace("'", ""))
+
+
+def _normalized_text(text: str) -> str:
+    return " ".join(_normalized_words(text))
+
+
+def _opening_pattern_4tok(text: str) -> str:
+    return "_".join(_normalized_words(text)[:4])
+
+
+def _phrase_matches_skeleton(text: str, skeleton: str) -> bool:
+    normalized = _normalized_text(text)
+    normalized_skeleton = re.sub(r"\{[^}]+\}", " ", skeleton.lower())
+    skeleton_words = _normalized_words(normalized_skeleton)
+    if not skeleton_words:
+        return False
+    return " ".join(skeleton_words) in normalized
+
+
+def _recent_registry_opening_counts(fmt: str, limit: int = 150) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    registry_path = ROOT / "AD_GENERATION_REGISTRY.JSON"
+    if not registry_path.exists():
+        return counts
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except Exception:
+        return counts
+    entries = registry.get("entries") if isinstance(registry, dict) else []
+    if not isinstance(entries, list):
+        return counts
+    for entry in entries[-limit:]:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("format") or "").strip().upper() != fmt:
+            continue
+        pattern = str(entry.get("opening_pattern_4tok_en") or "").strip()
+        if not pattern:
+            pattern = _opening_pattern_4tok(str(entry.get("headline_en") or ""))
+        if pattern:
+            counts[pattern] = counts.get(pattern, 0) + 1
+    return counts
+
+
+def semantic_copy_rejection(candidate: dict[str, Any], planned_ad: dict[str, Any], previous_same_format: list[dict[str, Any]]) -> str | None:
+    fmt = str(candidate.get("format") or planned_ad.get("format") or "").strip().upper()
+    copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
+    en = copy.get("EN") if isinstance(copy.get("EN"), dict) else {}
+    headline = str(en.get("headline") or "").strip()
+    support_line = str(en.get("support_line") or "").strip()
+    cta = str(en.get("cta") or "").strip()
+    if not headline:
+        return None
+
+    normalized_headline = _normalized_text(headline)
+    for skeleton in GENERIC_HEADLINE_SKELETONS:
+        if skeleton in normalized_headline:
+            return f"headline uses banned generic skeleton: {skeleton}"
+
+    copy_req = planned_ad.get("copy_requirements") if isinstance(planned_ad.get("copy_requirements"), dict) else {}
+    direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+    for entry in direction.values():
+        if not isinstance(entry, dict):
+            continue
+        for skeleton in entry.get("avoid_skeletons", []):
+            if isinstance(skeleton, str) and _phrase_matches_skeleton(headline, skeleton):
+                return f"headline matches avoid_skeleton: {skeleton}"
+
+    opening = _opening_pattern_4tok(headline)
+    if opening:
+        current_count = sum(1 for prev in previous_same_format if _opening_pattern_4tok(str(prev.get("headline") or "")) == opening)
+        registry_count = _recent_registry_opening_counts(fmt).get(opening, 0)
+        if current_count + registry_count >= 2:
+            return f"headline opening pattern repeated too often: {opening}"
+
+    normalized_support = _normalized_text(support_line)
+    for opener in GENERIC_SUPPORT_OPENERS:
+        if normalized_support.startswith(opener):
+            return f"support line starts with generic opener: {opener}"
+
+    persona = planned_ad.get("persona") if isinstance(planned_ad.get("persona"), dict) else {}
+    persona_text = " ".join(
+        " ".join(v) if isinstance(v, list) else str(v)
+        for key, v in persona.items()
+        if key in {"pain_points", "core_message", "objections", "trust_anchors", "english_ready"}
+    ).lower()
+    persona_terms = [word for word in _normalized_words(persona_text) if len(word) >= 6]
+    if support_line and persona_terms and not any(term in normalized_support for term in persona_terms[:24]):
+        if not any(term in normalized_support for term in ["craving", "hunger", "digestion", "routine", "homemade", "guided", "pcod", "outfit", "work", "travel"]):
+            return "support line is too generic for the persona"
+
+    if cta:
+        cta_repeats = sum(1 for prev in previous_same_format if str(prev.get("cta") or "").strip().lower() == cta.lower())
+        if cta_repeats >= 2:
+            return f"CTA repeats too frequently in {fmt}: {cta}"
+
     return None
 
 
@@ -2529,6 +2742,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                         "headline_angle": prev.get("headline_angle"),
                         "headline": prev_en.get("headline"),
                         "support_line": prev_en.get("support_line"),
+                        "cta": prev_en.get("cta"),
                         "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
                     }
                 )
@@ -2594,6 +2808,24 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 if session_id:
                     session_request_count += 1
                 continue
+            semantic_rejection = semantic_copy_rejection(candidate, ad_item, previous_same_format)
+            if semantic_rejection:
+                retry_prompt = (
+                    f"{cli_prompt}\n\n"
+                    f"REVISION_REQUIRED: {semantic_rejection}\n"
+                    "Rewrite only this ad. Keep strict JSON schema, product truth, persona fields, and hypothesis metadata. "
+                    "Choose a different human creative route; do not reuse the rejected headline/support skeleton.\n"
+                )
+                candidate, last_stdout, last_stderr, last_code = run_opencode(retry_prompt, force_file=session_fallback_used and not session_id)
+                if candidate:
+                    retry_rejection = semantic_copy_rejection(candidate, ad_item, previous_same_format)
+                    if retry_rejection:
+                        warnings.append(f"Ad {index}: semantic copy retry still weak; accepting generated copy: {retry_rejection}")
+                else:
+                    errors.append(f"Ad {index}: semantic copy retry returned no usable JSON after rejection: {semantic_rejection}")
+                    if session_id:
+                        session_request_count += 1
+                    continue
             generated_ads.append(hydrate_generated_ad_candidate(candidate, ad_item))
             if session_id:
                 session_request_count += 1
@@ -4178,13 +4410,13 @@ def _load_run_prompt_files(run_id: str, aspect_ratios: list[str] | None = None) 
 
 
 def _get_architecture_definition(arch: dict[str, Any], group: str, variant: str) -> str:
-    """Get the template/definition for a concept_variation field from copy_architecture.json."""
+    """Get the intent summary for a concept_variation field from copy_architecture.json."""
     if not arch or not group or not variant:
         return ""
     headline_archs = arch.get("headline_architectures") or {}
     group_data = headline_archs.get(group) or {}
     variant_data = group_data.get(variant) or {}
-    return str(variant_data.get("template") or "").strip()
+    return str(variant_data.get("intent") or variant_data.get("direction") or variant_data.get("template") or "").strip()
 
 
 def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt_rel_path: str, batch_vn: str = "") -> dict[str, Any]:
@@ -5319,7 +5551,14 @@ async def api_run_execute(
         hyp_type = str(hyp_meta.get("type") or "").strip().lower() if isinstance(hyp_meta, dict) else ""
         variant = str(hyp_meta.get("variant") or "").strip() if isinstance(hyp_meta, dict) else ""
         if isinstance(hyp_meta, dict) and hyp_type and hyp_type != "none":
-            copy_req["hypothesis"] = hyp_meta
+            guidance = _hypothesis_guidance(hyp_type, variant) if variant else ""
+            copy_req["hypothesis"] = {
+                "type": hyp_type,
+                "variant": variant,
+                "hypothesis_id": hyp_meta.get("hypothesis_id") or f"{hyp_type}-{variant}",
+                "intent": guidance,
+                "do_not_force_template": True,
+            }
             concept = copy_req.get("concept_variation") or {}
             if hyp_type == "awareness_stage" and variant:
                 concept["audience_stage"] = _framework_item("audience_stage", variant)
@@ -5327,62 +5566,46 @@ async def api_run_execute(
                 strategy = copy_req.get("support_line_strategy")
                 if isinstance(strategy, dict):
                     strategy["awareness_stage"] = _support_line_strategy_item("by_awareness_stage", variant)
-                guidance = _hypothesis_guidance("awareness_stage", variant)
-                if guidance:
-                    concept["awareness_stage_guidance"] = guidance
+                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+                entry = COPY_ARCH.get("headline_architectures", {}).get("awareness_stage", {}).get(variant)
+                if isinstance(entry, dict):
+                    direction["awareness_stage"] = _compact_creative_entry(variant, entry)
+                    copy_req["creative_direction"] = direction
             elif hyp_type == "concept_angle" and variant:
                 concept["concept_angle"] = _framework_item("concept_angle", variant)
                 _set_active_support_line_strategy(copy_req, "by_concept_angle", variant)
-                guidance = _hypothesis_guidance("concept_angle", variant)
-                if guidance:
-                    concept["concept_angle_guidance"] = guidance
+                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+                entry = COPY_ARCH.get("headline_architectures", {}).get("concept_angle", {}).get(variant)
+                if isinstance(entry, dict):
+                    direction["concept_angle"] = _compact_creative_entry(variant, entry)
+                    copy_req["creative_direction"] = direction
             elif hyp_type == "concept_structure" and variant:
                 concept["message_structure"] = _framework_item("message_structure", variant)
                 _set_active_support_line_strategy(copy_req, "by_concept_structure", variant)
                 strategy = copy_req.get("support_line_strategy")
                 if isinstance(strategy, dict):
                     strategy["concept_structure"] = _support_line_strategy_item("by_concept_structure", variant)
-                guidance = _hypothesis_guidance("concept_structure", variant)
-                if guidance:
-                    concept["concept_structure_guidance"] = guidance
+                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+                entry = COPY_ARCH.get("headline_architectures", {}).get("concept_structure", {}).get(variant)
+                if isinstance(entry, dict):
+                    direction["concept_structure"] = _compact_creative_entry(variant, entry)
+                    copy_req["creative_direction"] = direction
             elif hyp_type == "hook_structure" and variant:
                 concept["hook_structure_override"] = variant
                 _set_active_support_line_strategy(copy_req, "by_hook_structure", variant)
-                guidance = _hypothesis_guidance("hook_structure", variant)
-                if guidance:
-                    concept["hook_structure_guidance"] = guidance
+                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+                entry = COPY_ARCH.get("headline_architectures", {}).get("hook_structure", {}).get(variant)
+                if isinstance(entry, dict):
+                    direction["hook_structure"] = _compact_creative_entry(variant, entry)
+                    copy_req["creative_direction"] = direction
             elif hyp_type == "proof_style" and variant:
                 concept["proof_style_override"] = variant
                 _set_active_support_line_strategy(copy_req, "by_proof_style", variant)
-                guidance = _hypothesis_guidance("proof_style", variant)
-                if guidance:
-                    concept["proof_style_guidance"] = guidance
             elif hyp_type == "cta_voice" and variant:
                 concept["cta_voice_override"] = variant
-                guidance = _hypothesis_guidance("cta_voice", variant)
-                if guidance:
-                    concept["cta_voice_guidance"] = guidance
             copy_req["concept_variation"] = concept
-
-            # Update headline_architecture if hypothesis changed the structural driver
-            arch_src = None
-            arch_variant = None
-            if hyp_type == "concept_structure" and variant:
-                arch_src = "concept_structure"
-                arch_variant = variant
-            elif hyp_type == "hook_structure" and variant:
-                arch_src = "hook_structure"
-                arch_variant = variant
-            if arch_src and arch_variant:
-                ha_group = COPY_ARCH.get("headline_architectures", {}).get(arch_src, {})
-                ha_entry = ha_group.get(arch_variant)
-                if ha_entry:
-                    copy_req["headline_architecture"] = {
-                        "template": ha_entry.get("template", ""),
-                        "examples": ha_entry.get("examples", []),
-                        "source": arch_src,
-                        "variant": arch_variant,
-                    }
+            direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+            copy_req["creative_routes_to_explore"] = _creative_routes_for_persona(PERSONA_SEED_INPUTS.get(persona_no, {}), direction)
 
         ads_context.append(
             {
