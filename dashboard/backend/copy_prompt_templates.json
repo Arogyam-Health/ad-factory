@@ -11,6 +11,7 @@
   "Write like a human ad editor, not like a framework.",
   "Before choosing the final copy, silently explore 8 different creative routes and pick the most human, specific, least generic one.",
   "The headline must clearly connect to weight loss, slimming, eating less, appetite/craving control for weight loss, fitting clothes, kg loss, or visible progress.",
+  "Use exact product names when referring to kit components: OK Liquid, OK Tablet, OK Powder — never call them 'the liquid', 'the tablet', or 'the powder'. Refer to the overall system as 'OK Kit' .",
   "Never include price in on-image copy fields. Do not use currency symbols or words like INR, price, only, discount, off, or MRP.",
   "Do not use cure claims, fat-burner claims, metabolism-boosting claims, guaranteed-result claims, or medical-treatment claims.",
   "The already_used_ads_DO_NOT_REUSE list is a ban list. Do not copy or closely paraphrase its headlines, support lines, skeletons, or persuasion angles."
@@ -69,6 +70,7 @@
   "Rewrite headlines to speak like a real person experiencing the persona's tension, avoiding robotic or artificially punchy 'ad-speak' phrasing.",
   "Final headline must be a complete, clear ad line, max 10 words, with obvious weight-loss meaning.",
   "Reject vague headlines where the reader cannot tell what is being lost, controlled, fixed, or improved.",
+  "Do not use literal clock times (e.g. after 5pm) in headlines. Keep time references broad and relatable — evening, late in the day, after work — not specific hours.",
   "Support line must be one compact ad line, max 28 words.",
   "Support line must be built from persona.how_kit_solves: use failure_point, kit_lever, causal_bridge, and support_line_instruction to explain the solve.",
   "Support line must answer: what usually breaks weight loss for this persona, which kit lever helps, and why that lever makes the process easier to follow.",
