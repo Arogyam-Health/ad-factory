@@ -63,6 +63,7 @@
   "Use the already-loaded product master doc as the source of truth.",
   "Treat already_used_ads_DO_NOT_REUSE as a ban list for headline, {support_target}, skeleton, and persuasion angle.",
   "Silently consider at least 8 genuinely different ad ideas from the persona and product doc. Vary the human situation, emotional entry point, objection, proof style, and wording rhythm. Do not output drafts.",
+  "Silently consider at least 8 genuinely different support-line routes before writing the final line. Vary the opening syntax, human situation, emotional entry point, proof/mechanism style, and sentence rhythm. Do not output drafts. This should not affect already generated headline ideas, which should be generated independently before the support line is considered.",
   "Prefer a specific human situation or persona tension over generic product claims.",
   "Execute the headline as a single, seamless, natural thought with a realistic conversational rhythm, completely eliminating robotic, fragmented, or artificially punchy 'ad-speak' and forced punchlines.",
   "Rewrite headlines to speak like a real person experiencing the persona's tension, avoiding robotic or artificially punchy 'ad-speak' phrasing.",
