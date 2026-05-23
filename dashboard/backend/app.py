@@ -340,6 +340,7 @@ def _load_persona_seeds() -> dict[int, dict[str, str]]:
             "proof": str(entry.get("proof", "")),
             "tone": str(entry.get("tone", "")),
             "awareness_stage": str(entry.get("awareness_stage", "unaware")),
+            "how_kit_solves": entry.get("how_kit_solves", {}),
         }
     return seeds
 
@@ -1032,6 +1033,15 @@ def hydrate_generated_ad_candidate(candidate: dict[str, Any], planned_ad: dict[s
     return hydrated
 
 
+def _normalize_how_kit_solves(value: Any) -> dict[str, str]:
+    if isinstance(value, dict):
+        if isinstance(value.get("how_kit_solves"), dict):
+            value = value["how_kit_solves"]
+        allowed = ["failure_point", "kit_lever", "causal_bridge", "support_line_instruction"]
+        return {k: str(value.get(k, "")).strip() for k in allowed if str(value.get(k, "")).strip()}
+    return {}
+
+
 def _build_persona_payload_field(seed_field_value: Any, config: dict[str, Any]) -> Any:
     wrap = config.get("wrap_list", False)
     prefix = config.get("prefix")
@@ -1060,6 +1070,8 @@ def build_persona_payload(persona_number: int, personas: list[dict[str, Any]]) -
 
     for seed_key, field_cfg in seed_to_payload.items():
         raw = seed.get(seed_key, fallbacks.get(seed_key, ""))
+        if seed_key == "how_kit_solves":
+            raw = _normalize_how_kit_solves(raw)
         payload[field_cfg["field"]] = _build_persona_payload_field(raw, field_cfg)
 
     static = mapping.get("static_fields", {})

@@ -7,7 +7,13 @@
     "friction": "They have had cravings come back after a few days before, so they do not trust willpower-only solutions or short-lived appetite suppression.",
     "proof": "They need believable proof that hunger and cravings stay lower long enough to create visible progress, backed by real user results and a structured daily routine.",
     "tone": "direct and reassuring",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Weight loss breaks when hunger pressure, food noise, and trigger foods pull them into overeating after one bite, especially later in the day.",
+      "kit_lever": "OK Liquid helps reduce hunger and improve satiety so eating less feels physically easier; the daily tracker and coach support add structure and accountability.",
+      "causal_bridge": "Because their problem is not lack of intent but repeated craving pressure, lowering hunger and giving a repeatable daily routine makes the calorie deficit easier to maintain long enough for visible progress.",
+      "support_line_instruction": "Make the support line prove that the kit reduces the daily fight with cravings, not that it magically removes cravings forever."
+    }
   },
   {
     "persona_number": 2,
@@ -17,7 +23,13 @@
     "friction": "Most plans feel too high-maintenance for an irregular schedule and fall apart the moment work gets hectic.",
     "proof": "They need proof the system fits real life with a simple routine, normal-food compatibility, and no dependence on heavy workouts.",
     "tone": "practical and efficient",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Weight loss breaks because workdays create late meals, travel food, meetings, stress snacking, and no time for complicated meal prep.",
+      "kit_lever": "The kit gives a fixed daily routine, OK Liquid for appetite support, homemade-food compatibility, tracker guidance, and coach support for doubts.",
+      "causal_bridge": "Because they cannot rebuild their whole schedule, the product helps by reducing hunger pressure and decision load while fitting around real workdays and home food.",
+      "support_line_instruction": "Make the support line show weight loss fitting into a busy routine without separate meal prep, heavy workouts, or constant planning."
+    }
   },
   {
     "persona_number": 3,
@@ -27,7 +39,13 @@
     "friction": "Shame-based plans make the rebound worse, and they worry a weight-loss product will ignore the emotional side of overeating.",
     "proof": "They need proof that the routine feels supportive, there is someone who will guide them, listen to them and that routine reduces random snacking pressure, and helps them recover after bad days instead of spiraling.",
     "tone": "empathetic and non-judgmental",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Stress and evening pressure make them snack even when they know they should stop, which creates guilt and breaks consistency.",
+      "kit_lever": "OK Liquid helps reduce physical hunger and craving pressure; the tracker and coach support create a non-judgmental structure to return to after difficult moments.",
+      "causal_bridge": "The kit does not solve emotions; it makes the body-side hunger and routine side of stress eating easier to manage so one stressful day does not collapse the whole plan.",
+      "support_line_instruction": "Make the support line show less snack pressure and an easier reset path without therapy language or blame."
+    }
   },
   {
     "persona_number": 4,
@@ -37,7 +55,13 @@
     "friction": "They are tired of vague plateau advice and suspect something hidden is undoing their effort, but they do not know what.",
     "proof": "They need a clear explanation of how weight plateaus and how inconsistent appetite control can stall progress, plus realistic stories of people who finally broke through.",
     "tone": "calm and evidence-led",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They feel they are trying sincerely, but hidden intake drift, digestive heaviness, or inconsistent routines keep the scale from moving.",
+      "kit_lever": "OK Liquid supports lower intake through hunger and satiety control; OK Tablet and OK Powder support digestion and metabolic comfort; the tracker makes daily behavior visible.",
+      "causal_bridge": "Because their plateau may come from small daily gaps they cannot see, the kit combines intake support, digestion support, and tracking so progress has a clearer structure.",
+      "support_line_instruction": "Make the support line explain how the kit gives stuck progress a clearer system, not a miracle plateau breaker."
+    }
   },
   {
     "persona_number": 5,
@@ -47,7 +71,13 @@
     "friction": "They are deeply skeptical of generic advice and hormonal miracle claims because they have heard both too many times.",
     "proof": "They need doctor-led credibility, explicit no-cure positioning, and relatable result proof from women managing PCOD who still got visible weight loss.",
     "tone": "empathetic and trust-led",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They feel weight loss is harder because PCOD/PCOS can make cravings, stubborn fat, and progress feel less predictable.",
+      "kit_lever": "The kit is positioned as usable in harder weight-loss situations; OK Liquid supports appetite control while OK Tablet/Powder support digestion and internal balance.",
+      "causal_bridge": "It does not claim to cure PCOD; it helps make the weight-loss process more manageable by reducing hunger friction and adding a guided routine for consistency.",
+      "support_line_instruction": "Make the support line say the system supports manageable weight loss despite a harder body situation, without cure or hormone-fix claims."
+    }
   },
   {
     "persona_number": 6,
@@ -57,7 +87,13 @@
     "friction": "They believe their thyroid makes weight loss unusually hard and they distrust generic plans that act like effort is the only issue.",
     "proof": "They need explicit no-cure boundaries, doctor credibility, and proof that a simpler guided routine can still support progress in harder cases.",
     "tone": "respectful and trust-led",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They feel tired, puffy, and stuck, so they assume only extreme dieting or harsh routines can move stubborn weight.",
+      "kit_lever": "OK Liquid supports lower intake without constant hunger; OK Tablet/Powder support digestion and metabolic function; tracker guidance keeps the plan consistent.",
+      "causal_bridge": "Because extreme routines are hard to sustain, the kit gives a guided, lower-friction path that supports weight loss behavior even when progress feels slower than usual.",
+      "support_line_instruction": "Make the support line frame a practical path for stubborn weight, without saying the kit fixes thyroid."
+    }
   },
   {
     "persona_number": 7,
@@ -67,7 +103,13 @@
     "friction": "Repeated failure has damaged their self-belief, so they assume this will become the same old story.",
     "proof": "They need to see relatable people who had also failed multiple times get early wins with a simple, restart-friendly system and real support. They need to see how this solution be different",
     "tone": "hopeful and non-judgmental",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They keep restarting because previous plans became hungry, confusing, unsupported, or too strict after a few days.",
+      "kit_lever": "The kit gives day-wise pouches, food guidance, tracker sharing, coach support, and appetite/digestion support instead of leaving them to figure it out alone.",
+      "causal_bridge": "Because their failure loop is inconsistency and confusion, the kit solves by reducing guesswork and giving a supported routine they can return to daily.",
+      "support_line_instruction": "Make the support line show this is easier to continue after past failures because the system gives structure and support."
+    }
   },
   {
     "persona_number": 8,
@@ -77,7 +119,13 @@
     "friction": "They equate weight loss with weakness now, so any plan that feels crash-like gets rejected immediately.",
     "proof": "They need proof that the approach supports fullness and daily energy, not starvation-style restriction, with users saying they did not feel weak.",
     "tone": "direct and reassuring",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They avoid weight-loss plans because eating less has previously made them feel weak, drained, or unable to function.",
+      "kit_lever": "OK Liquid provides 350–400 kcal nutrition while supporting hunger control and satiety; the routine aims to help them eat less without feeling depleted.",
+      "causal_bridge": "Because their fear is the cost of weight loss, the kit makes lower intake feel more manageable while still supporting the body with nutrition and digestion support.",
+      "support_line_instruction": "Make the support line prove weight loss support without crash-diet weakness, not just fast results."
+    }
   },
   {
     "persona_number": 9,
@@ -87,7 +135,13 @@
     "friction": "Most weight-loss plans assume free time, mental bandwidth, and energy they simply do not have.",
     "proof": "They need proof the routine is lightweight, family-compatible, and easy to resume after messy days without guilt.",
     "tone": "practical and compassionate",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Their day is full of children, meals, errands, and interruptions, so separate diet cooking or complex tracking quickly breaks.",
+      "kit_lever": "The kit works with homemade food within guidance, reduces separate meal-prep burden, uses a simple daily routine, and includes tracker/coach support.",
+      "causal_bridge": "Because the plan fits ordinary family food and lowers decision load, it reduces the daily friction that usually makes parents quit.",
+      "support_line_instruction": "Make the support line show weight loss fitting around family meals and a full day, not requiring a separate lifestyle."
+    }
   },
   {
     "persona_number": 10,
@@ -97,7 +151,13 @@
     "friction": "Guilt around prioritizing themselves and nonstop household demands make consistency feel selfish or unrealistic.",
     "proof": "They need proof the system works with homemade food, requires no separate cooking, and still gives structure and support.",
     "tone": "warm and respectful",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Her own health gets pushed aside because anything extra feels like another chore on top of managing the home.",
+      "kit_lever": "The kit uses a clear routine, works with homemade food, supports hunger control through OK Liquid, and supports digestion through OK Tablet/Powder.",
+      "causal_bridge": "Because it does not require separate cooking or complicated planning, it gives her a practical self-care routine that can fit inside home life.",
+      "support_line_instruction": "Make the support line show a manageable home-friendly routine without patronizing her or making it beauty-first."
+    }
   },
   {
     "persona_number": 11,
@@ -107,7 +167,13 @@
     "friction": "Social food pressure is hard to resist, and once travel breaks the routine they find it hard to get back into the swing of it.",
     "proof": "They need proof that the system helps with post-event reset, appetite stabilization, and getting lighter again without extreme compensation. They want proof of quick results",
     "tone": "practical and forgiving",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Festivals, travel, weddings, and social eating break rhythm and make them regain what they had lost.",
+      "kit_lever": "The kit gives a structured way back with OK Liquid for appetite support, food guidance, tracker sharing, and coach support.",
+      "causal_bridge": "Because disruption causes loss of structure, the kit helps them return to a clear routine without guilt, punishment, or extreme detox language.",
+      "support_line_instruction": "Make the support line show getting back on track after disruption in a practical, non-shaming way."
+    }
   },
   {
     "persona_number": 12,
@@ -117,7 +183,13 @@
     "friction": "Conflicting advice has made them cynical, and fat-burner language instantly sounds fake to them.",
     "proof": "They need simple mechanism logic that focuses on appetite, intake control, and consistency rather than pseudo-science or magic metabolism claims.",
     "tone": "curious and educational",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They believe their metabolism is slow or broken, so they doubt simple eating advice can work.",
+      "kit_lever": "The kit works on multiple levers: OK Liquid supports lower intake, while OK Tablet/Powder support digestion, gut comfort, metabolic function, and elimination.",
+      "causal_bridge": "Because they distrust one-function fixes, explaining the multi-action system makes the product feel more complete and believable without fake metabolism-reset claims.",
+      "support_line_instruction": "Make the support line show appetite plus digestion/metabolic support as a complete system, avoiding metabolism hype."
+    }
   },
   {
     "persona_number": 13,
@@ -127,7 +199,13 @@
     "friction": "Generic weight-loss products ignore gut comfort, and digestive discomfort makes it harder for them to stay consistent. Things like diarrhoea also interrupts their usual routine (work, chores etc.).",
     "proof": "They need proof that the system supports digestion as well as appetite control, with believable user stories that mention less bloating and easier progress.",
     "tone": "practical and symptom-aware",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Strict diets trigger bloating, acidity, constipation, or heaviness, making them feel digestion and weight loss are tied together.",
+      "kit_lever": "OK Liquid supports appetite and satiety, while OK Tablet and OK Powder support digestion, gut comfort, nutrient absorption, and waste excretion.",
+      "causal_bridge": "Because digestive discomfort breaks consistency, pairing intake support with gut-comfort support helps them stay with weight loss without feeling worse inside.",
+      "support_line_instruction": "Make the support line explicitly connect gut comfort to staying consistent with weight loss."
+    }
   },
   {
     "persona_number": 14,
@@ -137,7 +215,13 @@
     "friction": "Price matters because past coaching, apps, or supplements did not feel worth the money.",
     "proof": "They need clear kit value, duration clarity, expected results, time and money investment needed and a money-back guarantee that reduces the fear of wasting money.",
     "tone": "transparent and value-focused",
-    "awareness_stage": "product_aware"
+    "awareness_stage": "product_aware",
+    "how_kit_solves": {
+      "failure_point": "They fear spending money on another overhyped product that gives no visible result or support.",
+      "kit_lever": "The kit is a complete guided system with clear routine, tracker sharing, coach support, real customer proof, and a 7-day money-back guarantee when instructions and tracker sharing are followed.",
+      "causal_bridge": "Because their hesitation is risk, the system reduces uncertainty through structure, accountability, proof, and guarantee-backed confidence.",
+      "support_line_instruction": "Make the support line reduce purchase risk through guidance and guarantee logic, not cheapness or discount framing."
+    }
   },
   {
     "persona_number": 15,
@@ -147,7 +231,13 @@
     "friction": "They cannot afford a crash plan that makes them weak, stressed, or unpredictable right before the big day.They cannot leave it up to chance.",
     "proof": "They need proof of visible early progress within a clear timeline for their goals, plus relatable deadline-driven transformations that still look realistic.",
     "tone": "calm and motivating",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They need visible change before a wedding, trip, or event and may panic into crash dieting.",
+      "kit_lever": "The kit gives a defined 15-day course designed for 3–5 kg loss when followed, with appetite support, food guidance, tracker sharing, and coach support.",
+      "causal_bridge": "Because they have a short window, the kit turns panic into a clear countdown routine while avoiding weakness-focused crash plans.",
+      "support_line_instruction": "Make the support line show a structured 15-day path for visible progress without reckless crash dieting."
+    }
   },
   {
     "persona_number": 16,
@@ -157,7 +247,13 @@
     "friction": "Aggressive weight-loss messaging makes them shut down because it worsens shame instead of building belief. Or solutions look too impossible to finish.",
     "proof": "They need relatable transformations that talk about confidence, comfort, and feeling good in daily life, not just kilos lost. They want to know that they are not alone in the journey",
     "tone": "uplifting and non-judgmental",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "They want to feel lighter, more confident, and better in clothes, not just chase a number on the scale.",
+      "kit_lever": "The kit supports visible weight loss through lower hunger pressure, digestion comfort, guided tracking, and a practical daily routine.",
+      "causal_bridge": "Because their desired outcome is lived confidence, the support should connect physical progress with feeling lighter and more in control day to day.",
+      "support_line_instruction": "Make the support line link visible progress with lighter, more confident daily living without body-shaming."
+    }
   },
   {
     "persona_number": 17,
@@ -167,7 +263,13 @@
     "friction": "They do not trust generic supplement language, self-medication solutions, or testimonials without real credibility behind them.",
     "proof": "They need doctor-formulated credibility, arogyam hospital backing, a clear explanation of how the kit works, proof of work, and honest boundaries around what it can and cannot do.",
     "tone": "careful and trust-led",
-    "awareness_stage": "product_aware"
+    "awareness_stage": "product_aware",
+    "how_kit_solves": {
+      "failure_point": "They distrust random internet weight-loss products and need proof that this is not another generic supplement.",
+      "kit_lever": "The kit is doctor-formulated by Dr. Arun Tyagi, tied to Arogyam credibility, supported by real customer results, 70,000+ customers served, 200 video testimonials, and a guided system.",
+      "causal_bridge": "Because trust is the buying barrier, the support line should prove this is a doctor-led, structured weight-loss system with real-world backing.",
+      "support_line_instruction": "Make the support line lead with credibility and guided-system proof, not influencer-style hype."
+    }
   },
   {
     "persona_number": 18,
@@ -177,7 +279,13 @@
     "friction": "Solo weight-loss attempts fail because they deviate from the plan. Small deviations turn irreversible before they realise. No one to keep them on track.",
     "proof": "They need proof of real check-ins, a daily tracker, coach guidance, and success stories from people who needed external accountability to stay consistent.",
     "tone": "coach-like and non-judgmental",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They lose consistency when nobody is checking in, answering doubts, or helping them course-correct.",
+      "kit_lever": "The kit includes a daily tracker for weight, meals, steps, water, and sleep, plus WhatsApp sharing and trained coach guidance.",
+      "causal_bridge": "Because accountability is their missing lever, tracker sharing and coach support turn the kit into a guided process rather than a product they take alone.",
+      "support_line_instruction": "Make the support line show that the system solves inconsistency through tracking and guidance."
+    }
   },
   {
     "persona_number": 19,
@@ -187,7 +295,13 @@
     "friction": "Complexity kills momentum fast, and detailed tracking makes them feel overwhelmed or mentally drained.",
     "proof": "They need proof of a low-decision routine, clear instructions, guided simple food rules, and support that keeps things simple instead of adding more noise.",
     "tone": "simple and direct",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "They get overwhelmed by complicated diet rules, conflicting advice, and not knowing what to do each day.",
+      "kit_lever": "The kit gives day-wise pouches, an information booklet, food guidance, a 7-day suggested diet plan, tracker sharing, and coach support.",
+      "causal_bridge": "Because complexity makes them quit early, the kit lowers decision fatigue by telling them what to do and giving support when they are unsure.",
+      "support_line_instruction": "Make the support line show low-guesswork weight loss: clear daily steps, food guidance, and support."
+    }
   },
   {
     "persona_number": 20,
@@ -197,7 +311,13 @@
     "friction": "They worry any weight-loss attempt will drain energy, feel unsafe, or collide with the demands of caring for a baby.",
     "proof": "They need proof that the plan feels guided, safe, home-routine friendly, and easy to follow.",
     "tone": "empathetic and protective",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "After motherhood, routine, energy, and body confidence may change, but postpartum safety exclusions matter.",
+      "kit_lever": "For eligible women beyond the exclusion window, the kit offers low-guesswork appetite support, digestion support, homemade-food fit, tracker guidance, and coach support.",
+      "causal_bridge": "Because she needs a manageable restart rather than bounce-back pressure, the kit lowers friction and supports a clear routine only when she is eligible.",
+      "support_line_instruction": "Make the support line frame a gentle eligible restart, not a postpartum body-pressure or under-6-month claim."
+    }
   },
   {
     "persona_number": 21,
@@ -207,7 +327,13 @@
     "friction": "They are tired of generic advice that ignores menopause and skeptical of anything that sounds too easy or too young for their stage of life.",
     "proof": "They need credible guidance, working mechanism, women-like-me proof, and realistic evidence that a simpler natural routine can still help during this life stage.",
     "tone": "respectful and evidence-led",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "Menopause-related body changes can make weight feel harder to manage, but she does not want exaggerated hormone claims.",
+      "kit_lever": "The kit supports weight loss behavior through appetite control, digestion/metabolic support, homemade-food compatibility, tracking, and coach guidance.",
+      "causal_bridge": "Because this phase can feel harder and less predictable, the kit offers a structured, natural path that reduces daily friction without claiming to fix hormones.",
+      "support_line_instruction": "Make the support line present a practical system for a harder phase, avoiding menopause-cure language."
+    }
   },
   {
     "persona_number": 22,
@@ -217,7 +343,13 @@
     "friction": "They are interested in Ayurveda and natural products, but they distrust flashy labels and weakly explained supplement claims.",
     "proof": "They need doctor-formulated Ayurvedic credibility, ingredient seriousness, working mechanism, and proof that the system is structured and not just another herbal bottle.",
     "tone": "calm and trust-led",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They want weight loss but worry about synthetic ingredients, side effects, dependency, or harsh trade-offs.",
+      "kit_lever": "The kit is an all-natural Ayurvedic formulation with 31 unique ingredients, no synthetic ingredients, no chemical preservatives, and a guided routine.",
+      "causal_bridge": "Because they need safety and naturalness to feel believable, the support line should show that natural still means structured and mechanism-backed.",
+      "support_line_instruction": "Make the support line prove natural plus structured, not vague herbal wellness."
+    }
   },
   {
     "persona_number": 23,
@@ -227,7 +359,13 @@
     "friction": "They avoid extreme plans because dependency, burnout, and bounce-back feel more likely than real change.",
     "proof": "They need proof that the system does not reduce only superficial weight and that it does not create dependency. They need proof to reduce rebound risk",
     "tone": "realistic and steady",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They fear fast weight loss will bounce back or create dependency once the course stops.",
+      "kit_lever": "The kit is not positioned as dehydration or temporary water loss; it supports nourishment, tracking, maintenance guidance, optional repeat cycles, and non-dependency after the journey.",
+      "causal_bridge": "Because rebound fear blocks action, the support line should show fast progress inside a guided system designed for maintenance and real habits.",
+      "support_line_instruction": "Make the support line explain sustainability and non-dependency without promising permanent results."
+    }
   },
   {
     "persona_number": 24,
@@ -237,7 +375,13 @@
     "friction": "Fear of needles, side effects, dependency, and being locked into a long-term medication route keeps them from acting.",
     "proof": "They need a believable alternative with doctor credibility, same or better effectiveness, real user results, and clear proof that it feels natural and non-invasive.",
     "tone": "calm and reassuring",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "They are interested in weight loss but feel injections are too medical, intimidating, or dependency-like.",
+      "kit_lever": "The kit gives a non-invasive Ayurvedic route using OK Liquid for appetite support, OK Tablet/Powder for digestion/metabolic support, and coach/tracker guidance.",
+      "causal_bridge": "Because their fear is the method itself, the kit offers a natural guided alternative that still addresses intake, digestion, and adherence.",
+      "support_line_instruction": "Make the support line contrast with injections softly by showing a natural, guided, non-invasive path."
+    }
   },
   {
     "persona_number": 25,
@@ -247,7 +391,13 @@
     "friction": "She is discouraged that old methods stopped working, and between hormonal shifts, stress, sleep issues, and family or work responsibilities, extreme plans feel too punishing to sustain.",
     "proof": "She needs to see realistic results from women like her, how the course works fundamentally to be sure it will work on her, proof the routine works with her busy life, and reassurance that progress will not leave her feeling weak.",
     "tone": "mature and empathetic",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "Her body feels different with age: belly fat, heaviness, digestion changes, lower energy, and less patience for extreme dieting.",
+      "kit_lever": "The kit supports lower hunger pressure, digestion/gut comfort, homemade-food fit, tracking, and guided consistency.",
+      "causal_bridge": "Because her problem is a changed body plus real-life friction, the kit makes weight loss feel manageable without requiring harsh diet rules or separate cooking.",
+      "support_line_instruction": "Make the support line show manageable weight loss for a changed body without anti-aging or hormone-fix claims."
+    }
   },
   {
     "persona_number": 26,
@@ -257,7 +407,13 @@
     "friction": "What used to work earlier doesn't anymore. He can't stick to strict diets, long workouts, and complicated food rules, and his desk job, late dinners, social eating, and irregular schedule make consistency hard.",
     "proof": "He needs proof of visible waist and weight progress from a straightforward routine, plus clear evidence it can fit busy workdays without a gym-heavy or overly restrictive plan. He is also inclined to solution with strong fundamental working principles.",
     "tone": "practical and no-nonsense",
-    "awareness_stage": "problem_aware"
+    "awareness_stage": "problem_aware",
+    "how_kit_solves": {
+      "failure_point": "His waist, shirts, stamina, late meals, travel, and work stress make weight loss feel like another task he will not maintain.",
+      "kit_lever": "The kit offers a straightforward guided routine with appetite support, digestion/metabolic support, tracker accountability, and homemade-food fit.",
+      "causal_bridge": "Because he needs practicality more than motivation speeches, the kit helps him reduce intake friction and stay accountable without gym-hero routines.",
+      "support_line_instruction": "Make the support line show a simple system that fits a man’s work-life routine without shame or macho transformation language."
+    }
   },
   {
     "persona_number": 27,
@@ -267,6 +423,12 @@
     "friction": "Fear creates urgency but also overwhelm, and because health already feels sensitive, they are wary of unverified bold claims, unsure what is safe, and low on confidence after past failed attempts.They are unsure whether they can even take these course with their existing medications.",
     "proof": "They need doctor-formulated credibility, working mechanism, assurance that the solution works with conditions like BP, cholesterol, prediabetes, fatty liver, breathlessness, or joint pain. They want a structured system which feels credible and not generic, believable results from people who started after health warnings",
     "tone": "health-aware and reassuring",
-    "awareness_stage": "solution_aware"
+    "awareness_stage": "solution_aware",
+    "how_kit_solves": {
+      "failure_point": "A doctor warning, report, or health scare has made weight loss feel urgent, but fear-based messaging can push panic.",
+      "kit_lever": "For eligible adults, the doctor-formulated kit gives appetite support, digestion/metabolic support, tracker sharing, coach guidance, and clear exclusions for pregnancy, recent postpartum, and active insulin use.",
+      "causal_bridge": "Because urgency needs structure, the kit turns a scary wake-up call into a guided first step rather than a cure claim or fear-driven promise.",
+      "support_line_instruction": "Make the support line frame urgent action as structured and supported, not as disease treatment or scare marketing."
+    }
   }
 ]
