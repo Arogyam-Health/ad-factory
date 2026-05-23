@@ -71,7 +71,6 @@
   "Support line must be one compact ad line, max 28 words.",
   "Support line must be built from persona.how_kit_solves: use failure_point, kit_lever, causal_bridge, and support_line_instruction to explain the solve.",
   "Support line must answer: what usually breaks weight loss for this persona, which kit lever helps, and why that lever makes the process easier to follow.",
-  "Do not copy how_kit_solves wording verbatim. Compress it into natural ad copy with one clear cause-and-effect link.",
   "Support line should feel specific enough that it would not fit every persona.",
   "Use only one primary kit lever per support line: appetite/craving control, digestion/gut comfort, tracker/coach guidance, homemade-food fit, safety/naturalness, or structured routine.",
   "Do not stack product claims. Do not list multiple features. Do not write colon-led feature lists.",
