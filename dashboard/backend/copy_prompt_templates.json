@@ -9,7 +9,7 @@
   "The persona may include how_kit_solves with failure_point, kit_lever, causal_bridge, and support_line_instruction. Treat this as the main source for writing support lines.",
   "Creative priority order: human hook first, persona-specific tension second, product proof/mechanism third, schema compliance last.",
   "Write like a human ad editor, not like a framework.",
-  "Before choosing the final copy, silently explore multiple different creative routes and pick the most human, specific, least generic one.",
+  "Before choosing the final copy, silently explore 8 different creative routes and pick the most human, specific, least generic one.",
   "The headline must clearly connect to weight loss, slimming, eating less, appetite/craving control for weight loss, fitting clothes, kg loss, or visible progress.",
   "Never include price in on-image copy fields. Do not use currency symbols or words like INR, price, only, discount, off, or MRP.",
   "Do not use cure claims, fat-burner claims, metabolism-boosting claims, guaranteed-result claims, or medical-treatment claims.",
@@ -32,7 +32,7 @@
     "HERO": [
       "For HERO format only: write one strong human headline, one compact support line, and one CTA.",
       "Do not force a formula like PAS/BAB/FAB into the headline. Use the selected concept only as emotional direction.",
-      "Headline should usually be 4-10 words. Support line should usually be 12-24 words.",
+      "Headline max 10 words. Support line max 28 words.",
       "Support line must be built from persona.how_kit_solves: failure_point + kit_lever + causal_bridge + support_line_instruction.",
       "Support line must explain how the kit helps this exact persona overcome their specific weight-loss failure point.",
       "Use one primary kit lever only: appetite/craving control, digestion/gut comfort, tracker/coach guidance, homemade-food fit, safety/naturalness, or structured routine.",
@@ -42,7 +42,7 @@
     "UGC": [
       "For UGC format only: use creator-like clarity and a believable lived-in hook.",
       "Do not force headline architecture templates. Keep it grounded in persona tension and product truth.",
-      "Headline should usually be 4-10 words. Support line should usually be 12-24 words.",
+      "Headline max 10 words. Support line max 28 words.",
       "Support line must be built from persona.how_kit_solves: failure_point + kit_lever + causal_bridge + support_line_instruction.",
       "Support line must sound like a creator explaining why the kit fits this person's real problem, not like a product brochure.",
       "Use one primary kit lever only: appetite/craving control, digestion/gut comfort, tracker/coach guidance, homemade-food fit, safety/naturalness, or structured routine.",
@@ -66,9 +66,9 @@
   "Prefer a specific human situation or persona tension over generic product claims.",
   "Execute the headline as a single, seamless, natural thought with a realistic conversational rhythm, completely eliminating robotic, fragmented, or artificially punchy 'ad-speak' and forced punchlines.",
   "Rewrite headlines to speak like a real person experiencing the persona's tension, avoiding robotic or artificially punchy 'ad-speak' phrasing.",
-  "Final headline must be a complete, clear ad line, usually 4-10 words, with obvious weight-loss meaning.",
+  "Final headline must be a complete, clear ad line, max 10 words, with obvious weight-loss meaning.",
   "Reject vague headlines where the reader cannot tell what is being lost, controlled, fixed, or improved.",
-  "Support line must be one compact ad line, ideally 12-24 words, maximum 28 words.",
+  "Support line must be one compact ad line, max 28 words.",
   "Support line must be built from persona.how_kit_solves: use failure_point, kit_lever, causal_bridge, and support_line_instruction to explain the solve.",
   "Support line must answer: what usually breaks weight loss for this persona, which kit lever helps, and why that lever makes the process easier to follow.",
   "Do not copy how_kit_solves wording verbatim. Compress it into natural ad copy with one clear cause-and-effect link.",
@@ -112,8 +112,8 @@
    "HERO": {
   "copy": {
     "EN": {
-      "headline": "<your headline, 4-10 words, clear weight-loss meaning>",
-      "support_line": "<12-24 words using how_kit_solves: failure_point + kit_lever + causal_bridge + support_line_instruction>",
+      "headline": "<your headline, max 10 words, clear weight-loss meaning>",
+      "support_line": "<max 28 words using how_kit_solves: failure_point + kit_lever + causal_bridge + support_line_instruction>",
       "cta": "<your CTA>"
     }
   }
@@ -121,8 +121,8 @@
 "UGC": {
   "copy": {
     "EN": {
-      "headline": "<your headline, 4-10 words, clear weight-loss meaning>",
-      "support_line": "<12-24 words using how_kit_solves in a creator-like voice: failure_point + kit_lever + causal_bridge + support_line_instruction>",
+      "headline": "<your headline, max 10 words, clear weight-loss meaning>",
+      "support_line": "<max 28 words using how_kit_solves in a creator-like voice: failure_point + kit_lever + causal_bridge + support_line_instruction>",
       "cta": "<your CTA>"
     }
   }
@@ -130,7 +130,7 @@
     "TEST": {
       "copy": {
         "EN": {
-          "headline": "<first-person quote, 4-10 words, obvious weight-loss meaning>",
+          "headline": "<first-person quote, max 10 words, obvious weight-loss meaning>",
           "attribution": "<role/source label, no personal names>",
           "trust_line": "<doctor-formulated / system proof>",
           "cta": "<your CTA>"
@@ -140,7 +140,7 @@
     "BA": {
       "copy": {
         "EN": {
-          "headline": "<your headline, 4-10 words, weight-loss meaning>",
+          "headline": "<your headline, max 10 words, weight-loss meaning>",
           "bullets": ["<struggle/friction bullet 1 or 2>", "<struggle/friction bullet 2 or 4>"],
           "cta": "<your CTA>"
         }
@@ -149,7 +149,7 @@
     "FEAT": {
       "copy": {
         "EN": {
-          "headline": "<your headline, 4-10 words, weight-loss meaning>",
+          "headline": "<your headline, max 10 words, weight-loss meaning>",
           "bullets": ["<distinct feature bullet 1>", "<distinct feature bullet 2>", "<distinct feature bullet 3>"],
           "cta": "<your CTA>"
         }

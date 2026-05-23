@@ -618,13 +618,13 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
             "awareness_stage": ["problem_aware", "solution_aware", "product_aware"],
         },
         "headline_rules": [
-            "4-10 words",
+            "max 10 words",
             "must clearly signal weight loss or a strong proxy (kg loss, eating less, craving control, slimming, clothes fit)",
             "must sound like a human ad line, not a framework",
             "avoid generic skeletons and fill-in-the-blank patterns",
         ],
         "support_rules": [
-            "12-24 words",
+            "max 28 words",
             "make the headline believable using one persona friction and one product truth",
             "do not list more than two proof/mechanism cues",
             "do not sound like a product feature list or colon-led spec sheet",
@@ -2715,17 +2715,29 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     def run_opencode(prompt: str, *, force_file: bool = False) -> tuple[dict[str, Any] | None, str, str, int]:
         use_session = bool(session_id) and not force_file
         cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=force_file or not use_session)
-        try:
-            result = subprocess.run(cmd, cwd=str(ROOT), text=True, capture_output=True, check=False, env=env, timeout=OPENCODE_AD_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
+        proc = subprocess.Popen(cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        poll_interval = 2
+        elapsed = 0
+        while elapsed < OPENCODE_AD_TIMEOUT_SECONDS:
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                proc.kill()
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad; killed subprocess after {elapsed}s")
+                return None, "", f"CANCELLED after {elapsed}s", -1
+            try:
+                proc.wait(timeout=poll_interval)
+                break
+            except subprocess.TimeoutExpired:
+                elapsed += poll_interval
+        else:
+            proc.kill()
             append_run_log(run_dir, "opencode_session.log", f"{now_iso()} TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s on ad prompt")
             return None, "", f"TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s", -1
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
-        if result.returncode != 0:
-            return None, stdout, stderr, result.returncode
+        stdout = proc.stdout.read() if proc.stdout else ""
+        stderr = proc.stderr.read() if proc.stderr else ""
+        if proc.returncode != 0:
+            return None, stdout, stderr, proc.returncode
         parsed = parse_opencode_json_output(stdout)
-        return (extract_generated_ad_candidate(parsed) if parsed else None), stdout, stderr, result.returncode
+        return (extract_generated_ad_candidate(parsed) if parsed else None), stdout, stderr, proc.returncode
 
     def current_session_limit() -> int:
         idx = min(session_rollovers, len(OPENCODE_ADS_PER_SESSION_SCHEDULE) - 1)
@@ -2851,6 +2863,11 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 errors.append(f"Ad {index}: launch failed: {exc}")
                 continue
 
+            if last_code == -1 and "CANCELLED" in last_stderr:
+                warnings.append(f"Ad {index}: cancelled mid-generation; saving already generated results")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad {index}")
+                break
+
             if last_code == -1:  # timeout
                 warning = f"Ad {index}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
                 warnings.append(warning)
@@ -2861,6 +2878,10 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 except OSError as exc:
                     errors.append(f"Ad {index}: retry launch failed after timeout: {exc}")
                     continue
+                if last_code == -1 and "CANCELLED" in last_stderr:
+                    warnings.append(f"Ad {index}: cancelled during timeout retry; saving already generated results")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad {index} timeout retry")
+                    break
 
             if last_code != 0 and session_id:
                 session_id = None
@@ -2869,49 +2890,34 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 warnings.append(f"{warning}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
                 append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
                 candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt, force_file=True)
+                if last_code == -1 and "CANCELLED" in last_stderr:
+                    warnings.append(f"Ad {index}: cancelled during fallback retry; saving already generated results")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad {index} fallback")
+                    break
 
             if not candidate:
-                retry_prompt = f"{cli_prompt}\n\n{build_strict_schema_note(target_format)}\n"
-                candidate, last_stdout, last_stderr, last_code = run_opencode(retry_prompt, force_file=session_fallback_used and not session_id)
+                msg = f"Ad {index}: LLM returned no usable JSON; no retry sent\nSTDERR:\n{last_stderr}"
+                warnings.append(msg)
+                print(f"[WARNING] {msg}", file=sys.stderr)
 
-            mismatch = hypothesis_mismatch(candidate, ad_item) if candidate else None
-            should_retry_hypothesis = bool(config.get("retry_hypothesis_mismatch"))
-            if mismatch and should_retry_hypothesis:
-                retry_prompt = (
-                    f"{cli_prompt}\n\n"
-                    f"REVISION_REQUIRED: {mismatch}\n"
-                    "Rewrite only this ad so it satisfies the requested hypothesis while keeping schema valid.\n"
-                )
-                candidate, last_stdout, last_stderr, last_code = run_opencode(retry_prompt, force_file=session_fallback_used and not session_id)
-                mismatch_after = hypothesis_mismatch(candidate, ad_item) if candidate else None
-                if mismatch_after:
-                    warnings.append(f"Ad {index}: hypothesis retry mismatch persisted; accepting generated copy: {mismatch_after}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
-            elif mismatch:
-                warnings.append(f"Ad {index}: hypothesis mismatch accepted without retry to avoid extra LLM token spend: {mismatch}")
+            if candidate:
+                mismatch = hypothesis_mismatch(candidate, ad_item)
+                if mismatch:
+                    msg = f"Ad {index}: hypothesis mismatch (accepted, no retry): {mismatch}"
+                    warnings.append(msg)
+                    print(f"[WARNING] {msg}", file=sys.stderr)
+
+                semantic_rejection = semantic_copy_rejection(candidate, ad_item, previous_same_format)
+                if semantic_rejection:
+                    msg = f"Ad {index}: semantic copy quality flag (accepted, no retry): {semantic_rejection}"
+                    warnings.append(msg)
+                    print(f"[WARNING] {msg}", file=sys.stderr)
 
             if not candidate:
                 errors.append(f"Ad {index}: returned no usable ad JSON; return code {last_code}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
                 if session_id:
                     session_request_count += 1
                 continue
-            semantic_rejection = semantic_copy_rejection(candidate, ad_item, previous_same_format)
-            if semantic_rejection:
-                retry_prompt = (
-                    f"{cli_prompt}\n\n"
-                    f"REVISION_REQUIRED: {semantic_rejection}\n"
-                    "Rewrite only this ad. Keep strict JSON schema, product truth, persona fields, and hypothesis metadata. "
-                    "Choose a different human creative route; do not reuse the rejected headline/support skeleton.\n"
-                )
-                candidate, last_stdout, last_stderr, last_code = run_opencode(retry_prompt, force_file=session_fallback_used and not session_id)
-                if candidate:
-                    retry_rejection = semantic_copy_rejection(candidate, ad_item, previous_same_format)
-                    if retry_rejection:
-                        warnings.append(f"Ad {index}: semantic copy retry still weak; accepting generated copy: {retry_rejection}")
-                else:
-                    errors.append(f"Ad {index}: semantic copy retry returned no usable JSON after rejection: {semantic_rejection}")
-                    if session_id:
-                        session_request_count += 1
-                    continue
             template_leak = detect_template_leakage(candidate)
             if template_leak:
                 warnings.append(f"Ad {index}: {template_leak}")
