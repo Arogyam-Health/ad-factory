@@ -2785,6 +2785,8 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             if session_id and session_request_count >= current_session_limit():
                 bootstrap_product_doc_session(f"rollover_before_ad_{index}")
 
+            current_persona = ad_item.get("persona") if isinstance(ad_item.get("persona"), dict) else {}
+            current_persona_num = current_persona.get("persona_number")
             previous_same_format: list[dict[str, Any]] = []
             target_format = str(ad_item.get("format") or "").strip().upper()
             for prev in generated_ads:
@@ -2792,11 +2794,14 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                     continue
                 if str(prev.get("format") or "").strip().upper() != target_format:
                     continue
+                prev_persona = prev.get("persona") if isinstance(prev.get("persona"), dict) else {}
+                if current_persona_num is not None and prev_persona.get("persona_number") != current_persona_num:
+                    continue
                 prev_copy = prev.get("copy") if isinstance(prev.get("copy"), dict) else {}
                 prev_en = prev_copy.get("EN") if isinstance(prev_copy.get("EN"), dict) else {}
                 previous_same_format.append(
                     {
-                        "persona": (prev.get("persona") or {}).get("name") if isinstance(prev.get("persona"), dict) else "",
+                        "persona": prev_persona.get("name") if isinstance(prev.get("persona"), dict) else "",
                         "headline_angle": prev.get("headline_angle"),
                         "headline": prev_en.get("headline"),
                         "support_line": prev_en.get("support_line"),
@@ -5686,6 +5691,17 @@ async def api_run_execute(
             copy_req["concept_variation"] = concept
             copy_req["selection_mode"] = "locked"
             direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+
+        # Apply format defaults for concept fields not set by hypothesis
+        fmt_defaults = COPY_PROMPTS.get("format_defaults", {})
+        if not concept.get("concept_angle"):
+            default_angle = (fmt_defaults or {}).get("default_concept_angle", "desired_outcome")
+            concept["concept_angle"] = {"id": default_angle}
+        if not concept.get("message_structure"):
+            structure_by_fmt = (fmt_defaults or {}).get("structure_by_fmt", {})
+            default_structure = structure_by_fmt.get(fmt, "pab")
+            concept["message_structure"] = {"id": default_structure}
+        copy_req["concept_variation"] = concept
 
         ads_context.append(
             {
