@@ -527,7 +527,7 @@ def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> st
     prompts = COPY_PROMPTS.get("strict_schema_note", {})
     field_map = prompts.get("field_map", {})
     if fmt == "ALL":
-        copy_fields = "headline, subheadline, bullets, trust_line, cta"
+        copy_fields = "the fields required by each ad's format (see Ad format rules above)"
     else:
         copy_fields = field_map.get(fmt, prompts.get("default_fields", "headline, cta"))
     parts = [
@@ -540,34 +540,51 @@ def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> st
     return " ".join(parts)
 
 
-def build_ad_prompt_tail(fmt: str) -> str:
+def build_ad_prompt_tail(fmt: str, formats: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
     tail = COPY_PROMPTS.get("prompt_tail", {})
     support_map = tail.get("support_target_map", {})
     support_target = support_map.get(fmt, tail.get("default_support_target", "subheadline"))
     display_fmt = fmt if fmt != "ALL" else "ad"
     lines = [line.format(fmt=display_fmt, support_target=support_target) for line in tail.get("lines", [])]
-    skeleton = build_response_skeleton(fmt)
+    skeleton = build_response_skeleton(fmt, formats=formats)
     if skeleton:
         lines.append(f"\nReturn your response using exactly this JSON skeleton (replace placeholder values with your actual copy):\n{skeleton}")
     return "\n".join(lines)
 
 
-def build_response_skeleton(fmt: str) -> str:
+def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
     skeletons = COPY_PROMPTS.get("response_skeleton", {})
     base = copy.deepcopy(skeletons.get("default", {}))
-    fmt_override = skeletons.get(fmt, {})
-    if fmt_override and "copy" in fmt_override:
-        if "copy" in base.get("ads", [{}])[0]:
-            base["ads"][0]["copy"] = copy.deepcopy(fmt_override["copy"])
-    elif fmt == "ALL":
-        all_fields = {"headline": "<headline>", "subheadline": "<subheadline>", "bullets": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "trust_line": "<trust line>", "cta": "<cta>"}
-        if "copy" in base.get("ads", [{}])[0]:
-            base["ads"][0]["copy"] = {"EN": {**all_fields}, "HI": {**all_fields}} if "HI" in base.get("ads", [{}])[0].get("copy", {}) else {"EN": {**all_fields}}
-    placeholder_fmt = fmt if fmt != "ALL" else "<FORMAT>"
-    raw = json.dumps(base, ensure_ascii=False, indent=2)
-    return raw.replace("{format}", placeholder_fmt)
+
+    if fmt != "ALL" or not formats:
+        # Single-format skeleton
+        fmt_override = skeletons.get(fmt, {})
+        if fmt_override and "copy" in fmt_override:
+            if "copy" in base.get("ads", [{}])[0]:
+                base["ads"][0]["copy"] = copy.deepcopy(fmt_override["copy"])
+        placeholder_fmt = fmt if fmt != "ALL" else "<FORMAT>"
+        raw = json.dumps(base, ensure_ascii=False, indent=2)
+        return raw.replace("{format}", placeholder_fmt)
+
+    # Multi-format skeleton: one example ad per unique format in the batch
+    seen: set[str] = set()
+    example_ads: list[dict] = []
+    for f in formats:
+        f = f.strip().upper()
+        if f in seen:
+            continue
+        seen.add(f)
+        ad = copy.deepcopy(base["ads"][0])
+        ad["format"] = f
+        fmt_override = skeletons.get(f, {})
+        if fmt_override and "copy" in fmt_override:
+            if "copy" in ad:
+                ad["copy"] = copy.deepcopy(fmt_override["copy"])
+        example_ads.append(ad)
+    base["ads"] = example_ads
+    return json.dumps(base, ensure_ascii=False, indent=2)
 
 
 def build_generation_payload_for_llm(context: dict[str, Any]) -> dict[str, Any]:
@@ -2653,12 +2670,13 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 all_rules = COPY_PROMPTS.get("concept_angle_definitions", {}).get("all_rules", [])
                 if all_rules:
                     concept_angle_rules = "\n\n" + "\n".join(all_rules)
+            chunk_formats = sorted({str(ad.get("format") or "").strip().upper() for ad in chunk_ads if isinstance(ad, dict)})
             cli_prompt = (
                 "SYSTEM:\n"
                 f"{build_ad_copy_system_prompt('ALL')}{concept_angle_rules}\n\n"
                 "USER_PAYLOAD_JSON:\n"
                 f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
-                f"{build_ad_prompt_tail('ALL')}\n\n"
+                f"{build_ad_prompt_tail('ALL', formats=chunk_formats)}\n\n"
                 f"{build_strict_schema_note('ALL', target_langs_list)}"
             )
 

@@ -613,7 +613,6 @@ def render_prompt(
     else:  # TEST
         copy_lines = [
             f"- Headline: {copy.headline}",
-            f"- Attribution: {copy.attribution}",
             f"- Trust line: {copy.trust_line}",
             f"- CTA: {copy.cta}",
         ]
@@ -1005,8 +1004,6 @@ def main() -> int:
                 if not cb.bullets or len(cb.bullets) < 2:
                     raise RuntimeError(f"{ctx}.copy.{lang}.bullets must have >=2 items for {fmt}")
             if fmt == "TEST":
-                if not cb.attribution:
-                    raise RuntimeError(f"{ctx}.copy.{lang}.attribution required for TEST")
                 if not cb.trust_line:
                     raise RuntimeError(f"{ctx}.copy.{lang}.trust_line required for TEST")
 

@@ -566,6 +566,7 @@
       "",
       "Step 4:",
       "Generate one ad per entry in the ads array. Each entry has a count field telling how many ad variations to create for that persona and format. Output that many ad objects in the response ads array.",
+      "For each ad, include only the copy fields required by its format (listed in Ad format rules above). For example: HERO/UGC use headline+subheadline+cta, BA/FEAT use headline+bullets+cta, TEST uses headline+trust_line+cta. Do not add extra fields not listed for that format.",
       "",
       "Step 5:",
       "Before final output, silently reject any ad where:",
