@@ -16,6 +16,7 @@ import urllib.request
 import hashlib
 import importlib.util
 import mimetypes
+import traceback
 import uuid
 import asyncio
 import psutil
@@ -2766,6 +2767,16 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 if session_id:
                     session_request_count += 1
 
+            # Log batch progress and write partial results
+            print(f"[COPY BATCH DONE] {batch_label}: {len(generated_ads)}/{total_items} ads generated", file=sys.stderr)
+            partial_dir = run_dir / "partial"
+            partial_dir.mkdir(parents=True, exist_ok=True)
+            (partial_dir / "ads.json").write_text(
+                json.dumps({"default_aspect_ratio": "4:5", "ads": generated_ads}, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            (partial_dir / "progress.txt").write_text(f"{len(generated_ads)}/{total_items}\n", encoding="utf-8")
+
             if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
                     break
 
@@ -4074,6 +4085,21 @@ def api_run(run_id: str) -> dict[str, Any]:
     return enrich_manifest_for_dashboard(manifest)
 
 
+def api_run_partial(run_id: str) -> dict[str, Any]:
+    run_dir = RUNS_ROOT / run_id
+    error_file = run_dir / "partial" / "error.txt"
+    if error_file.exists():
+        return {"ads": [], "progress": "0/0", "error": error_file.read_text(encoding="utf-8").strip()}
+    partial_json = run_dir / "partial" / "ads.json"
+    if not partial_json.exists():
+        return {"ads": [], "progress": "0/0"}
+    ads = json.loads(partial_json.read_text(encoding="utf-8"))
+    progress_file = run_dir / "partial" / "progress.txt"
+    progress = progress_file.read_text(encoding="utf-8").strip() if progress_file.exists() else "0/0"
+    ads["progress"] = progress
+    return ads
+
+
 def api_run_prompt_copies(run_id: str) -> dict[str, Any]:
     _run_dir, manifest, _has_storage_manifest = load_manifest_for_run(run_id)
     prompt_files_all = manifest.get("prompt_files") or []
@@ -5356,7 +5382,6 @@ async def api_run_execute(
     clear_input_images: bool = Form(False),
 ) -> dict[str, Any]:
     ensure_dirs()
-    batch = "v0"
     try:
         cfg = json.loads(config)
     except json.JSONDecodeError as exc:
@@ -5371,15 +5396,10 @@ async def api_run_execute(
     (run_dir / "context").mkdir(parents=True, exist_ok=True)
 
     product_path = save_upload(run_dir / "inputs" / "product master doc.txt", product_info_file)
-    mechanism_path = None
-    faq_path = None
     image_sources_path = save_upload(run_dir / "inputs" / "image_sources.txt", image_source_file)
     saved_input_images = store_uploaded_input_images(input_image_files or [], clear_input_images)
 
     product_file = coalesce_path(product_path, DEFAULT_PRODUCT_MASTER)
-    mechanism_file_path = ROOT / "__empty__.txt"
-    faq_file_path = ROOT / "__empty__.txt"
-
     image_sources_file_path = coalesce_path(image_sources_path, default_image_sources_file())
 
     try:
@@ -5399,24 +5419,12 @@ async def api_run_execute(
             share_across_personas=bool(cfg.get("share_background_across_personas")),
         )
         (run_dir / "context" / "visual_pattern_reuse.json").write_text(
-            json.dumps(
-                {
-                    "source_run_id": reuse_visual_patterns_from_run_id,
-                    "available_locks": len(pattern_locks),
-                    "applied_ads": applied_patterns,
-                    "share_across_personas": bool(cfg.get("share_background_across_personas")),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+            json.dumps({"source_run_id": reuse_visual_patterns_from_run_id, "available_locks": len(pattern_locks), "applied_ads": applied_patterns, "share_background_across_personas": bool(cfg.get("share_background_across_personas"))}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
         )
 
-    # Save hypothesis config to run dir for reference
     if hypothesis_cfg:
         (run_dir / "context" / "hypothesis_config.json").write_text(
-            json.dumps(hypothesis_cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            json.dumps(hypothesis_cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
         )
 
     product_ctx_source = "attached_product_master_doc"
@@ -5427,19 +5435,6 @@ async def api_run_execute(
         execution_provider = execution_model.split("/", 1)[0]
     cfg["opencode_model"] = execution_model
     cfg["opencode_provider"] = execution_provider
-    (run_dir / "context" / "product_doc_source.json").write_text(
-        json.dumps(
-            {
-                "source": product_ctx_source,
-                "product_file": str(product_file),
-                "note": "Canonical extraction is disabled; the full product master doc is attached to the OpenCode copy session unchanged.",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
     persona_library = parse_persona_library()
     ads_context: list[dict[str, Any]] = []
@@ -5449,24 +5444,15 @@ async def api_run_execute(
         fmt = item["format"]
         format_seen_counts[fmt] = format_seen_counts.get(fmt, 0) + 1
         persona_payload = build_persona_payload(persona_no, persona_library)
-
         format_payload = {"format": fmt, "rules": []}
         copy_req = build_copy_requirements(persona_no, fmt, format_seen_counts[fmt], run_id)
-
-        # Inject hypothesis directive if active
         hyp_meta = item.get("hypothesis")
         concept = {}
         hyp_type = str(hyp_meta.get("type") or "").strip().lower() if isinstance(hyp_meta, dict) else ""
         variant = str(hyp_meta.get("variant") or "").strip() if isinstance(hyp_meta, dict) else ""
         if isinstance(hyp_meta, dict) and hyp_type and hyp_type != "none":
             guidance = _hypothesis_guidance(hyp_type, variant) if variant else ""
-            copy_req["hypothesis"] = {
-                "type": hyp_type,
-                "variant": variant,
-                "hypothesis_id": hyp_meta.get("hypothesis_id") or f"{hyp_type}-{variant}",
-                "intent": guidance,
-                "do_not_force_template": True,
-            }
+            copy_req["hypothesis"] = {"type": hyp_type, "variant": variant, "hypothesis_id": hyp_meta.get("hypothesis_id") or f"{hyp_type}-{variant}", "intent": guidance, "do_not_force_template": True}
             concept = copy_req.get("concept_variation") or {}
             if hyp_type == "concept_angle" and variant:
                 concept["concept_angle"] = _framework_item("concept_angle", variant)
@@ -5486,180 +5472,127 @@ async def api_run_execute(
                     copy_req["creative_direction"] = direction
             copy_req["concept_variation"] = concept
             copy_req["selection_mode"] = "locked"
-            direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
-
-        # Apply format defaults for concept fields not set by hypothesis
         if not concept.get("concept_angle"):
             concept["concept_angle"] = {"id": "auto"}
         copy_req["concept_variation"] = concept
-
-        ads_context.append(
-            {
-                "persona": persona_payload,
-                "format_rules": format_payload,
-                "format": fmt,
-                "copy_requirements": copy_req,
-                "hypothesis": hyp_meta,
-                "visual_archetype": item.get("visual_archetype"),
-                "visual_pattern_reused_from_run_id": item.get("visual_pattern_reused_from_run_id"),
-                "visual_pattern_reuse_key": item.get("visual_pattern_reuse_key"),
-                "creative_index": item.get("creative_index", 1),
-                "creative_total": item.get("creative_total", 1),
-                "background_group_key": item.get("background_group_key"),
-                "share_background_across_personas": item.get("share_background_across_personas", False),
-            }
-        )
+        ads_context.append({"persona": persona_payload, "format_rules": format_payload, "format": fmt, "copy_requirements": copy_req, "hypothesis": hyp_meta, "visual_archetype": item.get("visual_archetype"), "visual_pattern_reused_from_run_id": item.get("visual_pattern_reused_from_run_id"), "visual_pattern_reuse_key": item.get("visual_pattern_reuse_key"), "creative_index": item.get("creative_index", 1), "creative_total": item.get("creative_total", 1), "background_group_key": item.get("background_group_key"), "share_background_across_personas": item.get("share_background_across_personas", False)})
 
     banlist_result = run_cmd(["python3", "scripts/registry_banlist.py", "--last", "150"], cwd=ROOT)
     banlist_payload = parse_json_stdout(banlist_result, "registry_banlist")
 
-    full_context = {
-        "generated_at": now_iso(),
-        "run_id": run_id,
-        "language_mode": resolve_language_mode(cfg),
-        "context_source": product_ctx_source,
-        "context_extractor_model": extractor_model,
-        "opencode_provider": execution_provider,
-        "opencode_model": execution_model,
-        "product_file_path": str(product_file),
-        "ads": ads_context,
-        "banlist": banlist_payload,
-    }
-    (run_dir / "context" / "run_context.json").write_text(
-        json.dumps(
-            {
-                "generated_at": full_context["generated_at"],
-                "run_id": full_context["run_id"],
-                "language_mode": full_context["language_mode"],
-                "context_source": full_context["context_source"],
-                "context_extractor_model": full_context["context_extractor_model"],
-                "opencode_provider": full_context["opencode_provider"],
-                "opencode_model": full_context["opencode_model"],
-                "product_file_path": full_context["product_file_path"],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    full_context = {"generated_at": now_iso(), "run_id": run_id, "language_mode": resolve_language_mode(cfg), "context_source": product_ctx_source, "context_extractor_model": extractor_model, "opencode_provider": execution_provider, "opencode_model": execution_model, "product_file_path": str(product_file), "ads": ads_context, "banlist": banlist_payload}
+    (run_dir / "context" / "run_context.json").write_text(json.dumps({k: full_context[k] for k in ["generated_at", "run_id", "language_mode", "context_source", "context_extractor_model", "opencode_provider", "opencode_model", "product_file_path"]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    llm_mode = "opencode"
-    copy_json = await asyncio.to_thread(call_opencode_compatible, cfg, full_context, run_dir)
-    used_template_fallback = False
-    if not copy_json:
-        llm_mode = "fallback_template"
-        used_template_fallback = True
-        (run_dir / "logs" / "opencode_fallback.txt").write_text(
-            "OpenCode copy generation unavailable; using deterministic schema-compatible fallback copy.\n",
-            encoding="utf-8",
-        )
-        copy_json = build_template_copy(full_context, run_id)
-    opencode_failures = copy_json.pop("_opencode_failures", []) if isinstance(copy_json, dict) else []
-    opencode_warnings = copy_json.pop("_opencode_warnings", []) if isinstance(copy_json, dict) else []
-    opencode_session_rollovers = int(copy_json.pop("_opencode_session_rollovers", 0) or 0) if isinstance(copy_json, dict) else 0
-    if opencode_failures and llm_mode == "opencode":
-        llm_mode = "opencode_partial_fallback"
-        (run_dir / "logs" / "opencode_fallback.txt").write_text(
-            "Some OpenCode ad generations failed; normalize_generated_copy filled those outputs with deterministic template copy.\n\n"
-            + "\n\n---\n\n".join(opencode_failures),
-            encoding="utf-8",
-        )
-    copy_json = normalize_generated_copy(copy_json, full_context, run_id)
-    copy_json = strip_internal_markers_from_payload(copy_json)
-    copy_json = enforce_unique_ctas(copy_json, full_context)
-    copy_json = scrub_on_image_copy(copy_json)
-    reuse_backgrounds_from_run_id = str(cfg.get("reuse_backgrounds_from_run_id") or "").strip()
-    if reuse_backgrounds_from_run_id:
-        locks = collect_background_reuse_locks(reuse_backgrounds_from_run_id)
-        copy_json, applied_locks = apply_background_reuse_locks(
-            copy_json,
-            locks,
-            share_across_personas=bool(cfg.get("share_background_across_personas")),
-        )
-        (run_dir / "context" / "background_reuse.json").write_text(
-            json.dumps(
-                {
-                    "source_run_id": reuse_backgrounds_from_run_id,
-                    "available_locks": len(locks),
-                    "applied_ads": applied_locks,
-                    "share_background_across_personas": bool(cfg.get("share_background_across_personas")),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-    generated_copy_error = validate_generated_copy_payload(copy_json, ads_context)
-    if generated_copy_error:
-        (run_dir / "logs" / "opencode_error.txt").write_text(
-            generated_copy_error + "\n\nGenerated payload:\n" + json.dumps(copy_json, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        raise HTTPException(status_code=502, detail="OpenCode copy generation returned incomplete copy. Prompt production stopped; check run logs.")
+    # Run pipeline in background thread so frontend can poll partial results
+    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_provider=execution_provider, execution_model=execution_model, ads_context=ads_context)
+    threading.Thread(target=_run_pipeline_background, kwargs=bg_kwargs, daemon=True).start()
 
-    copy_file = run_dir / "context" / "copy_batch.json"
-    copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"run_id": run_id, "status": "started"}
 
-    assembler_result = run_cmd(
-        [
-            "python3",
-            "scripts/generate_ads.py",
-            "--copy-file",
-            str(copy_file),
-            "--language-mode",
-            assembler_language_mode(cfg),
-            "--skip-uniqueness-check",
-        ],
-        cwd=ROOT,
-    )
-    if assembler_result.returncode != 0:
-        assembler_error = assembler_result.stderr or assembler_result.stdout
-        (run_dir / "logs" / "assembler_error.txt").write_text(assembler_error, encoding="utf-8")
-        raise HTTPException(status_code=500, detail="Prompt assembly failed. Check run logs.")
 
-    batch_match = re.search(r"Batch:\s*(v\d+)", assembler_result.stdout)
-    if not batch_match:
-        raise HTTPException(status_code=500, detail="Could not parse batch from assembler output")
-    batch = batch_match.group(1)
+def _run_pipeline_background(
+    run_dir: Path, cfg: dict, full_context: dict,
+    image_sources_file_path: Path, saved_input_images: list,
+    reuse_visual_patterns_from_run_id: str,
+    product_ctx_source: str, extractor_model: str,
+    execution_provider: str, execution_model: str,
+    ads_context: list,
+) -> None:
+    """Run the full pipeline in a background thread, writing results incrementally."""
+    try:
+        print(f"[PIPELINE] Starting background pipeline for run {run_dir.name}", file=sys.stderr)
+        llm_mode = "opencode"
+        copy_json = call_opencode_compatible(cfg, full_context, run_dir)
+        used_template_fallback = False
+        if not copy_json:
+            llm_mode = "fallback_template"
+            used_template_fallback = True
+            (run_dir / "logs" / "opencode_fallback.txt").write_text(
+                "OpenCode copy generation unavailable; using deterministic schema-compatible fallback copy.\n", encoding="utf-8")
+            copy_json = build_template_copy(full_context, run_dir.name)
+        opencode_failures = copy_json.pop("_opencode_failures", []) if isinstance(copy_json, dict) else []
+        opencode_warnings = copy_json.pop("_opencode_warnings", []) if isinstance(copy_json, dict) else []
+        opencode_session_rollovers = int(copy_json.pop("_opencode_session_rollovers", 0) or 0) if isinstance(copy_json, dict) else 0
+        if opencode_failures and llm_mode == "opencode":
+            llm_mode = "opencode_partial_fallback"
+            (run_dir / "logs" / "opencode_fallback.txt").write_text(
+                "Some OpenCode ad generations failed; normalize_generated_copy filled those outputs with deterministic template copy.\n\n" + "\n\n---\n\n".join(opencode_failures), encoding="utf-8")
+        copy_json = normalize_generated_copy(copy_json, full_context, run_dir.name)
+        copy_json = strip_internal_markers_from_payload(copy_json)
+        copy_json = enforce_unique_ctas(copy_json, full_context)
+        copy_json = scrub_on_image_copy(copy_json)
+        reuse_backgrounds_from_run_id = str(cfg.get("reuse_backgrounds_from_run_id") or "").strip()
+        if reuse_backgrounds_from_run_id:
+            locks = collect_background_reuse_locks(reuse_backgrounds_from_run_id)
+            copy_json, applied_locks = apply_background_reuse_locks(copy_json, locks, share_across_personas=bool(cfg.get("share_background_across_personas")))
+            (run_dir / "context" / "background_reuse.json").write_text(json.dumps({"source_run_id": reuse_backgrounds_from_run_id, "available_locks": len(locks), "applied_ads": applied_locks, "share_background_across_personas": bool(cfg.get("share_background_across_personas"))}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        generated_copy_error = validate_generated_copy_payload(copy_json, ads_context)
+        if generated_copy_error:
+            (run_dir / "logs" / "opencode_error.txt").write_text(generated_copy_error + "\n\nGenerated payload:\n" + json.dumps(copy_json, ensure_ascii=False, indent=2), encoding="utf-8")
+            (run_dir / "partial" / "error.txt").write_text(f"OpenCode copy generation returned incomplete copy: {generated_copy_error}", encoding="utf-8")
+            print(f"[PIPELINE ERROR] {generated_copy_error}", file=sys.stderr)
+            return
 
-    manifest = collect_run_result(run_dir, batch, image_generated=False)
-    manifest["llm_mode"] = llm_mode
-    if llm_mode == "fallback_template":
-        manifest["copy_source"] = "deterministic fallback template"
-    elif llm_mode == "opencode_partial_fallback":
-        manifest["copy_source"] = f"opencode generated copy with template fallback for {len(opencode_failures)} failed ad(s)"
-    else:
+        copy_file = run_dir / "context" / "copy_batch.json"
+        copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--language-mode", assembler_language_mode(cfg), "--skip-uniqueness-check"], cwd=ROOT)
+        if assembler_result.returncode != 0:
+            assembler_error = assembler_result.stderr or assembler_result.stdout
+            (run_dir / "logs" / "assembler_error.txt").write_text(assembler_error, encoding="utf-8")
+            (run_dir / "partial" / "error.txt").write_text(f"Prompt assembly failed: {assembler_error}", encoding="utf-8")
+            print(f"[PIPELINE ERROR] Prompt assembly failed: {assembler_error}", file=sys.stderr)
+            return
+
+        batch_match = re.search(r"Batch:\s*(v\d+)", assembler_result.stdout)
+        if not batch_match:
+            (run_dir / "partial" / "error.txt").write_text("Could not parse batch from assembler output", encoding="utf-8")
+            print(f"[PIPELINE ERROR] Could not parse batch from assembler output", file=sys.stderr)
+            return
+        batch = batch_match.group(1)
+
+        manifest = collect_run_result(run_dir, batch, image_generated=False)
+        manifest["llm_mode"] = llm_mode
         manifest["copy_source"] = "opencode generated copy"
-    if opencode_failures:
-        manifest["copy_generation_failures"] = len(opencode_failures)
-        manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
-    if used_template_fallback:
-        manifest["copy_generation_failures"] = max(int(manifest.get("copy_generation_failures") or 0), 1)
-        manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
-        manifest["copy_generation_notes"] = ["OpenCode copy generation unavailable; deterministic fallback copy was used."]
-    if opencode_warnings:
-        manifest["copy_generation_warnings"] = len(opencode_warnings)
-        manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
-        manifest["copy_generation_notes"] = [str(item).splitlines()[0] for item in opencode_warnings[:3]]
-    if opencode_session_rollovers:
-        manifest["copy_session_rollovers"] = opencode_session_rollovers
-        manifest["copy_session_schedule"] = OPENCODE_ADS_PER_SESSION_SCHEDULE
-        manifest["copy_session_log"] = str((run_dir / "logs" / "opencode_session.log").relative_to(ROOT))
-    manifest["context_source"] = product_ctx_source
-    manifest["context_extractor_model"] = extractor_model
-    manifest["opencode_provider"] = execution_provider
-    manifest["opencode_model"] = execution_model
-    manifest["image_sources_file"] = str(image_sources_file_path)
-    manifest["input_images_dir"] = str(INPUT_IMAGES_DIR.relative_to(ROOT)).replace("\\", "/")
-    manifest["input_images_uploaded"] = saved_input_images
-    if reuse_backgrounds_from_run_id:
-        manifest["background_reuse_from_run_id"] = reuse_backgrounds_from_run_id
-    if reuse_visual_patterns_from_run_id:
-        manifest["visual_pattern_reuse_from_run_id"] = reuse_visual_patterns_from_run_id
-    (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return manifest
+        if llm_mode == "fallback_template":
+            manifest["copy_source"] = "deterministic fallback template"
+        elif llm_mode == "opencode_partial_fallback":
+            manifest["copy_source"] = f"opencode generated copy with template fallback for {len(opencode_failures)} failed ad(s)"
+        if opencode_failures:
+            manifest["copy_generation_failures"] = len(opencode_failures)
+            manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
+        if used_template_fallback:
+            manifest["copy_generation_failures"] = max(int(manifest.get("copy_generation_failures") or 0), 1)
+            manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
+            manifest["copy_generation_notes"] = ["OpenCode copy generation unavailable; deterministic fallback copy was used."]
+        if opencode_warnings:
+            manifest["copy_generation_warnings"] = len(opencode_warnings)
+            manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
+            manifest["copy_generation_notes"] = [str(item).splitlines()[0] for item in opencode_warnings[:3]]
+        if opencode_session_rollovers:
+            manifest["copy_session_rollovers"] = opencode_session_rollovers
+            manifest["copy_session_schedule"] = OPENCODE_ADS_PER_SESSION_SCHEDULE
+            manifest["copy_session_log"] = str((run_dir / "logs" / "opencode_session.log").relative_to(ROOT))
+        manifest["context_source"] = product_ctx_source
+        manifest["context_extractor_model"] = extractor_model
+        manifest["opencode_provider"] = execution_provider
+        manifest["opencode_model"] = execution_model
+        manifest["image_sources_file"] = str(image_sources_file_path)
+        manifest["input_images_dir"] = str(INPUT_IMAGES_DIR.relative_to(ROOT)).replace("\\", "/")
+        manifest["input_images_uploaded"] = saved_input_images
+        if reuse_visual_patterns_from_run_id:
+            manifest["visual_pattern_reuse_from_run_id"] = reuse_visual_patterns_from_run_id
+        (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        # Clean up partial results now that final manifest is written
+        partial_dir = run_dir / "partial"
+        if partial_dir.exists():
+            import shutil
+            shutil.rmtree(partial_dir)
+        print(f"[PIPELINE DONE] Run {run_dir.name} completed, batch={batch}", file=sys.stderr)
+    except Exception as exc:
+        (run_dir / "logs" / "pipeline_error.txt").write_text(f"Pipeline background task failed: {exc}\n{traceback.format_exc()}", encoding="utf-8")
+        (run_dir / "partial" / "error.txt").write_text(f"Pipeline failed: {exc}", encoding="utf-8")
+        print(f"[PIPELINE ERROR] {exc}", file=sys.stderr)
 
 
 # Chrome process tracking

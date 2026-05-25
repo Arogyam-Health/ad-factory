@@ -249,30 +249,69 @@ async function runPipeline() {
     cancelBtn.textContent = "Cancel";
   }
   try {
-    const data = await fetchJSON("/api/runs/execute", { method: "POST", body: form });
-    if (cancelBtn) {
-      cancelBtn.style.display = "none";
+    // Clear any previous polling interval
+    if (state.runPollInterval) {
+      clearInterval(state.runPollInterval);
+      state.runPollInterval = null;
     }
-    const fallbackLine = data.copy_generation_failures
-      ? `\nCopy fallbacks: ${data.copy_generation_failures} failed ad(s); log: ${data.copy_fallback_log || "run logs"}`
-      : "";
-    const warningLine = data.copy_generation_warnings
-      ? `\nCopy warnings: ${data.copy_generation_warnings}; log: ${data.copy_warning_log || "run logs"}`
-      : "";
-    const sessionLine = data.copy_session_fallback
-      ? `\nSession fallback: product doc attached per request; log: ${data.copy_session_log || "run logs"}`
-      : "";
-    const noteLine = Array.isArray(data.copy_generation_notes) && data.copy_generation_notes.length
-      ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
-      : "";
-    const providerLine = data.opencode_provider ? `\nProvider: ${data.opencode_provider}` : "";
-    const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
-    setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${providerLine}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${warningLine}${sessionLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
-    fetchJSON("/api/defaults")
-      .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
-      .catch(() => {});
-    invalidateRuns();
-    await loadAndRenderRuns();
+    const { run_id } = await fetchJSON("/api/runs/execute", { method: "POST", body: form });
+
+    // Poll for partial results and final completion
+    setStatus(`Pipeline started (run: ${run_id})`);
+    await new Promise((resolve) => {
+      state.runPollInterval = setInterval(async () => {
+        // Check partial results
+        try {
+          const partial = await fetchJSON(`/api/runs/${run_id}/partial`);
+          if (partial.ads && partial.ads.length > 0 && partial.progress) {
+            setStatus(`Run: ${run_id}\nCopy progress: ${partial.progress}\nAds generated: ${partial.ads.length}`);
+          }
+        } catch {
+          // Partial endpoint may 404, ignore
+        }
+        // Check if pipeline completed (manifest exists → main endpoint succeeds)
+        try {
+          const data = await fetchJSON(`/api/runs/${run_id}`);
+          clearInterval(state.runPollInterval);
+          state.runPollInterval = null;
+          const fallbackLine = data.copy_generation_failures
+            ? `\nCopy fallbacks: ${data.copy_generation_failures} failed ad(s); log: ${data.copy_fallback_log || "run logs"}`
+            : "";
+          const warningLine = data.copy_generation_warnings
+            ? `\nCopy warnings: ${data.copy_generation_warnings}; log: ${data.copy_warning_log || "run logs"}`
+            : "";
+          const noteLine = Array.isArray(data.copy_generation_notes) && data.copy_generation_notes.length
+            ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
+            : "";
+          const providerLine = data.opencode_provider ? `\nProvider: ${data.opencode_provider}` : "";
+          const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
+          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${providerLine}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${warningLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
+          fetchJSON("/api/defaults")
+            .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
+            .catch(() => {});
+          invalidateRuns();
+          await loadAndRenderRuns();
+          resolve();
+        } catch {
+          // Check if pipeline errored (partial/error.txt exists but no manifest)
+          try {
+            const errResp = await fetch(`/api/runs/${run_id}/partial`);
+            if (errResp.ok) {
+              const partial = await errResp.json();
+              if (partial.error || partial.progress === "error") {
+                clearInterval(state.runPollInterval);
+                state.runPollInterval = null;
+                setStatus(`Pipeline failed: ${partial.error || "Unknown error"}`);
+                resolve();
+              }
+            }
+          } catch {
+            // ignore
+          }
+          // Pipeline still running, keep polling
+        }
+      }, 3000);
+    });
   } catch (err) {
     setStatus(`Failed: ${String(err)}`);
   } finally {
@@ -294,6 +333,10 @@ document.getElementById("cancelRunBtn")?.addEventListener("click", async () => {
   cancelBtn.disabled = true;
   cancelBtn.textContent = "Cancelling...";
   try {
+    if (state.runPollInterval) {
+      clearInterval(state.runPollInterval);
+      state.runPollInterval = null;
+    }
     await fetchJSON("/api/runs/cancel-current", { method: "POST" });
     setStatus("Cancelling pipeline... will stop after current ad and keep generated results.");
   } catch (err) {

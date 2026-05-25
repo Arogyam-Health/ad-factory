@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from dashboard.backend.app import (
     api_runs,
     api_run,
+    api_run_partial,
     api_run_prompt_copies,
     api_run_update_prompt_copies,
     api_edit_prompt,
@@ -31,6 +32,11 @@ def _runs() -> dict[str, Any]:
 @router.get("/api/runs/{run_id}")
 def _run(run_id: str) -> dict[str, Any]:
     return api_run(run_id)
+
+
+@router.get("/api/runs/{run_id}/partial")
+def _run_partial(run_id: str) -> dict[str, Any]:
+    return api_run_partial(run_id)
 
 @router.delete("/api/runs/{run_id}")
 def _delete_run(run_id: str) -> dict[str, Any]:

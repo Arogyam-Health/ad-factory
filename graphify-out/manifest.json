@@ -10,8 +10,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/generate_ads.py": {
-    "mtime": 1779673659.6906147,
-    "ast_hash": "540bb9a499dc248256efd0126fa3b537",
+    "mtime": 1779721124.3470428,
+    "ast_hash": "c599d95a71216507905a9d3ee3d30a11",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/registry_banlist.py": {
@@ -40,23 +40,23 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/app.py": {
-    "mtime": 1779688581.4040606,
-    "ast_hash": "a22cb7660672c76b01371cb771fc6ed4",
+    "mtime": 1779723319.0143728,
+    "ast_hash": "66847872be516f4914f3db78223bd2a6",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/index.html": {
-    "mtime": 1779446279.899778,
-    "ast_hash": "923f6dace349c99a02047c96b02422f4",
+    "mtime": 1779715486.7853293,
+    "ast_hash": "d08ccebfd8730c22fcf609e0d09cb7b7",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/AD_GENERATION_REGISTRY.JSON": {
-    "mtime": 1779674458.0588715,
-    "ast_hash": "b9a7c339950f2f4d9e134119890b00fc",
+    "mtime": 1779722088.8905199,
+    "ast_hash": "6bce26d5b1edd8e826d7a486d6917830",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/persona_seeds.json": {
-    "mtime": 1779676227.4647524,
-    "ast_hash": "a37726e3d1d8064c734871ad33309fbc",
+    "mtime": 1779716320.4903634,
+    "ast_hash": "88910f6c6abda0aedbaac25ec6274bc5",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/background_variant.json": {
@@ -70,23 +70,23 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/copy_prompt_templates.json": {
-    "mtime": 1779697194.462643,
-    "ast_hash": "83f39fbb7ca87fd379249748e3d1185c",
+    "mtime": 1779720688.8224475,
+    "ast_hash": "29d7ff3af831ed56a81d38c6cd7fbb3b",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/fallback_templates.json": {
-    "mtime": 1779687840.61678,
-    "ast_hash": "d81e7f5f9aac81cc4280cd1fa5eff271",
+    "mtime": 1779720473.0655386,
+    "ast_hash": "f925ba699788805fc3a05eea5f7f629c",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/copy_architecture.json": {
-    "mtime": 1779437982.1406066,
-    "ast_hash": "3173bd5618bed027d76c5324d01248f8",
+    "mtime": 1779697917.3877566,
+    "ast_hash": "d52598f6337b49570a96f604f2855f9b",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/routes/runs.py": {
-    "mtime": 1779446337.090335,
-    "ast_hash": "ca17b9b0020052f2ce8a4ade4c7d2d5f",
+    "mtime": 1779722830.7657058,
+    "ast_hash": "f1242357e40751a539f8b3055f95403b",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/routes/defaults.py": {
@@ -130,8 +130,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/state.js": {
-    "mtime": 1778662956.0774555,
-    "ast_hash": "b6a761c0e681118e1061a0f081409276",
+    "mtime": 1779723081.2110734,
+    "ast_hash": "15d388cae43c66ed1a2d61198a167bb9",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/ui.js": {
@@ -160,8 +160,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/main.js": {
-    "mtime": 1779446351.8810174,
-    "ast_hash": "16a24624835c1828874b5ffdf2e60394",
+    "mtime": 1779723165.4058552,
+    "ast_hash": "f8179dcf3dca886dba3a9efd409ad45f",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/hypothesis.js": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/runs.js": {
-    "mtime": 1779086365.9603124,
-    "ast_hash": "6422e9ae336691efbc19991b2a76c0c3",
+    "mtime": 1779715713.1316488,
+    "ast_hash": "0f1d803727783dbbf066749c94f06a4e",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/custom-select.js": {
@@ -265,13 +265,18 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/input/docs/product master doc.txt": {
-    "mtime": 1779079468.6435444,
-    "ast_hash": "1b6f01f2417669d5ae04570cd70a17c6",
+    "mtime": 1779709042.3792012,
+    "ast_hash": "68f170d21a23cd7670ae1d07c41fe5a4",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/input/images/Untitled design(1).png": {
     "mtime": 1778264695.4591074,
     "ast_hash": "f3e0acd6a7bc4f0786f4dded8ef78f40",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/Pasted text.txt": {
+    "mtime": 1779714002.1622052,
+    "ast_hash": "3605d3e659fec79e5d938bd846a49595",
     "semantic_hash": ""
   }
 }
