@@ -111,25 +111,11 @@ function renderProductDocInfo(productDoc) {
       <small>${doc.exists ? `${(size / 1024).toFixed(1)} KB` : "Missing"}</small>
       <div class="product-doc-actions">
         <button id="openProductDoc" class="ghost-btn" type="button">Open</button>
-        <button id="editProductDoc" class="ghost-btn" type="button">Edit</button>
         <a class="ghost-btn product-doc-download" href="/${doc.path || "input/docs/product master doc.txt"}" download>Download</a>
       </div>
     </div>
   `;
   document.getElementById("openProductDoc")?.addEventListener("click", () => {
-    fetchJSON("/api/product-doc").then((doc) => {
-      showPromptFullscreen(
-        doc.name || "Product Master Doc",
-        doc.content || "",
-        {
-          fetchUrl: "/api/product-doc",
-          saveUrl: "/api/product-doc",
-          saveBody: (text) => ({ content: text }),
-        }
-      );
-    }).catch((err) => setStatus(`Failed to load product doc: ${String(err)}`));
-  });
-  document.getElementById("editProductDoc")?.addEventListener("click", () => {
     fetchJSON("/api/product-doc").then((doc) => {
       showPromptFullscreen(
         doc.name || "Product Master Doc",
@@ -375,7 +361,7 @@ if (providerSelectEl) {
 }
 
 // Input Prompts
-document.querySelectorAll(".input-prompt-card").forEach((card) => {
+document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((card) => {
   card.addEventListener("click", () => {
     const promptType = card.dataset.promptType;
     const title = card.querySelector("strong").textContent;
@@ -390,6 +376,43 @@ document.querySelectorAll(".input-prompt-card").forEach((card) => {
       })
       .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
   });
+});
+
+document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
+  card.addEventListener("click", () => {
+    const filePath = card.dataset.filePath;
+    const title = card.querySelector("strong").textContent;
+    fetch(`/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        showPromptFullscreen(title, data.content || "", {
+          fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`,
+          saveUrl: "/api/prompt-file-content",
+          saveBody: (text) => ({ prompt_path: filePath, content: text }),
+        });
+      })
+      .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
+  });
+});
+
+// File upload on selection
+document.getElementById("productFile")?.addEventListener("change", async (event) => {
+  const file = (event.target).files?.[0];
+  if (!file) return;
+  setStatus(`Uploading ${file.name}...`);
+  try {
+    const text = await file.text();
+    await fetchJSON("/api/product-doc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: text }),
+    });
+    const doc = await fetchJSON("/api/product-doc");
+    renderProductDocInfo(doc);
+    setStatus(`Uploaded ${file.name}`);
+  } catch (err) {
+    setStatus(`Upload failed: ${String(err)}`);
+  }
 });
 
 // Init

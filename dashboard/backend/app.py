@@ -147,60 +147,6 @@ def cta_for_candidate(candidate: dict[str, Any], lang: str = "EN") -> str:
     return str(block.get("cta") or "").strip()
 
 
-def classify_proof_style_text(text: str) -> str:
-    lower = (text or "").lower()
-    if "70,000" in lower or "user" in lower or "people" in lower or "review" in lower or "testimonial" in lower or "trusted" in lower:
-        return "social_proof"
-    if "doctor" in lower or "ayurvedic" in lower or "dr." in lower or "formulated" in lower:
-        return "authority_anchor"
-    if "but" in lower or "skeptical" in lower or "doubt" in lower or "worried" in lower or "tried" in lower:
-        return "objection_flip"
-    if "simple" in lower or "clear" in lower or "5-minute" in lower or "easy" in lower or "low guesswork" in lower:
-        return "routine_clarity"
-    if "step" in lower or "routine" in lower or "morning" in lower or "night" in lower or "ok liquid" in lower or "craving" in lower or "fullness" in lower:
-        return "mechanism_explainer"
-    return "mechanism_explainer"
-
-
-def classify_cta_voice_text(cta: str) -> str:
-    text = (cta or "").strip().lower()
-    if "test" in text or "challenge" in text or "15-day" in text or "15 day" in text:
-        return "challenge_action"
-    if "fit" in text or "risk" in text or "safe" in text or "suit" in text:
-        return "reassurance_start"
-    if "today" in text or "now" in text or "start" in text or "act" in text:
-        return "urgent_start"
-    if "learn" in text or "how" in text or "works" in text or "discover" in text:
-        return "discovery_action"
-    if "see" in text or "view" in text or "check" in text or "steps" in text or "details" in text or "plan" in text or "protocol" in text:
-        return "guided_next_step"
-    return "guided_next_step"
-
-
-def proof_style_matches(expected: str, text: str) -> bool:
-    lower = (text or "").lower()
-    checks = {
-        "authority_anchor": ["doctor", "ayurvedic", "dr.", "formulated"],
-        "social_proof": ["70,000", "user", "people", "review", "testimonial", "trusted"],
-        "mechanism_explainer": ["step", "routine", "morning", "night", "ok liquid", "craving", "fullness", "works"],
-        "routine_clarity": ["simple", "clear", "5-minute", "easy", "low guesswork", "step", "routine"],
-        "objection_flip": ["but", "skeptical", "doubt", "worried", "tried", "without"],
-    }
-    return any(term in lower for term in checks.get(expected, []))
-
-
-def cta_voice_matches(expected: str, cta: str) -> bool:
-    text = (cta or "").strip().lower()
-    checks = {
-        "urgent_start": ["today", "now", "start", "act"],
-        "guided_next_step": ["see", "view", "check", "steps", "details", "plan", "protocol"],
-        "reassurance_start": ["fit", "risk", "safe", "suit"],
-        "challenge_action": ["test", "challenge", "15-day", "15 day"],
-        "discovery_action": ["learn", "how", "works", "discover"],
-    }
-    return any(term in text for term in checks.get(expected, []))
-
-
 def hook_structure_mismatch(candidate: dict[str, Any], planned_ad: dict[str, Any]) -> str | None:
     hypothesis = planned_ad.get("hypothesis") if isinstance(planned_ad.get("hypothesis"), dict) else {}
     if hypothesis.get("type") != "hook_structure":
@@ -227,28 +173,6 @@ def hypothesis_mismatch(candidate: dict[str, Any], planned_ad: dict[str, Any]) -
         actual = str(candidate.get("concept_angle") or "").strip()
         if actual != expected:
             return f"Expected concept_angle {expected}, but candidate returned {actual or 'blank'}"
-    if hyp_type == "awareness_stage":
-        actual = str(candidate.get("awareness_stage") or "").strip()
-        if actual != expected:
-            return f"Expected awareness_stage {expected}, but candidate returned {actual or 'blank'}"
-    if hyp_type == "concept_structure":
-        actual = str(candidate.get("concept_structure") or "").strip()
-        if actual != expected:
-            return f"Expected concept_structure {expected}, but candidate returned {actual or 'blank'}"
-    if hyp_type == "proof_style":
-        copy_text = copy_text_for_candidate(candidate, "EN")
-        if proof_style_matches(expected, copy_text):
-            return None
-        actual = classify_proof_style_text(copy_text)
-        if actual != expected:
-            return f"Expected proof_style {expected}, but EN copy classified as {actual}: {copy_text!r}"
-    if hyp_type == "cta_voice":
-        cta = cta_for_candidate(candidate, "EN")
-        if cta_voice_matches(expected, cta):
-            return None
-        actual = classify_cta_voice_text(cta)
-        if actual != expected:
-            return f"Expected cta_voice {expected}, but EN CTA classified as {actual}: {cta!r}"
     return None
 
 
@@ -324,7 +248,7 @@ def _load_persona_seeds() -> dict[int, dict[str, str]]:
         pn = int(entry.get("persona_number", 0))
         if pn < 1:
             continue
-            raw_attempts = str(entry.get("failed_attempts", "")).strip()
+        raw_attempts = str(entry.get("failed_attempts", "")).strip()
         raw_why = str(entry.get("why_it_failed", "")).strip()
         objections_raw = (raw_attempts + " " + raw_why).strip()
         seeds[pn] = {
@@ -390,35 +314,12 @@ def _build_hypothesis_variables() -> dict[str, dict[str, Any]]:
         },
         "concept_angle": {
             "label": "Concept Angle (H2)",
-            "description": "Test which messaging angle drives better results: pain vs. outcome vs. proof vs. authority vs. curiosity.",
-        },
-        "awareness_stage": {
-            "label": "Awareness Stage (H3)",
-            "description": "Test whether matching the ad to the audience\u2019s funnel stage improves performance.",
-        },
-        "concept_structure": {
-            "label": "Concept Structure (H6)",
-            "description": "Test copy flow structure: PAS vs BAB vs FAB vs Four Us.",
+            "description": "Test which messaging angle drives better results: pain vs. outcome vs. proof vs. authority vs. curiosity vs. comparison vs. offer vs. story.",
         },
     }
     arch = COPY_ARCH.get("headline_architectures", {})
     for hyp_type, meta in arch_types.items():
         options = [{"id": vid, "label": _hypothesis_variant_label(vid)} for vid in arch.get(hyp_type, {})]
-        hv[hyp_type] = {**meta, "options": options}
-
-    aux_types = {
-        "proof_style": {
-            "label": "Proof Style (H4)",
-            "description": "Test which trust framing works best for this persona: authority vs. social proof vs. mechanism explainer.",
-        },
-        "cta_voice": {
-            "label": "CTA Voice (H5)",
-            "description": "Test which call-to-action tone converts better: urgent vs. guided vs. reassuring vs. discovery.",
-        },
-    }
-    aux = COPY_ARCH.get("non_headline_hypotheses", {})
-    for hyp_type, meta in aux_types.items():
-        options = [{"id": vid, "label": _hypothesis_variant_label(vid)} for vid in aux.get(hyp_type, {})]
         hv[hyp_type] = {**meta, "options": options}
 
     return hv
@@ -443,10 +344,7 @@ HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
 
 
 def _headline_architecture_group(group: str) -> str:
-    return {
-        "audience_stage": "awareness_stage",
-        "message_structure": "concept_structure",
-    }.get(group, group)
+    return group
 
 
 def _entry_direction(entry: dict[str, Any]) -> str:
@@ -490,9 +388,6 @@ def _support_line_strategy_item(group: str, item_id: str) -> dict[str, Any]:
     source_map = {
         "by_concept_angle": ("headline_architectures", "concept_angle"),
         "by_hook_structure": ("headline_architectures", "hook_structure"),
-        "by_concept_structure": ("headline_architectures", "concept_structure"),
-        "by_awareness_stage": ("headline_architectures", "awareness_stage"),
-        "by_proof_style": ("non_headline_hypotheses", "proof_style"),
     }
     root_key, arch_group = source_map.get(group, ("", ""))
     entry = COPY_ARCH.get(root_key, {}).get(arch_group, {}).get(item_id) if root_key else None
@@ -507,7 +402,7 @@ def _support_line_strategy_item(group: str, item_id: str) -> dict[str, Any]:
     }
 
 
-def _build_support_line_strategy(audience_id: str, concept_angle: str, concept_structure_id: str) -> dict[str, Any]:
+def _build_support_line_strategy(concept_angle: str) -> dict[str, Any]:
     support_arch = COPY_ARCH.get("support_line_architectures", {})
     return {
         "composition_rule": support_arch.get(
@@ -515,8 +410,6 @@ def _build_support_line_strategy(audience_id: str, concept_angle: str, concept_s
             "Final support line = active support strategy meaning + assigned support_line_architecture sentence shape.",
         ),
         "active": _support_line_strategy_item("by_concept_angle", concept_angle),
-        "concept_structure": _support_line_strategy_item("by_concept_structure", concept_structure_id),
-        "awareness_stage": _support_line_strategy_item("by_awareness_stage", audience_id),
         "selection_note": "Use active as a support-line preference only. Do not turn it into a sentence template.",
     }
 
@@ -536,11 +429,8 @@ def _set_active_support_line_strategy(copy_req: dict[str, Any], group: str, vari
 # Feature-lane-driven headline concept selection removed.
 
 
-def _select_headline_architecture(persona_number: int, fmt: str, concept_structure_id: str) -> dict[str, Any]:
+def _select_headline_architecture(persona_number: int, fmt: str) -> dict[str, Any]:
     arch = COPY_ARCH.get("headline_architectures", {})
-    structure_arch = arch.get("concept_structure", {}).get(concept_structure_id)
-    if structure_arch:
-        return {"source": "concept_structure", "variant": concept_structure_id, **structure_arch}
     hook_arch = arch.get("hook_structure", {})
     hook_keys = list(hook_arch.keys())
     if hook_keys:
@@ -562,20 +452,14 @@ def _select_support_line_architecture(persona_number: int, fmt: str, format_sequ
     return {"variant": arch_id, **entry}
 
 
-def _creative_direction(audience_id: str, concept_angle: str, concept_structure_id: str) -> dict[str, Any]:
+def _creative_direction(concept_angle: str) -> dict[str, Any]:
     arch = COPY_ARCH.get("headline_architectures", {})
     direction: dict[str, Any] = {}
-    selections = {
-        "concept_structure": concept_structure_id,
-        "concept_angle": concept_angle,
-        "awareness_stage": audience_id,
-    }
-    for group, item_id in selections.items():
-        entry = arch.get(group, {}).get(item_id)
-        if isinstance(entry, dict):
-            direction[group] = _compact_creative_entry(item_id, entry)
-        else:
-            direction[group] = {"id": item_id}
+    entry = arch.get("concept_angle", {}).get(concept_angle)
+    if isinstance(entry, dict):
+        direction["concept_angle"] = _compact_creative_entry(concept_angle, entry)
+    else:
+        direction["concept_angle"] = {"id": concept_angle}
     return direction
 
 
@@ -623,9 +507,7 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
     return {
         "selection_mode": "llm_choose",
         "allowed_axes": {
-            "concept_angle": ["pain_point", "desired_outcome", "social_proof", "authority", "curiosity", "comparison", "offer"],
-            "concept_structure": ["four_us", "pas", "bab", "fab", "pab"],
-            "awareness_stage": ["problem_aware", "solution_aware", "product_aware"],
+            "concept_angle": ["pain_point", "desired_outcome", "social_proof", "authority", "curiosity", "comparison", "offer", "story"],
         },
         "headline_rules": [
             "must clearly signal weight loss or a strong proxy (kg loss, eating less, craving control, slimming, clothes fit)",
@@ -2272,9 +2154,7 @@ def concept_ids_from_requirements(copy_req: dict[str, Any]) -> dict[str, str]:
         return _clean_str(value) or fallback
 
     return {
-        "awareness_stage": nested_id("audience_stage", "problem_aware"),
         "concept_angle": nested_id("concept_angle", "desired_outcome"),
-        "concept_structure": nested_id("message_structure", "pab"),
     }
 
 
@@ -2416,7 +2296,7 @@ def normalize_generated_copy(
         if angle:
             ad["headline_angle"] = angle
 
-        for key in ["awareness_stage", "concept_angle", "concept_structure"]:
+        for key in ["concept_angle"]:
             value = _clean_str(candidate.get(key))
             if value:
                 ad[key] = value
@@ -2593,9 +2473,7 @@ def build_template_copy(context: dict[str, Any], run_id: str) -> dict[str, Any]:
         ad_payload = {
             "format": fmt,
             "headline_angle": "mechanism",
-            "awareness_stage": concept_ids["awareness_stage"],
             "concept_angle": concept_ids["concept_angle"],
-            "concept_structure": concept_ids["concept_structure"],
             "persona": {
                 "number": persona_num,
                 "name": persona_name,
@@ -2769,142 +2647,185 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         cancel_event_for_run(run_dir.name).clear()
         bootstrap_product_doc_session("initial")
 
-        for index, ad_item in enumerate(context.get("ads") or [], start=1):
-            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                if not cancel_event_for_run(run_dir.name).is_set():
-                    cancel_event_for_run(run_dir.name).set()
-                warnings.append(f"Run cancelled by user after {index - 1} ads")
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED by user after {index - 1} ads")
-                break
+        all_items = context.get("ads") or []
+        total_items = len(all_items)
+        batch_size = int(config.get("batch_size") or 10)
+        target_langs_map = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
 
-            if session_id and session_request_count >= current_session_limit():
-                bootstrap_product_doc_session(f"rollover_before_ad_{index}")
+        # Group by format, then chunk by batch_size
+        fmt_groups: dict[str, list[tuple[int, dict]]] = {}
+        for i, item in enumerate(all_items):
+            fmt = str(item.get("format") or "").strip().upper()
+            fmt_groups.setdefault(fmt, []).append((i + 1, item))
 
-            current_persona = ad_item.get("persona") if isinstance(ad_item.get("persona"), dict) else {}
-            current_persona_num = current_persona.get("persona_number")
-            previous_same_format: list[dict[str, Any]] = []
-            target_format = str(ad_item.get("format") or "").strip().upper()
+        def _build_previous_same_format(fmt: str, persona_num: int | None) -> list[dict[str, Any]]:
+            result: list[dict[str, Any]] = []
             for prev in generated_ads:
                 if not isinstance(prev, dict):
                     continue
-                if str(prev.get("format") or "").strip().upper() != target_format:
+                if str(prev.get("format") or "").strip().upper() != fmt:
                     continue
                 prev_persona = prev.get("persona") if isinstance(prev.get("persona"), dict) else {}
-                if current_persona_num is not None and prev_persona.get("persona_number") != current_persona_num:
+                if persona_num is not None and prev_persona.get("persona_number") != persona_num:
                     continue
                 prev_copy = prev.get("copy") if isinstance(prev.get("copy"), dict) else {}
                 prev_en = prev_copy.get("EN") if isinstance(prev_copy.get("EN"), dict) else {}
-                previous_same_format.append(
-                    {
-                        "persona": prev_persona.get("name") if isinstance(prev.get("persona"), dict) else "",
-                        "headline_angle": prev.get("headline_angle"),
-                        "headline": prev_en.get("headline"),
-                        "support_line": prev_en.get("subheadline") or prev_en.get("support_line"),
-                        "cta": prev_en.get("cta"),
-                        "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
-                    }
+                result.append({
+                    "persona": prev_persona.get("name") if isinstance(prev.get("persona"), dict) else "",
+                    "headline_angle": prev.get("headline_angle"),
+                    "headline": prev_en.get("headline"),
+                    "support_line": prev_en.get("subheadline") or prev_en.get("support_line"),
+                    "cta": prev_en.get("cta"),
+                    "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
+                })
+            return result
+
+        for target_format, fmt_items in fmt_groups.items():
+            for chunk_start in range(0, len(fmt_items), batch_size):
+                chunk = fmt_items[chunk_start:chunk_start + batch_size]
+                chunk_ads = [ad for _, ad in chunk]
+                chunk_indices = [idx for idx, _ in chunk]
+                batch_label = f"ads {chunk_indices[0]}-{chunk_indices[-1]} ({target_format})"
+
+                if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                    if not cancel_event_for_run(run_dir.name).is_set():
+                        cancel_event_for_run(run_dir.name).set()
+                    warnings.append(f"Run cancelled by user after {chunk_indices[0] - 1} ads")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED by user after {chunk_indices[0] - 1} ads")
+                    break
+
+                if session_id and session_request_count >= current_session_limit():
+                    bootstrap_product_doc_session(f"rollover_before_{batch_label}")
+
+                # Build previous_same_format from all previously generated ads
+                first_ad = chunk_ads[0]
+                first_persona = first_ad.get("persona") if isinstance(first_ad.get("persona"), dict) else {}
+                first_persona_num = first_persona.get("persona_number")
+                previous_same_format = _build_previous_same_format(target_format, first_persona_num)
+
+                # Build a batch context with all ads in this chunk
+                batch_context = {**context, "ads": chunk_ads}
+                user_payload = {
+                    "task": "Generate fresh ad copy JSON for provided context.",
+                    "context": build_generation_payload_for_llm(batch_context),
+                    "already_used_ads_DO_NOT_REUSE": previous_same_format,
+                    "constraints": {
+                        "language": target_langs_map.get(language_mode, ["EN", "HI"]),
+                        "language_mode": language_mode,
+                        "format": target_format,
+                        "return_json_only": True,
+                    },
+                }
+                target_langs_list = target_langs_map.get(language_mode, ["EN", "HI"])
+                hyp_meta = first_ad.get("hypothesis") if isinstance(first_ad.get("hypothesis"), dict) else {}
+                hyp_type = str(hyp_meta.get("type") or "none").strip().lower()
+                concept_angle_rules = ""
+                if hyp_type == "none":
+                    all_rules = COPY_PROMPTS.get("concept_angle_definitions", {}).get("all_rules", [])
+                    if all_rules:
+                        concept_angle_rules = "\n\n" + "\n".join(all_rules)
+                cli_prompt = (
+                    "SYSTEM:\n"
+                    f"{build_ad_copy_system_prompt(target_format)}{concept_angle_rules}\n\n"
+                    "USER_PAYLOAD_JSON:\n"
+                    f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
+                    f"{build_ad_prompt_tail(target_format)}\n\n"
+                    f"{build_strict_schema_note(target_format, target_langs_list)}"
                 )
-            single_context = {
-                **context,
-                "ads": [ad_item],
-            }
-            target_langs = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
-            user_payload = {
-                "task": "Generate fresh ad copy JSON for provided context.",
-                "context": build_generation_payload_for_llm(single_context),
-                "already_used_ads_DO_NOT_REUSE": previous_same_format,
-                "constraints": {
-                    "language": target_langs.get(language_mode, ["EN", "HI"]),
-                    "language_mode": language_mode,
-                    "format": target_format,
-                    "return_json_only": True,
-                },
-            }
-            target_langs_list = target_langs.get(language_mode, ["EN", "HI"])
-            cli_prompt = (
-                "SYSTEM:\n"
-                f"{build_ad_copy_system_prompt(target_format)}\n\n"
-                "USER_PAYLOAD_JSON:\n"
-                f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
-                f"{build_ad_prompt_tail(target_format)}\n\n"
-                f"{build_strict_schema_note(target_format, target_langs_list)}"
-            )
 
-            try:
-                candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
-            except OSError as exc:
-                errors.append(f"Ad {index}: launch failed: {exc}")
-                continue
-
-            if last_code == -1 and "CANCELLED" in last_stderr:
-                warnings.append(f"Ad {index}: cancelled mid-generation; saving already generated results")
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad {index}")
-                break
-
-            if last_code == -1:  # timeout
-                warning = f"Ad {index}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
-                warnings.append(warning)
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
-                bootstrap_product_doc_session("timeout_retry")
                 try:
                     candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
                 except OSError as exc:
-                    errors.append(f"Ad {index}: retry launch failed after timeout: {exc}")
+                    errors.append(f"Batch {batch_label}: launch failed: {exc}")
+                    for idx in chunk_indices:
+                        errors.append(f"Ad {idx}: launch failed in batch {batch_label}")
                     continue
+
                 if last_code == -1 and "CANCELLED" in last_stderr:
-                    warnings.append(f"Ad {index}: cancelled during timeout retry; saving already generated results")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad {index} timeout retry")
+                    warnings.append(f"Batch {batch_label}: cancelled mid-generation; saving already generated results")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label}")
                     break
 
-            if last_code != 0 and session_id:
-                session_id = None
-                session_fallback_used = True
-                warning = f"OpenCode reusable session failed on ad {index}; falling back to product-doc file attachment for remaining requests."
-                warnings.append(f"{warning}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
-                candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt, force_file=True)
-                if last_code == -1 and "CANCELLED" in last_stderr:
-                    warnings.append(f"Ad {index}: cancelled during fallback retry; saving already generated results")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad {index} fallback")
+                if last_code == -1:  # timeout
+                    warning = f"Batch {batch_label}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
+                    warnings.append(warning)
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
+                    bootstrap_product_doc_session("timeout_retry")
+                    try:
+                        candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
+                    except OSError as exc:
+                        errors.append(f"Batch {batch_label}: retry launch failed after timeout: {exc}")
+                        for idx in chunk_indices:
+                            errors.append(f"Ad {idx}: timeout retry failed in batch {batch_label}")
+                        continue
+                    if last_code == -1 and "CANCELLED" in last_stderr:
+                        warnings.append(f"Batch {batch_label}: cancelled during timeout retry; saving already generated results")
+                        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label} timeout retry")
+                        break
+
+                if last_code != 0 and session_id:
+                    session_id = None
+                    session_fallback_used = True
+                    warning = f"OpenCode reusable session failed on batch {batch_label}; falling back to product-doc file attachment for remaining requests."
+                    warnings.append(f"{warning}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
+                    candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt, force_file=True)
+                    if last_code == -1 and "CANCELLED" in last_stderr:
+                        warnings.append(f"Batch {batch_label}: cancelled during fallback retry; saving already generated results")
+                        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label} fallback")
+                        break
+
+                # Parse the multi-ad response
+                response_ads: list[dict] = []
+                if candidate and isinstance(candidate, dict):
+                    raw_ads = candidate.get("ads")
+                    if isinstance(raw_ads, list):
+                        response_ads = raw_ads
+
+                for local_idx, (global_idx, ad_item) in enumerate(chunk):
+                    response_ad = response_ads[local_idx] if local_idx < len(response_ads) else None
+                    if not response_ad or not isinstance(response_ad, dict):
+                        msg = f"Ad {global_idx}: LLM returned no usable ad at position {local_idx} in batch"
+                        warnings.append(msg)
+                        errors.append(f"Ad {global_idx}: no usable ad JSON at batch position {local_idx}")
+                        if session_id:
+                            session_request_count += 1
+                        continue
+
+                    mismatch = hypothesis_mismatch(response_ad, ad_item)
+                    if mismatch:
+                        msg = f"Ad {global_idx}: hypothesis mismatch (accepted, no retry): {mismatch}"
+                        warnings.append(msg)
+                        print(f"[WARNING] {msg}", file=sys.stderr)
+
+                    semantic_prev = _build_previous_same_format(target_format,
+                        (ad_item.get("persona") if isinstance(ad_item.get("persona"), dict) else {}).get("persona_number"))
+                    semantic_rejection = semantic_copy_rejection(response_ad, ad_item, semantic_prev)
+                    if semantic_rejection:
+                        msg = f"Ad {global_idx}: semantic copy quality flag (accepted, no retry): {semantic_rejection}"
+                        warnings.append(msg)
+                        print(f"[WARNING] {msg}", file=sys.stderr)
+
+                    template_leak = detect_template_leakage(response_ad)
+                    if template_leak:
+                        warnings.append(f"Ad {global_idx}: {template_leak}")
+
+                    if last_stdout:
+                        raw_dir = run_dir / "logs" / "opencode_raw"
+                        raw_dir.mkdir(parents=True, exist_ok=True)
+                        (raw_dir / f"ad_{global_idx:02d}_stdout.ndjson").write_text(last_stdout, encoding="utf-8")
+                        (raw_dir / f"ad_{global_idx:02d}_candidate.json").write_text(
+                            json.dumps({"candidate": response_ad, "ad_item": ad_item}, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+
+                    if response_ad:
+                        generated_ads.append(hydrate_generated_ad_candidate(response_ad, ad_item))
+                    if session_id:
+                        session_request_count += 1
+
+                if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
                     break
-
-            if not candidate:
-                msg = f"Ad {index}: LLM returned no usable JSON; no retry sent\nSTDERR:\n{last_stderr}"
-                warnings.append(msg)
-                print(f"[WARNING] {msg}", file=sys.stderr)
-
-            if candidate:
-                mismatch = hypothesis_mismatch(candidate, ad_item)
-                if mismatch:
-                    msg = f"Ad {index}: hypothesis mismatch (accepted, no retry): {mismatch}"
-                    warnings.append(msg)
-                    print(f"[WARNING] {msg}", file=sys.stderr)
-
-                semantic_rejection = semantic_copy_rejection(candidate, ad_item, previous_same_format)
-                if semantic_rejection:
-                    msg = f"Ad {index}: semantic copy quality flag (accepted, no retry): {semantic_rejection}"
-                    warnings.append(msg)
-                    print(f"[WARNING] {msg}", file=sys.stderr)
-
-            if not candidate:
-                errors.append(f"Ad {index}: returned no usable ad JSON; return code {last_code}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
-                if session_id:
-                    session_request_count += 1
-                continue
-            template_leak = detect_template_leakage(candidate)
-            if template_leak:
-                warnings.append(f"Ad {index}: {template_leak}")
-            if last_stdout:
-                raw_dir = run_dir / "logs" / "opencode_raw"
-                raw_dir.mkdir(parents=True, exist_ok=True)
-                (raw_dir / f"ad_{index:02d}_stdout.ndjson").write_text(last_stdout, encoding="utf-8")
-                (raw_dir / f"ad_{index:02d}_candidate.json").write_text(
-                    json.dumps({"candidate": candidate, "ad_item": ad_item}, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-            generated_ads.append(hydrate_generated_ad_candidate(candidate, ad_item))
-            if session_id:
-                session_request_count += 1
 
     if errors or warnings:
         (run_dir / "logs" / "opencode_error.txt").write_text("\n\n---\n\n".join(errors + warnings), encoding="utf-8")
@@ -4056,6 +3977,7 @@ def api_defaults() -> dict[str, Any]:
             "variables": HYPOTHESIS_VARIABLES,
             "default": {"type": "none", "variant": ""},
         },
+        "batch_size": 10,
     }
 
 
@@ -4406,13 +4328,8 @@ EXACT_COPY_SHEET_COLUMNS = [
     "persona_friction",
     "persona_proof",
     "persona_tone",
-    "persona_awareness_stage",
-    "concept_structure",
-    "concept_structure_definition",
     "concept_angle",
     "concept_angle_definition",
-    "awareness_stage",
-    "awareness_stage_definition",
     "hypothesis_type",
     "hypothesis_variant",
     "headline_copy",
@@ -4528,10 +4445,7 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
     persona_friction = ""
     persona_proof = ""
     persona_tone = ""
-    persona_awareness_stage = ""
-    concept_structure = ""
     concept_angle = ""
-    awareness_stage = ""
     hypothesis_type = ""
     hypothesis_variant = ""
 
@@ -4544,7 +4458,6 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
         persona_friction = str(seed.get("objections_raw", ""))
         persona_proof = str(seed.get("common_indian_moments", ""))
         persona_tone = str(seed.get("guardrail", ""))
-        persona_awareness_stage = str(seed.get("awareness_stage", ""))
 
         for ad in copy_batch.get("ads") or []:
             if not isinstance(ad, dict):
@@ -4561,8 +4474,6 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
                     if pn:
                         persona_name = pn
                     concept_angle = str(ad.get("concept_angle") or ad.get("headline_angle") or "")
-                    concept_structure = str(ad.get("concept_structure") or "")
-                    awareness_stage = str(ad.get("awareness_stage") or "")
                     hyp = ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {}
                     if hyp:
                         hypothesis_type = str(hyp.get("type") or hyp.get("variable_label") or "")
@@ -4570,9 +4481,7 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
                     break
 
     arch = COPY_ARCH
-    concept_structure_def = _get_architecture_definition(arch, "concept_structure", concept_structure)
     concept_angle_def = _get_architecture_definition(arch, "concept_angle", concept_angle)
-    awareness_stage_def = _get_architecture_definition(arch, "awareness_stage", awareness_stage)
 
     return {
         "prompt_id": prompt_rel_path,
@@ -4584,13 +4493,8 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
         "persona_friction": persona_friction,
         "persona_proof": persona_proof,
         "persona_tone": persona_tone,
-        "persona_awareness_stage": persona_awareness_stage,
-        "concept_structure": concept_structure,
-        "concept_structure_definition": concept_structure_def,
         "concept_angle": concept_angle,
         "concept_angle_definition": concept_angle_def,
-        "awareness_stage": awareness_stage,
-        "awareness_stage_definition": awareness_stage_def,
         "hypothesis_type": hypothesis_type,
         "hypothesis_variant": hypothesis_variant,
         "headline_copy": headline_copy,
@@ -4709,10 +4613,8 @@ async def api_import_on_image_copy(
     # Optional context columns (from export, used for validation/reference)
     OPTIONAL_CONTEXT_COLUMNS = [
         "format", "persona_name", "persona_pain", "persona_desire", "persona_friction",
-        "persona_proof", "persona_tone", "persona_awareness_stage",
-        "concept_structure", "concept_structure_definition",
+        "persona_proof", "persona_tone",
         "concept_angle", "concept_angle_definition",
-        "awareness_stage", "awareness_stage_definition",
         "hypothesis_type", "hypothesis_variant",
         "vn", "created_at",
     ]
@@ -5626,35 +5528,13 @@ async def api_run_execute(
                 "do_not_force_template": True,
             }
             concept = copy_req.get("concept_variation") or {}
-            if hyp_type == "awareness_stage" and variant:
-                concept["audience_stage"] = _framework_item("audience_stage", variant)
-                _set_active_support_line_strategy(copy_req, "by_awareness_stage", variant)
-                strategy = copy_req.get("support_line_strategy")
-                if isinstance(strategy, dict):
-                    strategy["awareness_stage"] = _support_line_strategy_item("by_awareness_stage", variant)
-                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
-                entry = COPY_ARCH.get("headline_architectures", {}).get("awareness_stage", {}).get(variant)
-                if isinstance(entry, dict):
-                    direction["awareness_stage"] = _compact_creative_entry(variant, entry)
-                    copy_req["creative_direction"] = direction
-            elif hyp_type == "concept_angle" and variant:
+            if hyp_type == "concept_angle" and variant:
                 concept["concept_angle"] = _framework_item("concept_angle", variant)
                 _set_active_support_line_strategy(copy_req, "by_concept_angle", variant)
                 direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
                 entry = COPY_ARCH.get("headline_architectures", {}).get("concept_angle", {}).get(variant)
                 if isinstance(entry, dict):
                     direction["concept_angle"] = _compact_creative_entry(variant, entry)
-                    copy_req["creative_direction"] = direction
-            elif hyp_type == "concept_structure" and variant:
-                concept["message_structure"] = _framework_item("message_structure", variant)
-                _set_active_support_line_strategy(copy_req, "by_concept_structure", variant)
-                strategy = copy_req.get("support_line_strategy")
-                if isinstance(strategy, dict):
-                    strategy["concept_structure"] = _support_line_strategy_item("by_concept_structure", variant)
-                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
-                entry = COPY_ARCH.get("headline_architectures", {}).get("concept_structure", {}).get(variant)
-                if isinstance(entry, dict):
-                    direction["concept_structure"] = _compact_creative_entry(variant, entry)
                     copy_req["creative_direction"] = direction
             elif hyp_type == "hook_structure" and variant:
                 concept["hook_structure_override"] = variant
@@ -5664,21 +5544,13 @@ async def api_run_execute(
                 if isinstance(entry, dict):
                     direction["hook_structure"] = _compact_creative_entry(variant, entry)
                     copy_req["creative_direction"] = direction
-            elif hyp_type == "proof_style" and variant:
-                concept["proof_style_override"] = variant
-                _set_active_support_line_strategy(copy_req, "by_proof_style", variant)
-            elif hyp_type == "cta_voice" and variant:
-                concept["cta_voice_override"] = variant
             copy_req["concept_variation"] = concept
             copy_req["selection_mode"] = "locked"
             direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
 
         # Apply format defaults for concept fields not set by hypothesis
         if not concept.get("concept_angle"):
-            concept["concept_angle"] = {"id": "desired_outcome"}
-        if not concept.get("message_structure"):
-            structure_defaults = {"HERO": "pab", "BA": "bab", "TEST": "pas", "FEAT": "fab", "UGC": "pas"}
-            concept["message_structure"] = {"id": structure_defaults.get(fmt, "pab")}
+            concept["concept_angle"] = {"id": "auto"}
         copy_req["concept_variation"] = concept
 
         ads_context.append(

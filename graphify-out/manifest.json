@@ -40,7 +40,7 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/app.py": {
-    "mtime": 1779687867.8722525,
+    "mtime": 1779688581.4040606,
     "ast_hash": "a22cb7660672c76b01371cb771fc6ed4",
     "semantic_hash": ""
   },
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/copy_prompt_templates.json": {
-    "mtime": 1779687858.6239653,
-    "ast_hash": "4a585d734d19a962843cd34c79f7464f",
+    "mtime": 1779697194.462643,
+    "ast_hash": "83f39fbb7ca87fd379249748e3d1185c",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/fallback_templates.json": {

@@ -1,62 +1,7 @@
 {
   "format": "v2",
-  "_description": "Creative direction metadata for LLM ad copy generation. This file intentionally avoids final-copy templates and examples so the LLM writes like a copywriter, not a form filler.",
+  "_description": "Creative direction metadata for LLM ad copy generation.",
   "headline_architectures": {
-    "concept_structure": {
-      "four_us": {
-        "intent": "Make the copy useful, specific, and memorable without sounding like a list.",
-        "headline_role": "One useful promise, pain, contrast, or proof point.",
-        "support_role": "Make the promise believable with mechanism, proof, and ease.",
-        "route_bias": ["desired_outcome", "specific_lived_moment", "proof_or_authority"],
-        "avoid_skeletons": [
-          "a 15-day weight-loss reset",
-          "hunger control that fits home food"
-        ]
-      },
-      "pas": {
-        "intent": "Start from a problem the persona already feels, then use the support line to show consequence and product-led relief.",
-        "headline_role": "Name the tension in a human, specific way. Do not force the words block, stuck, fail, or keep.",
-        "support_role": "Show the consequence or difficulty, then bridge to product mechanism/proof/ease.",
-        "route_bias": ["specific_lived_moment", "pain_moment", "failed_attempt_contrast"],
-        "avoid_skeletons": [
-          "{problem} keeps blocking weight loss",
-          "weight loss stalls when {problem}",
-          "diets fail because {problem}",
-          "{problem} keeps weight loss stuck"
-        ]
-      },
-      "bab": {
-        "intent": "Show a before/after contrast without overpromising. Use support line to explain the bridge.",
-        "headline_role": "Show a compact contrast or felt shift.",
-        "support_role": "Explain what makes the shift believable: routine, appetite control, digestion support, guidance, or proof.",
-        "route_bias": ["desired_outcome", "contrast", "daily_life_scene"],
-        "avoid_skeletons": [
-          "less {problem}, more progress",
-          "from {problem} to {result}"
-        ]
-      },
-      "fab": {
-        "intent": "Start from either feature credibility or buyer benefit, then complete the missing link in support.",
-        "headline_role": "Use one feature or one benefit, not a full feature list.",
-        "support_role": "Explain why the feature matters in daily weight-loss behavior.",
-        "route_bias": ["proof_or_authority", "simple_routine_ease", "mechanism"],
-        "avoid_skeletons": [
-          "doctor-formulated weight loss",
-          "31 ingredients, one simple routine"
-        ]
-      },
-      "pab": {
-        "intent": "Use the ad as problem to friction to product bridge, but do not squeeze the whole framework into the headline.",
-        "headline_role": "Name the problem or moment in a short human ad line.",
-        "support_role": "Add friction and bridge to product-led support.",
-        "route_bias": ["pain_moment", "daily_life_scene", "objection_flip"],
-        "avoid_skeletons": [
-          "weight loss stalls when {problem} wins",
-          "diets fail because {problem} returns",
-          "{problem} blocks progress"
-        ]
-      }
-    },
     "hook_structure": {
       "question_led": {
         "intent": "Open with one weight-loss question the persona would actually ask themselves.",
@@ -96,130 +41,60 @@
     },
     "concept_angle": {
       "pain_point": {
-        "intent": "Open with one concrete weight-loss friction the persona feels.",
+        "intent": "Lead with the customer problem.",
         "headline_role": "Name the struggle in human language without explaining the full fix.",
         "support_role": "Resolve the pain with persona friction, mechanism, and proof.",
         "route_bias": ["pain_moment", "specific_lived_moment"],
         "avoid_skeletons": ["weight loss gets harder when", "pcod can slow progress"]
       },
       "desired_outcome": {
-        "intent": "Open with a practical outcome or felt relief, but keep it believable and not magical.",
+        "intent": "Lead with the result the customer wants.",
         "headline_role": "Make the result specific enough to matter, without cramming proof and mechanism into headline.",
         "support_role": "Make the outcome believable with mechanism, routine fit, and proof.",
         "route_bias": ["desired_outcome", "daily_life_scene", "specific_lived_moment"],
         "avoid_skeletons": ["lose 3 to 5 kg", "feel lighter in 15 days"]
       },
       "social_proof": {
-        "intent": "Use one approved crowd proof point only if it helps the buyer trust the routine.",
+        "intent": "Lead with other customers words, experiences, or proof.",
         "headline_role": "Lead with buyer-relevant proof, not vanity metrics.",
         "support_role": "Connect proof to daily adherence or believable progress.",
         "route_bias": ["proof_or_authority", "simple_routine_ease"],
         "avoid_skeletons": ["70,000+ people tried this weight-loss system"]
       },
       "authority": {
-        "intent": "Use doctor or Ayurveda credibility as trust support, not as a hollow headline badge.",
+        "intent": "Lead with doctor credibility, expertise, hospital backing, or Ayurvedic authority.",
         "headline_role": "Mention authority only if the line still feels like a human ad hook.",
         "support_role": "Translate authority into practical daily benefit and weight-loss relevance.",
         "route_bias": ["proof_or_authority", "mechanism"],
         "avoid_skeletons": ["doctor-formulated by", "ayurvedic weight loss, properly formulated"]
       },
+      "story": {
+        "intent": "Lead with a relatable customer moment, mini-narrative, or lived situation.",
+        "headline_role": "Use a human admission or lived moment tied to weight loss.",
+        "support_role": "Resolve it through routine, proof, or guidance.",
+        "route_bias": ["specific_lived_moment", "pain_moment"],
+        "avoid_skeletons": ["every weight-loss diet felt", "i finally found"]
+      },
       "curiosity": {
-        "intent": "Open a specific weight-loss mechanism gap and satisfy it in support.",
+        "intent": "Lead with intrigue or a question that creates genuine interest.",
         "headline_role": "Create curiosity around a real behavior, friction, or routine gap.",
         "support_role": "Answer the gap with clear mechanism and product truth.",
         "route_bias": ["specific_lived_moment", "mechanism"],
         "avoid_skeletons": ["why weight loss breaks", "the 5-minute weight-loss routine gap"]
       },
       "comparison": {
-        "intent": "Contrast the kit with harder alternatives such as strict dieting, gym pressure, or separate meal prep.",
+        "intent": "Lead with a contrast against common failed methods or alternatives.",
         "headline_role": "Make the alternative feel recognizable, not attacked.",
         "support_role": "Show the lower-friction product path with realistic constraints.",
         "route_bias": ["failed_attempt_contrast", "objection_flip", "daily_life_scene"],
         "avoid_skeletons": ["weight loss that doesn't require", "no gym. no crash diet"]
       },
       "offer": {
-        "intent": "Use an approved reason to act, such as kit completeness, result window, or guarantee logic, without price pressure.",
+        "intent": "Lead with the deal, course box, guarantee, kit value, or buying proposition.",
         "headline_role": "Keep urgency practical and non-salesy.",
         "support_role": "Support the reason with kit completeness, reduced risk, or routine clarity.",
         "route_bias": ["desired_outcome", "simple_routine_ease"],
         "avoid_skeletons": ["15 days to visible progress", "a complete ayurvedic weight-loss kit"]
-      }
-    },
-    "awareness_stage": {
-      "unaware": {
-        "intent": "Name one hidden daily friction tied to weight-loss progress without assuming product demand.",
-        "headline_role": "Make the problem recognizable and concrete.",
-        "support_role": "Softly connect the friction to a solvable routine path.",
-        "route_bias": ["specific_lived_moment", "daily_life_scene"],
-        "avoid_skeletons": ["late-day cravings steal weight-loss progress"]
-      },
-      "problem_aware": {
-        "intent": "Start from a problem the reader already knows they have.",
-        "headline_role": "Validate the problem in a short, specific line.",
-        "support_role": "Make the next step feel clear and smaller than expected.",
-        "route_bias": ["pain_moment", "objection_flip"],
-        "avoid_skeletons": ["struggling with stubborn weight", "pcod weight loss feels harder"]
-      },
-      "solution_aware": {
-        "intent": "Assume the reader has tried weight-loss fixes before and needs a more believable route.",
-        "headline_role": "Name the failed-pattern tension without dismissing their effort.",
-        "support_role": "Differentiate through guidance, easier adherence, or safer-feeling support.",
-        "route_bias": ["failed_attempt_contrast", "objection_flip", "simple_routine_ease"],
-        "avoid_skeletons": ["tried diets that didn't stick", "weight loss, more guided this time"]
-      },
-      "product_aware": {
-        "intent": "Assume the reader knows the kit and needs a final trust or simplicity reason.",
-        "headline_role": "Give one proof push, simplicity reason, or risk-reduction cue.",
-        "support_role": "Carry the specifics without reintroducing the whole product.",
-        "route_bias": ["proof_or_authority", "simple_routine_ease"],
-        "avoid_skeletons": ["15-day weight loss you can trust", "still considering the weight-loss kit"]
-      }
-    }
-  },
-  "non_headline_hypotheses": {
-    "_description": "Hypothesis controls that affect support-line preferences or CTA tone. They are not headline templates.",
-    "proof_style": {
-      "authority_anchor": {
-        "intent": "Use one approved doctor-formulated or Ayurvedic credibility point if relevant.",
-        "support_role": "Translate authority into routine confidence or buyer relevance.",
-        "avoid": "Do not use vague expert-backed filler or repeat authority without daily benefit."
-      },
-      "social_proof": {
-        "intent": "Use one product-doc proof point if relevant.",
-        "support_role": "Connect proof to buyer relevance, adherence, or confidence.",
-        "avoid": "Do not stack all proof numbers or imply real testimonials."
-      },
-      "mechanism_explainer": {
-        "intent": "Explain the product mechanism simply: hunger/cravings, routine, fullness, digestion, or adherence.",
-        "support_role": "Make mechanism clarity the support line's trust engine in plain language.",
-        "avoid": "Do not sound medical, technical, or cure-oriented."
-      },
-      "routine_clarity": {
-        "intent": "Make the proof feel easy to follow through clear steps, low guesswork, and routine fit.",
-        "support_role": "Show the buyer why the plan can fit daily life.",
-        "avoid": "Do not make results sound effortless or automatic."
-      },
-      "objection_flip": {
-        "intent": "Address a real doubt directly, then resolve it with proof, mechanism, or ease.",
-        "support_role": "Reduce resistance without sounding defensive.",
-        "avoid": "Do not introduce a new fear the headline did not imply."
-      }
-    },
-    "cta_voice": {
-      "urgent_start": {
-        "intent": "Ask for action now or today without sale pressure."
-      },
-      "guided_next_step": {
-        "intent": "Ask the user to see, check, or view the plan or steps."
-      },
-      "reassurance_start": {
-        "intent": "Make the next step feel low-risk or fit-check oriented."
-      },
-      "challenge_action": {
-        "intent": "Frame action as a simple 15-day test or challenge."
-      },
-      "discovery_action": {
-        "intent": "Invite learning: see how it works, learn the steps, or discover the routine."
       }
     }
   },

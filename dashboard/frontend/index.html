@@ -54,11 +54,29 @@
           <p class="hint">By default, uploaded images are added to existing images in input/images and all are used for Gemini uploads.</p>
           <div id="inputImageGallery" class="input-image-gallery"></div>
         </section>
+
+        <section class="card card-files">
+          <h2>4) Config Files</h2>
+          <div class="input-prompts-grid">
+            <div class="input-prompt-card" data-file-path="persona_seeds.json">
+              <strong>Persona Seeds</strong>
+              <span>30 personas with tags, guardrails, headline anchors</span>
+            </div>
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_architecture.json">
+              <strong>Copy Architecture</strong>
+              <span>Headline &amp; support line architecture definitions</span>
+            </div>
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_prompt_templates.json">
+              <strong>Copy Prompt Templates</strong>
+              <span>System prompts, format rules, schema, angle definitions</span>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div class="column column-right">
         <section class="card card-hypothesis">
-          <h2>4) Hypothesis Testing</h2>
+          <h2>5) Hypothesis Testing</h2>
           <p class="hint">Select a variable to A/B test. The pipeline will generate controlled variants where only this variable changes.</p>
           <label>Hypothesis Variable</label>
           <select id="hypothesisType"></select>
@@ -70,7 +88,7 @@
         </section>
 
         <section class="card card-execution">
-          <h2>5) Execution</h2>
+          <h2>6) Execution</h2>
           <label>Server</label>
           <select id="serverType">
             <option value="opencode">OpenCode</option>
@@ -109,7 +127,7 @@
         </section>
 
         <section class="card card-uploads">
-          <h2>6) Optional File Uploads</h2>
+          <h2>7) Optional File Uploads</h2>
           <div class="uploads">
             <label>Product Master Doc <input id="productFile" type="file" /></label>
              
@@ -131,7 +149,7 @@
     </div>
 
     <section class="card card-runs">
-      <h2>7) Latest Runs</h2>
+      <h2>8) Latest Runs</h2>
       <div class="runs-toolbar">
         <button id="refreshRuns" class="ghost-btn" type="button">Refresh</button>
         <div class="batch-dropdown">
