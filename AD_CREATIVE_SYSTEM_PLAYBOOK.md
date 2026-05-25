@@ -235,7 +235,6 @@ The concept framework chooses the strategic route. The execution layer decides w
 
 Headline role:
 - The headline should carry one strong idea only: tension, proof, identity, deadline, outcome, or sacrifice reduction.
-- Keep most headlines between 5 and 12 words. Longer is allowed only when the rhythm still feels like a finished ad line.
 - The headline should sound edited by a human, not like a planning label or SEO phrase.
 - Do not force the full mechanism into the headline. Move mechanism, proof, and timing details into the support line.
 - Prefer plain sentence rhythm over cleverness, slogans, or stacked keyword phrases.
@@ -724,7 +723,7 @@ Variation operating mode:
 - Persona use: first-person micro-story from persona POV
 - Copy shape: my routine support + 3 practical wins + CTA
 - Text budget: 16-26 words + disclaimer
-- Default text policy: headline (max 8 words) + support line (max 8 words) + CTA (max 4 words) + disclaimer only
+- Default text policy: headline + support line + CTA + disclaimer only
 - Minimum copy units: headline + 1 short support line + CTA + disclaimer
 - No bullets or long paragraph quote unless explicitly requested
 - Prompt-detail baseline:
@@ -1263,9 +1262,9 @@ Minimum required on-image copy units by format:
 - UGC: headline + 1 short support line + CTA
 
 UGC default text policy:
-- One headline (max 8 words)
-- One short support line (max 8 words)
-- One CTA (max 4 words)
+- One headline
+- One short support line
+- One CTA
 - No bullets or long paragraph quote unless requested
 
 Text budget repair commands:

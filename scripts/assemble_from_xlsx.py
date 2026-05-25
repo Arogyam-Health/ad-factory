@@ -43,6 +43,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "output"
 BACKGROUNDS_PATH = ROOT / "background_variant.json"
+COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
 REGISTRY_PATH = ROOT / "AD_GENERATION_REGISTRY.JSON"
 STORAGE_ROOT = ROOT / "dashboard_storage"
 RUNS_ROOT = STORAGE_ROOT / "runs"
@@ -249,48 +250,16 @@ def outpaint_lock_block(aspect_ratio: str) -> str:
 
 
 def base_layout_lines_for_format(fmt: str) -> list[str]:
-    if fmt == "HERO":
-        return [
-            "- HERO format: strong headline, one support line, and one CTA.",
-            "- Focal hierarchy: product dominant, text secondary, background tertiary.",
-            "- Product zone: all key pack details stay away from edge-risk zones, but left/right weighting must follow the selected archetype rather than defaulting to a centered stack.",
-            "- CTA must be rendered as a filled rounded button chip (high-contrast), never as plain text.",
-            "- Camera framing should feel stable, premium, and label-safe.",
-            "- Do not collapse every HERO into centered text over centered products unless the selected archetype explicitly requires a centered composition.",
-        ]
-    if fmt == "BA":
-        return [
-            "- Format: BA.",
-            "- Build a clear struggle-to-progress contrast story without literal BEFORE/AFTER labels on-image.",
-            "- Contrast must be visible in scene, props, posture, and lighting, not text alone.",
-            "- Keep products grouped near lower center as the bridge between both states.",
-            "- CTA must be rendered as a filled rounded button chip centered in lower safe band, never plain text.",
-        ]
-    if fmt == "TEST":
-        return [
-            "- Format: TEST.",
-            "- This must read testimonial-first, not HERO with a person added.",
-            "- Quote, attribution, and trust proof hierarchy must be obvious on first scroll.",
-            "- Human presence can support credibility, but the testimonial message remains primary.",
-            "- CTA must be rendered as a filled rounded button chip in lower safe band, never plain text.",
-        ]
-    if fmt == "FEAT":
-        return [
-            "- Format: FEAT.",
-            "- Build a clean information hierarchy with headline, 3-4 concise feature points, and one CTA.",
-            "- Product cluster must stay fully visible as proof while information remains fast to scan.",
-            "- Bullets or callouts must be functional benefits only; short, concrete, and readable.",
-            "- CTA must be rendered as a filled rounded button chip, never plain text.",
-        ]
-    if fmt == "UGC":
-        return [
-            "- Format: UGC.",
-            "- Creator-style authenticity with premium cleanliness; avoid stock-template look.",
-            "- Subject and product should feel naturally integrated into a believable routine moment.",
-            "- Headline/support/context/CTA stack must stay compact and mobile-readable.",
-            "- Hands must look anatomically correct; no extra fingers or warped nails.",
-        ]
-    raise RuntimeError(f"Unsupported format: {fmt}")
+    if not COPY_PROMPTS_PATH.exists():
+        raise RuntimeError(f"Copy prompts config not found: {COPY_PROMPTS_PATH}")
+    try:
+        data = json.loads(COPY_PROMPTS_PATH.read_text(encoding="utf-8"))
+        lines = (data.get("layout_lines") or {}).get(fmt)
+        if lines is None:
+            raise RuntimeError(f"Unsupported format: {fmt}")
+        return list(lines)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load layout lines for {fmt}: {exc}")
 
 
 

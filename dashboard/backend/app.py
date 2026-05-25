@@ -42,7 +42,6 @@ RUNTIME_ROOT = ROOT / "runtime"
 ENV_PATH = ROOT / ".env.dashboard"
 
 DEFAULT_PRODUCT_MASTER = ROOT / "input" / "docs" / "product master doc.txt"
-DEFAULT_PLAYBOOK = ROOT / "AD_CREATIVE_SYSTEM_PLAYBOOK.md"
 DEFAULT_IMAGE_SOURCES_FILE = ROOT / "input" / "image_sources.txt"
 LEGACY_ACTIVE_IMAGES_FILE = ROOT / "input" / "activeimages.txt"
 INPUT_IMAGES_DIR = ROOT / "input" / "images"
@@ -83,17 +82,8 @@ def cancel_event_for_run(run_id: str) -> threading.Event:
 
 
 def load_format_visual_archetypes() -> dict[str, list[dict[str, str]]]:
-    script_path = ROOT / "scripts" / "generate_ads.py"
-    spec = importlib.util.spec_from_file_location("dashboard_generate_ads_patterns", script_path)
-    if spec is None or spec.loader is None:
-        return {}
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    raw = getattr(module, "FORMAT_VISUAL_ARCHETYPES", {})
+    raw = COPY_PROMPTS.get("visual_archetypes") or {}
     out: dict[str, list[dict[str, str]]] = {}
-    if not isinstance(raw, dict):
-        return out
     for fmt in FORMATS:
         items = raw.get(fmt) or []
         out[fmt] = [
@@ -312,7 +302,7 @@ def load_env_file(path: Path) -> None:
             os.environ[key] = value
 
 
-def parse_persona_library(playbook_path: Path) -> list[dict[str, Any]]:
+def parse_persona_library() -> list[dict[str, Any]]:
     path = PERSONA_SEEDS_PATH
     if not path.exists():
         return []
@@ -618,7 +608,6 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
             "awareness_stage": ["problem_aware", "solution_aware", "product_aware"],
         },
         "headline_rules": [
-            "max 10 words",
             "must clearly signal weight loss or a strong proxy (kg loss, eating less, craving control, slimming, clothes fit)",
             "must sound like a human ad line, not a framework",
             "avoid generic skeletons and fill-in-the-blank patterns",
@@ -644,22 +633,8 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
 def compact_format_rules_for_copy(fmt: str, format_rules: dict[str, Any]) -> dict[str, Any]:
     fmt = fmt.strip().upper()
     prompts = COPY_PROMPTS
-    wanted = (prompts.get("format_copy_keywords") or {}).get(fmt, [])
-    blocked = (prompts.get("format_visual_keywords") or {}).get("blocklist", [])
-    out: list[str] = []
-    for raw_rule in format_rules.get("rules") or []:
-        rule = str(raw_rule).strip()
-        if not rule:
-            continue
-        lower = rule.lower()
-        if any(b in lower for b in blocked):
-            continue
-        if wanted and not any(k in lower for k in wanted):
-            continue
-        out.append(rule)
-        if len(out) >= 8:
-            break
-    return {"format": fmt or format_rules.get("format"), "rules": out}
+    static_rules = (prompts.get("format_copy_rules") or {}).get(fmt, [])
+    return {"format": fmt, "rules": list(static_rules)}
 
 def build_ad_copy_system_prompt(fmt: str) -> str:
     fmt = fmt.strip().upper()
@@ -4065,7 +4040,7 @@ def startup() -> None:
 
 
 def api_defaults() -> dict[str, Any]:
-    personas = parse_persona_library(DEFAULT_PLAYBOOK)
+    personas = parse_persona_library()
     opencode = _get_opencode_catalog()
     return {
         "personas": personas,
@@ -4076,7 +4051,7 @@ def api_defaults() -> dict[str, Any]:
         "product_doc": default_product_doc_info(),
         "default_files": {
             "product_info": str(DEFAULT_PRODUCT_MASTER.relative_to(ROOT)),
-            "playbook": str(DEFAULT_PLAYBOOK.relative_to(ROOT)),
+
         },
         "opencode": opencode,
         "hypothesis": {
@@ -5624,7 +5599,7 @@ async def api_run_execute(
         encoding="utf-8",
     )
 
-    persona_library = parse_persona_library(DEFAULT_PLAYBOOK)
+    persona_library = parse_persona_library()
     ads_context: list[dict[str, Any]] = []
     format_seen_counts: dict[str, int] = {}
     for item in plan:
@@ -5633,19 +5608,8 @@ async def api_run_execute(
         format_seen_counts[fmt] = format_seen_counts.get(fmt, 0) + 1
         persona_payload = build_persona_payload(persona_no, persona_library)
 
-        format_result = run_cmd(
-            [
-                "python3",
-                "scripts/extract_format_rules.py",
-                "--playbook",
-                str(DEFAULT_PLAYBOOK),
-                "--format",
-                fmt,
-                "--json",
-            ],
-            cwd=ROOT,
-        )
-        format_payload = parse_json_stdout(format_result, f"extract_format_rules({fmt})")
+        static_rules = (COPY_PROMPTS.get("format_copy_rules") or {}).get(fmt, [])
+        format_payload = {"format": fmt, "rules": list(static_rules)}
         copy_req = build_copy_requirements(persona_no, fmt, format_seen_counts[fmt], run_id)
 
         # Inject hypothesis directive if active
