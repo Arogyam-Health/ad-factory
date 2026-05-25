@@ -496,39 +496,8 @@ def _compact_product_truth() -> dict[str, Any]:
 def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index: int, variation_seed: str = "") -> dict[str, Any]:
     persona_seed = PERSONA_SEED_INPUTS.get(persona_number, {})
 
-    fmt_specific_rules = {
-        "HERO": "Product is the main character. Direct, confident, product-first.",
-        "UGC": "Casual, lived-in, conversational. Real person sharing a struggle.",
-        "BA": "Contrast-led shift from struggle to better state. Simple, believable.",
-        "FEAT": "Feature connected to customer benefit. Clear, educational.",
-        "TEST": "Customer experience or proof as the hook. Specific, believable.",
-    }
-
     return {
         "selection_mode": "llm_choose",
-        "allowed_axes": {
-            "concept_angle": ["pain_point", "desired_outcome", "social_proof", "authority", "curiosity", "comparison", "offer", "story"],
-        },
-        "headline_rules": [
-            "must clearly signal weight loss or a strong proxy (kg loss, eating less, craving control, slimming, clothes fit)",
-            "must sound like a human ad line, not a framework",
-            "avoid generic skeletons and fill-in-the-blank patterns",
-        ],
-        "support_rules": [
-            "max 28 words",
-            "make the headline believable using one persona friction and one product truth",
-            "do not list more than two proof/mechanism cues",
-            "do not sound like a product feature list or colon-led spec sheet",
-            "avoid protocol timing (morning/night/step 1/step 2) unless the persona specifically needs it",
-        ],
-        "format_specific_rule": fmt_specific_rules.get(fmt, ""),
-        "hard_rules": [
-            "headline must be clear and complete",
-            "headline must connect to weight loss or appetite/craving control",
-            "support line adds new mechanism/proof/ease",
-            "do not use price",
-            "do not use banned claims",
-        ],
     }
 
 
@@ -540,6 +509,15 @@ def build_ad_copy_system_prompt(fmt: str) -> str:
     prompts = COPY_PROMPTS
     base_rules = prompts.get("system_prompt_base_rules", [])
     format_rules = prompts.get("system_prompt_format_rules", {})
+    if fmt == "ALL":
+        fmt_lines = []
+        for f in ["HERO", "UGC", "BA", "FEAT", "TEST"]:
+            lines = format_rules.get(f, [])
+            if lines:
+                fmt_lines.append(f"Ad format rules for {f}:")
+                fmt_lines.extend(lines)
+                fmt_lines.append("")
+        return " ".join(base_rules + fmt_lines)
     fmt_rules = format_rules.get(fmt, [])
     return " ".join(base_rules + fmt_rules)
 
@@ -548,7 +526,10 @@ def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> st
     fmt = fmt.strip().upper()
     prompts = COPY_PROMPTS.get("strict_schema_note", {})
     field_map = prompts.get("field_map", {})
-    copy_fields = field_map.get(fmt, prompts.get("default_fields", "headline, cta"))
+    if fmt == "ALL":
+        copy_fields = "headline, subheadline, bullets, trust_line, cta"
+    else:
+        copy_fields = field_map.get(fmt, prompts.get("default_fields", "headline, cta"))
     parts = [
         prompts.get("intro", ""),
         prompts.get("persona_fields_en", ""),
@@ -563,8 +544,9 @@ def build_ad_prompt_tail(fmt: str) -> str:
     fmt = fmt.strip().upper()
     tail = COPY_PROMPTS.get("prompt_tail", {})
     support_map = tail.get("support_target_map", {})
-    support_target = support_map.get(fmt, tail.get("default_support_target", "support line"))
-    lines = [line.format(fmt=fmt or "ad", support_target=support_target) for line in tail.get("lines", [])]
+    support_target = support_map.get(fmt, tail.get("default_support_target", "subheadline"))
+    display_fmt = fmt if fmt != "ALL" else "ad"
+    lines = [line.format(fmt=display_fmt, support_target=support_target) for line in tail.get("lines", [])]
     skeleton = build_response_skeleton(fmt)
     if skeleton:
         lines.append(f"\nReturn your response using exactly this JSON skeleton (replace placeholder values with your actual copy):\n{skeleton}")
@@ -579,46 +561,48 @@ def build_response_skeleton(fmt: str) -> str:
     if fmt_override and "copy" in fmt_override:
         if "copy" in base.get("ads", [{}])[0]:
             base["ads"][0]["copy"] = copy.deepcopy(fmt_override["copy"])
+    elif fmt == "ALL":
+        all_fields = {"headline": "<headline>", "subheadline": "<subheadline>", "bullets": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "trust_line": "<trust line>", "cta": "<cta>"}
+        if "copy" in base.get("ads", [{}])[0]:
+            base["ads"][0]["copy"] = {"EN": {**all_fields}, "HI": {**all_fields}} if "HI" in base.get("ads", [{}])[0].get("copy", {}) else {"EN": {**all_fields}}
+    placeholder_fmt = fmt if fmt != "ALL" else "<FORMAT>"
     raw = json.dumps(base, ensure_ascii=False, indent=2)
-    return raw.replace("{format}", fmt)
+    return raw.replace("{format}", placeholder_fmt)
 
 
 def build_generation_payload_for_llm(context: dict[str, Any]) -> dict[str, Any]:
-    compact_ads: list[dict[str, Any]] = []
+    seen: dict[tuple[str, int], dict[str, Any]] = {}
+    total = 0
     for item in context.get("ads") or []:
         if not isinstance(item, dict):
             continue
         fmt = str(item.get("format") or "").strip().upper()
         persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
-        format_rules = item.get("format_rules") if isinstance(item.get("format_rules"), dict) else {}
-        copy_requirements = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
-        compact_ads.append(
-            {
+        pn = persona.get("persona_number")
+        if not isinstance(pn, int):
+            continue
+        key = (fmt, pn)
+        total += 1
+        if key not in seen:
+            format_rules = item.get("format_rules") if isinstance(item.get("format_rules"), dict) else {}
+            copy_requirements = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
+            seen[key] = {
                 "format": fmt,
                 "persona": persona,
                 "format_rules": compact_format_rules_for_copy(fmt, format_rules),
                 "copy_requirements": copy_requirements,
+                "count": 1,
             }
-        )
+        else:
+            seen[key]["count"] += 1
 
-    requested_plan = []
-    for item in compact_ads:
-        persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
-        requested_plan.append(
-            {
-                "format": item.get("format"),
-                "persona_number": persona.get("persona_number"),
-                "persona_name": persona.get("persona_name"),
-            }
-        )
+    compact_ads = list(seen.values())
 
     return {
         "generated_at": context.get("generated_at"),
         "run_id": context.get("run_id"),
         "language_mode": context.get("language_mode"),
         "context_source": context.get("context_source"),
-        "requested_ad_count": len(compact_ads),
-        "requested_plan": requested_plan,
         "product_doc": {
             "attached_in_session": True,
             "source_file": context.get("product_file_path"),
@@ -664,8 +648,6 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
                 bullets = block.get("bullets") if isinstance(block.get("bullets"), list) else []
                 if len([item for item in bullets if isinstance(item, str) and item.strip()]) < 2:
                     return f"Generated ad {fmt}/P{persona_number} has insufficient {lang} bullets"
-            if fmt == "TEST" and not str(block.get("attribution") or "").strip():
-                return f"Generated ad {fmt}/P{persona_number} is missing {lang} attribution"
 
     missing = sorted(planned_keys - seen_keys)
     if missing:
@@ -2190,35 +2172,6 @@ def ensure_testimonial_headline(headline: str, lang: str, persona: dict[str, Any
     return fallback_text
 
 
-def ensure_testimonial_attribution(attribution: str, lang: str, persona: dict[str, Any], headline: str, trust_line: str) -> str:
-    variant_lists = FALLBACKS.get("testimonial_attribution_variants", {})
-    variants = variant_lists.get(lang, variant_lists.get("EN", []))
-    if not variants:
-        return attribution
-
-    current = _clean_str(attribution)
-    seed_input = (
-        f"{persona.get('number', '')}|{persona.get('name', '')}|{headline}|{trust_line}|{persona.get('pain_en', '')}|{persona.get('pain_hi', '')}"
-    )
-    digest = hashlib.sha1(seed_input.encode("utf-8", errors="ignore")).hexdigest()
-    idx = int(digest[:8], 16) % len(variants)
-    chosen = variants[idx]
-
-    if not current:
-        return chosen
-
-    # For TEST attribution we avoid personal names and generic repeated labels.
-    if re.search(r"\brepresentative\s+user\s+review\b", current, flags=re.IGNORECASE):
-        return chosen
-    if re.search(r"\b(user|customer)\s+review\b", current, flags=re.IGNORECASE):
-        return chosen
-    if re.search(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", current):
-        return chosen
-    if re.search(r"[\u0900-\u097F]{2,}\s+[\u0900-\u097F]{2,}", current):
-        return chosen
-    return shorten_copy_line(current)
-
-
 def _persona_number_from_candidate(candidate: dict[str, Any]) -> int | None:
     persona = candidate.get("persona") if isinstance(candidate, dict) else None
     if not isinstance(persona, dict):
@@ -2316,15 +2269,6 @@ def normalize_generated_copy(
             if fmt == "TEST":
                 if not _clean_str(src_lang.get("headline")):
                     base_lang["headline"] = ensure_testimonial_headline(base_lang.get("headline", ""), lang, persona)
-                llm_attribution = _clean_str(src_lang.get("attribution"))
-                if llm_attribution:
-                    base_lang["attribution"] = llm_attribution
-                else:
-                    base_lang["attribution"] = ensure_testimonial_attribution(
-                        llm_attribution, lang, persona,
-                        base_lang.get("headline", ""),
-                        _clean_str(src_lang.get("trust_line")) or base_lang.get("trust_line", ""),
-                    )
 
             if fmt in {"HERO", "UGC"}:
                 support = _clean_str(src_lang.get("support_line"))
@@ -2453,19 +2397,15 @@ def build_template_copy(context: dict[str, Any], run_id: str) -> dict[str, Any]:
             copy_en = {"headline": headline_en, "bullets": bullets_en, "cta": cta_en}
             copy_hi = {"headline": headline_hi, "bullets": bullets_hi, "cta": cta_hi}
         else:
-            attribution_en = fo.get("attribution", {}).get("EN", "Doctor-formulated Ayurvedic obesity and weight-loss protocol")
-            attribution_hi = fo.get("attribution", {}).get("HI", "डॉक्टर-फॉर्मुलेटेड आयुर्वेदिक मोटापा और वजन-घटाने का प्रोटोकॉल")
             trust_en = fo.get("trust_line", {}).get("EN", "Structured morning-night steps for visible weight-loss progress and obesity control.")
             trust_hi = fo.get("trust_line", {}).get("HI", "सुबह-रात के स्पष्ट कदमों से वजन घटाने और मोटापा नियंत्रण का भरोसेमंद सपोर्ट।")
             copy_en = {
                 "headline": headline_en,
-                "attribution": attribution_en,
                 "trust_line": trust_en,
                 "cta": cta_en,
             }
             copy_hi = {
                 "headline": headline_hi,
-                "attribution": attribution_hi,
                 "trust_line": trust_hi,
                 "cta": cta_hi,
             }
@@ -2531,7 +2471,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     session_id: str | None = None
     session_request_count = 0
     session_rollovers = 0
-    session_fallback_used = False
 
     if not product_file.exists() or not product_file.is_file():
         errors.append(f"Product master doc missing: {product_file}")
@@ -2561,9 +2500,9 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         cmd.extend(["--", prompt])
         return cmd
 
-    def run_opencode(prompt: str, *, force_file: bool = False) -> tuple[dict[str, Any] | None, str, str, int]:
-        use_session = bool(session_id) and not force_file
-        cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=force_file or not use_session)
+    def run_opencode(prompt: str) -> tuple[dict[str, Any] | None, str, str, int]:
+        use_session = bool(session_id)
+        cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=not use_session)
         proc = subprocess.Popen(cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         poll_interval = 2
         elapsed = 0
@@ -2586,14 +2525,14 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         if proc.returncode != 0:
             return None, stdout, stderr, proc.returncode
         parsed = parse_opencode_json_output(stdout)
-        return (extract_generated_ad_candidate(parsed) if parsed else None), stdout, stderr, proc.returncode
+        return parsed, stdout, stderr, proc.returncode
 
     def current_session_limit() -> int:
         idx = min(session_rollovers, len(OPENCODE_ADS_PER_SESSION_SCHEDULE) - 1)
         return OPENCODE_ADS_PER_SESSION_SCHEDULE[idx]
 
     def bootstrap_product_doc_session(reason: str) -> None:
-        nonlocal session_id, session_request_count, session_fallback_used, session_rollovers
+        nonlocal session_id, session_request_count, session_rollovers
         append_run_log(
             run_dir,
             "opencode_session.log",
@@ -2630,17 +2569,15 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             else:
                 session_id = None
                 session_request_count = 0
-                session_fallback_used = True
-                warning = "OpenCode did not expose a session id; falling back to attaching product master doc on every ad request."
+                warning = "OpenCode did not expose a session id; proceeding without session reuse."
                 warnings.append(warning)
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
         else:
             session_id = None
             session_request_count = 0
-            session_fallback_used = True
-            warning = "OpenCode product-doc session bootstrap failed; falling back to attaching product master doc on every ad request."
+            warning = "OpenCode product-doc session bootstrap failed; proceeding without session reuse."
             warnings.append(warning)
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
 
     with _opencode_queue_slot(f"copy_session {run_dir.name}"):
         _cancel_current_run.clear()
@@ -2652,18 +2589,12 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         batch_size = int(config.get("batch_size") or 10)
         target_langs_map = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
 
-        # Group by format, then chunk by batch_size
-        fmt_groups: dict[str, list[tuple[int, dict]]] = {}
-        for i, item in enumerate(all_items):
-            fmt = str(item.get("format") or "").strip().upper()
-            fmt_groups.setdefault(fmt, []).append((i + 1, item))
-
         def _build_previous_same_format(fmt: str, persona_num: int | None) -> list[dict[str, Any]]:
             result: list[dict[str, Any]] = []
             for prev in generated_ads:
                 if not isinstance(prev, dict):
                     continue
-                if str(prev.get("format") or "").strip().upper() != fmt:
+                if fmt != "ALL" and str(prev.get("format") or "").strip().upper() != fmt:
                     continue
                 prev_persona = prev.get("persona") if isinstance(prev.get("persona"), dict) else {}
                 if persona_num is not None and prev_persona.get("persona_number") != persona_num:
@@ -2680,151 +2611,144 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 })
             return result
 
-        for target_format, fmt_items in fmt_groups.items():
-            for chunk_start in range(0, len(fmt_items), batch_size):
-                chunk = fmt_items[chunk_start:chunk_start + batch_size]
-                chunk_ads = [ad for _, ad in chunk]
-                chunk_indices = [idx for idx, _ in chunk]
-                batch_label = f"ads {chunk_indices[0]}-{chunk_indices[-1]} ({target_format})"
+        all_items_tuples: list[tuple[int, dict]] = [(i + 1, item) for i, item in enumerate(all_items)]
+        all_items_flat = sorted(all_items_tuples, key=lambda x: str((x[1].get("format") or "") if isinstance(x, tuple) else (x.get("format") or "")))
+        for chunk_start in range(0, len(all_items_flat), batch_size):
+            chunk = all_items_flat[chunk_start:chunk_start + batch_size]
+            chunk_ads = [ad for _, ad in chunk]
+            chunk_indices = [idx for idx, _ in chunk]
+            batch_label = f"ads {chunk_indices[0]}-{chunk_indices[-1]}"
 
-                if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                    if not cancel_event_for_run(run_dir.name).is_set():
-                        cancel_event_for_run(run_dir.name).set()
-                    warnings.append(f"Run cancelled by user after {chunk_indices[0] - 1} ads")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED by user after {chunk_indices[0] - 1} ads")
-                    break
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                if not cancel_event_for_run(run_dir.name).is_set():
+                    cancel_event_for_run(run_dir.name).set()
+                warnings.append(f"Run cancelled by user after {chunk_indices[0] - 1} ads")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED by user after {chunk_indices[0] - 1} ads")
+                break
 
-                if session_id and session_request_count >= current_session_limit():
-                    bootstrap_product_doc_session(f"rollover_before_{batch_label}")
+            if session_id and session_request_count >= current_session_limit():
+                bootstrap_product_doc_session(f"rollover_before_{batch_label}")
 
-                # Build previous_same_format from all previously generated ads
-                first_ad = chunk_ads[0]
-                first_persona = first_ad.get("persona") if isinstance(first_ad.get("persona"), dict) else {}
-                first_persona_num = first_persona.get("persona_number")
-                previous_same_format = _build_previous_same_format(target_format, first_persona_num)
+            # Build previous_same_format across all previously generated ads (all formats mixed now)
+            previous_same_format = _build_previous_same_format("ALL", None)
+            first_ad = chunk_ads[0] if chunk_ads else {}
 
-                # Build a batch context with all ads in this chunk
-                batch_context = {**context, "ads": chunk_ads}
-                user_payload = {
-                    "task": "Generate fresh ad copy JSON for provided context.",
-                    "context": build_generation_payload_for_llm(batch_context),
-                    "already_used_ads_DO_NOT_REUSE": previous_same_format,
-                    "constraints": {
-                        "language": target_langs_map.get(language_mode, ["EN", "HI"]),
-                        "language_mode": language_mode,
-                        "format": target_format,
-                        "return_json_only": True,
-                    },
-                }
-                target_langs_list = target_langs_map.get(language_mode, ["EN", "HI"])
-                hyp_meta = first_ad.get("hypothesis") if isinstance(first_ad.get("hypothesis"), dict) else {}
-                hyp_type = str(hyp_meta.get("type") or "none").strip().lower()
-                concept_angle_rules = ""
-                if hyp_type == "none":
-                    all_rules = COPY_PROMPTS.get("concept_angle_definitions", {}).get("all_rules", [])
-                    if all_rules:
-                        concept_angle_rules = "\n\n" + "\n".join(all_rules)
-                cli_prompt = (
-                    "SYSTEM:\n"
-                    f"{build_ad_copy_system_prompt(target_format)}{concept_angle_rules}\n\n"
-                    "USER_PAYLOAD_JSON:\n"
-                    f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
-                    f"{build_ad_prompt_tail(target_format)}\n\n"
-                    f"{build_strict_schema_note(target_format, target_langs_list)}"
-                )
+            # Build a batch context with all ads in this chunk
+            batch_context = {**context, "ads": chunk_ads}
+            user_payload = {
+                "task": "Generate fresh ad copy JSON for provided context.",
+                "context": build_generation_payload_for_llm(batch_context),
+                "already_used_ads_DO_NOT_REUSE": previous_same_format,
+                "constraints": {
+                    "language": target_langs_map.get(language_mode, ["EN", "HI"]),
+                    "language_mode": language_mode,
+                    "return_json_only": True,
+                },
+            }
+            target_langs_list = target_langs_map.get(language_mode, ["EN", "HI"])
+            hyp_meta = first_ad.get("hypothesis") if isinstance(first_ad.get("hypothesis"), dict) else {}
+            hyp_type = str(hyp_meta.get("type") or "none").strip().lower()
+            concept_angle_rules = ""
+            if hyp_type == "none":
+                all_rules = COPY_PROMPTS.get("concept_angle_definitions", {}).get("all_rules", [])
+                if all_rules:
+                    concept_angle_rules = "\n\n" + "\n".join(all_rules)
+            cli_prompt = (
+                "SYSTEM:\n"
+                f"{build_ad_copy_system_prompt('ALL')}{concept_angle_rules}\n\n"
+                "USER_PAYLOAD_JSON:\n"
+                f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
+                f"{build_ad_prompt_tail('ALL')}\n\n"
+                f"{build_strict_schema_note('ALL', target_langs_list)}"
+            )
 
+            try:
+                candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
+            except OSError as exc:
+                errors.append(f"Batch {batch_label}: launch failed: {exc}")
+                for idx in chunk_indices:
+                    errors.append(f"Ad {idx}: launch failed in batch {batch_label}")
+                continue
+
+            if last_code == -1 and "CANCELLED" in last_stderr:
+                warnings.append(f"Batch {batch_label}: cancelled mid-generation; saving already generated results")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label}")
+                break
+
+            if last_code == -1:  # timeout
+                warning = f"Batch {batch_label}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
+                warnings.append(warning)
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
+                bootstrap_product_doc_session("timeout_retry")
                 try:
                     candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
                 except OSError as exc:
-                    errors.append(f"Batch {batch_label}: launch failed: {exc}")
+                    errors.append(f"Batch {batch_label}: retry launch failed after timeout: {exc}")
                     for idx in chunk_indices:
-                        errors.append(f"Ad {idx}: launch failed in batch {batch_label}")
+                        errors.append(f"Ad {idx}: timeout retry failed in batch {batch_label}")
                     continue
-
                 if last_code == -1 and "CANCELLED" in last_stderr:
-                    warnings.append(f"Batch {batch_label}: cancelled mid-generation; saving already generated results")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label}")
+                    warnings.append(f"Batch {batch_label}: cancelled during timeout retry; saving already generated results")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label} timeout retry")
                     break
 
-                if last_code == -1:  # timeout
-                    warning = f"Batch {batch_label}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
-                    warnings.append(warning)
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
-                    bootstrap_product_doc_session("timeout_retry")
-                    try:
-                        candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
-                    except OSError as exc:
-                        errors.append(f"Batch {batch_label}: retry launch failed after timeout: {exc}")
-                        for idx in chunk_indices:
-                            errors.append(f"Ad {idx}: timeout retry failed in batch {batch_label}")
-                        continue
-                    if last_code == -1 and "CANCELLED" in last_stderr:
-                        warnings.append(f"Batch {batch_label}: cancelled during timeout retry; saving already generated results")
-                        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label} timeout retry")
-                        break
+            if last_code != 0:
+                warnings.append(f"Batch {batch_label}: LLM call failed (exit code {last_code})\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
+                for idx in chunk_indices:
+                    errors.append(f"Ad {idx}: LLM call failed in batch {batch_label}")
+                continue
 
-                if last_code != 0 and session_id:
-                    session_id = None
-                    session_fallback_used = True
-                    warning = f"OpenCode reusable session failed on batch {batch_label}; falling back to product-doc file attachment for remaining requests."
-                    warnings.append(f"{warning}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
-                    candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt, force_file=True)
-                    if last_code == -1 and "CANCELLED" in last_stderr:
-                        warnings.append(f"Batch {batch_label}: cancelled during fallback retry; saving already generated results")
-                        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label} fallback")
-                        break
+            # Parse the multi-ad response
+            response_ads: list[dict] = []
+            if candidate and isinstance(candidate, dict):
+                raw_ads = candidate.get("ads")
+                if isinstance(raw_ads, list):
+                    response_ads = raw_ads
 
-                # Parse the multi-ad response
-                response_ads: list[dict] = []
-                if candidate and isinstance(candidate, dict):
-                    raw_ads = candidate.get("ads")
-                    if isinstance(raw_ads, list):
-                        response_ads = raw_ads
-
-                for local_idx, (global_idx, ad_item) in enumerate(chunk):
-                    response_ad = response_ads[local_idx] if local_idx < len(response_ads) else None
-                    if not response_ad or not isinstance(response_ad, dict):
-                        msg = f"Ad {global_idx}: LLM returned no usable ad at position {local_idx} in batch"
-                        warnings.append(msg)
-                        errors.append(f"Ad {global_idx}: no usable ad JSON at batch position {local_idx}")
-                        if session_id:
-                            session_request_count += 1
-                        continue
-
-                    mismatch = hypothesis_mismatch(response_ad, ad_item)
-                    if mismatch:
-                        msg = f"Ad {global_idx}: hypothesis mismatch (accepted, no retry): {mismatch}"
-                        warnings.append(msg)
-                        print(f"[WARNING] {msg}", file=sys.stderr)
-
-                    semantic_prev = _build_previous_same_format(target_format,
-                        (ad_item.get("persona") if isinstance(ad_item.get("persona"), dict) else {}).get("persona_number"))
-                    semantic_rejection = semantic_copy_rejection(response_ad, ad_item, semantic_prev)
-                    if semantic_rejection:
-                        msg = f"Ad {global_idx}: semantic copy quality flag (accepted, no retry): {semantic_rejection}"
-                        warnings.append(msg)
-                        print(f"[WARNING] {msg}", file=sys.stderr)
-
-                    template_leak = detect_template_leakage(response_ad)
-                    if template_leak:
-                        warnings.append(f"Ad {global_idx}: {template_leak}")
-
-                    if last_stdout:
-                        raw_dir = run_dir / "logs" / "opencode_raw"
-                        raw_dir.mkdir(parents=True, exist_ok=True)
-                        (raw_dir / f"ad_{global_idx:02d}_stdout.ndjson").write_text(last_stdout, encoding="utf-8")
-                        (raw_dir / f"ad_{global_idx:02d}_candidate.json").write_text(
-                            json.dumps({"candidate": response_ad, "ad_item": ad_item}, ensure_ascii=False, indent=2) + "\n",
-                            encoding="utf-8",
-                        )
-
-                    if response_ad:
-                        generated_ads.append(hydrate_generated_ad_candidate(response_ad, ad_item))
+            for local_idx, (global_idx, ad_item) in enumerate(chunk):
+                response_ad = response_ads[local_idx] if local_idx < len(response_ads) else None
+                if not response_ad or not isinstance(response_ad, dict):
+                    msg = f"Ad {global_idx}: LLM returned no usable ad at position {local_idx} in batch"
+                    warnings.append(msg)
+                    errors.append(f"Ad {global_idx}: no usable ad JSON at batch position {local_idx}")
                     if session_id:
                         session_request_count += 1
+                    continue
 
-                if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                mismatch = hypothesis_mismatch(response_ad, ad_item)
+                if mismatch:
+                    msg = f"Ad {global_idx}: hypothesis mismatch (accepted, no retry): {mismatch}"
+                    warnings.append(msg)
+                    print(f"[WARNING] {msg}", file=sys.stderr)
+
+                ad_format = str(ad_item.get("format") or "").strip().upper()
+                semantic_prev = _build_previous_same_format(ad_format,
+                        (ad_item.get("persona") if isinstance(ad_item.get("persona"), dict) else {}).get("persona_number"))
+                semantic_rejection = semantic_copy_rejection(response_ad, ad_item, semantic_prev)
+                if semantic_rejection:
+                    msg = f"Ad {global_idx}: semantic copy quality flag (accepted, no retry): {semantic_rejection}"
+                    warnings.append(msg)
+                    print(f"[WARNING] {msg}", file=sys.stderr)
+
+                template_leak = detect_template_leakage(response_ad)
+                if template_leak:
+                    warnings.append(f"Ad {global_idx}: {template_leak}")
+
+                if last_stdout:
+                    raw_dir = run_dir / "logs" / "opencode_raw"
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                    (raw_dir / f"ad_{global_idx:02d}_stdout.ndjson").write_text(last_stdout, encoding="utf-8")
+                    (raw_dir / f"ad_{global_idx:02d}_candidate.json").write_text(
+                        json.dumps({"candidate": response_ad, "ad_item": ad_item}, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+
+                if response_ad:
+                    generated_ads.append(hydrate_generated_ad_candidate(response_ad, ad_item))
+                if session_id:
+                    session_request_count += 1
+
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
                     break
 
     if errors or warnings:
@@ -2838,8 +2762,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         result_payload["_opencode_failures"] = errors
     if warnings:
         result_payload["_opencode_warnings"] = warnings
-    if session_fallback_used:
-        result_payload["_opencode_session_fallback"] = True
     if session_rollovers:
         result_payload["_opencode_session_rollovers"] = session_rollovers
     return result_payload
@@ -5617,7 +5539,6 @@ async def api_run_execute(
         copy_json = build_template_copy(full_context, run_id)
     opencode_failures = copy_json.pop("_opencode_failures", []) if isinstance(copy_json, dict) else []
     opencode_warnings = copy_json.pop("_opencode_warnings", []) if isinstance(copy_json, dict) else []
-    opencode_session_fallback = bool(copy_json.pop("_opencode_session_fallback", False)) if isinstance(copy_json, dict) else False
     opencode_session_rollovers = int(copy_json.pop("_opencode_session_rollovers", 0) or 0) if isinstance(copy_json, dict) else 0
     if opencode_failures and llm_mode == "opencode":
         llm_mode = "opencode_partial_fallback"
@@ -5704,9 +5625,6 @@ async def api_run_execute(
         manifest["copy_generation_warnings"] = len(opencode_warnings)
         manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
         manifest["copy_generation_notes"] = [str(item).splitlines()[0] for item in opencode_warnings[:3]]
-    if opencode_session_fallback:
-        manifest["copy_session_fallback"] = True
-        manifest["copy_session_log"] = str((run_dir / "logs" / "opencode_session.log").relative_to(ROOT))
     if opencode_session_rollovers:
         manifest["copy_session_rollovers"] = opencode_session_rollovers
         manifest["copy_session_schedule"] = OPENCODE_ADS_PER_SESSION_SCHEDULE
@@ -5832,6 +5750,51 @@ def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[st
         raise HTTPException(status_code=400, detail="No EXACT ON-IMAGE COPY block found in prompt file")
     full_path.write_text(updated_text, encoding="utf-8")
     return {"status": "saved", "prompt_file": prompt_path}
+
+
+def api_delete_run(run_id: str) -> dict[str, Any]:
+    run_dir = RUNS_ROOT / run_id
+    if not run_dir.exists():
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    manifest_path = run_dir / "manifest.json"
+    batch = None
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        batch = manifest.get("batch")
+
+    import shutil
+    shutil.rmtree(run_dir)
+
+    deleted_images = False
+    deleted_prompts = False
+    if batch:
+        other_runs_with_same_batch = False
+        for d in RUNS_ROOT.glob("run_*"):
+            if d.name == run_id:
+                continue
+            mf = d / "manifest.json"
+            if mf.exists():
+                try:
+                    m = json.loads(mf.read_text(encoding="utf-8"))
+                    if m.get("batch") == batch:
+                        other_runs_with_same_batch = True
+                        break
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+        if not other_runs_with_same_batch:
+            batch_images_dir = GENERATED_IMAGES_ROOT / batch
+            if batch_images_dir.exists():
+                shutil.rmtree(batch_images_dir)
+                deleted_images = True
+
+            batch_prompts_dir = ROOT / "output" / batch
+            if batch_prompts_dir.exists():
+                shutil.rmtree(batch_prompts_dir)
+                deleted_prompts = True
+
+    return {"status": "deleted", "run_id": run_id, "batch": batch, "deleted_images": deleted_images, "deleted_prompts": deleted_prompts}
 
 
 def api_delete_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:

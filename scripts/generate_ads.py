@@ -37,7 +37,6 @@ OUTPUT_DIR = ROOT / "output"
 
 SUPPORTED_FORMATS = {"HERO", "BA", "TEST", "FEAT", "UGC"}
 SUPPORTED_LANGS = {"EN", "HI", "HINGLISH"}
-SUPPORTED_AWARENESS_STAGES = {"unaware", "problem_aware", "solution_aware", "product_aware"}
 SUPPORTED_CONCEPT_ANGLES = {
     "pain_point",
     "desired_outcome",
@@ -323,25 +322,10 @@ def clean_id(value: Any) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", value.strip().lower()).strip("_")
 
 
-def infer_awareness_stage(persona: dict[str, Any]) -> str:
-    text = " ".join(str(persona.get(k) or "") for k in ["pain_en", "friction_en", "proof_needed_en", "tone_cue_en"]).lower()
-    if any(term in text for term in ["doctor", "trust", "proof", "safe", "natural", "guarantee", "budget", "value"]):
-        return "product_aware"
-    if any(term in text for term in ["past", "failed", "plateau", "rebound", "stubborn", "skeptic", "strict"]):
-        return "solution_aware"
-    if any(term in text for term in ["craving", "hunger", "snack", "stress", "busy", "schedule", "time", "routine"]):
-        return "problem_aware"
-    return "unaware"
-
-
 def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]) -> dict[str, Any]:
-    awareness = clean_id(ad.get("awareness_stage"))
     angle = clean_id(ad.get("concept_angle"))
     structure = clean_id(ad.get("concept_structure"))
-    explicit = bool(awareness or angle or structure)
-
-    if awareness not in SUPPORTED_AWARENESS_STAGES:
-        awareness = infer_awareness_stage(persona)
+    explicit = bool(angle or structure)
 
     if angle not in SUPPORTED_CONCEPT_ANGLES:
         headline_angle = clean_id(ad.get("headline_angle"))
@@ -351,7 +335,6 @@ def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]
         structure = FORMAT_DEFAULT_STRUCTURE.get(fmt, "four_us")
 
     return {
-        "awareness_stage": awareness,
         "concept_angle": angle,
         "concept_structure": structure,
         "explicit": explicit,
@@ -373,7 +356,6 @@ def append_concept_combo_index(
             "timestamp": timestamp,
             "format": fmt,
             "persona_number": persona_number,
-            "awareness_stage": concept["awareness_stage"],
             "concept_angle": concept["concept_angle"],
             "concept_structure": concept["concept_structure"],
         }
@@ -705,7 +687,6 @@ def render_prompt(
             f"- Friction: {friction}",
             f"- Proof needed: {proof}",
             f"- Tone cue: {tone}",
-            f"- Awareness stage: {concept['awareness_stage']}",
             f"- Concept angle: {concept['concept_angle']}",
             f"- Concept structure: {concept['concept_structure']}",
             "- Concept path is strategy only; do not render these labels on-image.",
@@ -1159,7 +1140,6 @@ def main() -> int:
                 "multiplier": creative_total,
                 "background_group_key": background_group_key,
                 "headline_angle": angle or None,
-                "awareness_stage": concept.get("awareness_stage", ""),
                 "concept_angle": concept.get("concept_angle", ""),
                 "concept_structure": concept.get("concept_structure", ""),
                 "hypothesis": ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {},
@@ -1228,7 +1208,6 @@ def main() -> int:
             "persona_number": persona["number"],
             "persona_name": persona["name"],
             "headline_angle": angle or None,
-            "awareness_stage": concept["awareness_stage"],
             "concept_angle": concept["concept_angle"],
             "concept_structure": concept["concept_structure"],
             "visual_archetype": visual_archetype["id"],

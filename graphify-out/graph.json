@@ -2258,81 +2258,81 @@
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L2889",
-      "id": "app_rationale_2889",
       "community": 0,
-      "norm_label": "collect generated image paths for a specific aspect ratio.      searches both le"
+      "norm_label": "collect generated image paths for a specific aspect ratio.      searches both le",
+      "id": "app_rationale_2889"
     },
     {
       "label": "Map generated images to prompts.      Precedence:       1. Sidecar metadata (the",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L3096",
-      "id": "app_rationale_3096",
       "community": 8,
-      "norm_label": "map generated images to prompts.      precedence:       1. sidecar metadata (the"
+      "norm_label": "map generated images to prompts.      precedence:       1. sidecar metadata (the",
+      "id": "app_rationale_3096"
     },
     {
       "label": "Sort key: aspect (4:5 before 9:16), persona number, creative index.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L3209",
-      "id": "app_rationale_3209",
       "community": 8,
-      "norm_label": "sort key: aspect (4:5 before 9:16), persona number, creative index."
+      "norm_label": "sort key: aspect (4:5 before 9:16), persona number, creative index.",
+      "id": "app_rationale_3209"
     },
     {
       "label": "Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L3454",
-      "id": "app_rationale_3454",
       "community": 0,
-      "norm_label": "legacy-ish extractor used by the dashboard editor.      it does not preserve exa"
+      "norm_label": "legacy-ish extractor used by the dashboard editor.      it does not preserve exa",
+      "id": "app_rationale_3454"
     },
     {
       "label": "Task 5: Extract ONLY the content inside:       EXACT ON-IMAGE COPY - DO NOT ALTE",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L3477",
-      "id": "app_rationale_3477",
       "community": 0,
-      "norm_label": "task 5: extract only the content inside:       exact on-image copy - do not alte"
+      "norm_label": "task 5: extract only the content inside:       exact on-image copy - do not alte",
+      "id": "app_rationale_3477"
     },
     {
       "label": "Expand ad plan to include hypothesis style.      When a hypothesis is active, ge",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L3894",
-      "id": "app_rationale_3894",
       "community": 0,
-      "norm_label": "expand ad plan to include hypothesis style.      when a hypothesis is active, ge"
+      "norm_label": "expand ad plan to include hypothesis style.      when a hypothesis is active, ge",
+      "id": "app_rationale_3894"
     },
     {
       "label": "Preserve EXACT headline value text as written in the exact block.      We intent",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L4368",
-      "id": "app_rationale_4368",
       "community": 0,
-      "norm_label": "preserve exact headline value text as written in the exact block.      we intent"
+      "norm_label": "preserve exact headline value text as written in the exact block.      we intent",
+      "id": "app_rationale_4368"
     },
     {
       "label": "Get the intent summary for a concept_variation field from copy_architecture.json",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L4408",
-      "id": "app_rationale_4408",
       "community": 0,
-      "norm_label": "get the intent summary for a concept_variation field from copy_architecture.json"
+      "norm_label": "get the intent summary for a concept_variation field from copy_architecture.json",
+      "id": "app_rationale_4408"
     },
     {
       "label": "For a single run, build the list of {prompt_96, image_sources} entries for 9:16",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L5121",
-      "id": "app_rationale_5121",
       "community": 0,
-      "norm_label": "for a single run, build the list of {prompt_96, image_sources} entries for 9:16"
+      "norm_label": "for a single run, build the list of {prompt_96, image_sources} entries for 9:16",
+      "id": "app_rationale_5121"
     },
     {
       "label": "Move bad generated images out of the active gallery before regeneration.",
@@ -2348,36 +2348,36 @@
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L5776",
-      "id": "app_rationale_5776",
       "community": 8,
-      "norm_label": "kill the chrome process started by launch-visible-browser and stop any running a"
+      "norm_label": "kill the chrome process started by launch-visible-browser and stop any running a",
+      "id": "app_rationale_5776"
     },
     {
       "label": "Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L5818",
-      "id": "app_rationale_5818",
       "community": 9,
-      "norm_label": "edit a prompt file in-place, replacing only the exact on-image copy block."
+      "norm_label": "edit a prompt file in-place, replacing only the exact on-image copy block.",
+      "id": "app_rationale_5818"
     },
     {
       "label": "Delete a prompt file and remove it from the run manifest.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L5838",
-      "id": "app_rationale_5838",
       "community": 9,
-      "norm_label": "delete a prompt file and remove it from the run manifest."
+      "norm_label": "delete a prompt file and remove it from the run manifest.",
+      "id": "app_rationale_5838"
     },
     {
       "label": "Delete a generated image and its metadata JSON.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L5858",
-      "id": "app_rationale_5858",
       "community": 9,
-      "norm_label": "delete a generated image and its metadata json."
+      "norm_label": "delete a generated image and its metadata json.",
+      "id": "app_rationale_5858"
     },
     {
       "label": "Compute the expected full output path for a generated image.",
@@ -2411,81 +2411,81 @@
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6056",
-      "id": "app_rationale_6056",
       "community": 8,
-      "norm_label": "build the deterministic output stem for a generated image.      example:  prompt"
+      "norm_label": "build the deterministic output stem for a generated image.      example:  prompt",
+      "id": "app_rationale_6056"
     },
     {
       "label": "Compute the expected full output path for a generated image.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6074",
-      "id": "app_rationale_6074",
       "community": 8,
-      "norm_label": "compute the expected full output path for a generated image."
+      "norm_label": "compute the expected full output path for a generated image.",
+      "id": "app_rationale_6074"
     },
     {
       "label": "Find the 4:5 reference image for a given prompt.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6082",
-      "id": "app_rationale_6082",
       "community": 8,
-      "norm_label": "find the 4:5 reference image for a given prompt."
+      "norm_label": "find the 4:5 reference image for a given prompt.",
+      "id": "app_rationale_6082"
     },
     {
       "label": "Regenerate images already in the to_be_regenerated queue.      Single endpoint t",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6110",
-      "id": "app_rationale_6110",
       "community": 0,
-      "norm_label": "regenerate images already in the to_be_regenerated queue.      single endpoint t"
+      "norm_label": "regenerate images already in the to_be_regenerated queue.      single endpoint t",
+      "id": "app_rationale_6110"
     },
     {
       "label": "Extract format, persona, language from an image's companion JSON metadata     an",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6338",
-      "id": "app_rationale_6338",
       "community": 8,
-      "norm_label": "extract format, persona, language from an image's companion json metadata     an"
+      "norm_label": "extract format, persona, language from an image's companion json metadata     an",
+      "id": "app_rationale_6338"
     },
     {
       "label": "Map persona number (P01) to persona name from run's copy_batch.json.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6420",
-      "id": "app_rationale_6420",
       "community": 9,
-      "norm_label": "map persona number (p01) to persona name from run's copy_batch.json."
+      "norm_label": "map persona number (p01) to persona name from run's copy_batch.json.",
+      "id": "app_rationale_6420"
     },
     {
       "label": "Strip excessive internal keys from image metadata and enrich with     hypothesis",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6444",
-      "id": "app_rationale_6444",
       "community": 9,
-      "norm_label": "strip excessive internal keys from image metadata and enrich with     hypothesis"
+      "norm_label": "strip excessive internal keys from image metadata and enrich with     hypothesis",
+      "id": "app_rationale_6444"
     },
     {
       "label": "Return a zip containing the image file and its metadata JSON.",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6484",
-      "id": "app_rationale_6484",
       "community": 9,
-      "norm_label": "return a zip containing the image file and its metadata json."
+      "norm_label": "return a zip containing the image file and its metadata json.",
+      "id": "app_rationale_6484"
     },
     {
       "label": "Return a zip of all images grouped by VN subfolders with metadata.     Always sc",
       "file_type": "rationale",
       "source_file": "dashboard/backend/app.py",
       "source_location": "L6516",
-      "id": "app_rationale_6516",
       "community": 9,
-      "norm_label": "return a zip of all images grouped by vn subfolders with metadata.     always sc"
+      "norm_label": "return a zip of all images grouped by vn subfolders with metadata.     always sc",
+      "id": "app_rationale_6516"
     },
     {
       "label": "Map persona number (P01) to persona name from run's copy_batch.json.",
@@ -3310,7 +3310,7 @@
       "label": "openProductDocEditor()",
       "file_type": "code",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L147",
+      "source_location": "L133",
       "id": "main_openproductdoceditor",
       "community": 3,
       "norm_label": "openproductdoceditor()"
@@ -3319,7 +3319,7 @@
       "label": "renderModelOptions()",
       "file_type": "code",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L157",
+      "source_location": "L143",
       "id": "main_rendermodeloptions",
       "community": 3,
       "norm_label": "rendermodeloptions()"
@@ -3328,7 +3328,7 @@
       "label": "initDefaults()",
       "file_type": "code",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L163",
+      "source_location": "L149",
       "id": "main_initdefaults",
       "community": 3,
       "norm_label": "initdefaults()"
@@ -3337,7 +3337,7 @@
       "label": "runPipeline()",
       "file_type": "code",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L195",
+      "source_location": "L181",
       "id": "main_runpipeline",
       "community": 3,
       "norm_label": "runpipeline()"
@@ -23519,7 +23519,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L147",
+      "source_location": "L133",
       "weight": 1.0,
       "_src": "dashboard_frontend_js_main_js",
       "_tgt": "main_openproductdoceditor",
@@ -23531,7 +23531,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L157",
+      "source_location": "L143",
       "weight": 1.0,
       "_src": "dashboard_frontend_js_main_js",
       "_tgt": "main_rendermodeloptions",
@@ -23543,7 +23543,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L163",
+      "source_location": "L149",
       "weight": 1.0,
       "_src": "dashboard_frontend_js_main_js",
       "_tgt": "main_initdefaults",
@@ -23555,7 +23555,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L195",
+      "source_location": "L181",
       "weight": 1.0,
       "_src": "dashboard_frontend_js_main_js",
       "_tgt": "main_runpipeline",
@@ -23567,7 +23567,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L172",
+      "source_location": "L158",
       "weight": 1.0,
       "_src": "main_initdefaults",
       "_tgt": "main_renderinputimages",
@@ -23579,7 +23579,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L173",
+      "source_location": "L159",
       "weight": 1.0,
       "_src": "main_initdefaults",
       "_tgt": "main_renderproductdocinfo",
@@ -23603,7 +23603,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "dashboard/frontend/js/main.js",
-      "source_location": "L187",
+      "source_location": "L173",
       "weight": 1.0,
       "_src": "main_initdefaults",
       "_tgt": "main_rendermodeloptions",

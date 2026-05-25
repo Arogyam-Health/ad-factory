@@ -61,25 +61,6 @@
       "desire_field": "desire_hi"
     }
   },
-  "testimonial_attribution_variants": {
-    "_description": "Attribution text variants per language for ensure_testimonial_attribution. Picked deterministically via hash.",
-    "EN": [
-      "Representative routine feedback",
-      "15-day adherence feedback snapshot",
-      "Persona-based obesity-care review note",
-      "Representative weight-loss routine review",
-      "Structured-plan feedback example",
-      "Representative user experience note"
-    ],
-    "HI": [
-      "प्रतिनिधि रूटीन फीडबैक",
-      "15-दिन adherence फीडबैक स्नैपशॉट",
-      "पर्सोना-आधारित obesity-care रिव्यू नोट",
-      "प्रतिनिधि वजन-घटाने रूटीन रिव्यू",
-      "स्ट्रक्चर्ड-प्लान फीडबैक उदाहरण",
-      "प्रतिनिधि यूजर अनुभव नोट"
-    ]
-  },
   "feature_templates": {
     "_description": "Feature support lines per feature key. Used in build_template_copy for BA format bullets and HERO/UGC support lines.",
     "structured_system": {
@@ -174,10 +155,6 @@
       "headline": {
         "EN": "I trusted the 15-day kit because the steps felt clear for weight loss.",
         "HI": "मैंने 15 दिन की किट पर भरोसा किया क्योंकि वजन-घटाने के कदम साफ लगे।"
-      },
-      "attribution": {
-        "EN": "Doctor-formulated Ayurvedic obesity and weight-loss protocol",
-        "HI": "डॉक्टर-फॉर्मुलेटेड आयुर्वेदिक मोटापा और वजन-घटाने का प्रोटोकॉल"
       },
       "trust_line": {
         "EN": "Structured morning-night steps for visible weight-loss progress and obesity control.",

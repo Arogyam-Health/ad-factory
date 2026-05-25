@@ -83,8 +83,22 @@ export function renderRun(run) {
 
   const header = document.createElement("div");
   header.className = "run-header";
-  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${run.batch} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span>`;
+  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${run.batch} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
   div.appendChild(header);
+
+  header.querySelector(".run-delete-btn")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete entire run ${run.run_id} and all its images?`)) return;
+    try {
+      await fetchJSON(`/api/runs/${run.run_id}`, { method: "DELETE" });
+      appendLog(`Deleted run ${run.run_id}`);
+      invalidateRuns();
+      const { loadRuns } = await import("./runs.js");
+      loadRuns();
+    } catch (err) {
+      appendLog(`Delete failed: ${String(err)}`);
+    }
+  });
 
   const llm = document.createElement("div");
   llm.className = "run-updated";

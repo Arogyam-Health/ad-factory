@@ -204,6 +204,7 @@ async function runPipeline() {
     formats_by_persona: getFormatsByPersona(),
     visual_archetypes_by_format: state.selectedVisualArchetypesByFormat,
     multiplier: Math.max(1, Math.min(20, Number.parseInt(document.getElementById("adMultiplier")?.value || "1", 10) || 1)),
+    batch_size: Math.max(1, Math.min(500, Number.parseInt(document.getElementById("batchSize")?.value || "10", 10) || 10)),
     share_background_across_personas: Boolean(document.getElementById("shareBackgroundAcrossPersonas")?.checked),
     reuse_backgrounds_from_run_id: reuseBackgrounds ? backgroundReuseRunId : "",
     reuse_visual_patterns_from_run_id: reuseVisualPatterns ? visualPatternReuseRunId : "",

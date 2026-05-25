@@ -379,6 +379,9 @@
       "Copy style:",
       "Direct, confident, product-first.",
       "",
+      "Required copy fields:",
+      "headline, subheadline, cta",
+      "",
       "Internal writing logic:",
       "Persona problem -> OK Kit as the solution -> practical benefit.",
       "",
@@ -397,6 +400,9 @@
       "",
       "Copy style:",
       "Casual, lived-in, conversational. Slightly imperfect is fine. It should not sound overly polished.",
+      "",
+      "Required copy fields:",
+      "headline, subheadline, cta",
       "",
       "Internal writing logic:",
       "Real-life moment -> relatable struggle -> OK Kit feels followable.",
@@ -424,6 +430,9 @@
       "Copy style:",
       "Specific, believable, proof-led.",
       "",
+      "Required copy fields:",
+      "headline, trust_line, cta",
+      "",
       "Internal writing logic:",
       "Customer experience/proof -> reason it worked -> next step.",
       "",
@@ -450,6 +459,9 @@
       "Copy style:",
       "Clear, simple, educational, benefit-linked.",
       "",
+      "Required copy fields:",
+      "headline, bullets (array of 3), cta",
+      "",
       "Internal writing logic:",
       "Feature -> why it matters -> customer benefit.",
       "Use FAB silently, but do not mention FAB.",
@@ -475,6 +487,9 @@
       "",
       "Copy style:",
       "Contrast-led, simple, believable.",
+      "",
+      "Required copy fields:",
+      "headline, bullets (array of 2: before state, after state), cta",
       "",
       "Internal writing logic:",
       "Before struggle -> after shift -> bridge through OK Kit.",
@@ -550,7 +565,7 @@
       "- If a specific concept angle is selected, make the ads clearly revolve around that angle.",
       "",
       "Step 4:",
-      "Generate the requested number of ads.",
+      "Generate one ad per entry in the ads array. Each entry has a count field telling how many ad variations to create for that persona and format. Output that many ad objects in the response ads array.",
       "",
       "Step 5:",
       "Before final output, silently reject any ad where:",
@@ -609,7 +624,7 @@
       "copy": {
         "EN": {
           "headline": "<proof-led headline, believable customer experience>",
-          "subheadline": "<subheadline explaining why it worked>",
+          "trust_line": "<trust line reinforcing the result or credibility>",
           "cta": "<your CTA>"
         }
       }
@@ -618,7 +633,7 @@
       "copy": {
         "EN": {
           "headline": "<feature-connected headline>",
-          "subheadline": "<subheadline linking feature to customer benefit>",
+          "bullets": ["<bullet 1 linking feature to customer benefit>", "<bullet 2>", "<bullet 3>"],
           "cta": "<your CTA>"
         }
       }
@@ -627,7 +642,7 @@
       "copy": {
         "EN": {
           "headline": "<before-after contrast headline>",
-          "subheadline": "<subheadline bridging the shift through OK Kit>",
+          "bullets": ["<bullet 1: before situation>", "<bullet 2: after shift>"],
           "cta": "<your CTA>"
         }
       }
@@ -692,9 +707,9 @@
     "field_map": {
       "HERO": "headline, subheadline, cta",
       "UGC": "headline, subheadline, cta",
-      "BA": "headline, subheadline, cta",
-      "FEAT": "headline, subheadline, cta",
-      "TEST": "headline, subheadline, cta"
+      "BA": "headline, bullets, cta",
+      "FEAT": "headline, bullets, cta",
+      "TEST": "headline, trust_line, cta"
     },
     "default_fields": "headline, cta"
   }

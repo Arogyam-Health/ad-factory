@@ -10,6 +10,7 @@ from dashboard.backend.app import (
     api_edit_prompt,
     api_delete_prompt,
     api_delete_image,
+    api_delete_run,
     api_mark_images_to_regenerate,
     api_restore_images_from_regeneration_queue,
     api_regenerate_queued_images,
@@ -30,6 +31,10 @@ def _runs() -> dict[str, Any]:
 @router.get("/api/runs/{run_id}")
 def _run(run_id: str) -> dict[str, Any]:
     return api_run(run_id)
+
+@router.delete("/api/runs/{run_id}")
+def _delete_run(run_id: str) -> dict[str, Any]:
+    return api_delete_run(run_id)
 
 @router.get("/api/runs/{run_id}/prompt-copies")
 def _prompt_copies(run_id: str) -> dict[str, Any]:

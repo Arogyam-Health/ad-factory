@@ -104,6 +104,9 @@
           <label>Ad multiplier per selected persona/format</label>
           <input id="adMultiplier" type="number" min="1" max="20" value="1" />
           <p class="hint">Use this to create multiple ads for the same persona, format, and hypothesis. The selected background stays locked across those multiplied ads.</p>
+          <label>Ads per LLM call (batch size)</label>
+          <input id="batchSize" type="number" min="1" max="500" value="10" />
+          <p class="hint">How many ad requests to send in a single LLM call. Higher = fewer calls, larger context.</p>
           <label class="toggle-label execution-toggle" title="Use the same background for the same selected format across all selected personas in this run.">
             <input id="shareBackgroundAcrossPersonas" type="checkbox" />
             <span>Keep same background across personas for each format</span>
