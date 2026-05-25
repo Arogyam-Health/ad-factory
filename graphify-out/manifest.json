@@ -1,17 +1,277 @@
 {
-  "/home/mylappy/myspace/info/scripts/bootstrap_stack.ps1": 1776685543.3337717,
-  "/home/mylappy/myspace/info/scripts/kie_nano_batch.py": 1776983719.8000624,
-  "/home/mylappy/myspace/info/scripts/gemini_web_automation.py": 1776996450.6193984,
-  "/home/mylappy/myspace/info/scripts/upgrade_safezone_backgrounds.py": 1776419346.4676032,
-  "/home/mylappy/myspace/info/scripts/generate_ads.py": 1776889564.1372766,
-  "/home/mylappy/myspace/info/scripts/extract_product_context.py": 1776950975.8357723,
-  "/home/mylappy/myspace/info/scripts/registry_banlist.py": 1776484903.8700902,
-  "/home/mylappy/myspace/info/scripts/stop_dashboard_stack.ps1": 1776685567.5927267,
-  "/home/mylappy/myspace/info/scripts/build_canonical_context.py": 1776952882.4382117,
-  "/home/mylappy/myspace/info/scripts/extract_format_rules.py": 1776784386.9895065,
-  "/home/mylappy/myspace/info/dashboard/__init__.py": 1776545980.9832356,
-  "/home/mylappy/myspace/info/dashboard/backend/__init__.py": 1776545985.1482508,
-  "/home/mylappy/myspace/info/dashboard/backend/app.py": 1776975990.2141364,
-  "/home/mylappy/myspace/info/dashboard/frontend/app.js": 1776894998.172568,
-  "/home/mylappy/myspace/info/dashboard/frontend/index.html": 1776894963.2510223
+  "/home/mylappy/myspace/info/scripts/bootstrap_stack.ps1": {
+    "mtime": 1779171674.6407547,
+    "ast_hash": "25335a6e26f33bad4f7124418f80b077",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/gemini_web_automation.py": {
+    "mtime": 1778691541.9349296,
+    "ast_hash": "5f0571fb7a51edf832035a16c887302b",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/generate_ads.py": {
+    "mtime": 1779673659.6906147,
+    "ast_hash": "540bb9a499dc248256efd0126fa3b537",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/registry_banlist.py": {
+    "mtime": 1779438137.6900663,
+    "ast_hash": "b73e5e77d6444041ec1cf2eeff6d2ddf",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/stop_dashboard_stack.ps1": {
+    "mtime": 1779171641.9046566,
+    "ast_hash": "68631351da58017a3f8a1efe9e8085cf",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/extract_format_rules.py": {
+    "mtime": 1778264695.4707494,
+    "ast_hash": "c1b6b0a2b82796b775233daa3f9198a6",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/__init__.py": {
+    "mtime": 1778264695.421102,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/__init__.py": {
+    "mtime": 1778264695.4216015,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/app.py": {
+    "mtime": 1779687867.8722525,
+    "ast_hash": "a22cb7660672c76b01371cb771fc6ed4",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/index.html": {
+    "mtime": 1779446279.899778,
+    "ast_hash": "923f6dace349c99a02047c96b02422f4",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/AD_GENERATION_REGISTRY.JSON": {
+    "mtime": 1779674458.0588715,
+    "ast_hash": "b9a7c339950f2f4d9e134119890b00fc",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/persona_seeds.json": {
+    "mtime": 1779676227.4647524,
+    "ast_hash": "a37726e3d1d8064c734871ad33309fbc",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/background_variant.json": {
+    "mtime": 1778931083.3355138,
+    "ast_hash": "297823e7b5d90e0a320b3c06266d33e4",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/docs/end_to_end_flow.excalidraw.json": {
+    "mtime": 1778868827.0046697,
+    "ast_hash": "e115c89df96fc109245b68797f4d16ac",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/copy_prompt_templates.json": {
+    "mtime": 1779687858.6239653,
+    "ast_hash": "4a585d734d19a962843cd34c79f7464f",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/fallback_templates.json": {
+    "mtime": 1779687840.61678,
+    "ast_hash": "d81e7f5f9aac81cc4280cd1fa5eff271",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/copy_architecture.json": {
+    "mtime": 1779437982.1406066,
+    "ast_hash": "3173bd5618bed027d76c5324d01248f8",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/runs.py": {
+    "mtime": 1779446337.090335,
+    "ast_hash": "ca17b9b0020052f2ce8a4ade4c7d2d5f",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/defaults.py": {
+    "mtime": 1778958081.9159787,
+    "ast_hash": "f8cd3a6d0506cae295d0c4a9304b0314",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/chrome.py": {
+    "mtime": 1778499509.7589831,
+    "ast_hash": "2dba42dee62e35bde4bdea3e8bf6b4a3",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/execute.py": {
+    "mtime": 1778497502.408314,
+    "ast_hash": "5cf3ace0d72c111a62dec1e5e64492c2",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/export_import.py": {
+    "mtime": 1778497558.465183,
+    "ast_hash": "360e15ee4998f1efa55e7940d3c3643e",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/__init__.py": {
+    "mtime": 1778496745.6536305,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/generate.py": {
+    "mtime": 1778497495.3590753,
+    "ast_hash": "bfd04d92eb1fef689c363e935582467f",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/progress.py": {
+    "mtime": 1778497558.4931839,
+    "ast_hash": "f1f0f3d1def26377c920ca6e8b82ae59",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/backend/routes/batch.py": {
+    "mtime": 1778497502.385313,
+    "ast_hash": "5dc4643f83b415fe34709a7c674c16f9",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/state.js": {
+    "mtime": 1778662956.0774555,
+    "ast_hash": "b6a761c0e681118e1061a0f081409276",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/ui.js": {
+    "mtime": 1778666759.5275605,
+    "ast_hash": "3a66cdef9889e69f1d8cf561cc689433",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/theme.js": {
+    "mtime": 1778496150.9728785,
+    "ast_hash": "0f5482b4cd9f048de42ffc36991db0e5",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/images.js": {
+    "mtime": 1779088129.91388,
+    "ast_hash": "90cd16efe25d449fba6658d4da7f0dcf",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/personas.js": {
+    "mtime": 1778666728.8903625,
+    "ast_hash": "ee2518e9591ad980fe12435382bd416b",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/chrome.js": {
+    "mtime": 1778578731.3657076,
+    "ast_hash": "5d916a86859b5931b81ba9bec95ae2c1",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/main.js": {
+    "mtime": 1779446351.8810174,
+    "ast_hash": "16a24624835c1828874b5ffdf2e60394",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/hypothesis.js": {
+    "mtime": 1778666728.8899539,
+    "ast_hash": "6cf2bd38c7b03f8465b9c6fb6347c871",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/prompts.js": {
+    "mtime": 1778841053.556593,
+    "ast_hash": "de7d3d7845e1d657fc8e903a25cee1f8",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/runs.js": {
+    "mtime": 1779086365.9603124,
+    "ast_hash": "6422e9ae336691efbc19991b2a76c0c3",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/custom-select.js": {
+    "mtime": 1778689037.896529,
+    "ast_hash": "c1ba64489db5e686ceb0f54441a49fa1",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/dashboard/frontend/js/api.js": {
+    "mtime": 1778496104.3066719,
+    "ast_hash": "43f1996570741c0e5a3d29c77bc2e179",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/start_dashboard_stack.ps1": {
+    "mtime": 1779171623.0723503,
+    "ast_hash": "53aff47f12422ce05b4c6d71ac0ec990",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/start_dashboard_stack.sh": {
+    "mtime": 1778264695.4721093,
+    "ast_hash": "a49f25737a64962104568cc9f3150ea8",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/assemble_from_xlsx.py": {
+    "mtime": 1779673660.7776377,
+    "ast_hash": "ca3ec86e922d8cad59cebb432e75463a",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/stop_dashboard_stack.sh": {
+    "mtime": 1778264695.4721093,
+    "ast_hash": "81aba97351b586d465b599aecc325756",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/setup_windows.ps1": {
+    "mtime": 1779171935.1358492,
+    "ast_hash": "5af0b4c323d96ca4576245044c27b15e",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/bootstrap_stack.sh": {
+    "mtime": 1778264695.4707494,
+    "ast_hash": "d6861c99159c00614b3ab535b317e8eb",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/chatgpt_web_sutomation.py": {
+    "mtime": 1779340856.1971843,
+    "ast_hash": "bf01f35b2e65ffc3520a50289d5a6e66",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/run_dashboard.sh": {
+    "mtime": 1778264695.4711092,
+    "ast_hash": "9690545d2394d670f754a051255adcf3",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/AGENTS.md": {
+    "mtime": 1779341478.8374467,
+    "ast_hash": "200e774bc4bde04c3040add7ee828698",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/requirements-dashboard.txt": {
+    "mtime": 1778526679.973799,
+    "ast_hash": "99f1ccd3ba6a90c80da9acc5ea6b51ae",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/AD_CREATIVE_SYSTEM_PLAYBOOK.md": {
+    "mtime": 1779537180.5123367,
+    "ast_hash": "39ddaa0dd427b7075053765955c12e44",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/docs/AB_TESTING_PLAYBOOK.md": {
+    "mtime": 1778868765.2998161,
+    "ast_hash": "d0db7d7cfa4b4266d8c087532e2691c4",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/docs/HANDOVER.md": {
+    "mtime": 1779439015.863242,
+    "ast_hash": "8232c8ae242310592329dad9812f298e",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/input/prompt_916_from_45.txt": {
+    "mtime": 1778958323.2656994,
+    "ast_hash": "64258929b44bc93a14e2d348c52d3504",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/input/startingprompt.txt": {
+    "mtime": 1779085162.2493956,
+    "ast_hash": "9a655cad8548635651ca8ded2f8f7615",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/input/docs/product master doc.txt": {
+    "mtime": 1779079468.6435444,
+    "ast_hash": "1b6f01f2417669d5ae04570cd70a17c6",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/input/images/Untitled design(1).png": {
+    "mtime": 1778264695.4591074,
+    "ast_hash": "f3e0acd6a7bc4f0786f4dded8ef78f40",
+    "semantic_hash": ""
+  }
 }

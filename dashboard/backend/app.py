@@ -324,14 +324,15 @@ def _load_persona_seeds() -> dict[int, dict[str, str]]:
         pn = int(entry.get("persona_number", 0))
         if pn < 1:
             continue
+            raw_attempts = str(entry.get("failed_attempts", "")).strip()
+        raw_why = str(entry.get("why_it_failed", "")).strip()
+        objections_raw = (raw_attempts + " " + raw_why).strip()
         seeds[pn] = {
-            "pain": str(entry.get("pain", "")),
-            "desire": str(entry.get("desire", "")),
-            "friction": str(entry.get("friction", "")),
-            "proof": str(entry.get("proof", "")),
-            "tone": str(entry.get("tone", "")),
-            "awareness_stage": str(entry.get("awareness_stage", "unaware")),
-            "how_kit_solves": entry.get("how_kit_solves", {}),
+            "core_pattern": str(entry.get("core_pattern", "")),
+            "common_indian_moments": str(entry.get("common_indian_moments", "")),
+            "objections_raw": objections_raw,
+            "how_kit_solves": str(entry.get("relevant_ok_kit_role", "")),
+            "guardrail": str(entry.get("guardrail", "")),
         }
     return seeds
 
@@ -661,17 +662,19 @@ def build_ad_copy_system_prompt(fmt: str) -> str:
     return " ".join(base_rules + fmt_rules)
 
 
-def build_strict_schema_note(fmt: str) -> str:
+def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
     prompts = COPY_PROMPTS.get("strict_schema_note", {})
     field_map = prompts.get("field_map", {})
     copy_fields = field_map.get(fmt, prompts.get("default_fields", "headline, cta"))
-    return " ".join([
+    parts = [
         prompts.get("intro", ""),
         prompts.get("persona_fields_en", ""),
-        prompts.get("language_extension", ""),
-        prompts.get("format_closure_template", "").format(fmt=fmt or "this", copy_fields=copy_fields),
-    ])
+    ]
+    if languages and any("HINGLISH" in l.upper() for l in languages):
+        parts.append(prompts.get("language_extension", ""))
+    parts.append(prompts.get("format_closure_template", "").format(fmt=fmt or "this", copy_fields=copy_fields))
+    return " ".join(parts)
 
 
 def build_ad_prompt_tail(fmt: str) -> str:
@@ -1025,6 +1028,9 @@ def hydrate_generated_ad_candidate(candidate: dict[str, Any], planned_ad: dict[s
 
 
 def _normalize_how_kit_solves(value: Any) -> dict[str, str]:
+    if isinstance(value, str):
+        trimmed = value.strip()
+        return {"kit_lever": trimmed} if trimmed else {}
     if isinstance(value, dict):
         if isinstance(value.get("how_kit_solves"), dict):
             value = value["how_kit_solves"]
@@ -2814,12 +2820,14 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                     "return_json_only": True,
                 },
             }
+            target_langs_list = target_langs.get(language_mode, ["EN", "HI"])
             cli_prompt = (
                 "SYSTEM:\n"
                 f"{build_ad_copy_system_prompt(target_format)}\n\n"
                 "USER_PAYLOAD_JSON:\n"
                 f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
-                f"{build_ad_prompt_tail(target_format)}"
+                f"{build_ad_prompt_tail(target_format)}\n\n"
+                f"{build_strict_schema_note(target_format, target_langs_list)}"
             )
 
             try:
@@ -4531,11 +4539,11 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
         # Pull full persona data from persona_seeds.json
         seed = PERSONA_SEED_INPUTS.get(persona_number) or {}
         persona_name = str(seed.get("persona_name") or f"Persona {persona_number}")
-        persona_pain = str(seed.get("pain", ""))
-        persona_desire = str(seed.get("desire", ""))
-        persona_friction = str(seed.get("friction", ""))
-        persona_proof = str(seed.get("proof", ""))
-        persona_tone = str(seed.get("tone", ""))
+        persona_pain = str(seed.get("core_pattern", ""))
+        persona_desire = str(seed.get("common_indian_moments", ""))
+        persona_friction = str(seed.get("objections_raw", ""))
+        persona_proof = str(seed.get("common_indian_moments", ""))
+        persona_tone = str(seed.get("guardrail", ""))
         persona_awareness_stage = str(seed.get("awareness_stage", ""))
 
         for ad in copy_batch.get("ads") or []:

@@ -2,44 +2,38 @@
   "persona_mapping": {
     "_description": "Maps persona_seeds.json fields → LLM payload fields. Each entry defines how a seed field is transformed into a payload field.",
     "seed_to_payload": {
-      "pain": {
+      "core_pattern": {
         "field": "pain_points",
         "wrap_list": true,
         "prefix": null
       },
-      "desire": {
-        "field": "core_message",
-        "wrap_list": true,
-        "prefix": null
-      },
-      "friction": {
-        "field": "objections",
-        "wrap_list": true,
-        "prefix": null
-      },
-      "proof": {
+      "common_indian_moments": {
         "field": "trust_anchors",
         "wrap_list": true,
         "prefix": null
       },
-      "tone": {
-        "field": "english_ready",
+      "objections_raw": {
+        "field": "objections",
         "wrap_list": true,
-        "prefix": "Tone cue: "
+        "prefix": null
       },
       "how_kit_solves": {
         "field": "how_kit_solves",
         "wrap_list": false,
         "prefix": null
+      },
+      "guardrail": {
+        "field": "guardrails",
+        "wrap_list": true,
+        "prefix": "Guardrail: "
       }
     },
     "persona_fallbacks": {
-      "pain": "Daily routine feels heavy and hard to sustain.",
-      "desire": "A practical routine that feels easy to follow.",
-      "friction": "Past plans felt too strict and difficult to maintain.",
-      "proof": "Needs clear structure and believable support.",
-      "tone": "practical and confidence-building",
-      "how_kit_solves": {}
+      "core_pattern": "Daily routine feels heavy and hard to sustain.",
+      "common_indian_moments": "Everyday situations make it harder to stay consistent.",
+      "objections_raw": "Past plans felt too strict and difficult to maintain.",
+      "how_kit_solves": {},
+      "guardrail": ""
     },
     "static_fields": {
       "trigger_scenarios": [],

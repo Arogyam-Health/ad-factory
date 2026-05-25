@@ -567,8 +567,8 @@
   },
   "strict_schema_note": {
     "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys.",
-    "persona_fields_en": "persona must be an object with number, name, pain_en, desire_en, friction_en, proof_needed_en, tone_cue_en, how_kit_solves, pain_hi, desire_hi, friction_hi, proof_needed_hi, tone_cue_hi.",
-    "language_extension": "When constraints.language includes HINGLISH, also include pain_hinglish, desire_hinglish, friction_hinglish, proof_needed_hinglish, tone_cue_hinglish in persona.",
+    "persona_fields_en": "persona must be an object with number, name, core_pattern_en, common_moments_en, failed_attempts_en, why_it_failed_en, kit_role_en, guardrail_en, core_pattern_hi, common_moments_hi, failed_attempts_hi, why_it_failed_hi, kit_role_hi, guardrail_hi.",
+    "language_extension": "When constraints.language includes HINGLISH, also include core_pattern_hinglish, common_moments_hinglish, failed_attempts_hinglish, why_it_failed_hinglish, kit_role_hinglish, guardrail_hinglish in persona.",
     "format_closure_template": "For {fmt} format, copy.EN, copy.HI, and copy.HINGLISH (when requested) must contain only: {copy_fields}.",
     "field_map": {
       "HERO": "headline, subheadline, cta",
