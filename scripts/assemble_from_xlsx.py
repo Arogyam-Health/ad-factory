@@ -250,16 +250,7 @@ def outpaint_lock_block(aspect_ratio: str) -> str:
 
 
 def base_layout_lines_for_format(fmt: str) -> list[str]:
-    if not COPY_PROMPTS_PATH.exists():
-        raise RuntimeError(f"Copy prompts config not found: {COPY_PROMPTS_PATH}")
-    try:
-        data = json.loads(COPY_PROMPTS_PATH.read_text(encoding="utf-8"))
-        lines = (data.get("layout_lines") or {}).get(fmt)
-        if lines is None:
-            raise RuntimeError(f"Unsupported format: {fmt}")
-        return list(lines)
-    except Exception as exc:
-        raise RuntimeError(f"Failed to load layout lines for {fmt}: {exc}")
+    return []
 
 
 

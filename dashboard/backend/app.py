@@ -50,6 +50,7 @@ CONVERT_916_TEMPLATE_PATH = ROOT / "input" / "prompt_916_from_45.txt"
 PERSONA_SEEDS_PATH = ROOT / "persona_seeds.json"
 COPY_ARCH_PATH = ROOT / "dashboard" / "backend" / "copy_architecture.json"
 COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
+FALLBACK_TEMPLATES_PATH = ROOT / "dashboard" / "backend" / "fallback_templates.json"
 STARTING_PROMPT_PATH = ROOT / "input" / "startingprompt.txt"
 
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
@@ -130,7 +131,7 @@ def copy_text_for_candidate(candidate: dict[str, Any], lang: str = "EN") -> str:
     copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
     block = copy.get(lang) if isinstance(copy.get(lang), dict) else {}
     parts: list[str] = []
-    for key in ["headline", "support_line", "trust_line", "attribution", "cta"]:
+    for key in ["headline", "subheadline", "support_line", "trust_line", "attribution", "cta"]:
         value = block.get(key)
         if isinstance(value, str) and value.strip():
             parts.append(value.strip())
@@ -423,8 +424,21 @@ def _build_hypothesis_variables() -> dict[str, dict[str, Any]]:
 
 
 COPY_PROMPTS = _load_copy_prompts()
+
+def _load_fallback_templates() -> dict[str, Any]:
+    path = FALLBACK_TEMPLATES_PATH
+    if not path.exists():
+        print(f"WARNING: {path} not found. Fallback templates disabled.", file=sys.stderr)
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"WARNING: Failed to load {path}: {exc}", file=sys.stderr)
+        return {}
+
+FALLBACKS = _load_fallback_templates()
 HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
-CTA_VARIANTS = COPY_PROMPTS.get("cta_variants", {})
+
 
 
 def _headline_architecture_group(group: str) -> str:
@@ -597,8 +611,13 @@ def _compact_product_truth() -> dict[str, Any]:
 def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index: int, variation_seed: str = "") -> dict[str, Any]:
     persona_seed = PERSONA_SEED_INPUTS.get(persona_number, {})
 
-    prompts = COPY_PROMPTS.get("copy_requirements", {})
-    format_specific = prompts.get("format_specific", {})
+    fmt_specific_rules = {
+        "HERO": "Product is the main character. Direct, confident, product-first.",
+        "UGC": "Casual, lived-in, conversational. Real person sharing a struggle.",
+        "BA": "Contrast-led shift from struggle to better state. Simple, believable.",
+        "FEAT": "Feature connected to customer benefit. Clear, educational.",
+        "TEST": "Customer experience or proof as the hook. Specific, believable.",
+    }
 
     return {
         "selection_mode": "llm_choose",
@@ -619,7 +638,7 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
             "do not sound like a product feature list or colon-led spec sheet",
             "avoid protocol timing (morning/night/step 1/step 2) unless the persona specifically needs it",
         ],
-        "format_specific_rule": format_specific.get(fmt, prompts.get("default_format_rule", "")),
+        "format_specific_rule": fmt_specific_rules.get(fmt, ""),
         "hard_rules": [
             "headline must be clear and complete",
             "headline must connect to weight loss or appetite/craving control",
@@ -631,10 +650,7 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
 
 
 def compact_format_rules_for_copy(fmt: str, format_rules: dict[str, Any]) -> dict[str, Any]:
-    fmt = fmt.strip().upper()
-    prompts = COPY_PROMPTS
-    static_rules = (prompts.get("format_copy_rules") or {}).get(fmt, [])
-    return {"format": fmt, "rules": list(static_rules)}
+    return {"format": fmt.strip().upper(), "rules": []}
 
 def build_ad_copy_system_prompt(fmt: str) -> str:
     fmt = fmt.strip().upper()
@@ -757,8 +773,8 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
             block = copy.get(lang) if isinstance(copy.get(lang), dict) else {}
             if not str(block.get("headline") or "").strip():
                 return f"Generated ad {fmt}/P{persona_number} is missing {lang} headline"
-            if fmt in {"HERO", "UGC"} and not str(block.get("support_line") or "").strip():
-                return f"Generated ad {fmt}/P{persona_number} is missing {lang} support line"
+            if fmt in {"HERO", "UGC"} and not str(block.get("subheadline") or block.get("support_line") or "").strip():
+                return f"Generated ad {fmt}/P{persona_number} is missing {lang} subheadline"
             if fmt in {"BA", "FEAT"}:
                 bullets = block.get("bullets") if isinstance(block.get("bullets"), list) else []
                 if len([item for item in bullets if isinstance(item, str) and item.strip()]) < 2:
@@ -839,7 +855,7 @@ def semantic_copy_rejection(candidate: dict[str, Any], planned_ad: dict[str, Any
     copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
     en = copy.get("EN") if isinstance(copy.get("EN"), dict) else {}
     headline = str(en.get("headline") or "").strip()
-    support_line = str(en.get("support_line") or "").strip()
+    support_line = str(en.get("subheadline") or en.get("support_line") or "").strip()
     cta = str(en.get("cta") or "").strip()
     if not headline:
         return None
@@ -927,7 +943,7 @@ def detect_template_leakage(candidate: dict[str, Any] | None) -> str | None:
     texts: list[str] = []
     for lang in ("EN", "HI"):
         block = copy_raw.get(lang) if isinstance(copy_raw.get(lang), dict) else copy_raw if lang == "EN" else {}
-        for key in ("headline", "support_line", "trust_line"):
+        for key in ("headline", "subheadline", "support_line", "trust_line"):
             val = block.get(key) if isinstance(block, dict) else None
             if isinstance(val, str) and val.strip():
                 texts.append(val.strip())
@@ -1034,7 +1050,7 @@ def build_persona_payload(persona_number: int, personas: list[dict[str, Any]]) -
                 persona_name = name
             break
     seed = PERSONA_SEED_INPUTS.get(persona_number, {})
-    mapping = COPY_PROMPTS.get("persona_mapping", {})
+    mapping = FALLBACKS.get("persona_mapping", {})
     seed_to_payload = mapping.get("seed_to_payload", {})
     fallbacks = mapping.get("persona_fallbacks", {})
 
@@ -1946,7 +1962,7 @@ def strip_internal_markers_from_payload(payload: dict[str, Any]) -> dict[str, An
             block = copy.get(lang)
             if not isinstance(block, dict):
                 continue
-            for key in ["headline", "support_line", "cta", "trust_line", "attribution"]:
+            for key in ["headline", "subheadline", "support_line", "cta", "trust_line", "attribution"]:
                 if key in block and isinstance(block.get(key), str):
                     value = strip_internal_marker(block[key])
                     block[key] = strip_price_tokens(value)
@@ -1996,38 +2012,6 @@ def registry_banlist_values(context: dict[str, Any]) -> set[str]:
 
 
 def enforce_unique_ctas(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    ads = payload.get("ads") if isinstance(payload.get("ads"), list) else []
-    blocked = registry_banlist_values(context)
-    seen: set[str] = set()
-    for ad in ads:
-        if not isinstance(ad, dict):
-            continue
-        fmt = _clean_str(ad.get("format")).upper()
-        copy = ad.get("copy") if isinstance(ad.get("copy"), dict) else {}
-        for lang in ["EN", "HI"]:
-            block = copy.get(lang) if isinstance(copy.get(lang), dict) else None
-            if not block:
-                continue
-            current = _clean_str(block.get("cta"))
-            if current and current not in seen and current not in blocked:
-                seen.add(current)
-                continue
-            variants = CTA_VARIANTS.get(lang, {}).get(fmt, [])
-            chosen = ""
-            for candidate in variants:
-                if candidate not in seen and candidate not in blocked:
-                    chosen = candidate
-                    break
-            if not chosen:
-                for candidate in variants:
-                    if candidate not in seen:
-                        chosen = candidate
-                        break
-            if not chosen:
-                # Keep CTA natural if uniqueness pool is exhausted.
-                chosen = current or (variants[0] if variants else "See Details")
-            block["cta"] = chosen
-            seen.add(chosen)
     return payload
 
 
@@ -2290,7 +2274,7 @@ def concept_ids_from_requirements(copy_req: dict[str, Any]) -> dict[str, str]:
 
 def ensure_testimonial_headline(headline: str, lang: str, persona: dict[str, Any]) -> str:
     clean = shorten_copy_line(headline)
-    guidance = COPY_PROMPTS.get("testimonial_headline_guidance", {})
+    guidance = FALLBACKS.get("testimonial_headline_guidance", {})
     cfg = guidance.get(lang, guidance.get("EN", {}))
     first_pat = cfg.get("first_person_pattern", "")
     weight_pat = cfg.get("weight_pattern", "")
@@ -2321,7 +2305,7 @@ def ensure_testimonial_headline(headline: str, lang: str, persona: dict[str, Any
 
 
 def ensure_testimonial_attribution(attribution: str, lang: str, persona: dict[str, Any], headline: str, trust_line: str) -> str:
-    variant_lists = COPY_PROMPTS.get("testimonial_attribution_variants", {})
+    variant_lists = FALLBACKS.get("testimonial_attribution_variants", {})
     variants = variant_lists.get(lang, variant_lists.get("EN", []))
     if not variants:
         return attribution
@@ -2379,6 +2363,12 @@ def normalize_generated_copy(
     base = build_template_copy(context, run_id)
     ads_generated = generated.get("ads") if isinstance(generated, dict) else None
     candidates = ads_generated if isinstance(ads_generated, list) else []
+    for cand in candidates:
+        if isinstance(cand, dict):
+            for lang_copy in (cand.get("copy") or {}).values():
+                if isinstance(lang_copy, dict) and "subheadline" in lang_copy:
+                    lang_copy["support_line"] = lang_copy.pop("subheadline")
+
     used_indices: set[int] = set()
 
     def pick_candidate(fmt: str, persona_num: int, persona_name: str) -> dict[str, Any] | None:
@@ -2469,7 +2459,7 @@ def normalize_generated_copy(
 
 
 def _template_copy(primary_key: str, secondary_key: str, concept_angle: str, pain: str, lang: str) -> str:
-    templates = COPY_PROMPTS.get("template_copy_headline_sentence", {})
+    templates = FALLBACKS.get("template_copy_headline_sentence", {})
     template = templates.get(lang, templates.get("EN", ""))
     return template.format(primary_key=primary_key, secondary_key=secondary_key, pain=pain)
 
@@ -2479,13 +2469,13 @@ def template_headline(primary_key: str, concept_angle: str, pain: str, lang: str
 
 
 def template_support(primary_key: str, secondary_key: str, lang: str) -> str:
-    templates = COPY_PROMPTS.get("template_copy_support_sentence", {})
+    templates = FALLBACKS.get("template_copy_support_sentence", {})
     template = templates.get(lang, templates.get("EN", ""))
     return template.format(primary_key=primary_key, secondary_key=secondary_key)
 
 
 def feature_template(key: str) -> dict[str, str]:
-    templates = COPY_PROMPTS.get("feature_templates", {})
+    templates = FALLBACKS.get("feature_templates", {})
     entry = templates.get(key)
     if entry:
         return {"support_en": entry.get("EN", ""), "support_hi": entry.get("HI", "")}
@@ -2511,10 +2501,10 @@ def build_template_copy(context: dict[str, Any], run_id: str) -> dict[str, Any]:
         desire_en = choose_text(persona.get("core_message", []), "A practical routine that feels easy to follow.")
         friction_en = choose_text(persona.get("objections", []), "Past plans felt too strict and difficult to maintain.")
         proof_en = choose_text(persona.get("trust_anchors", []), "Needs proof through clear structure and believable support.")
-        en_fallbacks = COPY_PROMPTS.get("template_copy_en_fallbacks", {})
+        en_fallbacks = FALLBACKS.get("template_copy_en_fallbacks", {})
         tone_en = en_fallbacks.get("tone", "Practical, empathetic, and confidence-building")
 
-        hi_fallbacks = COPY_PROMPTS.get("template_copy_hi_fallbacks", {})
+        hi_fallbacks = FALLBACKS.get("template_copy_hi_fallbacks", {})
         pain_hi = hi_fallbacks.get("pain", "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।")
         desire_hi = hi_fallbacks.get("desire", "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।")
         friction_hi = hi_fallbacks.get("friction", "पहले के प्लान बहुत सख्त और मुश्किल थे।")
@@ -2524,13 +2514,13 @@ def build_template_copy(context: dict[str, Any], run_id: str) -> dict[str, Any]:
         concept_angle = concept_ids["concept_angle"]
         headline_en = template_headline(primary_key, concept_angle, pain_en, "EN")
         headline_hi = template_headline(primary_key, concept_angle, pain_en, "HI")
-        fmt_overrides = COPY_PROMPTS.get("template_copy_format_overrides", {})
+        fmt_overrides = FALLBACKS.get("template_copy_format_overrides", {})
         fo = fmt_overrides.get(fmt, {})
         if fo.get("headline"):
             headline_en = fo["headline"].get("EN", headline_en)
             headline_hi = fo["headline"].get("HI", headline_hi)
 
-        cta_map = COPY_PROMPTS.get("template_copy_cta_map", {})
+        cta_map = FALLBACKS.get("template_copy_cta_map", {})
         default_cta = cta_map.get("_default", {"EN": "Start Today", "HI": "आज शुरू करें"})
         fmt_cta = cta_map.get(fmt, default_cta)
         cta_en = fmt_cta.get("EN", "Start Today")
@@ -2803,7 +2793,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                         "persona": prev_persona.get("name") if isinstance(prev.get("persona"), dict) else "",
                         "headline_angle": prev.get("headline_angle"),
                         "headline": prev_en.get("headline"),
-                        "support_line": prev_en.get("support_line"),
+                        "support_line": prev_en.get("subheadline") or prev_en.get("support_line"),
                         "cta": prev_en.get("cta"),
                         "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
                     }
@@ -4320,6 +4310,8 @@ def api_run_update_prompt_copies(run_id: str, payload: dict[str, Any] = Body(...
 
             if key == "headline":
                 lang_copy["headline"] = value
+            elif key == "subheadline":
+                lang_copy["subheadline"] = value
             elif key == "support line":
                 lang_copy["support_line"] = value
             elif key == "context line":
@@ -5608,8 +5600,7 @@ async def api_run_execute(
         format_seen_counts[fmt] = format_seen_counts.get(fmt, 0) + 1
         persona_payload = build_persona_payload(persona_no, persona_library)
 
-        static_rules = (COPY_PROMPTS.get("format_copy_rules") or {}).get(fmt, [])
-        format_payload = {"format": fmt, "rules": list(static_rules)}
+        format_payload = {"format": fmt, "rules": []}
         copy_req = build_copy_requirements(persona_no, fmt, format_seen_counts[fmt], run_id)
 
         # Inject hypothesis directive if active
@@ -5675,14 +5666,11 @@ async def api_run_execute(
             direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
 
         # Apply format defaults for concept fields not set by hypothesis
-        fmt_defaults = COPY_PROMPTS.get("format_defaults", {})
         if not concept.get("concept_angle"):
-            default_angle = (fmt_defaults or {}).get("default_concept_angle", "desired_outcome")
-            concept["concept_angle"] = {"id": default_angle}
+            concept["concept_angle"] = {"id": "desired_outcome"}
         if not concept.get("message_structure"):
-            structure_by_fmt = (fmt_defaults or {}).get("structure_by_fmt", {})
-            default_structure = structure_by_fmt.get(fmt, "pab")
-            concept["message_structure"] = {"id": default_structure}
+            structure_defaults = {"HERO": "pab", "BA": "bab", "TEST": "pas", "FEAT": "fab", "UGC": "pas"}
+            concept["message_structure"] = {"id": structure_defaults.get(fmt, "pab")}
         copy_req["concept_variation"] = concept
 
         ads_context.append(

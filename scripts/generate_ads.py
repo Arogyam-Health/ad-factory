@@ -390,7 +390,8 @@ def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
     if re.search(r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b", headline, flags=re.IGNORECASE):
         raise RuntimeError(f"{ctx}.headline contains protocol mechanics; move to support/bullets")
     cta = require_str(raw, "cta", ctx)
-    support_line = (raw.get("support_line") or "").strip() if isinstance(raw.get("support_line"), str) else ""
+    sub_val = raw.get("subheadline") or raw.get("support_line")
+    support_line = (sub_val or "").strip() if isinstance(sub_val, str) else ""
     context_line = (raw.get("context_line") or "").strip() if isinstance(raw.get("context_line"), str) else ""
     trust_line = (raw.get("trust_line") or "").strip() if isinstance(raw.get("trust_line"), str) else ""
     attribution = (raw.get("attribution") or "").strip() if isinstance(raw.get("attribution"), str) else ""
@@ -497,17 +498,7 @@ def stable_signature_seed(*parts: Any) -> int:
 
 
 def base_layout_lines_for_format(fmt: str) -> list[str]:
-    path = COPY_PROMPTS_PATH
-    if not path.exists():
-        raise RuntimeError(f"Copy prompts config not found: {path}")
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        lines = (data.get("layout_lines") or {}).get(fmt)
-        if lines is None:
-            raise RuntimeError(f"Unsupported format: {fmt}")
-        return list(lines)
-    except Exception as exc:
-        raise RuntimeError(f"Failed to load layout lines for {fmt}: {exc}")
+    return []
 
 
 def find_visual_archetype(fmt: str, archetype_id: str) -> dict[str, Any]:

@@ -1,0 +1,216 @@
+{
+  "persona_mapping": {
+    "_description": "Maps persona_seeds.json fields → LLM payload fields. Each entry defines how a seed field is transformed into a payload field.",
+    "seed_to_payload": {
+      "pain": {
+        "field": "pain_points",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "desire": {
+        "field": "core_message",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "friction": {
+        "field": "objections",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "proof": {
+        "field": "trust_anchors",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "tone": {
+        "field": "english_ready",
+        "wrap_list": true,
+        "prefix": "Tone cue: "
+      },
+      "how_kit_solves": {
+        "field": "how_kit_solves",
+        "wrap_list": false,
+        "prefix": null
+      }
+    },
+    "persona_fallbacks": {
+      "pain": "Daily routine feels heavy and hard to sustain.",
+      "desire": "A practical routine that feels easy to follow.",
+      "friction": "Past plans felt too strict and difficult to maintain.",
+      "proof": "Needs clear structure and believable support.",
+      "tone": "practical and confidence-building",
+      "how_kit_solves": {}
+    },
+    "static_fields": {
+      "trigger_scenarios": [],
+      "language_bank": [],
+      "grounded_mechanism_map": []
+    },
+    "hindi_ready_default": "टोन संकेत: सरल, भरोसेमंड, व्यावहारिक"
+  },
+  "testimonial_headline_guidance": {
+    "_description": "Regex patterns and fallback strings for ensure_testimonial_headline. One entry per language.",
+    "EN": {
+      "first_person_pattern": "\\b(i|i'm|i've|i'd|my|me)\\b",
+      "weight_pattern": "\\b(weight|obesity|excess\\s*weight|kg|kilo)\\b",
+      "suffix": "It finally fit my weight-loss routine.",
+      "desire_template": "\"I finally found {desire_phrase} for my weight-loss goal.\"",
+      "fallback": "\"I finally found a routine I can follow for weight loss every day.\"",
+      "desire_field": "desire_en"
+    },
+    "HI": {
+      "first_person_pattern": "(मैं|मेरी|मेरा|मुझे|मैंने)",
+      "weight_pattern": "(वजन|मोटापा|किलो|kg)",
+      "suffix": "यह मेरे वजन घटाने के लिए काम आया।",
+      "desire_template": "\"मुझे आखिर {desire_phrase} वाला रूटीन मिला जो वजन घटाने में मदद करता है।\"",
+      "fallback": "\"मुझे आखिर ऐसा रूटीन मिला जिसे मैं रोज निभा सकूं और वजन घटा सकूं।\"",
+      "desire_field": "desire_hi"
+    }
+  },
+  "testimonial_attribution_variants": {
+    "_description": "Attribution text variants per language for ensure_testimonial_attribution. Picked deterministically via hash.",
+    "EN": [
+      "Representative routine feedback",
+      "15-day adherence feedback snapshot",
+      "Persona-based obesity-care review note",
+      "Representative weight-loss routine review",
+      "Structured-plan feedback example",
+      "Representative user experience note"
+    ],
+    "HI": [
+      "प्रतिनिधि रूटीन फीडबैक",
+      "15-दिन adherence फीडबैक स्नैपशॉट",
+      "पर्सोना-आधारित obesity-care रिव्यू नोट",
+      "प्रतिनिधि वजन-घटाने रूटीन रिव्यू",
+      "स्ट्रक्चर्ड-प्लान फीडबैक उदाहरण",
+      "प्रतिनिधि यूजर अनुभव नोट"
+    ]
+  },
+  "feature_templates": {
+    "_description": "Feature support lines per feature key. Used in build_template_copy for BA format bullets and HERO/UGC support lines.",
+    "structured_system": {
+      "EN": "Structured system for consistent weight-loss progress.",
+      "HI": "लगातार वजन-सपोर्ट के लिए व्यवस्थित सिस्टम।"
+    },
+    "cravings_down": {
+      "EN": "Helps reduce cravings for better daily weight management.",
+      "HI": "बेहतर दैनिक वजन-प्रबंधन के लिए लालसा कम करने में सहायक।"
+    },
+    "guided_weight_loss": {
+      "EN": "Guided morning and night steps for visible results.",
+      "HI": "दिखने वाले परिणामों के लिए निर्देशित सुबह-रात के कदम।"
+    },
+    "natural_ingredients": {
+      "EN": "Natural Ayurvedic formulation without side effects.",
+      "HI": "बिना दुष्प्रभाव के प्राकृतिक आयुर्वेदिक फॉर्मूलेशन।"
+    },
+    "easy_routine": {
+      "EN": "Simple routine that fits into daily life easily.",
+      "HI": "रोज़मर्रा की ज़िंदगी में आसानी से फिट होने वाली सरल दिनचर्या।"
+    },
+    "_default": {
+      "EN": "Structured system for consistent progress.",
+      "HI": "लगातार प्रगति के लिए व्यवस्थित सिस्टम।"
+    }
+  },
+  "template_copy_cta_map": {
+    "_description": "Single CTA per format for template copy (build_template_copy). Not the same as cta_variants (which are used by enforce_unique_ctas).",
+    "HERO": {
+      "EN": "Start Today",
+      "HI": "आज शुरू करें"
+    },
+    "BA": {
+      "EN": "See The Shift",
+      "HI": "बदलाव देखें"
+    },
+    "TEST": {
+      "EN": "See The Proof",
+      "HI": "प्रमाण देखें"
+    },
+    "FEAT": {
+      "EN": "View Kit Steps",
+      "HI": "किट कदम देखें"
+    },
+    "UGC": {
+      "EN": "See My Routine",
+      "HI": "मेरी दिनचर्या देखें"
+    },
+    "_default": {
+      "EN": "Start Today",
+      "HI": "आज शुरू करें"
+    }
+  },
+  "template_copy_format_overrides": {
+    "_description": "Format-specific overrides in build_template_copy. BA/FEAT/UGC override the generated template headline. UGC overrides support line. FEAT has hardcoded bullets. TEST has headline + attribution + trust_line.",
+    "BA": {
+      "headline": {
+        "EN": "A clear kit routine beats random dieting.",
+        "HI": "साफ किट दिनचर्या अनियमित डाइटिंग से बेहतर है।"
+      }
+    },
+    "FEAT": {
+      "headline": {
+        "EN": "Three kit steps support 15-day weight loss.",
+        "HI": "तीन किट कदम 15 दिन के वजन-सपोर्ट में मदद करते हैं।"
+      },
+      "bullets": {
+        "EN": [
+          "Morning OK Liquid helps reduce hunger and random snacking for weight loss.",
+          "Night Tablet + Powder support digestion and lighter mornings in obesity routine.",
+          "Built for visible 15-day weight-loss support without crash-diet pressure."
+        ],
+        "HI": [
+          "सुबह का OK Liquid वजन घटाने के लिए भूख और अचानक खाने की आदत कम करने में सहायक है।",
+          "रात का Tablet + Powder मोटापा-नियंत्रण दिनचर्या में पाचन-सपोर्ट देता है।",
+          "कठोर डाईट दबाव के बिना 15 दिन के वजन-सपोर्ट के लिए बनाया गया।"
+        ]
+      }
+    },
+    "UGC": {
+      "headline": {
+        "EN": "Late-night cravings can feel easier to control.",
+        "HI": "रात की लालसा नियंत्रित करना आसान लग सकता है।"
+      },
+      "support_override": {
+        "EN": "A simple first step helps keep late-night weight-loss control practical.",
+        "HI": "एक सरल पहला कदम रात के वजन-नियंत्रण को व्यावहारिक रखता है।"
+      }
+    },
+    "TEST": {
+      "headline": {
+        "EN": "I trusted the 15-day kit because the steps felt clear for weight loss.",
+        "HI": "मैंने 15 दिन की किट पर भरोसा किया क्योंकि वजन-घटाने के कदम साफ लगे।"
+      },
+      "attribution": {
+        "EN": "Doctor-formulated Ayurvedic obesity and weight-loss protocol",
+        "HI": "डॉक्टर-फॉर्मुलेटेड आयुर्वेदिक मोटापा और वजन-घटाने का प्रोटोकॉल"
+      },
+      "trust_line": {
+        "EN": "Structured morning-night steps for visible weight-loss progress and obesity control.",
+        "HI": "सुबह-रात के स्पष्ट कदमों से वजन घटाने और मोटापा नियंत्रण का भरोसेमंड सपोर्ट।"
+      }
+    }
+  },
+  "template_copy_en_fallbacks": {
+    "_description": "English fallback values for build_template_copy when persona fields are empty.",
+    "tone": "Practical, empathetic, and confidence-building"
+  },
+  "template_copy_hi_fallbacks": {
+    "_description": "Hindi fallback values for build_template_copy when persona fields are empty.",
+    "pain": "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।",
+    "desire": "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।",
+    "friction": "पहले के प्लान बहुत सख्त और मुश्किल थे।",
+    "proof": "साफ कदम, भरोसेमंड सपोर्ट और व्यावहारिक प्रमाण चाहिए।",
+    "tone": "सरल, भरोसेमंड, और व्यावहारिक"
+  },
+  "template_copy_headline_sentence": {
+    "_description": "Template string for _template_copy (used by template_headline). {primary_key}, {secondary_key}, {pain} are filled at runtime.",
+    "EN": "A clear {primary_key} system for {secondary_key} that helps manage {pain}.",
+    "HI": "{primary_key} का {secondary_key} सिस्टम जो {pain} को संभालने में मदद करता है।"
+  },
+  "template_copy_support_sentence": {
+    "_description": "Template string for template_support in build_template_copy. {primary_key}, {secondary_key} are filled at runtime.",
+    "EN": "Simple steps rooted in {primary_key} and {secondary_key}.",
+    "HI": "सरल कदम, जो {primary_key} और {secondary_key} पर आधारित हैं।"
+  }
+}

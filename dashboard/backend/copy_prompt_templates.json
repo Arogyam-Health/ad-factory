@@ -1,236 +1,7 @@
 {
   "format": "v1",
   "_description": "All prompt text templates for ad copy LLM generation. Edit this file to change what the LLM sees — no code changes needed. Dynamic placeholders use {fmt}, {support_target}, {copy_fields}.",
-"system_prompt_base_rules": [
-  "You are a senior performance ad copywriter for a health/weight-loss brand.",
-  "You generate ad copy JSON only. Return valid JSON with keys default_aspect_ratio and ads.",
-  "Each ads item must include format, headline_angle, awareness_stage, concept_angle, concept_structure, persona, and copy fields.",
-  "Use the product master doc as the single source of product truth. Do not invent benefits, proof, mechanisms, exclusions, guarantees, or medical claims.",
-  "The persona may include how_kit_solves with failure_point, kit_lever, causal_bridge, and support_line_instruction. Treat this as the main source for writing support lines.",
-  "Creative priority order: human hook first, persona-specific tension second, product proof/mechanism third, schema compliance last.",
-  "Write like a human ad editor, not like a framework.",
-  "Before choosing the final copy, silently explore 8 different creative routes and pick the most human, specific, least generic one.",
-  "The headline must clearly connect to weight loss, slimming, eating less, appetite/craving control for weight loss, fitting clothes, kg loss, or visible progress.",
-  "Use exact product names when referring to kit components: OK Liquid, OK Tablet, OK Powder — never call them 'the liquid', 'the tablet', or 'the powder'. Refer to the overall system as 'OK Kit' .",
-  "Never include price in on-image copy fields. Do not use currency symbols or words like INR, price, only, discount, off, or MRP.",
-  "Do not use cure claims, fat-burner claims, metabolism-boosting claims, guaranteed-result claims, or medical-treatment claims.",
-  "The already_used_ads_DO_NOT_REUSE list is a ban list. Do not copy or closely paraphrase its headlines, support lines, skeletons, or persuasion angles."
-],
-  "system_prompt_format_rules": {
-    "BA": [
-      "For BA format only: never prefix copy with BEFORE:/AFTER: labels or Hindi equivalents.",
-      "For BA format only: write explicit split contrast copy. Use 2 or 4 bullets total; bullet 1/2 are left-side struggle state and bullet 3/4 are right-side fix or progress state. If using 2 bullets, bullet 1 is struggle and bullet 2 is fix."
-    ],
-    "TEST": [
-      "For TEST format only: headline must read like a first-person review line suitable for a quote card, not generic highly-rated phrasing.",
-      "For TEST format only: we do not have real customer testimonials in the source material. Create a made-up but believable representative review line grounded only in product-doc claims, persona pain/desire, and safe outcomes. Do not imply it is a real named customer quote.",
-      "For TEST format only: attribution must be role/source-based without personal names and must not imply verification, certification, or a real collected testimonial. Use labels like representative user experience, routine feedback snapshot, or persona-based review note.",
-      "For TEST format only: avoid superficial praise such as 'amazing product', 'best ever', 'life-changing', or unbelievable before/after claims. The review should sound specific, modest, and plausible: routine fit, reduced cravings, easier adherence, homemade food, guided steps, or visible 15-day progress where supported by the product doc."
-    ],
-    "FEAT": [
-      "For FEAT format only: make each bullet a different product feature."
-    ],
-    "HERO": [
-      "For HERO format only: write one strong human headline, one compact support line, and one CTA.",
-      "Do not force a formula like PAS/BAB/FAB into the headline. Use the selected concept only as emotional direction.",
-      "Support line max 28 words.",
-      "Support line must be built from persona.how_kit_solves: failure_point + kit_lever + causal_bridge + support_line_instruction.",
-      "Support line must explain how the kit helps this exact persona overcome their specific weight-loss failure point.",
-      "Use one primary kit lever only: appetite/craving control, digestion/gut comfort, tracker/coach guidance, homemade-food fit, safety/naturalness, or structured routine.",
-      "Do not write generic support lines like 'a guided Ayurvedic system supports weight loss' or 'this routine supports cravings and progress'.",
-      "Do not stack product claims. Do not write feature lists. Do not use colon-led support lines."
-    ],
-    "UGC": [
-      "For UGC format only: use creator-like clarity and a believable lived-in hook.",
-      "Do not force headline architecture templates. Keep it grounded in persona tension and product truth.",
-      "Support line max 28 words.",
-      "Support line must be built from persona.how_kit_solves: failure_point + kit_lever + causal_bridge + support_line_instruction.",
-      "Support line must sound like a creator explaining why the kit fits this person's real problem, not like a product brochure.",
-      "Use one primary kit lever only: appetite/craving control, digestion/gut comfort, tracker/coach guidance, homemade-food fit, safety/naturalness, or structured routine.",
-      "Do not write generic support lines like 'a guided Ayurvedic system supports weight loss' or 'this routine supports cravings and progress'.",
-      "Do not stack product claims. Do not write feature lists. Do not use colon-led support lines."
-    ]
-  },
-  "prompt_tail": {
-    "support_target_map": {
-      "BA": "right-side shift",
-      "FEAT": "feature stack",
-      "TEST": "trust line"
-    },
-    "default_support_target": "support line",
-    "lines": [
-  "Return only valid JSON. No markdown. No extra text.",
-  "Return one ad only. You may return either a single ad object or an object with default_aspect_ratio and a one-item ads array.",
-  "Use the already-loaded product master doc as the source of truth.",
-  "Treat already_used_ads_DO_NOT_REUSE as a ban list for headline, {support_target}, skeleton, and persuasion angle.",
-  "Silently consider at least 8 genuinely different ad ideas from the persona and product doc. Vary the human situation, emotional entry point, objection, proof style, and wording rhythm. Do not output drafts.",
-  "Silently consider at least 8 genuinely different support-line routes before writing the final line. Vary the opening syntax, human situation, emotional entry point, proof/mechanism style, and sentence rhythm. Do not output drafts. This should not affect already generated headline ideas, which should be generated independently before the support line is considered.",
-  "Prefer a specific human situation or persona tension over generic product claims.",
-  "Execute the headline as a single, seamless, natural thought with a realistic conversational rhythm, completely eliminating robotic, fragmented, or artificially punchy 'ad-speak' and forced punchlines.",
-  "Rewrite headlines to speak like a real person experiencing the persona's tension, avoiding robotic or artificially punchy 'ad-speak' phrasing.",
-  "Final headline must be a complete, clear ad line with obvious weight-loss meaning.",
-  "Reject vague headlines where the reader cannot tell what is being lost, controlled, fixed, or improved.",
-  "Do not use literal clock times (e.g. after 5pm) in headlines. Keep time references broad and relatable — evening, late in the day, after work — not specific hours.",
-  "Support line must be one compact ad line, max 28 words.",
-  "Support line must be built from persona.how_kit_solves: use failure_point, kit_lever, causal_bridge, and support_line_instruction to explain the solve.",
-  "Support line must answer: what usually breaks weight loss for this persona, which kit lever helps, and why that lever makes the process easier to follow.",
-  "Support line should feel specific enough that it would not fit every persona.",
-  "Use only one primary kit lever per support line: appetite/craving control, digestion/gut comfort, tracker/coach guidance, homemade-food fit, safety/naturalness, or structured routine.",
-  "Do not stack product claims. Do not list multiple features. Do not write colon-led feature lists.",
-  "Bad support style: 'A guided Ayurvedic routine supports cravings, digestion, metabolism, tracking, and visible progress.'",
-  "Bad support style: 'This doctor-formulated kit supports weight loss naturally with a simple routine.'",
-  "Bad support style: 'The kit helps you stay consistent and see visible progress.'",
-  "Bad support style: 'Supports appetite, digestion, metabolism, detox, tracking, and guidance.'",
-  "Do not start support line with 'Yes:', 'No:', 'Because', 'It can', or 'You can'.",
-  "Do not return framework labels, rationale, explanations, copy_requirements, disclaimers, or extra keys.",
-  "Think for yourself. Invent your own creative angles and routes. Do not follow or echo any route labels, creative direction labels, or framework names from the context above.",
-  "Write like a real person talking to another person, not like an ad copy generator. No formulaic patterns, no buzzwords, no frameworks showing through."
-]
-  },
-  "response_skeleton": {
-    "_description": "Exact JSON skeleton the LLM must fill. Shown at end of prompt_tail to enforce structure. Placeholders in angle brackets are replaced by the LLM.",
-    "default": {
-      "default_aspect_ratio": "4:5",
-      "ads": [
-        {
-          "format": "{format}",
-          "headline_angle": "<short natural description>",
-          "awareness_stage": "<chosen or locked id>",
-          "concept_angle": "<chosen or locked id>",
-          "concept_structure": "<chosen or locked id>",
-          "persona": {
-            "persona_number": "<number>",
-            "persona_name": "<name>"
-          },
-          "copy": {
-            "EN": {
-              "headline": "<headline>",
-              "cta": "<cta>"
-            }
-          }
-        }
-      ]
-    },
-   "HERO": {
-  "copy": {
-    "EN": {
-      "headline": "<your headline, clear weight-loss meaning>",
-      "support_line": "<max 28 words using how_kit_solves: failure_point + kit_lever + causal_bridge + support_line_instruction>",
-      "cta": "<your CTA>"
-    }
-  }
-},
-"UGC": {
-  "copy": {
-    "EN": {
-      "headline": "<your headline, clear weight-loss meaning>",
-      "support_line": "<max 28 words using how_kit_solves in a creator-like voice: failure_point + kit_lever + causal_bridge + support_line_instruction>",
-      "cta": "<your CTA>"
-    }
-  }
-},
-    "TEST": {
-      "copy": {
-        "EN": {
-          "headline": "<first-person quote, obvious weight-loss meaning>",
-          "attribution": "<role/source label, no personal names>",
-          "trust_line": "<doctor-formulated / system proof>",
-          "cta": "<your CTA>"
-        }
-      }
-    },
-    "BA": {
-      "copy": {
-        "EN": {
-          "headline": "<your headline, weight-loss meaning>",
-          "bullets": ["<struggle/friction bullet 1 or 2>", "<struggle/friction bullet 2 or 4>"],
-          "cta": "<your CTA>"
-        }
-      }
-    },
-    "FEAT": {
-      "copy": {
-        "EN": {
-          "headline": "<your headline, weight-loss meaning>",
-          "bullets": ["<distinct feature bullet 1>", "<distinct feature bullet 2>", "<distinct feature bullet 3>"],
-          "cta": "<your CTA>"
-        }
-      }
-    }
-  },
-  "strict_schema_note": {
-    "intro": "STRICT_SCHEMA: Return JSON only. Do not include copy_requirements, disclaimers, or extra keys.",
-    "persona_fields_en": "persona must be an object with number, name, pain_en, desire_en, friction_en, proof_needed_en, tone_cue_en, how_kit_solves, pain_hi, desire_hi, friction_hi, proof_needed_hi, tone_cue_hi.",
-    "language_extension": "When constraints.language includes HINGLISH, also include pain_hinglish, desire_hinglish, friction_hinglish, proof_needed_hinglish, tone_cue_hinglish in persona.",
-    "format_closure_template": "For {fmt} format, copy.EN, copy.HI, and copy.HINGLISH (when requested) must contain only: {copy_fields}.",
-    "field_map": {
-      "HERO": "headline, support_line, cta",
-      "UGC": "headline, support_line, cta",
-      "BA": "headline, bullets (list), cta",
-      "FEAT": "headline, bullets (list), cta",
-      "TEST": "headline, attribution, trust_line, cta"
-    },
-    "default_fields": "headline, cta"
-  },
-  "copy_requirements": {
-    "must_mention": "The headline itself must clearly signal weight loss directly or through an unmistakable proxy such as kg loss, fat loss, slimming, eating less, craving control for weight loss, or visible weight-loss progress. Support lines can add mechanism/proof, but cannot be the only place that makes the ad about weight loss.",
-    "variation_rule": "Do not reuse the same headline skeleton, support-line skeleton, or persuasion angle as other ads in the same format for this batch.",
-    "hierarchy_rule": "Use creative_direction as intent-level guidance, not as a sentence formula. Headline = human hook; support = missing proof/mechanism/context. Do not output framework labels.",
-    "format_specific": {
-      "HERO": "Keep headline as one clean, finished ad line with clear weight-loss meaning. Support line must use persona.how_kit_solves to explain the persona-specific solve: failure point, kit lever, and why it works for this person.",
-      "UGC": "Creator-like tone is allowed. Support line must use persona.how_kit_solves to explain why the kit fits this person's real problem without sounding like a brochure.",   
-      "BA": "Split copy: left bullets are struggle state; right bullets are progress/routine shift.",
-      "TEST": "Quote-like representative headline; attribution + trust line must be role/source-based, non-personal, and must not imply a real verified testimonial.",
-      "FEAT": "Bullets must be distinct product features (LLM decides which features from master doc)."
-    },
-    "default_format_rule": "Respect format-specific structure; no lane enforcement."
-  },
   "product_doc_bootstrap_prompt": "Read the attached product master doc completely. For every following ad-copy request in this same OpenCode session, use that doc as the single source of product truth for benefits, proof, mechanism, differentiators, exclusions, and priority hierarchy. Do not rewrite, summarize, modify, or ignore the doc. The following messages will provide only ad format/persona/concept/schema instructions. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.",
-  "format_copy_rules": {
-    "_description": "Static pre-filtered format-specific copy rules extracted once from AD_CREATIVE_SYSTEM_PLAYBOOK.md. No longer filtered at runtime.",
-    "HERO": [
-      "Persona use: strongest pain-led hook + fastest believable outcome",
-      "Copy shape: strong headline + support line + CTA + disclaimer",
-      "Text budget: 18-36 words + disclaimer",
-      "Minimum copy units: headline + 1 support line + CTA + disclaimer",
-      "Headline lives in top text band only; CTA button in lower safe zone only.",
-      "Hero headline variation lanes (rotate for up to 8 variants):"
-    ],
-    "BA": [
-      "Persona use: \"before\" = persona struggle, \"after\" = first meaningful win",
-      "Copy shape: pain-to-progress headline + 3 outcome bullets",
-      "Text budget: 22-36 words + disclaimer",
-      "Minimum copy units: headline + 2-3 short bullets + CTA + disclaimer",
-      "Transformation must be shown via routine/behavior/outcome cues, not extreme physique manipulation."
-    ],
-    "TEST": [
-      "Purpose: trust",
-      "Persona use: testimonial language mirrors persona words (cravings, stuck, no time)",
-      "Copy shape: quote + attribution + trust line + CTA",
-      "Text budget: 24-40 words + disclaimer",
-      "Minimum copy units: headline/quote + attribution + trust line + CTA + disclaimer",
-      "Testimonial integrity: never fabricate customer quotes; if real quote is unavailable, use rating + user-count + mechanism proof framing instead",
-      "Large quote marks, clear attribution area, trust strip under quote.",
-      "If real testimonial exists in source: use exact quote + real attribution."
-    ],
-    "FEAT": [
-      "Persona use: map each feature to persona friction",
-      "Copy shape: \"what makes it work\" + 3-4 benefit bullets + CTA",
-      "Text budget: 26-42 words + disclaimer",
-      "Minimum copy units: headline + 3 feature-benefit bullets + CTA + disclaimer",
-      "Each callout must connect feature/mechanism to practical benefit."
-    ],
-    "UGC": [
-      "Persona use: first-person micro-story from persona POV",
-      "Copy shape: my routine support + 3 practical wins + CTA",
-      "Text budget: 16-26 words + disclaimer",
-      "Default text policy: headline + support line + CTA + disclaimer only",
-      "Minimum copy units: headline + 1 short support line + CTA + disclaimer",
-      "Authentic setting aligned to persona (kitchen, desk, bedroom, commute, etc.).",
-      "Overlay text stays punchy and legible; avoid dense copy in UGC.",
-      "Rotate at least 3 axes per new creative: copy angle, scene context, composition map, trust framing, CTA voice."
-    ]
-  },
   "visual_archetypes": {
     "HERO": [
       {
@@ -511,325 +282,301 @@
       }
     ]
   },
-  "layout_lines": {
-    "_description": "Baseline visual layout instructions per format. Used alongside visual_archetypes to build image prompts.",
+
+  "system_prompt_base_rules": [
+    "You are a senior direct-response ad copywriter for Obesity Killer Kit.",
+    "Your job is to generate static ad copy for Meta ads.",
+    "Do not assume the persona or format from the examples below. The examples are only reference material.",
+    "",
+    "Output format must be:",
+    "",
+    "Ad structure:",
+    "",
+    "Core product context:",
+    "Obesity Killer Kit is a 15-day Ayurvedic weight-loss course by Arogyam. It is designed to help overweight or obese people lose weight by making the routine easier to follow.",
+    "",
+    "Main product truths:",
+    "1. OK Liquid helps reduce hunger and cravings, making it easier to eat less without constantly fighting food urges.",
+    "2. The course gives a clear 15-day day-wise routine, so the customer is not guessing what to do.",
+    "3. It works with regular homemade food, especially vegetables and salads. No separate meal prep is required.",
+    "4. No heavy workout is required. Walking or yoga can support results.",
+    "5. Tracker and coach support help customers stay consistent and resolve course-related doubts.",
+    "6. The product is doctor-designed, hospital-backed, and trusted by 70,000+ customers.",
+    "7. Customers can lose 3-5 kg in 15 days when they follow the course properly.",
+    "8. It is Ayurvedic and positioned as natural with no reported side effects across thousands of users.",
+    "",
+    "Hard claim guardrails:",
+    "1. Do not claim that OK Kit treats, cures, reverses, fixes, or heals any medical condition.",
+    "2. Do not claim that OK Kit treats PCOD, PCOS, thyroid, diabetes, BP, IBS, fatty liver, anxiety, stress, binge eating, depression, or hormonal imbalance.",
+    "3. Do not claim guaranteed weight loss unless the terms are explained. Prefer supports 3–5 kg weight loss in 15 days when followed properly.",
+    "4. Do not say eat anything and still lose weight.",
+    "5. Do not say no effort needed.",
+    "6. Do not say permanent weight loss or no rebound forever.",
+    "7. Do not say OK Kit is a replacement for prescribed medicines, GLP-1 injections, medical treatment, or doctor advice.",
+    "8. Do not target minors.",
+    "9. Do not write internal disclaimers like OK Kit does not treat PCOD inside the ad copy unless I specifically ask for disclaimer-style copy.",
+    "",
+    "Very important headline rules:",
+    "1. The headline must do 80% of the job.",
+    "2. The headline must clearly signal: a) what we are talking about: weight loss b) who we are talking to: the selected persona or persona context",
+    "3. The headline must make sense even if the viewer does not read the subheadline.",
+    "4. Do not write generic headlines that could apply to any persona.",
+    "5. Reject headlines like: Cravings Make Diets Break, A Clear 15-Day Start, Weight Loss With Support, Guided Not Extreme, Less Strict More Followable",
+    "6. For condition-context personas like PCOD, thyroid, menopause, or post-pregnancy, the headline should mention or strongly imply that context plus weight loss, without claiming treatment.",
+    "7. For behavioural personas like stress eater, late-night eater, office snacker, or busy professional, the headline should mention or strongly imply the behaviour plus weight loss.",
+    "",
+    "Good headline examples:",
+    "- PCOD Weight Loss Feels Slower?",
+    "- PCOD Cravings Breaking Your Diet?",
+    "- Weight Loss With PCOD Needs Structure",
+    "- Late-Night Snacking Hurting Weight Loss?",
+    "- Office Snacks Ruining Weight Loss?",
+    "- Busy Day, Weight Loss Still Pending?",
+    "- Stress Eating Slowing Your Weight Loss?",
+    "- Tired Of Restarting Diets Every Monday?",
+    "",
+    "Bad headline examples:",
+    "- Start Fresh Today",
+    "- Feel Lighter Naturally",
+    "- Cravings Make Diets Break",
+    "- A Clear 15-Day Start",
+    "- Weight Loss With Support",
+    "- Guided, Not Extreme"
+  ],
+  "system_prompt_format_rules": {
     "HERO": [
-      "- HERO format: strong headline, one support line, and one CTA.",
-      "- Focal hierarchy: product dominant, text secondary, background tertiary.",
-      "- Product zone: all key pack details stay away from edge-risk zones, but left/right weighting must follow the selected archetype rather than defaulting to a centered stack.",
-      "- CTA must be rendered as a filled rounded button chip (high-contrast), never as plain text.",
-      "- Camera framing should feel stable, premium, and label-safe.",
-      "- Do not collapse every HERO into centered text over centered products unless the selected archetype explicitly requires a centered composition."
-    ],
-    "BA": [
-      "- Format: BA.",
-      "- Build a clear struggle-to-progress contrast story without literal BEFORE/AFTER labels on-image.",
-      "- Contrast must be visible in scene, props, posture, and lighting, not text alone.",
-      "- Keep products grouped near lower center as the bridge between both states.",
-      "- CTA must be rendered as a filled rounded button chip centered in lower safe band, never plain text."
-    ],
-    "TEST": [
-      "- Format: TEST.",
-      "- This must read testimonial-first, not HERO with a person added.",
-      "- Quote, attribution, and trust proof hierarchy must be obvious on first scroll.",
-      "- Human presence can support credibility, but the testimonial message remains primary.",
-      "- CTA must be rendered as a filled rounded button chip in lower safe band, never plain text."
-    ],
-    "FEAT": [
-      "- Format: FEAT.",
-      "- Build a clean information hierarchy with headline, 3-4 concise feature points, and one CTA.",
-      "- Product cluster must stay fully visible as proof while information remains fast to scan.",
-      "- Bullets or callouts must be functional benefits only; short, concrete, and readable.",
-      "- CTA must be rendered as a filled rounded button chip, never plain text."
+      "Meaning:",
+      "The product is the main character. The ad should make OK Kit look like the clear solution for the selected persona's weight-loss problem.",
+      "",
+      "Job of the ad:",
+      "Make the customer think: This is the course I need.",
+      "",
+      "Copy style:",
+      "Direct, confident, product-first.",
+      "",
+      "Internal writing logic:",
+      "Persona problem -> OK Kit as the solution -> practical benefit.",
+      "",
+      "Use when:",
+      "The user selects Hero format.",
+      "",
+      "Avoid:",
+      "Do not make it sound like a generic brand poster."
     ],
     "UGC": [
-      "- Format: UGC.",
-      "- Creator-style authenticity with premium cleanliness; avoid stock-template look.",
-      "- Subject and product should feel naturally integrated into a believable routine moment.",
-      "- Headline/support/context/CTA stack must stay compact and mobile-readable.",
-      "- Hands must look anatomically correct; no extra fingers or warped nails."
-    ]
-  },
-  "format_defaults": {
-    "_description": "Default concept_structure per format (used when no hypothesis overrides it).",
-    "structure_by_fmt": {
-      "HERO": "pab",
-      "BA": "bab",
-      "TEST": "pas",
-      "FEAT": "fab",
-      "UGC": "pas"
-    },
-    "default_concept_angle": "desired_outcome"
-  },
-  "persona_mapping": {
-    "_description": "Maps persona_seeds.json fields → LLM payload fields. Each entry defines how a seed field is transformed into a payload field.",
-    "seed_to_payload": {
-      "pain": {
-        "field": "pain_points",
-        "wrap_list": true,
-        "prefix": null
-      },
-      "desire": {
-        "field": "core_message",
-        "wrap_list": true,
-        "prefix": null
-      },
-      "friction": {
-        "field": "objections",
-        "wrap_list": true,
-        "prefix": null
-      },
-      "proof": {
-        "field": "trust_anchors",
-        "wrap_list": true,
-        "prefix": null
-      },
-      "tone": {
-        "field": "english_ready",
-        "wrap_list": true,
-        "prefix": "Tone cue: "
-      },
-      "how_kit_solves": {
-        "field": "how_kit_solves",
-        "wrap_list": false,
-        "prefix": null
-      }
-    },
-    "persona_fallbacks": {
-      "pain": "Daily routine feels heavy and hard to sustain.",
-      "desire": "A practical routine that feels easy to follow.",
-      "friction": "Past plans felt too strict and difficult to maintain.",
-      "proof": "Needs clear structure and believable support.",
-      "tone": "practical and confidence-building",
-      "how_kit_solves": {}
-    },
-    "static_fields": {
-      "trigger_scenarios": [],
-      "language_bank": [],
-      "grounded_mechanism_map": []
-    },
-    "hindi_ready_default": "टोन संकेत: सरल, भरोसेमंड, व्यावहारिक"
-  },
-  "cta_variants": {
-    "_description": "CTA text options per language per format. Used by enforce_unique_ctas to assign unique CTAs.",
-    "EN": {
-      "HERO": [
-        "Start Today",
-        "See The 15-Day Plan",
-        "Begin The Kit"
-      ],
-      "BA": [
-        "See The Shift",
-        "Start The Reset",
-        "View The Change"
-      ],
-      "TEST": [
-        "See The Proof",
-        "Read The Routine",
-        "Start With Proof"
-      ],
-      "FEAT": [
-        "View Kit Steps",
-        "See The Protocol",
-        "Check The Steps"
-      ],
-      "UGC": [
-        "See My Routine",
-        "Watch The Routine",
-        "Try The Steps"
-      ]
-    },
-    "HI": {
-      "HERO": [
-        "आज शुरू करें",
-        "15 दिन का प्लान देखें",
-        "किट शुरू करें"
-      ],
-      "BA": [
-        "बदलाव देखें",
-        "रीसेट शुरू करें",
-        "फर्क देखें"
-      ],
-      "TEST": [
-        "प्रमाण देखें",
-        "दिनचर्या पढ़ें",
-        "भरोसे से शुरू करें"
-      ],
-      "FEAT": [
-        "किट कदम देखें",
-        "प्रोटोकॉल देखें",
-        "कदम देखें"
-      ],
-      "UGC": [
-        "मेरी दिनचर्या देखें",
-        "दिनचर्या देखें",
-        "कदम अपनाएं"
-      ]
-    }
-  },
-  "testimonial_headline_guidance": {
-    "_description": "Regex patterns and fallback strings for ensure_testimonial_headline. One entry per language.",
-    "EN": {
-      "first_person_pattern": "\\b(i|i'm|i've|i'd|my|me)\\b",
-      "weight_pattern": "\\b(weight|obesity|excess\\s*weight|kg|kilo)\\b",
-      "suffix": "It finally fit my weight-loss routine.",
-      "desire_template": "\"I finally found {desire_phrase} for my weight-loss goal.\"",
-      "fallback": "\"I finally found a routine I can follow for weight loss every day.\"",
-      "desire_field": "desire_en"
-    },
-    "HI": {
-      "first_person_pattern": "(मैं|मेरी|मेरा|मुझे|मैंने)",
-      "weight_pattern": "(वजन|मोटापा|किलो|kg)",
-      "suffix": "यह मेरे वजन घटाने के लिए काम आया।",
-      "desire_template": "\"मुझे आखिर {desire_phrase} वाला रूटीन मिला जो वजन घटाने में मदद करता है।\"",
-      "fallback": "\"मुझे आखिर ऐसा रूटीन मिला जिसे मैं रोज निभा सकूं और वजन घटा सकूं।\"",
-      "desire_field": "desire_hi"
-    }
-  },
-  "testimonial_attribution_variants": {
-    "_description": "Attribution text variants per language for ensure_testimonial_attribution. Picked deterministically via hash.",
-    "EN": [
-      "Representative routine feedback",
-      "15-day adherence feedback snapshot",
-      "Persona-based obesity-care review note",
-      "Representative weight-loss routine review",
-      "Structured-plan feedback example",
-      "Representative user experience note"
+      "Meaning:",
+      "The ad should feel like it comes from a real customer, creator, or everyday person, not from the brand.",
+      "",
+      "Job of the ad:",
+      "Make the customer think: Someone like me has this exact problem.",
+      "",
+      "Copy style:",
+      "Casual, lived-in, conversational. Slightly imperfect is fine. It should not sound overly polished.",
+      "",
+      "Internal writing logic:",
+      "Real-life moment -> relatable struggle -> OK Kit feels followable.",
+      "",
+      "Use when:",
+      "The user selects UGC format.",
+      "",
+      "Avoid:",
+      "Do not invent fake names, exact results, or fake personal stories.",
+      "Do not write fake influencer-style praise."
     ],
-    "HI": [
-      "प्रतिनिधि रूटीन फीडबैक",
-      "15-दिन adherence फीडबैक स्नैपशॉट",
-      "पर्सोना-आधारित obesity-care रिव्यू नोट",
-      "प्रतिनिधि वजन-घटाने रूटीन रिव्यू",
-      "स्ट्रक्चर्ड-प्लान फीडबैक उदाहरण",
-      "प्रतिनिधि यूजर अनुभव नोट"
+    "TEST": [
+      "Meaning:",
+      "The ad uses customer experience, proof, or result pattern as the main hook.",
+      "",
+      "Job of the ad:",
+      "Make the customer think: This has worked for people like me.",
+      "",
+      "Copy style:",
+      "Specific, believable, proof-led.",
+      "",
+      "Internal writing logic:",
+      "Customer experience/proof -> reason it worked -> next step.",
+      "",
+      "Use when:",
+      "The user selects Testimonial format.",
+      "",
+      "Avoid:",
+      "Do not invent names, exact kg loss, medical conditions, or direct quotes unless provided.",
+      "Do not claim every customer gets the same result."
+    ],
+    "FEAT": [
+      "Meaning:",
+      "The ad explains one important feature of OK Kit and connects it to a real customer problem.",
+      "",
+      "Job of the ad:",
+      "Make the customer think: Now I understand how this helps.",
+      "",
+      "Copy style:",
+      "Clear, simple, educational, benefit-linked.",
+      "",
+      "Internal writing logic:",
+      "Feature -> why it matters -> customer benefit.",
+      "Use FAB silently, but do not mention FAB.",
+      "",
+      "Use when:",
+      "The user selects Product-feature led format.",
+      "",
+      "Avoid:",
+      "Do not list features without explaining why they matter."
+    ],
+    "BA": [
+      "Meaning:",
+      "The ad shows the shift from the customer's current struggle to a better state after following the course.",
+      "",
+      "Job of the ad:",
+      "Make the customer clearly see the transformation.",
+      "",
+      "Copy style:",
+      "Contrast-led, simple, believable.",
+      "",
+      "Internal writing logic:",
+      "Before struggle -> after shift -> bridge through OK Kit.",
+      "Use BAB silently, but do not mention BAB.",
+      "",
+      "Use when:",
+      "The user selects Before-after format.",
+      "",
+      "Avoid:",
+      "Do not promise guaranteed body transformation or unrealistic visual results."
     ]
   },
-  "feature_templates": {
-    "_description": "Feature support lines per feature key. Used in build_template_copy for BA format bullets and HERO/UGC support lines.",
-    "structured_system": {
-      "EN": "Structured system for consistent weight-loss progress.",
-      "HI": "लगातार वजन-सपोर्ट के लिए व्यवस्थित सिस्टम।"
+  "prompt_tail": {
+    "support_target_map": {
+      "BA": "before-after shift",
+      "FEAT": "feature benefit",
+      "TEST": "trust line"
     },
-    "cravings_down": {
-      "EN": "Helps reduce cravings for better daily weight management.",
-      "HI": "बेहतर दैनिक वजन-प्रबंधन के लिए लालसा कम करने में सहायक।"
-    },
-    "guided_weight_loss": {
-      "EN": "Guided morning and night steps for visible results.",
-      "HI": "दिखने वाले परिणामों के लिए निर्देशित सुबह-रात के कदम।"
-    },
-    "natural_ingredients": {
-      "EN": "Natural Ayurvedic formulation without side effects.",
-      "HI": "बिना दुष्प्रभाव के प्राकृतिक आयुर्वेदिक फॉर्मूलेशन।"
-    },
-    "easy_routine": {
-      "EN": "Simple routine that fits into daily life easily.",
-      "HI": "रोज़मर्रा की ज़िंदगी में आसानी से फिट होने वाली सरल दिनचर्या।"
-    },
-    "_default": {
-      "EN": "Structured system for consistent progress.",
-      "HI": "लगातार प्रगति के लिए व्यवस्थित सिस्टम।"
-    }
+    "default_support_target": "subheadline",
+    "lines": [
+      "Framework usage rules:",
+      "1.`Frameworks are only internal writing logic to help you structure the copy. They are not literal templates to fill in. Always write in natural language that flows, not like a strategy document or framework breakdown.",
+      "2. Use these frameworks silently only as internal writing logic.",
+      "3. Do not mention PAS, BAB, FAB, or 4U in the output.",
+      "4. Use PAS only lightly for pain-led ads. Do not over-agitate weight, body image, or medical conditions.",
+      "5. Use BAB mainly for Before-after ads.",
+      "6. Use FAB mainly for Product-feature led ads.",
+      "7. Use 4U only as a headline quality check: Is the headline useful? Is it specific? Does it feel relevant now? Is it clear why this persona should care?",
+      "",
+      "Subheadline rules:",
+      "1. The subheadline should explain how OK Kit helps that persona.",
+      "2. Use one clear product truth at a time.",
+      "3. Do not overload every ad with all benefits.",
+      "4. Write in natural language, not like a strategy document.",
+      "5. Avoid robotic phrases like: supports weight-loss behaviour, hunger pressure, metabolic support, bridges the gap, empowers your journey, unlocks transformation, holistic wellness solution",
+      "6. Prefer simple human phrasing like: helps reduce hunger and cravings, makes it easier to stay with the plan, gives you a clear 15-day routine, works with regular homemade food, no separate meal prep needed, coach support helps with course-related doubts",
+      "",
+      "CTA rules:",
+      "Use short, simple CTAs. Examples: Learn More, Shop Now, Start the Course, See How It Works, Check Eligibility",
+      "",
+      "Language style:",
+      "1. Write like a real Indian customer-facing brand, not like AI.",
+      "2. Keep the copy clean, direct, and believable.",
+      "3. Use simple English.",
+      "4. Light Roman Hindi is allowed only if it feels natural, but do not force it.",
+      "5. Avoid fancy words and marketing clichés.",
+      "6. Do not use exaggerated urgency.",
+      "7. Do not sound like a medical prescription.",
+      "8. Do not use emojis.",
+      "",
+      "Generation process:",
+      "Step 1: Identify the persona-specific headline anchor.",
+      "Step 2: Identify the selected ad format and use its internal writing logic.",
+      "Step 3: Generate the requested number of ads.",
+      "Step 4: Before final output, silently reject any ad where:",
+      "  1. The headline does not clearly signal weight loss.",
+      "  2. The headline does not clearly signal the selected persona or persona context.",
+      "  3. The headline could work unchanged for another persona.",
+      "  4. The ad does not follow the selected format.",
+      "  5. The subheadline contains a medical treatment claim.",
+      "  6. The copy sounds robotic or internal.",
+      "  7. The ad uses tag names, framework names, or category labels.",
+      "  8. The ad includes internal disclaimers as ad copy.",
+      "",
+      "Final output: Give only the table. No explanation."
+    ]
   },
-  "template_copy_cta_map": {
-    "_description": "Single CTA per format for template copy (build_template_copy). Not the same as cta_variants (which are used by enforce_unique_ctas).",
+  "response_skeleton": {
+    "_description": "Exact JSON skeleton the LLM must fill. Shown at end of prompt_tail to enforce structure. Placeholders in angle brackets are replaced by the LLM.",
+    "default": {
+      "default_aspect_ratio": "4:5",
+      "ads": [
+        {
+          "format": "{format}",
+          "persona": {
+            "persona_number": "<number>",
+            "persona_name": "<name>"
+          },
+          "copy": {
+            "EN": {
+              "headline": "<headline>",
+              "cta": "<cta>"
+            }
+          }
+        }
+      ]
+    },
     "HERO": {
-      "EN": "Start Today",
-      "HI": "आज शुरू करें"
-    },
-    "BA": {
-      "EN": "See The Shift",
-      "HI": "बदलाव देखें"
-    },
-    "TEST": {
-      "EN": "See The Proof",
-      "HI": "प्रमाण देखें"
-    },
-    "FEAT": {
-      "EN": "View Kit Steps",
-      "HI": "किट कदम देखें"
-    },
-    "UGC": {
-      "EN": "See My Routine",
-      "HI": "मेरी दिनचर्या देखें"
-    },
-    "_default": {
-      "EN": "Start Today",
-      "HI": "आज शुरू करें"
-    }
-  },
-  "template_copy_format_overrides": {
-    "_description": "Format-specific overrides in build_template_copy. BA/FEAT/UGC override the generated template headline. UGC overrides support line. FEAT has hardcoded bullets. TEST has headline + attribution + trust_line.",
-    "BA": {
-      "headline": {
-        "EN": "A clear kit routine beats random dieting.",
-        "HI": "साफ किट दिनचर्या अनियमित डाइटिंग से बेहतर है।"
-      }
-    },
-    "FEAT": {
-      "headline": {
-        "EN": "Three kit steps support 15-day weight loss.",
-        "HI": "तीन किट कदम 15 दिन के वजन-सपोर्ट में मदद करते हैं।"
-      },
-      "bullets": {
-        "EN": [
-          "Morning OK Liquid helps reduce hunger and random snacking for weight loss.",
-          "Night Tablet + Powder support digestion and lighter mornings in obesity routine.",
-          "Built for visible 15-day weight-loss support without crash-diet pressure."
-        ],
-        "HI": [
-          "सुबह का OK Liquid वजन घटाने के लिए भूख और अचानक खाने की आदत कम करने में सहायक है।",
-          "रात का Tablet + Powder मोटापा-नियंत्रण दिनचर्या में पाचन-सपोर्ट देता है।",
-          "कठोर डाईट दबाव के बिना 15 दिन के वजन-सपोर्ट के लिए बनाया गया।"
-        ]
+      "copy": {
+        "EN": {
+          "headline": "<headline, signals weight loss for this persona>",
+          "subheadline": "<subheadline explaining how OK Kit helps this persona>",
+          "cta": "<your CTA>"
+        }
       }
     },
     "UGC": {
-      "headline": {
-        "EN": "Late-night cravings can feel easier to control.",
-        "HI": "रात की लालसा नियंत्रित करना आसान लग सकता है।"
-      },
-      "support_override": {
-        "EN": "A simple first step helps keep late-night weight-loss control practical.",
-        "HI": "एक सरल पहला कदम रात के वजन-नियंत्रण को व्यावहारिक रखता है।"
+      "copy": {
+        "EN": {
+          "headline": "<headline, conversational and persona-specific>",
+          "subheadline": "<subheadline in creator voice>",
+          "cta": "<your CTA>"
+        }
       }
     },
     "TEST": {
-      "headline": {
-        "EN": "I trusted the 15-day kit because the steps felt clear for weight loss.",
-        "HI": "मैंने 15 दिन की किट पर भरोसा किया क्योंकि वजन-घटाने के कदम साफ लगे।"
-      },
-      "attribution": {
-        "EN": "Doctor-formulated Ayurvedic obesity and weight-loss protocol",
-        "HI": "डॉक्टर-फॉर्मुलेटेड आयुर्वेदिक मोटापा और वजन-घटाने का प्रोटोकॉल"
-      },
-      "trust_line": {
-        "EN": "Structured morning-night steps for visible weight-loss progress and obesity control.",
-        "HI": "सुबह-रात के स्पष्ट कदमों से वजन घटाने और मोटापा नियंत्रण का भरोसेमंड सपोर्ट।"
+      "copy": {
+        "EN": {
+          "headline": "<proof-led headline, believable customer experience>",
+          "subheadline": "<subheadline explaining why it worked>",
+          "cta": "<your CTA>"
+        }
+      }
+    },
+    "FEAT": {
+      "copy": {
+        "EN": {
+          "headline": "<feature-connected headline>",
+          "subheadline": "<subheadline linking feature to customer benefit>",
+          "cta": "<your CTA>"
+        }
+      }
+    },
+    "BA": {
+      "copy": {
+        "EN": {
+          "headline": "<before-after contrast headline>",
+          "subheadline": "<subheadline bridging the shift through OK Kit>",
+          "cta": "<your CTA>"
+        }
       }
     }
   },
-  "template_copy_en_fallbacks": {
-    "_description": "English fallback values for build_template_copy when persona fields are empty.",
-    "tone": "Practical, empathetic, and confidence-building"
-  },
-  "template_copy_hi_fallbacks": {
-    "_description": "Hindi fallback values for build_template_copy when persona fields are empty.",
-    "pain": "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।",
-    "desire": "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।",
-    "friction": "पहले के प्लान बहुत सख्त और मुश्किल थे।",
-    "proof": "साफ कदम, भरोसेमंड सपोर्ट और व्यावहारिक प्रमाण चाहिए।",
-    "tone": "सरल, भरोसेमंड, और व्यावहारिक"
-  },
-  "template_copy_headline_sentence": {
-    "_description": "Template string for _template_copy (used by template_headline). {primary_key}, {secondary_key}, {pain} are filled at runtime.",
-    "EN": "A clear {primary_key} system for {secondary_key} that helps manage {pain}.",
-    "HI": "{primary_key} का {secondary_key} सिस्टम जो {pain} को संभालने में मदद करता है।"
-  },
-  "template_copy_support_sentence": {
-    "_description": "Template string for template_support in build_template_copy. {primary_key}, {secondary_key} are filled at runtime.",
-    "EN": "Simple steps rooted in {primary_key} and {secondary_key}.",
-    "HI": "सरल कदम, जो {primary_key} और {secondary_key} पर आधारित हैं।"
+  "strict_schema_note": {
+    "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys.",
+    "persona_fields_en": "persona must be an object with number, name, pain_en, desire_en, friction_en, proof_needed_en, tone_cue_en, how_kit_solves, pain_hi, desire_hi, friction_hi, proof_needed_hi, tone_cue_hi.",
+    "language_extension": "When constraints.language includes HINGLISH, also include pain_hinglish, desire_hinglish, friction_hinglish, proof_needed_hinglish, tone_cue_hinglish in persona.",
+    "format_closure_template": "For {fmt} format, copy.EN, copy.HI, and copy.HINGLISH (when requested) must contain only: {copy_fields}.",
+    "field_map": {
+      "HERO": "headline, subheadline, cta",
+      "UGC": "headline, subheadline, cta",
+      "BA": "headline, subheadline, cta",
+      "FEAT": "headline, subheadline, cta",
+      "TEST": "headline, subheadline, cta"
+    },
+    "default_fields": "headline, cta"
   }
 }
