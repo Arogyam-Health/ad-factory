@@ -76,6 +76,8 @@ def _load_visual_archetypes() -> dict[str, list[dict[str, Any]]]:
 
 FORMAT_VISUAL_ARCHETYPES = _load_visual_archetypes()
 
+PROMPT_ASSEMBLER_DIR = Path(__file__).resolve().parent
+PROMPT_ASSEMBLER_TEMPLATES = json.loads((PROMPT_ASSEMBLER_DIR / "prompt_assembler_templates.json").read_text(encoding="utf-8"))
 
 @dataclass(frozen=True)
 class CopyBlock:
@@ -242,63 +244,6 @@ def build_seeded_background_sentence(bg: dict[str, Any], seed: int, aspect_ratio
         f"{base} on a {surface}, with {environment}, lit by {lighting}, conveying {mood}; "
         f"{camera}, {composition}, {layout_intent}, {cta_safe_space}, {crop_safety}, {text_overlay_treatment}, {edge_tone_control}, {color_tone}, "
         f"{format_clause}, clean premium studio ad photography, ultra-detailed, flawless commercial finish."
-    )
-
-
-def build_ugc_subject_line(seed: int) -> str:
-    rng = random.Random(seed)
-    age_band = rng.choice(["24-29", "27-33", "30-36", "32-38"])
-    tone = rng.choice(["calm confident", "warm assured", "focused optimistic", "grounded and practical"])
-    attire = rng.choice([
-        "solid kurta",
-        "casual cotton shirt",
-        "minimal blouse",
-        "everyday premium casual wear",
-    ])
-    hair = rng.choice([
-        "neat tied-back hair",
-        "simple ponytail",
-        "natural shoulder-length hair",
-        "clean center-part tied style",
-    ])
-    return f"Indian woman {age_band}, {tone} expression, {attire}, {hair}; natural and unposed."
-
-
-def safezone_enforcement_block(aspect_ratio: str) -> str:
-    # Keep wording stable so downstream validators can key off consistent tokens.
-    if aspect_ratio == "9:16":
-        return (
-            "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n"
-            "- Keep all critical content inside the 14%-65% vertical safe band.\n"
-            "- Reserve the lower 35% as quiet space; no product labels or headline copy in this band.\n"
-            "- Keep side margins clean; no key content touching left or right frame edges.\n"
-            "- Product cluster may be centered or left/right weighted according to the selected archetype, but must remain fully inside safe zones.\n"
-            "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones."
-        )
-    return (
-        "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n"
-        "- Frame: 1080x1350 (4:5).\n"
-        "- Restricted bands: top 10% (0-135px), bottom 15% (1148-1350px), side edges outer 8% (0-86px and 994-1080px).\n"
-        "- Keep all products and all on-image text fully inside the central safe field: x=86-994 and y=135-1148.\n"
-        "- Product cluster may be centered or left/right weighted according to the selected archetype, with mild upward bias allowed, but must not touch any restricted band.\n"
-        "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.\n"
-        "- HARD DIMENSION LOCK: output must be exactly 1080×1350 pixels. If the generated image is any other size or aspect ratio, reject and regenerate until it matches exactly 1080×1350."
-    )
-
-
-def outpaint_lock_block(aspect_ratio: str) -> str:
-    if aspect_ratio != "9:16":
-        return ""
-    return (
-        "9:16 CONVERSION LOCK (OUTPAINT ONLY)\n"
-        "- Treat base 4:5 composition as fixed ground truth; preserve it exactly.\n"
-        "- Extend canvas vertically only; top/bottom extension zones are background only.\n"
-        "- Do not stretch, warp, zoom, crop, or recomposite existing content.\n"
-        "- Keep product cluster size, spacing, and relative proportions identical to base 4:5.\n"
-        "- Keep product cluster anchored at roughly same visual vertical position (~45%).\n"
-        "- Keep headline/support/CTA hierarchy and spacing tight; do not add vertical gaps.\n"
-        "- Keep all critical text+product content inside the central active band; do not push into extension zones.\n"
-        "- If any distortion, spacing drift, or repositioning appears, reject and regenerate."
     )
 
 
@@ -479,10 +424,6 @@ def stable_signature_seed(*parts: Any) -> int:
     return int(digest[:8], 16) or 1
 
 
-def base_layout_lines_for_format(fmt: str) -> list[str]:
-    return []
-
-
 def find_visual_archetype(fmt: str, archetype_id: str) -> dict[str, Any]:
     for item in FORMAT_VISUAL_ARCHETYPES.get(fmt, []):
         if str(item.get("id") or "").strip() == archetype_id:
@@ -576,10 +517,11 @@ def render_prompt(
 
     persona_number = require_int(persona, "number", "ads[].persona")
 
-    layout_lines = base_layout_lines_for_format(fmt) + list(visual_archetype.get("layout_lines") or [])
+    T = PROMPT_ASSEMBLER_TEMPLATES
+
+    layout_lines = list(visual_archetype.get("layout_lines") or [])
     archetype_direction_lines = [str(line) for line in (visual_archetype.get("direction_lines") or []) if isinstance(line, str) and line.strip()]
 
-    # Copy block: render EXACTLY what was provided.
     copy_lines: list[str] = []
     if fmt == "HERO":
         copy_lines = [
@@ -620,59 +562,28 @@ def render_prompt(
     lock = visual_lock if isinstance(visual_lock, dict) else {}
     subject_line = (lock.get("subject") or "").strip() if isinstance(lock.get("subject"), str) else ""
     if not subject_line:
-        if fmt == "UGC":
-            subject_line = build_ugc_subject_line(bg_seed)
-        elif fmt == "BA":
-            subject_line = "Same adult subject identity appears in both panels: left shows routine struggle, right shows practical control; no body-shaming or body-morph visuals."
-        else:
-            subject_line = "No human subject, products only."
-    action_line = (
-        "Products arranged on a clean table/counter at correct scale; creator may point or gesture near them but must not touch, hold, grab, lift, or open any product or box."
-        if fmt == "UGC"
-        else "Arrange all 5 products as a cohesive premium cluster; kit box acts as anchor."
-    )
-    if fmt == "BA":
-        action_line = "Split action: BEFORE panel shows rushed/impulsive routine cue; AFTER panel shows one clear repeatable step with cleaner setup and calmer behavior."
-    if isinstance(lock.get("action"), str) and lock.get("action").strip():
-        action_line = lock.get("action").strip()
-    camera_line = "Handheld close-to-medium framing, phone-like realism, stable focus on labels." if fmt == "UGC" else "Eye-level medium framing with clean edge discipline."
-    if isinstance(lock.get("camera"), str) and lock.get("camera").strip():
-        camera_line = lock.get("camera").strip()
-    realism_line = (
-        "True-to-life proportions; no stock-template look; natural skin and correct hand anatomy."
-        if fmt == "UGC"
-        else "True-to-life proportions; no stock-template look."
-    )
-    if isinstance(lock.get("realism"), str) and lock.get("realism").strip():
-        realism_line = lock.get("realism").strip()
+        subject_line = T["subject_lines"].get(fmt) or T["subject_lines"]["default"]
+    action_line = (lock.get("action") or "").strip() if isinstance(lock.get("action"), str) and lock.get("action").strip() else (T["action_lines"].get(fmt) or T["action_lines"]["default"])
+    camera_line = (lock.get("camera") or "").strip() if isinstance(lock.get("camera"), str) and lock.get("camera").strip() else (T["camera_lines"].get(fmt) or T["camera_lines"]["default"])
+    realism_line = (lock.get("realism") or "").strip() if isinstance(lock.get("realism"), str) and lock.get("realism").strip() else (T["realism_lines"].get(fmt) or T["realism_lines"]["default"])
 
     lines: list[str] = []
     canvas_spec = "1080 x 1920" if aspect_ratio == "9:16" else "1080 x 1350"
     lines.append("PRODUCT LOCK BLOCK")
-    lines.extend(
-        [
-            "- Use the uploaded Obesity Killer product packshot images as absolute visual truth.",
-            "- Use provided product references as exact appearance truth for pack shape, label, and color.",
-            "- Do not redesign, redraw, relabel, or alter any product or packaging in any way.",
-            "- Do not change brand name, label colors, illustrations, proportions, or any text (Hindi or English).",
-            "- If any label text is unclear, preserve the original image as-is. Do not reinterpret it.",
-            "- Only permitted: placement, scaling, subtle drop shadows, mild warm lighting correction.",
-        ]
-    )
+    lines.extend(T["product_lock_block"])
     lines.append("")
     lines.append("OUTPUT SPEC")
-    lines.extend(
-        [
-            f"- Canvas: {canvas_spec} pixels. Portrait. {aspect_ratio} ratio.",
-            f"- Style: {style}",
-            f"- Visual archetype: {visual_archetype['id']} ({visual_archetype['label']})",
-            "- Full-bleed requirement: scene must reach all canvas edges; no inset poster card, no inner frame, no side matte bands, no faux border margins.",
-            "- Text policy: low text by default; all copy minimal and mobile-readable at 375px width.",
-            "- Rendering: no compression artifacts; no soft edges on text or product labels.",
-            "- All 5 products present, proportionally sized per reference dimensions, unmodified.",
-            "- Readability: maintain high-contrast foreground/background treatment for ad-platform legibility.",
-        ]
-    )
+    style_description = T["style_descriptions"].get(fmt) or ""
+    archetype_id = visual_archetype['id']
+    archetype_label = visual_archetype['label']
+    for line_tpl in T["output_spec_lines"]:
+        lines.append(line_tpl.format(
+            canvas_spec=canvas_spec,
+            aspect_ratio=aspect_ratio,
+            style_description=style_description,
+            archetype_id=archetype_id,
+            archetype_label=archetype_label,
+        ))
     lines.append("")
     lines.append("FORMAT LAYOUT INSTRUCTIONS")
     lines.extend(layout_lines)
@@ -697,102 +608,61 @@ def render_prompt(
     lines.append("Render every character exactly as written. No paraphrasing, no punctuation changes, no autocorrection.")
     lines.append("")
     lines.append("NEGATIVE CONSTRAINTS")
-    negative = [
-        "- Do not recreate or redraw any product.",
-        "- Do not blur, approximate, or rewrite any label text.",
-        "- Do not use sale badges, burst graphics, or stickers.",
-        "- Do not show body transformations or weight-loss visuals.",
-        "- Do not use colors outside the defined palette.",
-        "- Do not use more than 2 font weights.",
-        "- Do not overcrowd the layout.",
-        "- Do not add edge glows, tinted borders, amber/orange side casts, or decorative vignette frames.",
-        "- Do not create inset-canvas look: no white frame border, no inner-card composition, no side fade bands, no outer padding effect.",
-        "- Do not shrink main scene inside margins; composition must remain full-bleed to all four edges.",
-        "- Do not place any translucent white panel behind or below the product cluster.",
-        "- Do not make medical cure claims of any kind.",
-        "- Do not use ring light, studio flash, or overproduced lighting.",
-    ]
+    negative = list(T["negative_constraints"])
     if fmt == "UGC":
-        negative.insert(8, "- Do not render unnatural or anatomically incorrect hands.")
-        negative.insert(9, "- Do not show the creator holding, grabbing, lifting, opening, pinching, or touching any product, bottle, packet, jar, or kit box; products must rest independently on the surface at correct scale.")
+        negative[8:8] = T["ugc_extra_constraints"]
     if fmt == "BA":
-        negative.append("- Do not render literal BEFORE:/AFTER: words anywhere on-image.")
+        negative.extend(T["ba_extra_constraint"])
     lines.extend(negative)
     lines.append("")
     lines.append("QUALITY BAR - verify before accepting output")
-    lines.extend(
-        [
-            "- All 5 products present, correctly proportioned, and completely unmodified.",
-            "- All on-image text sharp and readable at 375px mobile size.",
-            "- Product labels accurate, unmodified, and fully readable.",
-            "- Layout calm, balanced, and premium.",
-            "- No clutter, no hype, and no forbidden elements.",
-            "- Single clear focal hierarchy aligned with the selected visual archetype.",
-            "- If any item above fails, regenerate immediately without compromise.",
-        ]
-    )
+    lines.extend(T["quality_bar_lines"])
     lines.append("")
     lines.append("VISUAL DIRECTION BLOCK")
-    lines.extend(
-        [
-            f"- Background slot: {bg['id']} - {bg.get('title', '').strip() or 'Catalog background'}",
-            f"- Background seed: {bg_seed}",
-            f"- Seeded background direction (single sentence, exact): {seeded_sentence}",
-            f"- Subject: {subject_line}",
-            f"- Action: {action_line}",
-            f"- Camera: {camera_line}",
-            f"- Lighting: {(lock.get('lighting') or 'Warm, soft, directional (top-left) and label-safe.')}",
-            f"- Props: {(lock.get('props') or 'Minimal, non-competing; keep edge zones quiet.')}",
-            f"- Surfaces: {(lock.get('surfaces') or 'Premium, clean texture; avoid busy patterns under text.')}",
-            "- Text panel treatment: if used, keep panel in upper text zone only with vertical fade to transparent before products; never place white panel behind or below product cluster.",
-            "- Edge color control: keep border tones neutral and natural; no orange/amber edge tint and no ornamental frame glow.",
-            "- Edge structure control: enforce full-bleed composition to edges; reject outputs with visible inset border, side matte strip, or inner-frame card look.",
-            f"- Mood: {(lock.get('mood') or 'Calm confidence and practical consistency; no hype.')}",
-            f"- Realism: {realism_line}",
-            f"- Selected visual archetype: {visual_archetype['id']} - {visual_archetype['label']}",
-        ]
-    )
+    bg_title = (bg.get("title") or "Catalog background").strip()
+    lighting_line = (lock.get("lighting") or "").strip() if isinstance(lock.get("lighting"), str) and lock.get("lighting").strip() else T["lighting_default"]
+    props_line = (lock.get("props") or "").strip() if isinstance(lock.get("props"), str) and lock.get("props").strip() else T["props_default"]
+    surfaces_line = (lock.get("surfaces") or "").strip() if isinstance(lock.get("surfaces"), str) and lock.get("surfaces").strip() else T["surfaces_default"]
+    mood_line = (lock.get("mood") or "").strip() if isinstance(lock.get("mood"), str) and lock.get("mood").strip() else T["mood_default"]
+    for line_tpl in T["visual_direction_lines"]:
+        lines.append(line_tpl.format(
+            bg_id=bg["id"],
+            bg_title=bg_title,
+            bg_seed=bg_seed,
+            seeded_sentence=seeded_sentence,
+            subject_line=subject_line,
+            action_line=action_line,
+            camera_line=camera_line,
+            lighting_line=lighting_line,
+            props_line=props_line,
+            surfaces_line=surfaces_line,
+            mood_line=mood_line,
+            realism_line=realism_line,
+            archetype_id=archetype_id,
+            archetype_label=archetype_label,
+        ))
     if fmt == "HERO":
-        lines.append("- HERO anti-convergence rule: obey the selected archetype literally. Do not fall back to generic centered headline + centered product composition unless the chosen archetype is the centered variant.")
+        lines.append(T["hero_anti_convergence_rule"])
     lines.extend(archetype_direction_lines)
     if fmt == "BA":
-        lines.extend(
-            [
-                "- BEFORE panel visual anchors: include at least 2 struggle cues (messy surface, unplanned snack context, low-clarity routine signals).",
-                "- AFTER panel visual anchors: include at least 2 control cues (clean setup, fixed-step context, calmer brighter environment).",
-                "- Identity continuity: if a person is shown, keep same person across both panels; change only mood/context, never fake body transformation.",
-            ]
-        )
+        lines.extend(T["ba_panel_anchors"])
     if lock:
-        lines.append("- VISUAL MATCH LOCK (from base 4:5): keep same subject identity, camera feel, lighting direction, prop family, and product arrangement; only adjust spacing/scale for aspect-ratio fit.")
+        lines.append(T["visual_match_lock"])
         if aspect_ratio == "9:16":
-            lines.append("- For 9:16 conversion: preserve the same product left-right order and relative layering as base 4:5; allow only vertical re-spacing and minor scale adaptation.")
+            lines.append(T["visual_match_lock_916"])
     lines.append("")
     lines.append("TYPOGRAPHY SHARPNESS BLOCK")
-    lines.extend(
-        [
-            "- Headline: Poppins Bold with high contrast against clean background area.",
-            "- Support and CTA: Poppins Medium/Regular, same family.",
-            "- Size: readable on a 375px mobile screen without zooming.",
-            "- Placement: flat uncluttered zones only; avoid noisy textures.",
-            "- Forbidden: thin fonts, script fonts, decorative typefaces, glow effects, outlined text, drop shadows on copy.",
-            "- Mandatory: crisp hard text edges, zero softness, zero anti-alias blur on any character.",
-            "- If any text is soft, blurry, or illegible, discard and regenerate immediately.",
-        ]
-    )
+    lines.extend(T["typography_lines"])
     lines.append("")
-    lines.append("Keep on-image text minimal and mobile-readable. Avoid dense copy blocks.")
-    lines.append("Render CTA as a real filled button chip with rounded corners and strong contrast; never show CTA as standalone plain text.")
-    lines.append("Typography must be pin-sharp. If any text appears soft, blurry, or smeared, regenerate.")
-    lines.append("Keep text count minimal and increase font size rather than packing more copy.")
-    lines.append("Use clean sans typography with strong stroke clarity; no thin/light weights for body text.")
-    lines.append("Use Poppins only for on-image text: Headline in Poppins Bold, support/CTA in Poppins Medium/Regular.")
+    lines.extend(T["typography_extra_lines"])
     lines.append("")
-    lines.append(safezone_enforcement_block(aspect_ratio))
-    lock_block = outpaint_lock_block(aspect_ratio)
-    if lock_block:
+    if aspect_ratio == "9:16":
+        lines.append(T["safezone_916"])
+    else:
+        lines.append(T["safezone_45"])
+    if aspect_ratio == "9:16":
         lines.append("")
-        lines.append(lock_block)
+        lines.append(T["outpaint_lock"])
     lines.append("")
     return "\n".join(lines).strip() + "\n"
 

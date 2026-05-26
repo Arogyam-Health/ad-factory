@@ -171,6 +171,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--send-confirm-timeout", type=float, default=35.0)
     parser.add_argument("--continue-on-error", action="store_true")
+    parser.add_argument(
+        "--to-45-file",
+        default="input/to_45_perfect.txt",
+        help="File containing a prompt to re-generate the image in perfect 4:5. The generated image is uploaded and this prompt is sent. Set to empty to disable.",
+    )
     return parser.parse_args()
 
 
@@ -2900,6 +2905,119 @@ def run() -> None:
                             encoding="utf-8",
                         )
                         print(f"  [done] Saved image: {saved_path}")
+
+                        # ------------------------------------------------------------------
+                        # Step: Re-generate in perfect 4:5 (if to_45_file is configured)
+                        # ------------------------------------------------------------------
+                        to_45_path = Path(args.to_45_file) if args.to_45_file else None
+                        if to_45_path and to_45_path.exists():
+                            to_45_prompt = to_45_path.read_text(encoding="utf-8").strip()
+                            if to_45_prompt:
+                                print(f"  [4:5 fix] Re-generating for perfect 4:5 using {to_45_path.name}...")
+                                try:
+                                    upload_images(page_for_job, [saved_path], timeout=180)
+                                    time.sleep(1.0)
+                                    baseline_srcs_45 = get_all_image_srcs(page_for_job)
+                                    composer_45 = set_prompt_text(
+                                        page_for_job,
+                                        to_45_prompt,
+                                        method=args.prompt_paste_method,
+                                        verify_timeout=args.prompt_paste_timeout,
+                                        min_integrity_ratio=args.prompt_integrity_ratio,
+                                        debug_path=prompt_debug_path,
+                                    )
+                                    click_send_and_confirm(
+                                        page_for_job,
+                                        composer=composer_45,
+                                        expected_prompt=to_45_prompt,
+                                        min_integrity_ratio=args.prompt_integrity_ratio,
+                                        debug_path=prompt_debug_path,
+                                        settle_wait=args.prompt_settle_wait,
+                                        submit_method=args.send_submit_method,
+                                        confirm_timeout=args.send_confirm_timeout,
+                                        expected_attachment_count=1,
+                                        ready_timeout=max(180.0, float(args.timeout)),
+                                    )
+                                    # The 4:5 response has a clickable text that opens an image viewer overlay.
+                                    # The viewer's "Save" button downloads the uploaded image, not the regenerated one,
+                                    # so we must extract the <img> src from the viewer and fetch it with cookies.
+                                    saved_path_45 = None
+                                    try:
+                                        print("  [4:5 fix] Clicking 'Download' button in ChatGPT response...")
+                                        # Button text varies; try common patterns
+                                        btn = (page_for_job.locator('button:has-text("Download")').last
+                                               .or_(page_for_job.locator('button:has-text("image")').last)
+                                               .or_(page_for_job.locator('button:has-text("click")').last))
+                                        btn.wait_for(timeout=args.timeout * 1000)
+                                        btn.click()
+                                        time.sleep(2.0)
+
+                                        viewer = page_for_job.locator('[data-testid="lightbox-new-body-surface"]')
+                                        viewer.wait_for(timeout=15000)
+                                        print("  [4:5 fix] Viewer opened, extracting image src...")
+
+                                        data_url = page_for_job.evaluate("""
+                                            () => {
+                                                const viewer = document.querySelector('[data-testid="lightbox-new-body-surface"]');
+                                                if (!viewer) return null;
+                                                const img = viewer.querySelector('img');
+                                                if (!img) return null;
+                                                const src = img.getAttribute('src') || '';
+                                                if (src.startsWith('data:')) return src;
+                                                return fetch(src, {credentials: 'include'})
+                                                    .then(r => r.blob())
+                                                    .then(blob => new Promise((done) => {
+                                                        const reader = new FileReader();
+                                                        reader.onloadend = () => done(reader.result);
+                                                        reader.onerror = () => done(null);
+                                                        reader.readAsDataURL(blob);
+                                                    }))
+                                                    .catch(() => null);
+                                            }
+                                        """)
+                                        if data_url:
+                                            saved_path_45 = _save_data_url(
+                                                data_url,
+                                                generated_images_dir / f"{job.output_stem}_45fix",
+                                                min_bytes=args.min_image_bytes,
+                                            )
+                                            if saved_path_45:
+                                                print(f"  [4:5 fix] Saved regenerated image from viewer: {saved_path_45}")
+
+                                        if not saved_path_45:
+                                            print("  [4:5 fix] Could not extract image from viewer via fetch.")
+                                            try:
+                                                download_dirs = _default_download_dirs(download_dir)
+                                                before = snapshot_download_dirs(download_dirs)
+                                                found = wait_for_completed_download_any(
+                                                    download_dirs=download_dirs,
+                                                    before_by_dir=before,
+                                                    started_at=time.time(),
+                                                    timeout=30,
+                                                    min_bytes=args.min_image_bytes,
+                                                )
+                                                if found:
+                                                    dest = generated_images_dir / f"{job.output_stem}_45fix{found.suffix or '.png'}"
+                                                    dest.parent.mkdir(parents=True, exist_ok=True)
+                                                    shutil.copy2(found, dest)
+                                                    found.unlink(missing_ok=True)
+                                                    saved_path_45 = dest
+                                                    print(f"  [4:5 fix] Found in download folder: {dest}")
+                                            except Exception as exc_watch:
+                                                print(f"  [4:5 fix] Download watch failed: {exc_watch}")
+                                    except Exception as exc_45:
+                                        print(f"  [4:5 fix] Error during viewer extraction: {exc_45}")
+
+                                    if saved_path_45 and saved_path_45.stat().st_size > args.min_image_bytes:
+                                        shutil.copy2(saved_path_45, saved_path)
+                                        if saved_path_45 != saved_path:
+                                            saved_path_45.unlink(missing_ok=True)
+                                        print(f"  [4:5 fix] Replaced with perfect 4:5 version: {saved_path}")
+                                    else:
+                                        print(f"  [4:5 fix] Failed to get 4:5 version; keeping original.")
+                                except Exception as exc_45:
+                                    print(f"  [4:5 fix] Error during 4:5 re-generation: {exc_45}")
+
                         time.sleep(args.sleep_after_download)
                         break
 

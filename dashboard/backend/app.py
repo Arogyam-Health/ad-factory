@@ -1478,6 +1478,9 @@ def run_chatgpt_generation(
         cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_sources_file:
         cmd.extend(["--image-source-file", image_sources_file])
+    to_45_path = ROOT / "input" / "to_45_perfect.txt"
+    if to_45_path.exists() and aspect_ratio == "4:5":
+        cmd.extend(["--to-45-file", str(to_45_path)])
 
     log_dir = RUNTIME_ROOT / "generation_logs"
     log_dir.mkdir(parents=True, exist_ok=True)

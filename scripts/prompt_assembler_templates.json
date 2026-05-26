@@ -1,0 +1,125 @@
+{
+  "product_lock_block": [
+    "- Use the uploaded Obesity Killer product packshot images as absolute visual truth.",
+    "- Use provided product references as exact appearance truth for pack shape, label, and color.",
+    "- Do not redesign, redraw, relabel, or alter any product or packaging in any way.",
+    "- Do not change brand name, label colors, illustrations, proportions, or any text (Hindi or English).",
+    "- If any label text is unclear, preserve the original image as-is. Do not reinterpret it.",
+    "- Only permitted: placement, scaling, subtle drop shadows, mild warm lighting correction."
+  ],
+  "style_descriptions": {
+    "HERO": "HERO, polished enough for paid ad deployment.",
+    "BA": "BA (before/after journey without body-shaming visuals).",
+    "TEST": "TEST (trust-first testimonial/review framing).",
+    "FEAT": "FEAT (features and mechanism clarity).",
+    "UGC": "UGC (creator-style authenticity, premium and clean)."
+  },
+  "output_spec_lines": [
+    "- Canvas: {canvas_spec} pixels. Portrait. {aspect_ratio} ratio.",
+    "- Style: {style_description}",
+    "- Visual archetype: {archetype_id} ({archetype_label})",
+    "- Full-bleed requirement: scene must reach all canvas edges; no inset poster card, no inner frame, no side matte bands, no faux border margins.",
+    "- Text policy: low text by default; all copy minimal and mobile-readable at 375px width.",
+    "- Rendering: no compression artifacts; no soft edges on text or product labels.",
+    "- All 5 products present, proportionally sized per reference dimensions, unmodified.",
+    "- Readability: maintain high-contrast foreground/background treatment for ad-platform legibility."
+  ],
+  "negative_constraints": [
+    "- Do not recreate or redraw any product.",
+    "- Do not blur, approximate, or rewrite any label text.",
+    "- Do not use sale badges, burst graphics, or stickers.",
+    "- Do not show body transformations or weight-loss visuals.",
+    "- Do not use colors outside the defined palette.",
+    "- Do not use more than 2 font weights.",
+    "- Do not overcrowd the layout.",
+    "- Do not add edge glows, tinted borders, amber/orange side casts, or decorative vignette frames.",
+    "- Do not create inset-canvas look: no white frame border, no inner-card composition, no side fade bands, no outer padding effect.",
+    "- Do not shrink main scene inside margins; composition must remain full-bleed to all four edges.",
+    "- Do not place any translucent white panel behind or below the product cluster.",
+    "- Do not make medical cure claims of any kind.",
+    "- Do not use ring light, studio flash, or overproduced lighting."
+  ],
+  "ugc_extra_constraints": [
+    "- Do not render unnatural or anatomically incorrect hands.",
+    "- Do not show the creator holding, grabbing, lifting, opening, pinching, or touching any product, bottle, packet, jar, or kit box; products must rest independently on the surface at correct scale."
+  ],
+  "ba_extra_constraint": [
+    "- Do not render literal BEFORE:/AFTER: words anywhere on-image."
+  ],
+  "quality_bar_lines": [
+    "- All 5 products present, correctly proportioned, and completely unmodified.",
+    "- All on-image text sharp and readable at 375px mobile size.",
+    "- Product labels accurate, unmodified, and fully readable.",
+    "- Layout calm, balanced, and premium.",
+    "- No clutter, no hype, and no forbidden elements.",
+    "- Single clear focal hierarchy aligned with the selected visual archetype.",
+    "- If any item above fails, regenerate immediately without compromise."
+  ],
+  "visual_direction_lines": [
+    "- Background slot: {bg_id} - {bg_title}",
+    "- Background seed: {bg_seed}",
+    "- Seeded background direction (single sentence, exact): {seeded_sentence}",
+    "- Subject: {subject_line}",
+    "- Action: {action_line}",
+    "- Camera: {camera_line}",
+    "- Lighting: {lighting_line}",
+    "- Props: {props_line}",
+    "- Surfaces: {surfaces_line}",
+    "- Text panel treatment: if used, keep panel in upper text zone only with vertical fade to transparent before products; never place white panel behind or below product cluster.",
+    "- Edge color control: keep border tones neutral and natural; no orange/amber edge tint and no ornamental frame glow.",
+    "- Edge structure control: enforce full-bleed composition to edges; reject outputs with visible inset border, side matte strip, or inner-frame card look.",
+    "- Mood: {mood_line}",
+    "- Realism: {realism_line}",
+    "- Selected visual archetype: {archetype_id} - {archetype_label}"
+  ],
+  "hero_anti_convergence_rule": "- HERO anti-convergence rule: obey the selected archetype literally. Do not fall back to generic centered headline + centered product composition unless the chosen archetype is the centered variant.",
+  "ba_panel_anchors": [
+    "- BEFORE panel visual anchors: include at least 2 struggle cues (messy surface, unplanned snack context, low-clarity routine signals).",
+    "- AFTER panel visual anchors: include at least 2 control cues (clean setup, fixed-step context, calmer brighter environment).",
+    "- Identity continuity: if a person is shown, keep same person across both panels; change only mood/context, never fake body transformation."
+  ],
+  "visual_match_lock": "- VISUAL MATCH LOCK (from base 4:5): keep same subject identity, camera feel, lighting direction, prop family, and product arrangement; only adjust spacing/scale for aspect-ratio fit.",
+  "visual_match_lock_916": "- For 9:16 conversion: preserve the same product left-right order and relative layering as base 4:5; allow only vertical re-spacing and minor scale adaptation.",
+  "typography_lines": [
+    "- Headline: Poppins Bold with high contrast against clean background area.",
+    "- Support and CTA: Poppins Medium/Regular, same family.",
+    "- Size: readable on a 375px mobile screen without zooming.",
+    "- Placement: flat uncluttered zones only; avoid noisy textures.",
+    "- Forbidden: thin fonts, script fonts, decorative typefaces, glow effects, outlined text, drop shadows on copy.",
+    "- Mandatory: crisp hard text edges, zero softness, zero anti-alias blur on any character.",
+    "- If any text is soft, blurry, or illegible, discard and regenerate immediately."
+  ],
+  "typography_extra_lines": [
+    "Keep on-image text minimal and mobile-readable. Avoid dense copy blocks.",
+    "Render CTA as a real filled button chip with rounded corners and strong contrast; never show CTA as standalone plain text.",
+    "Typography must be pin-sharp. If any text appears soft, blurry, or smeared, regenerate.",
+    "Keep text count minimal and increase font size rather than packing more copy.",
+    "Use clean sans typography with strong stroke clarity; no thin/light weights for body text.",
+    "Use Poppins only for on-image text: Headline in Poppins Bold, support/CTA in Poppins Medium/Regular."
+  ],
+  "safezone_45": "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n- Frame: 1080x1350 (4:5).\n- Restricted bands: top 10% (0-135px), bottom 15% (1148-1350px), side edges outer 8% (0-86px and 994-1080px).\n- Keep all products and all on-image text fully inside the central safe field: x=86-994 and y=135-1148.\n- Product cluster may be centered or left/right weighted according to the selected archetype, with mild upward bias allowed, but must not touch any restricted band.\n- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.\n- HARD DIMENSION LOCK: output must be exactly 1080×1350 pixels. If the generated image is any other size or aspect ratio, reject and regenerate until it matches exactly 1080×1350.",
+  "safezone_916": "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n- Keep all critical content inside the 14%-65% vertical safe band.\n- Reserve the lower 35% as quiet space; no product labels or headline copy in this band.\n- Keep side margins clean; no key content touching left or right frame edges.\n- Product cluster may be centered or left/right weighted according to the selected archetype, but must remain fully inside safe zones.\n- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.",
+  "outpaint_lock": "9:16 CONVERSION LOCK (OUTPAINT ONLY)\n- Treat base 4:5 composition as fixed ground truth; preserve it exactly.\n- Extend canvas vertically only; top/bottom extension zones are background only.\n- Do not stretch, warp, zoom, crop, or recomposite existing content.\n- Keep product cluster size, spacing, and relative proportions identical to base 4:5.\n- Keep product cluster anchored at roughly same visual vertical position (~45%).\n- Keep headline/support/CTA hierarchy and spacing tight; do not add vertical gaps.\n- Keep all critical text+product content inside the central active band; do not push into extension zones.\n- If any distortion, spacing drift, or repositioning appears, reject and regenerate.",
+  "subject_lines": {
+    "UGC": "Same adult subject identity appears in both panels: left shows routine struggle, right shows practical control; no body-shaming or body-morph visuals.",
+    "BA": "Same adult subject identity appears in both panels: left shows routine struggle, right shows practical control; no body-shaming or body-morph visuals.",
+    "default": "No human subject, products only."
+  },
+  "action_lines": {
+    "UGC": "Products arranged on a clean table/counter at correct scale; creator may point or gesture near them but must not touch, hold, grab, lift, or open any product or box.",
+    "BA": "Split action: BEFORE panel shows rushed/impulsive routine cue; AFTER panel shows one clear repeatable step with cleaner setup and calmer behavior.",
+    "default": "Arrange all 5 products as a cohesive premium cluster; kit box acts as anchor."
+  },
+  "camera_lines": {
+    "UGC": "Handheld close-to-medium framing, phone-like realism, stable focus on labels.",
+    "default": "Eye-level medium framing with clean edge discipline."
+  },
+  "realism_lines": {
+    "UGC": "True-to-life proportions; no stock-template look; natural skin and correct hand anatomy.",
+    "default": "True-to-life proportions; no stock-template look."
+  },
+  "lighting_default": "Warm, soft, directional (top-left) and label-safe.",
+  "props_default": "Minimal, non-competing; keep edge zones quiet.",
+  "surfaces_default": "Premium, clean texture; avoid busy patterns under text.",
+  "mood_default": "Calm confidence and practical consistency; no hype."
+}

@@ -23066,6 +23066,51 @@
       "test_group": "",
       "variant_variable": "",
       "variant_value": ""
+    },
+    {
+      "id": "entry_488",
+      "timestamp": "2026-05-26T06:48:54Z",
+      "format": "HERO",
+      "persona_number": 9,
+      "persona_name": "Beginner Weight-Loss User",
+      "headline_angle": "mechanism",
+      "concept_angle": "curiosity",
+      "concept_structure": "pab",
+      "visual_archetype": "hero_center_stage",
+      "headline_en": "New To Weight Loss And Confused What To Do?",
+      "headline_hi": "structured_system का auto सिस्टम जो Wants weight loss but does not know where to start. को संभालने में मदद करता है।",
+      "support_line_en": "Obesity Killer Kit gives you a clear 15-day routine, so you are not guessing what to do each day.",
+      "support_line_hi": "सरल कदम, जो structured_system और cravings_down पर आधारित हैं।",
+      "cta_en": "See How It Works",
+      "cta_hi": "आज शुरू करें",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-041",
+      "background_name": "Muted terracotta wall",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v42; aspect_ratio=4:5; seed=142497587; visual_archetype=hero_center_stage",
+      "opening_pattern_4tok_en": "new_to_weight_loss",
+      "opening_pattern_4tok_hi": "structured_system_का_auto",
+      "copy_skeleton": "question_mechanism_cta",
+      "hook_structure_class": "proof_led",
+      "proof_style_class": "routine_clarity",
+      "cta_voice_class": "discovery_action",
+      "headline_word_count": 9,
+      "support_line_word_count": 19,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": true,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
     }
   ],
   "indexes": {
@@ -23557,7 +23602,8 @@
         "New Mom Weight Loss Needs Simplicity",
         "Event Coming, Weight Loss Pending?",
         "Wedding Soon, Weight Loss Pending?",
-        "Function Outfit Tight? Start Weight Loss"
+        "Function Outfit Tight? Start Weight Loss",
+        "New To Weight Loss And Confused What To Do?"
       ],
       "cta_en": [
         "Get the 15-day guided kit",
@@ -24046,7 +24092,8 @@
         "Start the Course",
         "Check Eligibility",
         "Check Eligibility",
-        "Start the Course"
+        "Start the Course",
+        "See How It Works"
       ],
       "support_line_en": [
         "Strict diets flare acidity and constipation; this doctor-formulated Ayurvedic system supports 3–5 kg loss in 15 days with digestion support and homemade-food fit.",
@@ -24425,7 +24472,8 @@
         "OK Kit gives structure with tracker and coach support to help you stay consistent.",
         "OK Kit gives a clear 15-day course and can support 3-5 kg weight loss when followed properly.",
         "OK Kit gives a clear 15-day course that can support 3-5 kg weight loss when followed properly.",
-        "OK Kit helps reduce hunger and cravings, making it easier to stay with your food routine before the event."
+        "OK Kit helps reduce hunger and cravings, making it easier to stay with your food routine before the event.",
+        "Obesity Killer Kit gives you a clear 15-day routine, so you are not guessing what to do each day."
       ],
       "bullets_en": [
         "Meetings, travel, late lunches and your plan collapses by day 3",
@@ -24815,10 +24863,10 @@
           "BG-097",
           "BG-405",
           "BG-024",
-          "BG-454"
+          "BG-454",
+          "BG-041"
         ],
         "remaining": [
-          "BG-041",
           "BG-079",
           "BG-122",
           "BG-046",
@@ -27409,6 +27457,12 @@
           "entry_id": "entry_487",
           "timestamp": "2026-05-25T17:27:25Z",
           "background_slot": "BG-454",
+          "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_488",
+          "timestamp": "2026-05-26T06:48:54Z",
+          "background_slot": "BG-041",
           "background_source": "catalog"
         }
       ],
@@ -32841,6 +32895,14 @@
           "timestamp": "2026-05-25T17:27:25Z",
           "format": "HERO",
           "persona_number": 15,
+          "concept_angle": "curiosity",
+          "concept_structure": "pab"
+        },
+        {
+          "entry_id": "entry_488",
+          "timestamp": "2026-05-26T06:48:54Z",
+          "format": "HERO",
+          "persona_number": 9,
           "concept_angle": "curiosity",
           "concept_structure": "pab"
         }

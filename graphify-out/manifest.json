@@ -10,8 +10,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/generate_ads.py": {
-    "mtime": 1779721124.3470428,
-    "ast_hash": "c599d95a71216507905a9d3ee3d30a11",
+    "mtime": 1779777266.3952956,
+    "ast_hash": "0e684d1f191009b5bba2f3cee0ec93f0",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/registry_banlist.py": {
@@ -40,8 +40,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/app.py": {
-    "mtime": 1779725277.662837,
-    "ast_hash": "6a2f68acf4599594cbd867184aa0fb8d",
+    "mtime": 1779780636.2787545,
+    "ast_hash": "f203ea0ac25e3e1e170a7b983d30c142",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/index.html": {
@@ -50,8 +50,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/AD_GENERATION_REGISTRY.JSON": {
-    "mtime": 1779724542.6301389,
-    "ast_hash": "31693fb9d17c1fc5a044465cb6fdfd72",
+    "mtime": 1779778134.880211,
+    "ast_hash": "87a7bb9eef1b6eb0508ca257b939fbd6",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/persona_seeds.json": {
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/copy_prompt_templates.json": {
-    "mtime": 1779720688.8224475,
-    "ast_hash": "29d7ff3af831ed56a81d38c6cd7fbb3b",
+    "mtime": 1779777990.6515803,
+    "ast_hash": "973d2d77086c91cd830011be51ba21f8",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/fallback_templates.json": {
@@ -220,8 +220,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/chatgpt_web_sutomation.py": {
-    "mtime": 1779340856.1971843,
-    "ast_hash": "bf01f35b2e65ffc3520a50289d5a6e66",
+    "mtime": 1779780542.4760022,
+    "ast_hash": "b2e6a8b7a6c5afcaed78fc95dd09e31b",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/run_dashboard.sh": {
@@ -260,8 +260,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/input/startingprompt.txt": {
-    "mtime": 1779085162.2493956,
-    "ast_hash": "9a655cad8548635651ca8ded2f8f7615",
+    "mtime": 1779776006.125406,
+    "ast_hash": "59ab3509628984e3b60ec5c4aa95635b",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/input/docs/product master doc.txt": {
@@ -272,6 +272,16 @@
   "/home/mylappy/myspace/info/input/images/Untitled design(1).png": {
     "mtime": 1778264695.4591074,
     "ast_hash": "f3e0acd6a7bc4f0786f4dded8ef78f40",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/scripts/prompt_assembler_templates.json": {
+    "mtime": 1779776856.6493804,
+    "ast_hash": "bada177604e25c2fad8b14b01b7e677e",
+    "semantic_hash": ""
+  },
+  "/home/mylappy/myspace/info/input/to_45_perfect.txt": {
+    "mtime": 1779780298.8174481,
+    "ast_hash": "ac7e47c8af1e26bb5a0ce6160b7a9930",
     "semantic_hash": ""
   }
 }
