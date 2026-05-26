@@ -2466,7 +2466,7 @@ def build_template_copy(context: dict[str, Any], run_id: str) -> dict[str, Any]:
     return {"default_aspect_ratio": "4:5", "ads": ads}
 
 
-def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], run_dir: Path) -> dict[str, Any] | None:
+def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], run_dir: Path, reserved_batch: str | None = None, language_mode: str | None = None) -> dict[str, Any] | None:
     api_url = (config.get("opencode_api_url") or "").strip()
     api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
     model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
@@ -2522,7 +2522,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         use_session = bool(session_id)
         cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=not use_session)
         proc = subprocess.Popen(cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-        poll_interval = 2
+        poll_interval = 0.1
         elapsed = 0
         while elapsed < OPENCODE_AD_TIMEOUT_SECONDS:
             if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
@@ -2776,6 +2776,26 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 encoding="utf-8",
             )
             (partial_dir / "progress.txt").write_text(f"{len(generated_ads)}/{total_items}\n", encoding="utf-8")
+
+            # Run assembler incrementally so prompts appear in output/ during the pipeline
+            if reserved_batch and language_mode:
+                partial_copy_file = partial_dir / "copy_batch.json"
+                partial_copy_file.write_text(
+                    json.dumps({"default_aspect_ratio": "4:5", "ads": generated_ads}, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                asm_result = run_cmd([
+                    "python3", "scripts/generate_ads.py",
+                    "--copy-file", str(partial_copy_file),
+                    "--batch", reserved_batch,
+                    "--language-mode", language_mode,
+                    "--skip-uniqueness-check",
+                    "--no-registry-write",
+                    "--seed", "0",
+                ], cwd=ROOT)
+                if asm_result.returncode != 0:
+                    asm_err = asm_result.stderr or asm_result.stdout
+                    print(f"[INCREMENTAL ASSEMBLER] batch {batch_label} failed: {asm_err}", file=sys.stderr)
 
             if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
                     break
@@ -5490,6 +5510,24 @@ async def api_run_execute(
     return {"run_id": run_id, "status": "started"}
 
 
+def _list_output_batches() -> list[int]:
+    output_dir = ROOT / "output"
+    if not output_dir.exists():
+        return []
+    out: list[int] = []
+    for child in output_dir.iterdir():
+        if child.is_dir():
+            m = re.match(r"^v(\d+)$", child.name)
+            if m:
+                out.append(int(m.group(1)))
+    return sorted(out)
+
+
+def _reserve_batch_name() -> str:
+    batches = _list_output_batches()
+    return "v1" if not batches else f"v{batches[-1] + 1}"
+
+
 def _run_pipeline_background(
     run_dir: Path, cfg: dict, full_context: dict,
     image_sources_file_path: Path, saved_input_images: list,
@@ -5501,8 +5539,11 @@ def _run_pipeline_background(
     """Run the full pipeline in a background thread, writing results incrementally."""
     try:
         print(f"[PIPELINE] Starting background pipeline for run {run_dir.name}", file=sys.stderr)
+        # Reserve batch number early so incremental assembler runs write to the same batch dir
+        reserved_batch = _reserve_batch_name()
+        language_mode = assembler_language_mode(cfg)
         llm_mode = "opencode"
-        copy_json = call_opencode_compatible(cfg, full_context, run_dir)
+        copy_json = call_opencode_compatible(cfg, full_context, run_dir, reserved_batch=reserved_batch, language_mode=language_mode)
         used_template_fallback = False
         if not copy_json:
             llm_mode = "fallback_template"
@@ -5536,7 +5577,7 @@ def _run_pipeline_background(
         copy_file = run_dir / "context" / "copy_batch.json"
         copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--language-mode", assembler_language_mode(cfg), "--skip-uniqueness-check"], cwd=ROOT)
+        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode, "--skip-uniqueness-check"], cwd=ROOT)
         if assembler_result.returncode != 0:
             assembler_error = assembler_result.stderr or assembler_result.stdout
             (run_dir / "logs" / "assembler_error.txt").write_text(assembler_error, encoding="utf-8")
@@ -5544,12 +5585,7 @@ def _run_pipeline_background(
             print(f"[PIPELINE ERROR] Prompt assembly failed: {assembler_error}", file=sys.stderr)
             return
 
-        batch_match = re.search(r"Batch:\s*(v\d+)", assembler_result.stdout)
-        if not batch_match:
-            (run_dir / "partial" / "error.txt").write_text("Could not parse batch from assembler output", encoding="utf-8")
-            print(f"[PIPELINE ERROR] Could not parse batch from assembler output", file=sys.stderr)
-            return
-        batch = batch_match.group(1)
+        batch = reserved_batch
 
         manifest = collect_run_result(run_dir, batch, image_generated=False)
         manifest["llm_mode"] = llm_mode

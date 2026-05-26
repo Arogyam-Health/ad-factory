@@ -1,16 +1,16 @@
 # Graph Report - info  (2026-05-25)
 
 ## Corpus Check
-- 49 files · ~686,868 words
+- 49 files · ~694,613 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2305 nodes · 3132 edges · 773 communities (125 shown, 648 thin omitted)
+- 2334 nodes · 3165 edges · 771 communities (129 shown, 642 thin omitted)
 - Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 83 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0a4f0d0c`
+- Built from commit: `56a3365e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -769,8 +769,6 @@
 - [[_COMMUNITY_Community 758|Community 758]]
 - [[_COMMUNITY_Community 759|Community 759]]
 - [[_COMMUNITY_Community 760|Community 760]]
-- [[_COMMUNITY_Community 761|Community 761]]
-- [[_COMMUNITY_Community 762|Community 762]]
 - [[_COMMUNITY_Community 763|Community 763]]
 - [[_COMMUNITY_Community 764|Community 764]]
 - [[_COMMUNITY_Community 765|Community 765]]
@@ -787,8 +785,8 @@
 6. `api_run_execute()` - 26 edges
 7. `Version 2.0 — Revised with full prompt system, background variation engine, and live registry logic` - 26 edges
 8. `load_manifest_for_run()` - 20 edges
-9. `load_manifest_for_run()` - 20 edges
-10. `api_regenerate_queued_images()` - 19 edges
+9. `api_regenerate_queued_images()` - 20 edges
+10. `load_manifest_for_run()` - 20 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `_run_opencode_queued()` --calls--> `run()`  [INFERRED]
@@ -802,15 +800,15 @@
 - `call_opencode_compatible()` --calls--> `run()`  [INFERRED]
   dashboard/backend/app.py → scripts/gemini_web_automation.py
 
-## Communities (773 total, 648 thin omitted)
+## Communities (771 total, 642 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.04
-Nodes (27): _build_hypothesis_variables(), build_multipart_form(), build_persona_payload(), _build_persona_payload_field(), _build_support_line_strategy(), debugger_endpoint_reachable(), _find_session_id(), gemini_debugger_args() (+19 more)
+Nodes (30): _build_hypothesis_variables(), build_multipart_form(), build_persona_payload(), _build_persona_payload_field(), _build_support_line_strategy(), debugger_endpoint_reachable(), _find_session_id(), gemini_debugger_args() (+22 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.09
-Nodes (39): assert_not_temporary_chat(), _attachment_spinner_count(), build_browser_context(), build_image_metadata(), build_local_image_paths(), build_test_variables(), collect_upload_images_from_dir(), discover_prompt_jobs() (+31 more)
+Cohesion: 0.10
+Nodes (36): _attachment_spinner_count(), build_browser_context(), build_image_metadata(), build_local_image_paths(), build_test_variables(), collect_upload_images_from_dir(), discover_prompt_jobs(), download_to_temp() (+28 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.13
@@ -833,12 +831,12 @@ Cohesion: 0.13
 Nodes (15): code:block6 (generate_ads.py --copy-file copy_batch.json [--batch vN] [--), code:block7 ("Approved light palette background: matte warm white and #FE), Complete Copy-Generation Pipeline, Phase 10: Write to Disk, Phase 11: Registry Update, Phase 12: Auto-Classification of Diversity Tags, Phase 1: Loading into `generate_ads.py`, Phase 2: Copy Validation (+7 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.15
-Nodes (12): A/B Testing Playbook, code:text (Within one strategy, which generated ad is best?), code:text (one persona), code:text (persona), code:text (CTR test: 1,000 impressions per cell), code:text (persona), Dashboard Controls, How To Test Execution Quality (+4 more)
+Cohesion: 0.14
+Nodes (13): A/B Testing Playbook, Bad Tests To Avoid, code:text (persona), code:text (CTR test: 1,000 impressions per cell), code:text (Bad: P01 HERO authority vs P02 UGC social proof), code:text (one variable changed + equal spend + enough data + clean met), code:text (persona), Dashboard Controls (+5 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.16
-Nodes (20): api_run(), _aspect_key_for_image(), _build_image_item(), build_image_items_for_manifest(), build_regeneration_queue_items_for_manifest(), enrich_manifest_for_dashboard(), _find_45_prompt_for_regeneration(), _find_prompt_for_image() (+12 more)
+Cohesion: 0.15
+Nodes (21): api_run(), _aspect_key_for_image(), _build_image_item(), build_image_items_for_manifest(), build_regeneration_queue_items_for_manifest(), enrich_manifest_for_dashboard(), _find_45_prompt_for_regeneration(), _find_prompt_for_image() (+13 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.14
@@ -864,6 +862,10 @@ Nodes (23): _append_opencode_queue_log(), append_run_log(), build_ad_copy_system
 Cohesion: 0.47
 Nodes (5): applyTheme(), initTheme(), themeToggleEl, applyTheme(), initTheme()
 
+### Community 75 - "Community 75"
+Cohesion: 0.20
+Nodes (10): api_download_single_image(), _build_persona_name_map(), _clean_metadata_for_download(), Map persona number (P01) to persona name from run's copy_batch.json., Strip excessive internal keys from image metadata and enrich with     hypothesis, Map persona number (P01) to persona name from run's copy_batch.json., Strip excessive internal keys from image metadata and enrich with     hypothesis, Return a zip containing the image file and its metadata JSON. (+2 more)
+
 ### Community 658 - "Community 658"
 Cohesion: 0.06
 Nodes (34): field, prefix, wrap_list, field, prefix, wrap_list, field, prefix (+26 more)
@@ -873,16 +875,16 @@ Cohesion: 0.08
 Nodes (31): api_run_execute(), apply_background_reuse_locks(), apply_visual_pattern_reuse_to_plan(), assembler_language_mode(), _background_reuse_keys(), build_copy_requirements(), coalesce_path(), collect_background_reuse_locks() (+23 more)
 
 ### Community 660 - "Community 660"
-Cohesion: 0.06
-Nodes (31): avoid_skeletons, headline_role, intent, route_bias, support_role, avoid_skeletons, headline_role, intent (+23 more)
+Cohesion: 0.25
+Nodes (8): avoid_skeletons, headline_role, intent, route_bias, support_role, headline_architectures, hook_structure, command_led
 
 ### Community 661 - "Community 661"
 Cohesion: 0.06
 Nodes (31): add_used_text(), append_background_index(), append_concept_combo_index(), aspect_ratio_folder(), build_seeded_background_sentence(), classify_cta_voice(), classify_hook_structure(), classify_proof_style() (+23 more)
 
 ### Community 662 - "Community 662"
-Cohesion: 0.08
-Nodes (27): api_run_execute(), apply_visual_pattern_reuse_to_plan(), build_copy_requirements(), build_persona_payload(), _build_persona_payload_field(), _build_support_line_strategy(), coalesce_path(), _compact_creative_entry() (+19 more)
+Cohesion: 0.09
+Nodes (25): api_run_execute(), apply_visual_pattern_reuse_to_plan(), build_copy_requirements(), build_persona_payload(), _build_persona_payload_field(), coalesce_path(), _compact_creative_entry(), _creative_direction() (+17 more)
 
 ### Community 663 - "Community 663"
 Cohesion: 0.10
@@ -894,35 +896,35 @@ Nodes (26): clear_composer_keyboard(), click_send_and_confirm(), _compact_prompt
 
 ### Community 665 - "Community 665"
 Cohesion: 0.11
-Nodes (24): api_delete_image(), api_delete_run(), api_edit_prompt(), api_replace_image(), api_run(), api_run_partial(), Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block., Delete a generated image and its metadata JSON. (+16 more)
+Nodes (22): signal_cancel_current_run(), signal_cancel_run(), api_delete_image(), api_delete_run(), api_replace_image(), api_run(), api_run_partial(), Delete a generated image and its metadata JSON. (+14 more)
 
 ### Community 666 - "Community 666"
 Cohesion: 0.14
 Nodes (20): enhanceSelect(), optionLabel(), refreshSelect(), sync(), renderHypothesisUI(), updateHypothesisSummary(), updateHypothesisVariantOptions(), enhanceAllSelects() (+12 more)
 
 ### Community 667 - "Community 667"
-Cohesion: 0.14
-Nodes (23): api_run_generate_916(), api_run_generate_916_selected(), api_run_generate_images_916_from_45(), api_run_update_prompt_copies(), _append_audit_log(), apply_visual_locks(), collect_run_result(), extract_selected_ad_keys_from_45_prompts() (+15 more)
+Cohesion: 0.20
+Nodes (17): api_run_generate_916(), api_run_generate_916(), api_run_generate_916_selected(), api_run_generate_images_916_from_45(), api_run_update_prompt_copies(), apply_visual_locks(), collect_run_result(), extract_selected_ad_keys_from_45_prompts() (+9 more)
 
 ### Community 668 - "Community 668"
-Cohesion: 0.10
-Nodes (24): assembler_language_mode(), build_template_copy(), choose_text(), _clean_bullets(), _clean_str(), concept_ids_from_requirements(), enforce_unique_ctas(), ensure_testimonial_headline() (+16 more)
+Cohesion: 0.18
+Nodes (14): build_template_copy(), choose_text(), _clean_bullets(), _clean_str(), concept_ids_from_requirements(), ensure_testimonial_headline(), feature_template(), normalize_generated_copy() (+6 more)
 
 ### Community 669 - "Community 669"
-Cohesion: 0.17
-Nodes (24): clear_composer_keyboard(), click_send_and_confirm(), click_send_button(), _compact_prompt_compare(), find_composer(), focus_composer(), format_prompt_integrity(), get_composer_text() (+16 more)
+Cohesion: 0.20
+Nodes (21): clear_composer_keyboard(), click_send_and_confirm(), _compact_prompt_compare(), find_composer(), focus_composer(), format_prompt_integrity(), get_composer_text(), _normalize_prompt_compare() (+13 more)
 
 ### Community 670 - "Community 670"
 Cohesion: 0.11
 Nodes (16): hideChromeKillButton(), killChrome(), headlessToggle, hideChromeKillButton(), killChrome(), killChromeBtn, launchChromeBtn, progressEntries (+8 more)
 
 ### Community 671 - "Community 671"
-Cohesion: 0.11
-Nodes (23): _append_opencode_queue_log(), append_run_log(), build_ad_copy_system_prompt(), build_ad_prompt_tail(), build_response_skeleton(), build_strict_schema_note(), call_opencode_compatible(), cancel_event_for_run() (+15 more)
+Cohesion: 0.07
+Nodes (31): _append_audit_log(), _append_opencode_queue_log(), append_run_log(), assembler_language_mode(), build_ad_copy_system_prompt(), build_ad_prompt_tail(), build_response_skeleton(), build_strict_schema_note() (+23 more)
 
 ### Community 672 - "Community 672"
-Cohesion: 0.14
-Nodes (23): _aspect_key_for_image(), _build_image_item(), build_image_items_for_manifest(), build_regeneration_queue_items_for_manifest(), enrich_manifest_for_dashboard(), _find_45_prompt_for_regeneration(), _find_prompt_for_group_bucket(), _find_prompt_for_image() (+15 more)
+Cohesion: 0.12
+Nodes (25): _aspect_key_for_image(), _build_image_item(), build_image_items_for_manifest(), build_regeneration_queue_items_for_manifest(), enrich_manifest_for_dashboard(), _find_45_prompt_for_regeneration(), _find_prompt_for_group_bucket(), _find_prompt_for_image() (+17 more)
 
 ### Community 673 - "Community 673"
 Cohesion: 0.12
@@ -937,36 +939,36 @@ Cohesion: 0.12
 Nodes (21): headline, EN, HI, bullets, headline, EN, HI, EN (+13 more)
 
 ### Community 676 - "Community 676"
-Cohesion: 0.15
-Nodes (18): api_batch_generate_images_45(), api_batch_generate_images_916(), api_run_prompt_copies(), apply_background_reuse_locks(), _background_reuse_keys(), collect_45_visual_locks(), collect_background_reuse_locks(), collect_visual_pattern_reuse_locks() (+10 more)
+Cohesion: 0.18
+Nodes (13): api_run_prompt_copies(), apply_background_reuse_locks(), _background_reuse_keys(), collect_45_visual_locks(), collect_background_reuse_locks(), collect_visual_pattern_reuse_locks(), extract_on_image_copy_lines(), parse_background_lock_from_prompt() (+5 more)
 
 ### Community 677 - "Community 677"
 Cohesion: 0.18
 Nodes (18): showPromptFullscreen(), cancelBtn, defaultsInfoEl, initDefaults(), modelSelectEl, providerSelectEl, renderInputImages(), renderModelOptions() (+10 more)
 
 ### Community 678 - "Community 678"
-Cohesion: 0.20
-Nodes (18): api_batch_generate_images_45(), api_batch_generate_images_916(), api_run_generate_916(), api_run_generate_916_selected(), api_run_generate_images_916_from_45(), api_run_update_prompt_copies(), apply_visual_locks(), collect_run_result() (+10 more)
+Cohesion: 0.19
+Nodes (19): api_batch_generate_images_45(), api_batch_generate_images_916(), api_run_generate_916_selected(), api_run_generate_images_916_from_45(), api_run_update_prompt_copies(), apply_visual_locks(), collect_45_visual_locks(), collect_run_result() (+11 more)
 
 ### Community 679 - "Community 679"
-Cohesion: 0.14
-Nodes (18): api_regenerate_queued_images(), api_run_generate_images_45(), build_916_conversion_prompt_job(), _build_expected_output_path(), _build_output_stem_from_prompt(), dashboard_subprocess_env(), ensure_916_conversion_template(), _find_45_parent_for_prompt() (+10 more)
+Cohesion: 0.13
+Nodes (19): api_regenerate_queued_images(), api_run_generate_images_45(), build_916_conversion_prompt_job(), _build_expected_output_path(), _build_output_stem_from_prompt(), dashboard_subprocess_env(), ensure_916_conversion_template(), _find_45_parent_for_prompt() (+11 more)
 
 ### Community 680 - "Community 680"
-Cohesion: 0.14
-Nodes (18): api_regenerate_queued_images(), api_run_generate_images_45(), build_916_conversion_prompt_job(), _build_expected_output_path(), _build_output_stem_from_prompt(), dashboard_subprocess_env(), ensure_916_conversion_template(), _find_45_parent_for_prompt() (+10 more)
+Cohesion: 0.11
+Nodes (23): api_regenerate_queued_images(), api_run_generate_images_45(), build_916_conversion_prompt_job(), _build_expected_output_path(), _build_output_stem_from_prompt(), dashboard_subprocess_env(), ensure_916_conversion_template(), _find_45_parent_for_prompt() (+15 more)
 
 ### Community 681 - "Community 681"
-Cohesion: 0.15
-Nodes (16): api_file_content(), api_export_on_image_copy(), api_import_on_image_copy(), _extract_created_at_iso_from_file(), extract_exact_on_image_copy_block(), _extract_prompt_row_metadata(), _extract_vn_from_prompt_rel_path(), _get_architecture_definition() (+8 more)
+Cohesion: 0.14
+Nodes (19): api_export_on_image_copy(), api_import_on_image_copy(), _extract_backfill_batch(), _extract_created_at_iso_from_file(), extract_exact_on_image_copy_block(), _extract_prompt_row_metadata(), _extract_vn_from_prompt_rel_path(), _get_architecture_definition() (+11 more)
 
 ### Community 682 - "Community 682"
 Cohesion: 0.15
 Nodes (17): build_generation_payload_for_llm(), build_opencode_catalog(), _build_opencode_catalog_cached(), call_opencode_repair_copy(), choose_openai_gpt52(), compact_format_rules_for_copy(), _compact_product_truth(), list_models_for_provider() (+9 more)
 
 ### Community 683 - "Community 683"
-Cohesion: 0.14
-Nodes (17): api_download_batch_images(), api_download_batches(), api_download_single_image(), _build_persona_name_map(), _clean_metadata_for_download(), _extract_aspect_from_image_path(), _extract_vn_from_image_path(), _parse_image_naming() (+9 more)
+Cohesion: 0.17
+Nodes (13): api_download_batch_images(), api_download_batches(), _extract_aspect_from_image_path(), _extract_vn_from_image_path(), _parse_image_naming(), Extract format, persona, language from an image's companion JSON metadata     an, Extract format, persona, language from an image's companion JSON metadata     an, Return a zip of all images grouped by VN subfolders with metadata.     Always sc (+5 more)
 
 ### Community 684 - "Community 684"
 Cohesion: 0.15
@@ -981,12 +983,12 @@ Cohesion: 0.12
 Nodes (17): EN, HI, EN, HI, feature_templates, cravings_down, _description, easy_routine (+9 more)
 
 ### Community 687 - "Community 687"
-Cohesion: 0.12
-Nodes (16): avoid, intent, avoid, intent, bridge, contrast, question_answer, result_first (+8 more)
+Cohesion: 0.15
+Nodes (13): avoid, intent, avoid, intent, bridge, contrast, question_answer, simple_facts (+5 more)
 
 ### Community 688 - "Community 688"
-Cohesion: 0.18
-Nodes (15): api_export_on_image_copy(), api_import_on_image_copy(), _append_audit_log(), _extract_backfill_batch(), _extract_created_at_iso_from_file(), extract_exact_on_image_copy_block(), _extract_prompt_row_metadata(), _extract_vn_from_prompt_rel_path() (+7 more)
+Cohesion: 0.13
+Nodes (20): api_export_on_image_copy(), api_import_on_image_copy(), api_run_prompt_copies(), _append_audit_log(), _extract_backfill_batch(), _extract_created_at_iso_from_file(), extract_exact_on_image_copy_block(), extract_on_image_copy_lines() (+12 more)
 
 ### Community 689 - "Community 689"
 Cohesion: 0.23
@@ -1005,8 +1007,8 @@ Cohesion: 0.15
 Nodes (15): _active_window_title(), click_attach_button_near_composer(), _click_attach_menu_button_only(), _click_upload_files_menu_item(), _native_dialog_choose_file(), _native_file_dialog_active(), _open_upload_file_chooser(), Click the visible attachment/add-files control closest to the composer. (+7 more)
 
 ### Community 693 - "Community 693"
-Cohesion: 0.24
-Nodes (14): api_runs(), _build_backfill_manifest(), collect_45_reference_jobs_for_batch(), _collect_aspect_ratio_images(), generated_image_roots(), load_batch_image_summary(), Collect generated image paths for a specific aspect ratio.      Searches both le, For a single run, build the list of {prompt_96, image_sources} entries for 9:16 (+6 more)
+Cohesion: 0.20
+Nodes (16): api_runs(), _build_backfill_manifest(), collect_45_reference_jobs_for_batch(), _collect_aspect_ratio_images(), generated_image_roots(), load_batch_image_summary(), Collect generated image paths for a specific aspect ratio.      Searches both le, Collect generated image paths for a specific aspect ratio.      Searches both le (+8 more)
 
 ### Community 694 - "Community 694"
 Cohesion: 0.23
@@ -1017,12 +1019,12 @@ Cohesion: 0.14
 Nodes (4): logStatusEl, statusEl, showRunsSkeletons(), skeletonRunCard()
 
 ### Community 696 - "Community 696"
-Cohesion: 0.21
-Nodes (12): api_mark_images_to_regenerate(), api_restore_images_from_regeneration_queue(), collect_backfill_result(), _find_prompt_for_group_bucket(), _match_metadata_prompt(), _original_path_for_queued_image(), Compute the expected full output path for a generated image., Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block. (+4 more)
+Cohesion: 0.15
+Nodes (16): api_mark_images_to_regenerate(), api_replace_image(), api_restore_images_from_regeneration_queue(), collect_backfill_result(), _find_prompt_for_group_bucket(), _match_metadata_prompt(), _original_path_for_queued_image(), Compute the expected full output path for a generated image. (+8 more)
 
 ### Community 697 - "Community 697"
-Cohesion: 0.23
-Nodes (12): api_file_content(), api_mark_images_to_regenerate(), api_restore_images_from_regeneration_queue(), collect_backfill_result(), merge_manifest(), Move bad generated images out of the active gallery before regeneration., Move images from to_be_regenerated back to their original location., _regeneration_archive_path() (+4 more)
+Cohesion: 0.16
+Nodes (15): api_file_content(), api_file_content(), api_mark_images_to_regenerate(), api_restore_images_from_regeneration_queue(), collect_backfill_result(), Move bad generated images out of the active gallery before regeneration., Move bad generated images out of the active gallery before regeneration., Move images from to_be_regenerated back to their original location. (+7 more)
 
 ### Community 698 - "Community 698"
 Cohesion: 0.17
@@ -1037,8 +1039,8 @@ Cohesion: 0.17
 Nodes (11): Ad Creative System — Complete Handover Guide, Batch Numbering, code:block1 (info/), code:json ({), code:bash (# Activate venv), Directory Map, How to Run, The Hypothesis System (+3 more)
 
 ### Community 701 - "Community 701"
-Cohesion: 0.22
-Nodes (10): api_kill_chrome(), api_launch_visible_browser(), Move bad generated images out of the active gallery before regeneration., Kill the Chrome process started by launch-visible-browser and stop any running a, api_kill_chrome(), api_launch_visible_browser(), Launch a visible Chrome instance with CDP enabled so the user can log in     bef, Kill the Chrome process started by launch-visible-browser and stop any running a (+2 more)
+Cohesion: 0.18
+Nodes (12): api_kill_chrome(), api_launch_visible_browser(), Move bad generated images out of the active gallery before regeneration., Kill the Chrome process started by launch-visible-browser and stop any running a, api_kill_chrome(), api_launch_visible_browser(), Launch a visible Chrome instance with CDP enabled so the user can log in     bef, Launch a visible Chrome instance with CDP enabled so the user can log in     bef (+4 more)
 
 ### Community 702 - "Community 702"
 Cohesion: 0.20
@@ -1049,12 +1051,12 @@ Cohesion: 0.20
 Nodes (11): base_layout_lines_for_format(), build_ugc_subject_line(), CopyBlock, outpaint_lock_block(), parse_copy_block(), render_prompt(), require_int(), require_str() (+3 more)
 
 ### Community 704 - "Community 704"
-Cohesion: 0.22
-Nodes (8): _description, format, headline_architectures, concept_angle, support_line_architectures, composition_rule, _rotation, rotation_order
+Cohesion: 0.29
+Nodes (6): _description, format, support_line_architectures, composition_rule, _rotation, rotation_order
 
 ### Community 705 - "Community 705"
-Cohesion: 0.22
-Nodes (9): desire_field, desire_template, fallback, first_person_pattern, suffix, weight_pattern, testimonial_headline_guidance, _description (+1 more)
+Cohesion: 0.29
+Nodes (7): desire_field, desire_template, fallback, first_person_pattern, suffix, weight_pattern, EN
 
 ### Community 706 - "Community 706"
 Cohesion: 0.22
@@ -1089,8 +1091,8 @@ Cohesion: 0.29
 Nodes (7): prompt_tail, default_support_target, lines, support_target_map, BA, FEAT, TEST
 
 ### Community 714 - "Community 714"
-Cohesion: 0.29
-Nodes (7): desire_field, desire_template, fallback, first_person_pattern, suffix, weight_pattern, HI
+Cohesion: 0.22
+Nodes (9): desire_field, desire_template, fallback, first_person_pattern, suffix, weight_pattern, testimonial_headline_guidance, _description (+1 more)
 
 ### Community 715 - "Community 715"
 Cohesion: 0.29
@@ -1101,44 +1103,44 @@ Cohesion: 0.33
 Nodes (7): chatgpt_app_ready(), click_new_chat_safely(), count_chat_bubbles(), goto_chatgpt(), navigate_to_fresh_chat(), _path_is_conversation(), wait_for_manual_login()
 
 ### Community 717 - "Community 717"
-Cohesion: 0.33
-Nodes (7): gemini_app_ready(), goto_gemini_app(), navigate_to_fresh_chat(), Navigate to Gemini without failing only because the SPA never fires full load., Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con, _url_is_base_app(), wait_for_manual_login()
+Cohesion: 0.22
+Nodes (10): assert_not_temporary_chat(), gemini_app_ready(), goto_gemini_app(), navigate_to_fresh_chat(), page_heading_looks_temporary(), Navigate to Gemini without failing only because the SPA never fires full load., Navigate to a fresh Gemini chat using URL Stability Locks to defeat SPA race con, _url_is_base_app() (+2 more)
 
 ### Community 718 - "Community 718"
-Cohesion: 0.33
-Nodes (6): api_run_prompt_copies(), collect_45_visual_locks(), extract_on_image_copy_lines(), parse_persona_number_from_prompt(), Legacy-ish extractor used by the dashboard editor.      It DOES NOT preserve exa, _prompt_copies()
+Cohesion: 0.67
+Nodes (6): _normalized_text(), _normalized_words(), _opening_pattern_4tok(), _phrase_matches_skeleton(), _recent_registry_opening_counts(), semantic_copy_rejection()
 
 ### Community 719 - "Community 719"
-Cohesion: 0.33
-Nodes (6): avoid_skeletons, headline_role, intent, route_bias, support_role, authority
+Cohesion: 0.04
+Nodes (49): avoid_skeletons, headline_role, intent, route_bias, support_role, avoid_skeletons, headline_role, intent (+41 more)
 
 ### Community 720 - "Community 720"
 Cohesion: 0.33
-Nodes (6): avoid_skeletons, headline_role, intent, route_bias, support_role, comparison
+Nodes (6): avoid_skeletons, headline_role, intent, route_bias, support_role, confession_led
 
 ### Community 721 - "Community 721"
 Cohesion: 0.33
-Nodes (6): curiosity, avoid_skeletons, headline_role, intent, route_bias, support_role
+Nodes (6): avoid_skeletons, headline_role, intent, route_bias, support_role, contrast_loop
 
 ### Community 722 - "Community 722"
 Cohesion: 0.33
-Nodes (6): desired_outcome, avoid_skeletons, headline_role, intent, route_bias, support_role
+Nodes (6): proof_led, avoid_skeletons, headline_role, intent, route_bias, support_role
 
 ### Community 723 - "Community 723"
 Cohesion: 0.33
-Nodes (6): offer, avoid_skeletons, headline_role, intent, route_bias, support_role
+Nodes (6): question_led, avoid_skeletons, headline_role, intent, route_bias, support_role
 
 ### Community 724 - "Community 724"
-Cohesion: 0.33
-Nodes (6): pain_point, avoid_skeletons, headline_role, intent, route_bias, support_role
+Cohesion: 0.60
+Nodes (4): api_batch_generate_images_45(), api_batch_generate_images_916(), _batch_generate_45(), _batch_generate_916()
 
 ### Community 725 - "Community 725"
-Cohesion: 0.33
-Nodes (6): social_proof, avoid_skeletons, headline_role, intent, route_bias, support_role
+Cohesion: 0.40
+Nodes (5): api_edit_prompt(), Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block., Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block., _replace_exact_copy_block(), _edit_prompt()
 
 ### Community 726 - "Community 726"
-Cohesion: 0.33
-Nodes (6): story, avoid_skeletons, headline_role, intent, route_bias, support_role
+Cohesion: 0.40
+Nodes (5): classify_hook_structure(), headline_for_candidate(), hook_structure_mismatch(), hypothesis_mismatch(), Classify a headline opening pattern for hypothesis sanity checks.      The class
 
 ### Community 727 - "Community 727"
 Cohesion: 0.33
@@ -1233,8 +1235,8 @@ Cohesion: 0.67
 Nodes (3): api_delete_prompt(), Delete a prompt file and remove it from the run manifest., _delete_prompt()
 
 ### Community 750 - "Community 750"
-Cohesion: 0.67
-Nodes (3): api_delete_prompt(), Delete a prompt file and remove it from the run manifest., _delete_prompt()
+Cohesion: 0.50
+Nodes (4): api_delete_prompt(), Delete a prompt file and remove it from the run manifest., Delete a prompt file and remove it from the run manifest., _delete_prompt()
 
 ### Community 751 - "Community 751"
 Cohesion: 0.67
@@ -1260,25 +1262,37 @@ Nodes (3): ensure_slot_tracker(), pick_background_slot(), stable_fmt_seed()
 Cohesion: 0.67
 Nodes (3): find_visual_archetype(), pick_visual_archetype(), stable_signature_seed()
 
+### Community 758 - "Community 758"
+Cohesion: 0.67
+Nodes (3): result_first, avoid, intent
+
+### Community 759 - "Community 759"
+Cohesion: 1.00
+Nodes (3): click_send_button(), _send_button_action(), wait_until_send_enabled()
+
+### Community 760 - "Community 760"
+Cohesion: 0.67
+Nodes (3): code:text (Within one strategy, which generated ad is best?), code:text (one persona), How To Test Execution Quality
+
 ## Knowledge Gaps
 - **359 isolated node(s):** `type`, `version`, `source`, `elements`, `format` (+354 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **648 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **642 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `run()` connect `Community 2` to `Community 678`, `Community 679`, `Community 682`, `Community 716`, `Community 13`, `Community 691`, `Community 694`, `Community 699`, `Community 669`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+  _High betweenness centrality (0.047) - this node is a cross-community bridge._
 - **Why does `run()` connect `Community 1` to `Community 673`, `Community 678`, `Community 679`, `Community 712`, `Community 746`, `Community 682`, `Community 717`, `Community 13`, `Community 692`, `Community 664`?**
-  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Why does `call_opencode_compatible()` connect `Community 13` to `Community 0`, `Community 1`, `Community 2`, `Community 679`, `Community 682`, `Community 689`, `Community 659`?**
-  _High betweenness centrality (0.015) - this node is a cross-community bridge._
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
 - **Are the 5 inferred relationships involving `run()` (e.g. with `_run_opencode_queued()` and `run_cmd()`) actually correct?**
   _`run()` has 5 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 6 inferred relationships involving `run()` (e.g. with `_run_opencode_queued()` and `run_cmd()`) actually correct?**
   _`run()` has 6 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `type`, `version`, `source` to the rest of the system?**
-  _1096 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _1123 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.039186507936507936 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.037991858887381276 - nodes in this community are weakly interconnected._

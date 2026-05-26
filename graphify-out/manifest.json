@@ -40,8 +40,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/app.py": {
-    "mtime": 1779723319.0143728,
-    "ast_hash": "66847872be516f4914f3db78223bd2a6",
+    "mtime": 1779725277.662837,
+    "ast_hash": "6a2f68acf4599594cbd867184aa0fb8d",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/index.html": {
@@ -50,8 +50,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/AD_GENERATION_REGISTRY.JSON": {
-    "mtime": 1779722088.8905199,
-    "ast_hash": "6bce26d5b1edd8e826d7a486d6917830",
+    "mtime": 1779724542.6301389,
+    "ast_hash": "31693fb9d17c1fc5a044465cb6fdfd72",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/persona_seeds.json": {
@@ -160,8 +160,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/main.js": {
-    "mtime": 1779723165.4058552,
-    "ast_hash": "f8179dcf3dca886dba3a9efd409ad45f",
+    "mtime": 1779723440.3339734,
+    "ast_hash": "5635a21f0be6e33c7ccfde2f4c7d3b02",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/hypothesis.js": {
@@ -272,11 +272,6 @@
   "/home/mylappy/myspace/info/input/images/Untitled design(1).png": {
     "mtime": 1778264695.4591074,
     "ast_hash": "f3e0acd6a7bc4f0786f4dded8ef78f40",
-    "semantic_hash": ""
-  },
-  "/home/mylappy/myspace/info/Pasted text.txt": {
-    "mtime": 1779714002.1622052,
-    "ast_hash": "3605d3e659fec79e5d938bd846a49595",
     "semantic_hash": ""
   }
 }
