@@ -343,6 +343,23 @@ FALLBACKS = _load_fallback_templates()
 HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
 
 
+def _invalidate_config_cache(full_path: Path) -> None:
+    """Reload the in-memory global for a config file that was just saved."""
+    global PERSONA_SEED_INPUTS, COPY_ARCH, HYPOTHESIS_VARIABLES, COPY_PROMPTS, FALLBACKS
+    if full_path == PERSONA_SEEDS_PATH:
+        PERSONA_SEED_INPUTS = _load_persona_seeds()
+    elif full_path == COPY_ARCH_PATH:
+        COPY_ARCH = _load_copy_architecture()
+        HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
+    elif full_path == COPY_PROMPTS_PATH:
+        COPY_PROMPTS = _load_copy_prompts()
+    elif full_path == FALLBACK_TEMPLATES_PATH:
+        FALLBACKS = _load_fallback_templates()
+    # prompt_assembler_templates.json and background_variant.json are used by
+    # subprocess scripts (generate_ads.py, chatgpt_web_sutomation.py),
+    # not cached in this process — no reload needed.
+
+
 
 def _headline_architecture_group(group: str) -> str:
     return group
@@ -1072,6 +1089,7 @@ def api_save_prompt_file_content(payload: dict[str, Any] = Body(...)) -> dict[st
     if not full_path.exists():
         raise HTTPException(status_code=404, detail=f"Prompt file not found: {prompt_path}")
     full_path.write_text(content, encoding="utf-8")
+    _invalidate_config_cache(full_path)
     return {"status": "saved", "path": prompt_path}
 
 
@@ -1080,6 +1098,7 @@ def api_input_prompt(prompt_type: str = "916_conversion") -> dict[str, Any]:
     path_map = {
         "916_conversion": CONVERT_916_TEMPLATE_PATH,
         "starting_prompt": STARTING_PROMPT_PATH,
+        "to_45_perfect": ROOT / "input" / "to_45_perfect.txt",
     }
     p = path_map.get(prompt_type)
     if not p or not p.exists():
@@ -1094,10 +1113,11 @@ def api_save_input_prompt(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
     path_map = {
         "916_conversion": CONVERT_916_TEMPLATE_PATH,
         "starting_prompt": STARTING_PROMPT_PATH,
+        "to_45_perfect": ROOT / "input" / "to_45_perfect.txt",
     }
     p = path_map.get(prompt_type)
     if not p:
-        raise HTTPException(status_code=400, detail="prompt_type must be '916_conversion' or 'starting_prompt'")
+        raise HTTPException(status_code=400, detail="prompt_type must be '916_conversion', 'starting_prompt', or 'to_45_perfect'")
     p.write_text(content, encoding="utf-8")
     return {"status": "saved", "path": str(p.relative_to(ROOT))}
 
@@ -5072,6 +5092,9 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
             "--upload-dir",
             str(INPUT_IMAGES_DIR),
         ]
+        to_45_path = ROOT / "input" / "to_45_perfect.txt"
+        if to_45_path.exists():
+            cmd.extend(["--to-45-file", str(to_45_path)])
     else:
         cmd = [
             sys.executable,
@@ -5179,6 +5202,9 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[
             "--manual-login-timeout", str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
             "--upload-dir", str(INPUT_IMAGES_DIR),
         ]
+        to_45_path = ROOT / "input" / "to_45_perfect.txt"
+        if to_45_path.exists():
+            cmd.extend(["--to-45-file", str(to_45_path)])
     else:
         cmd = [
             sys.executable, "scripts/gemini_web_automation.py",

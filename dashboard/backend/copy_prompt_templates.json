@@ -19,6 +19,8 @@
           "- This is the only HERO variant that should read as fully centered and symmetrical."
         ]
       },
+     
+
       {
         "id": "hero_left_copy_right_product",
         "label": "Left-copy right-product hero",

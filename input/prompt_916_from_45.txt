@@ -15,7 +15,7 @@ Composition rules for 9:16:
 - Add natural background continuation only where needed to fit 9:16.
 
 Meta 9:16 safe-zone rules (for mobile feed/reels overlays):
-- Canvas is 1080x1920 (9:16).
+- Canvas is 1080(length) x 1920(height) (9:16 aspect ratio).
 - STRICT META/REELS SAFE FIELD: x=86 to x=994, y=270 to y=1248. All headline text, support text, CTA buttons, offer text, logos, badges, and readable product-label text must sit fully inside this field.
 - PRODUCT SAFE FIELD: all product packshots and human faces/hands must remain fully visible inside x=86 to x=994 and y=270 to y=1500. Do not cut off caps, labels, boxes, hands, or faces.
 - RESTRICTED TOP UI BAND: y=0 to y=269 must contain background only. No text, CTA, logos, faces, or product details.

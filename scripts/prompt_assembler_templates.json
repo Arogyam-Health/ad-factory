@@ -7,6 +7,23 @@
     "- If any label text is unclear, preserve the original image as-is. Do not reinterpret it.",
     "- Only permitted: placement, scaling, subtle drop shadows, mild warm lighting correction."
   ],
+  "proof_bar_block": [
+    "PROOF BAR / TRUST STRIP",
+    "- Add one proof bar near the lower safe field, below the product cluster but fully above the bottom restricted band.",
+    "- Exact proof bar text: 70,000+ Users | 3-5 kg loss with 1 Kit | 100% Ayurvedic",
+    "- Render every character exactly as written. Do not change spacing, numbers, hyphens, plus sign, vertical bars, casing, or wording.",
+    "- The proof bar must be horizontally centered.",
+    "- Place it inside the central safe field only: x=86-994 and y=135-1148.",
+    "- Keep at least 40px clearance from the product cluster and at least 60px clearance above the bottom restricted band.",
+    "- Use Poppins Medium, dark brown #421808 text.",
+    "- Text must be sharp, readable at 375px mobile width, and not smaller than the support line.",
+    "- Use a clean light cream rectangular strip or rounded pill behind the proof text only if needed for readability.",
+    "- Proof strip background must use only #FFFBED or #FEFAE0 with very subtle opacity; no glow, no border, no shadow-heavy treatment.",
+    "- The proof bar must not touch the canvas edges and must not look like a footer border.",
+    "- Do not place the proof bar inside the bottom 15% restricted area.",
+    "- Do not overlap the products, CTA, or any packaging labels.",
+    "- Keep it premium, minimal, and calm — no badge, sticker, burst, underline, or decorative treatment."
+  ],
   "style_descriptions": {
     "HERO": "HERO, polished enough for paid ad deployment.",
     "BA": "BA (before/after journey without body-shaming visuals).",
@@ -97,7 +114,7 @@
     "Use clean sans typography with strong stroke clarity; no thin/light weights for body text.",
     "Use Poppins only for on-image text: Headline in Poppins Bold, support/CTA in Poppins Medium/Regular."
   ],
-  "safezone_45": "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n- Frame: 1080x1350 (4:5).\n- Restricted bands: top 10% (0-135px), bottom 15% (1148-1350px), side edges outer 8% (0-86px and 994-1080px).\n- Keep all products and all on-image text fully inside the central safe field: x=86-994 and y=135-1148.\n- Product cluster may be centered or left/right weighted according to the selected archetype, with mild upward bias allowed, but must not touch any restricted band.\n- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.\n- HARD DIMENSION LOCK: output must be exactly 1080×1350 pixels. If the generated image is any other size or aspect ratio, reject and regenerate until it matches exactly 1080×1350.",
+  "safezone_45": "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n- Frame: 1080(length) x 1350(height) (4:5 aspect ratio).\n- Restricted bands: top 10% (0-135px), bottom 15% (1148-1350px), side edges outer 8% (0-86px and 994-1080px).\n- Keep all products and all on-image text fully inside the central safe field: x=86-994 and y=135-1148.\n- Product cluster may be centered or left/right weighted according to the selected archetype, with mild upward bias allowed, but must not touch any restricted band.\n- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.\n- HARD DIMENSION LOCK: output must be exactly 1080×1350 pixels. If the generated image is any other size or aspect ratio, reject and regenerate until it matches exactly 1080×1350.",
   "safezone_916": "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n- Keep all critical content inside the 14%-65% vertical safe band.\n- Reserve the lower 35% as quiet space; no product labels or headline copy in this band.\n- Keep side margins clean; no key content touching left or right frame edges.\n- Product cluster may be centered or left/right weighted according to the selected archetype, but must remain fully inside safe zones.\n- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.",
   "outpaint_lock": "9:16 CONVERSION LOCK (OUTPAINT ONLY)\n- Treat base 4:5 composition as fixed ground truth; preserve it exactly.\n- Extend canvas vertically only; top/bottom extension zones are background only.\n- Do not stretch, warp, zoom, crop, or recomposite existing content.\n- Keep product cluster size, spacing, and relative proportions identical to base 4:5.\n- Keep product cluster anchored at roughly same visual vertical position (~45%).\n- Keep headline/support/CTA hierarchy and spacing tight; do not add vertical gaps.\n- Keep all critical text+product content inside the central active band; do not push into extension zones.\n- If any distortion, spacing drift, or repositioning appears, reject and regenerate.",
   "subject_lines": {

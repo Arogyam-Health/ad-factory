@@ -2909,18 +2909,29 @@ def run() -> None:
 
                         # ------------------------------------------------------------------
                         # Step: Re-generate in perfect 4:5 (if to_45_file is configured)
+                        # Opens a NEW tab for a fresh ChatGPT conversation to avoid
+                        # context pollution from the original generation.
                         # ------------------------------------------------------------------
                         to_45_path = Path(args.to_45_file) if args.to_45_file else None
                         if to_45_path and to_45_path.exists():
                             to_45_prompt = to_45_path.read_text(encoding="utf-8").strip()
                             if to_45_prompt:
-                                print(f"  [4:5 fix] Re-generating for perfect 4:5 using {to_45_path.name}...")
+                                print(f"  [4:5 fix] Final Re-generating for perfect 4:5 via NEW tab using {to_45_path.name}...")
                                 try:
-                                    upload_images(page_for_job, [saved_path], timeout=180)
+                                    page_45fix = context.new_page()
+                                    page_45fix.bring_to_front()
+                                    navigate_to_fresh_chat(
+                                        page_45fix,
+                                        manual_login_timeout=args.manual_login_timeout,
+                                        strict_login=(args.login_wait_mode == "strict"),
+                                    )
+                                    select_model_and_tool_if_requested(page_45fix, args)
+                                    upload_images(page_45fix, [saved_path], timeout=180)
                                     time.sleep(1.0)
-                                    baseline_srcs_45 = get_all_image_srcs(page_for_job)
+
+                                    baseline_srcs_45 = get_all_image_srcs(page_45fix)
                                     composer_45 = set_prompt_text(
-                                        page_for_job,
+                                        page_45fix,
                                         to_45_prompt,
                                         method=args.prompt_paste_method,
                                         verify_timeout=args.prompt_paste_timeout,
@@ -2928,7 +2939,7 @@ def run() -> None:
                                         debug_path=prompt_debug_path,
                                     )
                                     click_send_and_confirm(
-                                        page_for_job,
+                                        page_45fix,
                                         composer=composer_45,
                                         expected_prompt=to_45_prompt,
                                         min_integrity_ratio=args.prompt_integrity_ratio,
@@ -2939,75 +2950,108 @@ def run() -> None:
                                         expected_attachment_count=1,
                                         ready_timeout=max(180.0, float(args.timeout)),
                                     )
-                                    # The 4:5 response has a clickable text that opens an image viewer overlay.
-                                    # The viewer's "Save" button downloads the uploaded image, not the regenerated one,
-                                    # so we must extract the <img> src from the viewer and fetch it with cookies.
+
+                                    # Race: react to whichever ChatGPT gives us first
+                                    #   - Button (Download/Save) → click immediately, extract from viewer
+                                    #   - Inline image → wait 30s after it appears for full render, then download
                                     saved_path_45 = None
-                                    try:
-                                        print("  [4:5 fix] Clicking 'Download' button in ChatGPT response...")
-                                        # Button text varies; try common patterns
-                                        btn = (page_for_job.locator('button:has-text("Download")').last
-                                               .or_(page_for_job.locator('button:has-text("image")').last)
-                                               .or_(page_for_job.locator('button:has-text("click")').last))
-                                        btn.wait_for(timeout=args.timeout * 1000)
-                                        btn.click()
-                                        time.sleep(2.0)
+                                    fix_timeout = max(180.0, float(args.timeout))
+                                    print(f"  [4:5 fix] Monitoring response for button or image (timeout={fix_timeout:.0f}s)...")
 
-                                        viewer = page_for_job.locator('[data-testid="lightbox-new-body-surface"]')
-                                        viewer.wait_for(timeout=15000)
-                                        print("  [4:5 fix] Viewer opened, extracting image src...")
+                                    btn_locator = (page_45fix.locator('button:has-text("Download")').last
+                                                   .or_(page_45fix.locator('button:has-text("image")').last)
+                                                   .or_(page_45fix.locator('button:has-text("click")').last))
+                                    img_appeared_at = None
+                                    deadline_45 = time.time() + fix_timeout
 
-                                        data_url = page_for_job.evaluate("""
-                                            () => {
-                                                const viewer = document.querySelector('[data-testid="lightbox-new-body-surface"]');
-                                                if (!viewer) return null;
-                                                const img = viewer.querySelector('img');
-                                                if (!img) return null;
-                                                const src = img.getAttribute('src') || '';
-                                                if (src.startsWith('data:')) return src;
-                                                return fetch(src, {credentials: 'include'})
-                                                    .then(r => r.blob())
-                                                    .then(blob => new Promise((done) => {
-                                                        const reader = new FileReader();
-                                                        reader.onloadend = () => done(reader.result);
-                                                        reader.onerror = () => done(null);
-                                                        reader.readAsDataURL(blob);
-                                                    }))
-                                                    .catch(() => null);
-                                            }
-                                        """)
-                                        if data_url:
-                                            saved_path_45 = _save_data_url(
-                                                data_url,
-                                                generated_images_dir / f"{job.output_stem}_45fix",
-                                                min_bytes=args.min_image_bytes,
-                                            )
-                                            if saved_path_45:
-                                                print(f"  [4:5 fix] Saved regenerated image from viewer: {saved_path_45}")
+                                    while time.time() < deadline_45 and not saved_path_45:
+                                        # --- Signal 1: download button (preferred, instant action) ---
+                                        try:
+                                            if btn_locator.is_visible(timeout=500):
+                                                print("  [4:5 fix] Download button appeared, clicking it...")
+                                                btn_locator.click()
+                                                time.sleep(2.0)
+                                                viewer = page_45fix.locator('[data-testid="lightbox-new-body-surface"]')
+                                                viewer.wait_for(timeout=15000)
+                                                data_url = page_45fix.evaluate("""
+                                                    () => {
+                                                        const v = document.querySelector('[data-testid="lightbox-new-body-surface"]');
+                                                        if (!v) return null;
+                                                        const img = v.querySelector('img');
+                                                        if (!img) return null;
+                                                        const src = img.getAttribute('src') || '';
+                                                        if (src.startsWith('data:')) return src;
+                                                        return fetch(src, {credentials: 'include'})
+                                                            .then(r => r.blob())
+                                                            .then(blob => new Promise((done) => {
+                                                                const r = new FileReader();
+                                                                r.onloadend = () => done(r.result);
+                                                                r.onerror = () => done(null);
+                                                                r.readAsDataURL(blob);
+                                                            }))
+                                                            .catch(() => null);
+                                                    }
+                                                """)
+                                                if data_url:
+                                                    saved_path_45 = _save_data_url(
+                                                        data_url,
+                                                        generated_images_dir / f"{job.output_stem}_45fix",
+                                                        min_bytes=args.min_image_bytes,
+                                                    )
+                                                    if saved_path_45:
+                                                        print(f"  [4:5 fix] Saved from viewer: {saved_path_45}")
+                                        except Exception:
+                                            pass
+
+                                        # --- Signal 2: inline image appearing in the chat ---
+                                        if not saved_path_45:
+                                            try:
+                                                current_srcs = get_all_image_srcs(page_45fix)
+                                                new_srcs = [s for s in current_srcs if s not in baseline_srcs_45]
+                                                if new_srcs:
+                                                    if img_appeared_at is None:
+                                                        img_appeared_at = time.time()
+                                                        print("  [4:5 fix] Image appeared, waiting 30s for render...")
+                                                    if time.time() - img_appeared_at >= 30:
+                                                        saved_path_45 = download_generated_image(
+                                                            page_45fix, context, new_srcs[0],
+                                                            out_path_no_ext=generated_images_dir / f"{job.output_stem}_45fix",
+                                                            download_dir=download_dir,
+                                                            min_bytes=args.min_image_bytes,
+                                                            download_timeout=args.download_timeout,
+                                                        )
+                                                        if saved_path_45:
+                                                            print(f"  [4:5 fix] Downloaded inline: {saved_path_45}")
+                                                else:
+                                                    img_appeared_at = None
+                                            except Exception:
+                                                pass
 
                                         if not saved_path_45:
-                                            print("  [4:5 fix] Could not extract image from viewer via fetch.")
-                                            try:
-                                                download_dirs = _default_download_dirs(download_dir)
-                                                before = snapshot_download_dirs(download_dirs)
-                                                found = wait_for_completed_download_any(
-                                                    download_dirs=download_dirs,
-                                                    before_by_dir=before,
-                                                    started_at=time.time(),
-                                                    timeout=30,
-                                                    min_bytes=args.min_image_bytes,
-                                                )
-                                                if found:
-                                                    dest = generated_images_dir / f"{job.output_stem}_45fix{found.suffix or '.png'}"
-                                                    dest.parent.mkdir(parents=True, exist_ok=True)
-                                                    shutil.copy2(found, dest)
-                                                    found.unlink(missing_ok=True)
-                                                    saved_path_45 = dest
-                                                    print(f"  [4:5 fix] Found in download folder: {dest}")
-                                            except Exception as exc_watch:
-                                                print(f"  [4:5 fix] Download watch failed: {exc_watch}")
-                                    except Exception as exc_45:
-                                        print(f"  [4:5 fix] Error during viewer extraction: {exc_45}")
+                                            time.sleep(0.5)
+
+                                    # Fallback: download directory watch
+                                    if not saved_path_45:
+                                        try:
+                                            print("  [4:5 fix] No button or image; watching download directories...")
+                                            download_dirs = _default_download_dirs(download_dir)
+                                            before = snapshot_download_dirs(download_dirs)
+                                            found = wait_for_completed_download_any(
+                                                download_dirs=download_dirs,
+                                                before_by_dir=before,
+                                                started_at=time.time(),
+                                                timeout=30,
+                                                min_bytes=args.min_image_bytes,
+                                            )
+                                            if found:
+                                                dest = generated_images_dir / f"{job.output_stem}_45fix{found.suffix or '.png'}"
+                                                dest.parent.mkdir(parents=True, exist_ok=True)
+                                                shutil.copy2(found, dest)
+                                                found.unlink(missing_ok=True)
+                                                saved_path_45 = dest
+                                                print(f"  [4:5 fix] Found in download folder: {dest}")
+                                        except Exception as exc_watch:
+                                            print(f"  [4:5 fix] Download watch fallback failed: {exc_watch}")
 
                                     if saved_path_45 and saved_path_45.stat().st_size > args.min_image_bytes:
                                         shutil.copy2(saved_path_45, saved_path)
@@ -3016,6 +3060,8 @@ def run() -> None:
                                         print(f"  [4:5 fix] Replaced with perfect 4:5 version: {saved_path}")
                                     else:
                                         print(f"  [4:5 fix] Failed to get 4:5 version; keeping original.")
+
+                                    page_45fix.close()
                                 except Exception as exc_45:
                                     print(f"  [4:5 fix] Error during 4:5 re-generation: {exc_45}")
 

@@ -10,8 +10,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/generate_ads.py": {
-    "mtime": 1779777266.3952956,
-    "ast_hash": "0e684d1f191009b5bba2f3cee0ec93f0",
+    "mtime": 1779860714.0938401,
+    "ast_hash": "ba20ea85b5a66b8e33267d84bab29d1e",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/registry_banlist.py": {
@@ -40,22 +40,22 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/app.py": {
-    "mtime": 1779785611.424593,
-    "ast_hash": "dcaae43437d42f15f0dc6ce70e72f67e",
+    "mtime": 1779863394.4088507,
+    "ast_hash": "660ba871560e48acfe4cc3198b9fe83c",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/index.html": {
-    "mtime": 1779785639.3976226,
-    "ast_hash": "24abebc29854aa3f7a0172d6ad669e98",
+    "mtime": 1779861038.2964013,
+    "ast_hash": "0de17b724e4404f885695517966c73e6",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/AD_GENERATION_REGISTRY.JSON": {
-    "mtime": 1779778134.880211,
-    "ast_hash": "87a7bb9eef1b6eb0508ca257b939fbd6",
+    "mtime": 1779861840.5501637,
+    "ast_hash": "7f6bebce4fdeb1fa15ae82f4e65fad48",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/persona_seeds.json": {
-    "mtime": 1779716320.4903634,
+    "mtime": 1779799641.2388868,
     "ast_hash": "88910f6c6abda0aedbaac25ec6274bc5",
     "semantic_hash": ""
   },
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/copy_prompt_templates.json": {
-    "mtime": 1779777990.6515803,
-    "ast_hash": "973d2d77086c91cd830011be51ba21f8",
+    "mtime": 1779862991.5498626,
+    "ast_hash": "7fc3749bcc8d268070de5628e3301ec0",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/fallback_templates.json": {
@@ -220,8 +220,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/chatgpt_web_sutomation.py": {
-    "mtime": 1779783982.6892936,
-    "ast_hash": "36d3aa4d6194ba866ef8e59f00d84066",
+    "mtime": 1779787717.743608,
+    "ast_hash": "deb8f480c544b4329137dad0a2e87da6",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/run_dashboard.sh": {
@@ -255,8 +255,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/input/prompt_916_from_45.txt": {
-    "mtime": 1778958323.2656994,
-    "ast_hash": "64258929b44bc93a14e2d348c52d3504",
+    "mtime": 1779860506.4132314,
+    "ast_hash": "b2452c45973c6b63d8d2bc20c3113e2c",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/input/startingprompt.txt": {
@@ -275,8 +275,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/prompt_assembler_templates.json": {
-    "mtime": 1779776856.6493804,
-    "ast_hash": "bada177604e25c2fad8b14b01b7e677e",
+    "mtime": 1779860616.0748103,
+    "ast_hash": "c4fa04a379bcb1d24f82ca945680b3a2",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/input/to_45_perfect.txt": {

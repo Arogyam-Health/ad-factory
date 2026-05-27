@@ -559,6 +559,8 @@ def render_prompt(
             f"- CTA: {copy.cta}",
         ]
 
+    copy_lines.append(f"- Proof bar: 70,000+ Users | 3-5 kg loss with 1 Kit | 100% Ayurvedic")
+
     lock = visual_lock if isinstance(visual_lock, dict) else {}
     subject_line = (lock.get("subject") or "").strip() if isinstance(lock.get("subject"), str) else ""
     if not subject_line:
@@ -571,6 +573,9 @@ def render_prompt(
     canvas_spec = "1080 x 1920" if aspect_ratio == "9:16" else "1080 x 1350"
     lines.append("PRODUCT LOCK BLOCK")
     lines.extend(T["product_lock_block"])
+    lines.append("")
+    lines.append("PROOF BAR BLOCK")
+    lines.extend(T["proof_bar_block"])
     lines.append("")
     lines.append("OUTPUT SPEC")
     style_description = T["style_descriptions"].get(fmt) or ""
@@ -606,6 +611,7 @@ def render_prompt(
     lines.append("EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING")
     lines.extend(copy_lines)
     lines.append("Render every character exactly as written. No paraphrasing, no punctuation changes, no autocorrection.")
+    lines.append("- Proof bar is present exactly once, fully readable, horizontally centered, and does not enter the bottom restricted band.")
     lines.append("")
     lines.append("NEGATIVE CONSTRAINTS")
     negative = list(T["negative_constraints"])
