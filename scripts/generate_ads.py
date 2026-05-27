@@ -6,7 +6,7 @@ What this script does:
   - Reads externally-generated ad copy from a JSON file (no copy generation here).
   - Selects catalog background slots with exhaustive per-format rotation.
   - Builds seeded background sentence from `background_variant.json`.
-  - Assembles full 9-section prompts per playbook and writes `output/vN/OUTPUT_<FORMAT>_(EN|HI).txt`.
+  - Assembles full 9-section prompts per playbook and writes `output/vN/<FORMAT>_<persona>_<lang>.txt`.
   - Enforces safe-zone rules by embedding an explicit SAFE-ZONE ENFORCEMENT block.
   - Appends entries to `AD_GENERATION_REGISTRY.JSON` and updates indexes (background rotation + used_text).
 
@@ -689,9 +689,10 @@ def aspect_ratio_folder(aspect_ratio: str) -> str:
     return "96" if aspect_ratio == "9:16" else "45"
 
 
-def prompt_filename(fmt: str, persona_number: int, lang: str, creative_index: int = 1, creative_total: int = 1) -> str:
+def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str = "", creative_index: int = 1, creative_total: int = 1) -> str:
     suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
-    return f"OUTPUT_{fmt}_P{persona_number:02d}_{lang}{suffix}.txt"
+    angle_part = f"_{concept_angle}" if concept_angle else ""
+    return f"{fmt}_P{persona_number:02d}_{lang}{suffix}{angle_part}.txt"
 
 
 def classify_hook_structure(headline: str) -> str:
@@ -934,7 +935,7 @@ def main() -> int:
         for stale_lang in ["EN", "HI", "HINGLISH"]:
             if stale_lang in render_langs:
                 continue
-            for stale_path in ratio_dir.glob(f"OUTPUT_{fmt}_P{persona_number:02d}_{stale_lang}*.txt"):
+            for stale_path in ratio_dir.glob(f"{fmt}_P{persona_number:02d}_{stale_lang}*.txt"):
                 stale_path.unlink()
 
         background_group_key = str(ad.get("background_group_key") or "").strip()
@@ -997,7 +998,7 @@ def main() -> int:
                 visual_archetype,
                 visual_lock=visual_lock,
             )
-            out_path = ratio_dir / prompt_filename(fmt, persona_number, lang, creative_index, creative_total)
+            out_path = ratio_dir / prompt_filename(fmt, persona_number, lang, concept.get("concept_angle", ""), creative_index, creative_total)
             validate_prompt_text(out_text, out_path)
             out_path.write_text(out_text, encoding="utf-8")
             prompt_meta = {

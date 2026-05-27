@@ -197,9 +197,7 @@ def _format_sort_key(fmt: str) -> tuple[int, str]:
 def _parse_prompt_name(path: Path) -> tuple[str, str, str, str]:
     stem = path.stem
     patterns = [
-        r"^(?:FINAL|OUTPUT)_(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?$",
-        r"^(?:FINAL|OUTPUT)_(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)$",
-        r"^(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?$",
+        r"^(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?(?:_[a-z_]+)?$",
         r"^(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)$",
     ]
     for pat in patterns:
@@ -217,7 +215,7 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str]:
     for token in tokens:
         if token in FORMAT_ORDER:
             return token, persona_id, "XX", ""
-    fmt = next((t for t in tokens if t not in {"FINAL", "OUTPUT", persona_id}), "PROMPT")
+    fmt = next((t for t in tokens if t not in {persona_id}), "PROMPT")
     return fmt, persona_id, "XX", ""
 
 
@@ -231,7 +229,22 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
         fmt, persona, lang, variant = _parse_prompt_name(path)
         variant_suffix = f"_{variant}" if variant else ""
         key = f"{fmt}_{persona}_{lang}{variant_suffix}"
-        safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}"
+        safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}"
+
+        # Read concept_angle from prompt file to include in output_stem
+        concept_angle = ""
+        try:
+            body = path.read_text(encoding="utf-8")
+            m = re.search(r"^- concept_angle\s*:\s*(.+)$", body, re.MULTILINE | re.IGNORECASE)
+            if m:
+                concept_angle = m.group(1).strip()
+        except Exception:
+            pass
+        if concept_angle:
+            safe_stem += f"-{concept_angle}"
+            if concept_angle not in key:
+                key += f"_{concept_angle}"
+
         raw_jobs.append(
             PromptJob(
                 prompt_path=path.resolve(),

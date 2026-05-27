@@ -478,9 +478,10 @@ def parse_xlsx(xlsx_path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def prompt_filename(fmt: str, persona_number: int, lang: str, creative_index: int = 1, creative_total: int = 1) -> str:
+def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str = "", creative_index: int = 1, creative_total: int = 1) -> str:
     suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
-    return f"OUTPUT_{fmt}_P{persona_number:02d}_{lang}{suffix}.txt"
+    angle_part = f"_{concept_angle}" if concept_angle else ""
+    return f"{fmt}_P{persona_number:02d}_{lang}{suffix}{angle_part}.txt"
 
 
 def aspect_ratio_folder(aspect_ratio: str) -> str:
@@ -643,7 +644,7 @@ def main() -> int:
         creative_index = row.get("_creative_index", 1)
         creative_total = row.get("_creative_total", 1)
 
-        filename = prompt_filename(fmt, persona_number, lang, creative_index, creative_total)
+        filename = prompt_filename(fmt, persona_number, lang, concept_angle, creative_index, creative_total)
         out_path = ratio_dir / filename
         out_path.write_text(prompt_text, encoding="utf-8")
 
@@ -772,7 +773,7 @@ def main() -> int:
     print()
     print("Next: run gemini_web_automation.py or chatgpt_web_sutomation.py with:")
     print(f"  --prompt-dir {ratio_dir}")
-    print(f"  --prompt-glob 'OUTPUT_*_P*_{lang}.txt'")
+    print(f"  --prompt-glob '{fmt}_P*_{lang}*.txt'")
     print(f"  --out-dir {ROOT / 'generated_images' / batch_name}")
     return 0
 

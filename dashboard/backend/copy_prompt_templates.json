@@ -665,8 +665,6 @@
       "1. Auto",
       "Meaning:",
       "If the user selects Auto, choose the most suitable angle based on the selected persona and format.",
-      "Rule:",
-      "Do not mention Auto in the output.",
       "",
       "2. Pain point",
       "Meaning:",
@@ -709,7 +707,7 @@
     ]
   },
   "strict_schema_note": {
-    "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys.",
+    "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys. The response for each ad must include a 'concept_angle' field identifying which concept angle was used (e.g. 'desired_outcome', 'pain_point', 'social_proof', etc.).",
     "persona_fields_en": "persona must be an object with only number and name.",
     "language_extension": "",
     "format_closure_template": "For {fmt} format, copy.EN, copy.HI, and copy.HINGLISH (when requested) must contain only: {copy_fields}.",

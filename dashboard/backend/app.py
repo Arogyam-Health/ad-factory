@@ -1224,8 +1224,8 @@ def build_916_conversion_prompt_job(fmt: str, persona_num: int, lang: str, index
     lang_clean = (lang or "EN").strip().upper() or "EN"
     persona_safe = max(0, int(persona_num or 0))
     if persona_safe > 0:
-        return f"OUTPUT_{fmt_clean}_P{persona_safe:02d}_{lang_clean}_A{max(1, int(index)):02d}.txt"
-    return f"OUTPUT_{fmt_clean}_P{index:02d}_{lang_clean}.txt"
+        return f"{fmt_clean}_P{persona_safe:02d}_{lang_clean}_A{max(1, int(index)):02d}.txt"
+    return f"{fmt_clean}_P{index:02d}_{lang_clean}.txt"
 
 
 def collect_45_reference_jobs_for_batch(batch: str) -> list[dict[str, Any]]:
@@ -2841,7 +2841,7 @@ def collect_run_result(run_dir: Path, batch_name: str, image_generated: bool) ->
     output_dir = ROOT / "output" / batch_name
     prompt_files = []
     if output_dir.exists():
-        for file in sorted(output_dir.glob("**/OUTPUT_*.txt")):
+        for file in sorted(output_dir.glob("**/[A-Z]*_P*.txt")):
             prompt_files.append(str(file.relative_to(ROOT)))
 
     image_files: list[str] = []
@@ -2904,7 +2904,7 @@ def scan_prompt_files_for_batch(batch_name: str) -> list[str]:
     prompt_files: list[str] = []
     if not output_dir.exists():
         return prompt_files
-    for file in sorted(output_dir.glob("**/OUTPUT_*.txt")):
+    for file in sorted(output_dir.glob("**/[A-Z]*_P*.txt")):
         prompt_files.append(str(file.relative_to(ROOT)))
     return prompt_files
 
@@ -3326,7 +3326,7 @@ def parse_background_lock_from_prompt(prompt_text: str) -> tuple[str, int] | Non
 
 def parse_prompt_filename(prompt_path: str) -> tuple[str, str, int | None] | None:
     name = Path(prompt_path).name
-    match = re.match(r"^OUTPUT_([A-Z]+)(?:_P(\d+))?_(EN|HI|HINGLISH)(?:_(?:V|A)\d+)?\.txt$", name)
+    match = re.match(r"^([A-Z]+)(?:_P(\d+))?_(EN|HI|HINGLISH)(?:_(?:V|A)\d+)?(?:_[a-z_]+)?\.txt$", name)
     if not match:
         return None
     persona_raw = match.group(2)
@@ -3591,7 +3591,7 @@ def collect_45_visual_locks(batch: str) -> dict[str, dict[str, Any]]:
     ratio_dir = ROOT / "output" / batch / "45"
     if not ratio_dir.exists():
         return out
-    for prompt_file in sorted(ratio_dir.glob("OUTPUT_*_EN.txt")) + sorted(ratio_dir.glob("OUTPUT_*_HI.txt")):
+    for prompt_file in sorted(ratio_dir.glob("*_EN.txt")) + sorted(ratio_dir.glob("*_HI.txt")):
         parsed = parse_prompt_filename(prompt_file.name)
         if not parsed:
             continue
@@ -5308,7 +5308,7 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
             base_name = f"p{persona_num:02d}"
             image_sources: list[str] = []
             for pf45, imgs in prompt_to_images.items():
-                if f"OUTPUT_{fmt}_P{persona_num:02d}" in str(pf45).upper():
+                if f"{fmt}_P{persona_num:02d}" in str(pf45).upper():
                     image_sources = list(imgs)
                     break
 
@@ -5357,11 +5357,11 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
         fmt, lang, persona_num = parsed
 
         # 9:16 prompt expected at output/{batch}/96/
-        pf_filename = f"OUTPUT_{fmt}_P{persona_num:02d}_{lang}.txt"
-        prompt_96 = f"output/{batch}/96/{pf_filename}"
-        prompt_96_path = ROOT / prompt_96
-        if not prompt_96_path.exists():
+        prompt_96_pattern = f"output/{batch}/96/{fmt}_P{persona_num:02d}_{lang}*.txt"
+        prompt_96_matches = sorted(ROOT.glob(prompt_96_pattern))
+        if not prompt_96_matches:
             continue
+        pf_filename = prompt_96_matches[0].name
 
         image_sources = list(prompt_to_images.get(rel_45, []))
 
@@ -6171,13 +6171,8 @@ def _find_prompt_by_name(prompt_name: str, prompt_files: list[str]) -> str:
 
 
 def _build_output_stem_from_prompt(prompt_path: str, engine: str) -> str:
-    """Build the deterministic output stem for a generated image.
-
-    Example:  prompt=OUTPUT_HERO_P25_EN_A34.txt, engine=chatgpt
-              -> "chatgpt-hero-p25-en-a34"
-    """
     name = Path(prompt_path).stem
-    match = re.match(r"^(?:FINAL|OUTPUT_)?([A-Za-z0-9]+)_P(\d+)_([A-Za-z0-9]+)(?:_([AV]\d+))?$", name, flags=re.IGNORECASE)
+    match = re.match(r"^([A-Za-z0-9]+)_P(\d+)_([A-Za-z0-9]+)(?:_([AV]\d+))?(?:_[a-z_]+)?$", name, flags=re.IGNORECASE)
     if not match:
         return ""
     fmt = match.group(1).lower()
@@ -6363,9 +6358,9 @@ def api_regenerate_queued_images(run_id: str, payload: dict[str, Any] = Body(...
             raise HTTPException(status_code=500, detail=f"9:16 regeneration failed: {exc}")
 
         for job in jobs_916:
-            prompt_path = str(ROOT / "output" / batch / "45" / f"OUTPUT_{job['format']}_P{job['persona_number']:02d}_{job['language']}.txt")
+            prompt_path = str(ROOT / "output" / batch / "45" / f"{job['format']}_P{job['persona_number']:02d}_{job['language']}.txt")
             # Try to find exact prompt path
-            pname = f"OUTPUT_{job['format']}_P{job['persona_number']:02d}_{job['language']}"
+            pname = f"{job['format']}_P{job['persona_number']:02d}_{job['language']}"
             candidates = [pf for pf in prompt_files_list if pname in Path(pf).name]
             if candidates:
                 prompt_path = candidates[0]

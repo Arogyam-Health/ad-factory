@@ -14,7 +14,7 @@ let batchDropdownInitialized = false;
 
 function parsePromptPath(path) {
   const name = path.split("/").pop() || path;
-  const match = name.match(/^OUTPUT_([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)(?:_A(\d+))?\.txt$/i);
+  const match = name.match(/^([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)(?:_A(\d+))?(?:_([a-z_]+))?\.txt$/i);
   const aspect = path.includes("/916/") || path.includes("/96/") ? "9:16" : path.includes("/45/") ? "4:5" : "Other";
   return {
     name,
@@ -23,6 +23,7 @@ function parsePromptPath(path) {
     persona: match ? `P${String(Number(match[2])).padStart(2, "0")}` : "P--",
     lang: match ? match[3].toUpperCase() : "--",
     creative: match && match[4] ? `A${String(Number(match[4])).padStart(2, "0")}` : "A01",
+    conceptAngle: match && match[5] ? match[5] : null,
   };
 }
 
@@ -52,7 +53,7 @@ function buildPromptFileSummary(promptFiles) {
     const card = document.createElement("div");
     card.className = "prompt-file-card";
     card.title = path;
-    card.innerHTML = `<span class="prompt-file-aspect">${parsed.aspect}</span><strong>${parsed.format} ${parsed.persona}</strong><span>${parsed.creative} · ${parsed.lang}</span>`;
+    card.innerHTML = `<span class="prompt-file-aspect">${parsed.aspect}</span><strong>${parsed.format} ${parsed.persona}</strong><span>${parsed.creative} · ${parsed.lang}${parsed.conceptAngle ? ` · <em>${parsed.conceptAngle}</em>` : ''}</span>`;
     card.addEventListener("click", () => {
       showPromptFullscreen(Path(path).name || path, "", {
         fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(path)}`,

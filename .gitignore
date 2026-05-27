@@ -20,3 +20,5 @@ runtime
 output/*
 
 scripts/__pycache__/*
+
+.commandcode
