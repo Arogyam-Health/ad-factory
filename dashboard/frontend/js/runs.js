@@ -334,6 +334,7 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Batch generating 4:5 in ${engineLabel} for ${runIds.length} run(s)...`);
+  showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-45", {
       method: "POST",
@@ -348,6 +349,8 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
     loadRuns();
   } catch (err) {
     appendLog(String(err));
+  } finally {
+    hideStopGenButton();
   }
 });
 
@@ -363,6 +366,7 @@ document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Batch generating 4:5 + 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-both", {
       method: "POST",
@@ -373,6 +377,8 @@ document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
     loadRuns();
   } catch (err) {
     appendLog(String(err));
+  } finally {
+    hideStopGenButton();
   }
 });
 
@@ -387,6 +393,7 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Batch generating 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-916", {
       method: "POST",
@@ -401,6 +408,8 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
     loadRuns();
   } catch (err) {
     appendLog(String(err));
+  } finally {
+    hideStopGenButton();
   }
 });
 
@@ -489,3 +498,25 @@ function showEngineSelector(aspectLabel = "4:5") {
     });
   });
 }
+
+function showStopGenButton() {
+  const btn = document.getElementById("stopGeneration");
+  if (btn) { btn.style.display = "inline-block"; btn.disabled = false; }
+}
+
+function hideStopGenButton() {
+  const btn = document.getElementById("stopGeneration");
+  if (btn) { btn.style.display = "none"; }
+}
+
+document.getElementById("stopGeneration")?.addEventListener("click", async () => {
+  const btn = document.getElementById("stopGeneration");
+  if (btn) { btn.disabled = true; btn.textContent = "Stopping..."; }
+  try {
+    const data = await fetchJSON("/api/stop-generation", { method: "POST" });
+    appendLog(`Generation stopped. ${JSON.stringify(data)}`);
+  } catch (err) {
+    appendLog(`Stop generation error: ${String(err)}`);
+  }
+  if (btn) { btn.style.display = "none"; btn.textContent = "⏹ Stop Gen"; }
+});

@@ -2570,7 +2570,8 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         idx = min(session_rollovers, len(OPENCODE_ADS_PER_SESSION_SCHEDULE) - 1)
         return OPENCODE_ADS_PER_SESSION_SCHEDULE[idx]
 
-    def bootstrap_product_doc_session(reason: str) -> None:
+    def bootstrap_product_doc_session(reason: str) -> bool:
+        """Returns True if cancelled by user, False otherwise."""
         nonlocal session_id, session_request_count, session_rollovers
         append_run_log(
             run_dir,
@@ -2578,7 +2579,25 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             f"{now_iso()} Starting OpenCode product-doc session ({reason}) with file: {product_file}",
         )
         bootstrap_cmd = build_cmd(build_product_doc_bootstrap_prompt(), use_session=False, attach_product_doc=True)
-        bootstrap = subprocess.run(bootstrap_cmd, cwd=str(ROOT), text=True, capture_output=True, check=False, env=env)
+        proc = subprocess.Popen(bootstrap_cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        bootstrap_timeout = 120
+        poll_start = time.time()
+        cancelled = False
+        while proc.poll() is None:
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                proc.kill()
+                proc.wait(timeout=5)
+                cancelled = True
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Bootstrap CANCELLED by user during {reason}")
+                break
+            if time.time() - poll_start > bootstrap_timeout:
+                proc.kill()
+                proc.wait(timeout=5)
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Bootstrap TIMEOUT after {bootstrap_timeout}s during {reason}")
+                break
+            time.sleep(0.1)
+        stdout, stderr = proc.communicate()
+        bootstrap = subprocess.CompletedProcess(bootstrap_cmd, proc.returncode, stdout, stderr)
         append_run_log(
             run_dir,
             "opencode_session.log",
@@ -2587,6 +2606,10 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 f"STDOUT:\n{bootstrap.stdout or ''}\nSTDERR:\n{bootstrap.stderr or ''}"
             ),
         )
+        if cancelled:
+            session_id = None
+            session_request_count = 0
+            return True
         if bootstrap.returncode == 0:
             next_session_id = parse_opencode_session_id(bootstrap.stdout or "")
             if next_session_id:
@@ -2617,11 +2640,15 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             warning = "OpenCode product-doc session bootstrap failed; proceeding without session reuse."
             warnings.append(warning)
             append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
+        return False
 
     with _opencode_queue_slot(f"copy_session {run_dir.name}"):
         _cancel_current_run.clear()
         cancel_event_for_run(run_dir.name).clear()
-        bootstrap_product_doc_session("initial")
+        if bootstrap_product_doc_session("initial"):
+            warnings.append("Run cancelled by user during initial bootstrap")
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during initial bootstrap")
+            return None, [], warnings
 
         all_items = context.get("ads") or []
         total_items = len(all_items)
@@ -2666,7 +2693,10 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 break
 
             if session_id and session_request_count >= current_session_limit():
-                bootstrap_product_doc_session(f"rollover_before_{batch_label}")
+                if bootstrap_product_doc_session(f"rollover_before_{batch_label}"):
+                    warnings.append(f"Run cancelled during session rollover before {batch_label}")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during session rollover")
+                    break
 
             # Build previous_same_format across all previously generated ads (all formats mixed now)
             previous_same_format = _build_previous_same_format("ALL", None)
@@ -2719,7 +2749,10 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 warning = f"Batch {batch_label}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
                 warnings.append(warning)
                 append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
-                bootstrap_product_doc_session("timeout_retry")
+                if bootstrap_product_doc_session("timeout_retry"):
+                    warnings.append(f"Run cancelled during timeout retry bootstrap for {batch_label}")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during timeout retry bootstrap")
+                    break
                 try:
                     candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
                 except OSError as exc:
@@ -5885,6 +5918,23 @@ def api_kill_chrome() -> dict[str, Any]:
             continue
 
     return {"status": "killed", "chrome": killed, "gemini_processes": gemini_killed, "chatgpt_processes": chatgpt_killed}
+
+
+def api_stop_generation() -> dict[str, Any]:
+    """Kill any running generation/assembly scripts (chatgpt, gemini, generate_ads, opencode)."""
+    targets = ["chatgpt_web_sutomation", "gemini_web_automation", "generate_ads.py", "opencode"]
+    counts: dict[str, int] = {t: 0 for t in targets}
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            joined = " ".join(cmdline)
+            for target in targets:
+                if target in joined:
+                    proc.kill()
+                    counts[target] += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return {"status": "killed", **counts}
 
 
 def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
