@@ -173,6 +173,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--send-confirm-timeout", type=float, default=35.0)
     parser.add_argument("--continue-on-error", action="store_true")
+    parser.add_argument(
+        "--aspect-ratio",
+        choices=["4:5", "9:16"],
+        default="4:5",
+        help="Target aspect ratio for output images (determines PIL crop target)",
+    )
     return parser.parse_args()
 
 
@@ -2710,6 +2716,30 @@ def download_generated_image(
     raise RuntimeError("Image was detected, but no valid image file could be saved.")
 
 
+def resize_to_ratio(input_path: Path, output_path: Path, output_size: tuple[int, int]) -> None:
+    img = PILImage.open(input_path).convert("RGB")
+    target_ratio = output_size[0] / output_size[1]
+    w, h = img.size
+    current_ratio = w / h
+    crop_box = None
+
+    if abs(current_ratio - target_ratio) < 0.001:
+        final = img.resize(output_size, PILImage.Resampling.LANCZOS)
+    elif current_ratio > target_ratio:
+        new_w = h * target_ratio
+        left = (w - new_w) / 2
+        crop_box = (left, 0, left + new_w, h)
+        final = img.crop(crop_box).resize(output_size, PILImage.Resampling.LANCZOS)
+    else:
+        new_h = w / target_ratio
+        top = (h - new_h) / 2
+        crop_box = (0, top, w, top + new_h)
+        final = img.crop(crop_box).resize(output_size, PILImage.Resampling.LANCZOS)
+
+    final.save(output_path, "PNG", optimize=True)
+    print(f"  [crop] {img.size} -> {PILImage.open(output_path).size} (crop_box={crop_box})")
+
+
 # ---------------------------------------------------------------------------
 # Debug and metadata
 # ---------------------------------------------------------------------------
@@ -2898,26 +2928,12 @@ def run() -> None:
 
                         # ------------------------------------------------------------------
                         # Step: Ensure exact target dimensions via PIL crop
-                        # (fast, deterministic — replaces previous ChatGPT fix-45 approach)
                         # ------------------------------------------------------------------
                         try:
-                            aspect = prompt_metadata.get("aspect_ratio", "4:5")
-                            target_map = {"4:5": (1080, 1350), "9:16": (1080, 1920)}
-                            target = target_map.get(aspect, (1080, 1350))
-                            img = PILImage.open(saved_path)
-                            if img.size != target:
-                                print(f"  [crop] Image is {img.size}, cropping to {target}...")
-                                w, h = img.size
-                                tw, th = target
-                                left = (w - tw) // 2
-                                top = (h - th) // 2
-                                cropped = img.crop((left, top, left + tw, top + th))
-                                cropped.save(saved_path, optimize=True)
-                                print(f"  [crop] Saved cropped image: {saved_path}")
-                            else:
-                                print(f"  [crop] Image already at {target}, skipping.")
+                            target = (1080, 1350) if args.aspect_ratio == "4:5" else (1080, 1920)
+                            resize_to_ratio(saved_path, saved_path, target)
                         except Exception as exc:
-                            print(f"  [crop] PIL crop failed (keeping original): {exc}")
+                            print(f"  [crop] Failed (keeping original): {exc}")
 
                         time.sleep(args.sleep_after_download)
                         break

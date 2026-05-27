@@ -1498,6 +1498,7 @@ def run_chatgpt_generation(
         cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_sources_file:
         cmd.extend(["--image-source-file", image_sources_file])
+    cmd.extend(["--aspect-ratio", aspect_ratio])
 
     log_dir = RUNTIME_ROOT / "generation_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -5088,6 +5089,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
             str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
             "--upload-dir",
             str(INPUT_IMAGES_DIR),
+            "--aspect-ratio", "4:5",
         ]
     else:
         cmd = [
@@ -5195,6 +5197,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[
             "--download-timeout", str(int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90")),
             "--manual-login-timeout", str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
             "--upload-dir", str(INPUT_IMAGES_DIR),
+            "--aspect-ratio", "4:5",
         ]
     else:
         cmd = [
