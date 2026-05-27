@@ -173,8 +173,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument(
         "--to-45-file",
-        default="input/to_45_perfect.txt",
-        help="File containing a prompt to re-generate the image in perfect 4:5. The generated image is uploaded and this prompt is sent. Set to empty to disable.",
+        default="",
+        help="File containing a prompt to re-generate the image in perfect 4:5. The generated image is uploaded and this prompt is sent. Omit or set to empty to disable.",
     )
     return parser.parse_args()
 
@@ -359,6 +359,7 @@ def build_test_variables(job: PromptJob, prompt_metadata: dict[str, Any], effect
         "variant": job.variant_id,
         "visual_pattern": visual_pattern,
         "visual_archetype": visual_archetype,
+        "hypothesis": effective_hypothesis,
         "hypothesis_type": hyp_type,
         "hypothesis_variant": hyp_variant,
         "persona": prompt_metadata.get("persona", job.persona_id),

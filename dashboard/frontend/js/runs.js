@@ -350,6 +350,31 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
   }
 });
 
+document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
+  const selectedBatches = getSelectedBatchValues();
+  if (!selectedBatches.length) { appendLog("Select at least one batch."); return; }
+
+  const engine = await showEngineSelector("4:5 & 9:16");
+  if (!engine) return;
+
+  const runsForBatches = state.runsData.filter((r) => selectedBatches.includes(r.batch));
+  if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
+  const runIds = runsForBatches.map((r) => r.run_id);
+  const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
+  appendLog(`Batch generating 4:5 + 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  try {
+    const data = await fetchJSON("/api/batch/generate-images-both", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine }),
+    });
+    appendLog(`Done. 4:5 prompts: ${data.total_45_prompts}, 9:16 images: ${data.total_916_completed}, Batches: ${data.batch_key}`);
+    loadRuns();
+  } catch (err) {
+    appendLog(String(err));
+  }
+});
+
 document.getElementById("batchGen916")?.addEventListener("click", async () => {
   const selectedBatches = getSelectedBatchValues();
   if (!selectedBatches.length) { appendLog("Select at least one batch."); return; }

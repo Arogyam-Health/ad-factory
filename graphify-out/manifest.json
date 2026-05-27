@@ -40,13 +40,13 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/app.py": {
-    "mtime": 1779780636.2787545,
-    "ast_hash": "f203ea0ac25e3e1e170a7b983d30c142",
+    "mtime": 1779785611.424593,
+    "ast_hash": "dcaae43437d42f15f0dc6ce70e72f67e",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/index.html": {
-    "mtime": 1779715486.7853293,
-    "ast_hash": "d08ccebfd8730c22fcf609e0d09cb7b7",
+    "mtime": 1779785639.3976226,
+    "ast_hash": "24abebc29854aa3f7a0172d6ad669e98",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/AD_GENERATION_REGISTRY.JSON": {
@@ -125,8 +125,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/backend/routes/batch.py": {
-    "mtime": 1778497502.385313,
-    "ast_hash": "5dc4643f83b415fe34709a7c674c16f9",
+    "mtime": 1779785625.337635,
+    "ast_hash": "11f86f1597a82383c5f894c742ae8845",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/state.js": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/runs.js": {
-    "mtime": 1779715713.1316488,
-    "ast_hash": "0f1d803727783dbbf066749c94f06a4e",
+    "mtime": 1779785652.268688,
+    "ast_hash": "ba843c1eae49dbb5c71f0dd0344d58df",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/dashboard/frontend/js/custom-select.js": {
@@ -220,8 +220,8 @@
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/chatgpt_web_sutomation.py": {
-    "mtime": 1779780542.4760022,
-    "ast_hash": "b2e6a8b7a6c5afcaed78fc95dd09e31b",
+    "mtime": 1779783982.6892936,
+    "ast_hash": "36d3aa4d6194ba866ef8e59f00d84066",
     "semantic_hash": ""
   },
   "/home/mylappy/myspace/info/scripts/run_dashboard.sh": {
