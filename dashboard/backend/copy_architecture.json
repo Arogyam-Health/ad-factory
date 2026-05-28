@@ -97,43 +97,5 @@
         "avoid_skeletons": ["15 days to visible progress", "a complete ayurvedic weight-loss kit"]
       }
     }
-  },
-  "support_line_architectures": {
-    "_rotation": "Deterministically rotate across personas using (persona_number + format_index). Each persona gets the architecture at index (persona_number + format_index) % len(rotation_order).",
-    "composition_rule": "Support line must add new payload after the headline. It should be compact ad copy, not a framework explanation.",
-    "rotation_order": [
-      "pain_first",
-      "result_first",
-      "contrast",
-      "simple_facts",
-      "question_answer",
-      "bridge"
-    ],
-    "definitions": {
-      "pain_first": {
-        "intent": "Open from the persona friction, then add mechanism/proof/ease.",
-        "avoid": "Do not repeat the headline pain in different words."
-      },
-      "result_first": {
-        "intent": "Add a believable outcome detail, then explain mechanism or ease.",
-        "avoid": "Do not add a second oversized promise."
-      },
-      "contrast": {
-        "intent": "Name the old hard path and show the easier product path.",
-        "avoid": "Do not make results sound effortless."
-      },
-      "simple_facts": {
-        "intent": "Use 2-3 concrete facts: mechanism, proof, routine, or constraint.",
-        "avoid": "Do not become a feature dump."
-      },
-      "question_answer": {
-        "intent": "If headline is a question, answer naturally with mechanism and proof.",
-        "avoid": "Do not start with Yes, No, Because, It can, or You can."
-      },
-      "bridge": {
-        "intent": "Connect headline context to mechanism to outcome.",
-        "avoid": "Do not write three separate sentences for HERO/UGC."
-      }
-    }
   }
 }

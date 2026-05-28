@@ -275,7 +275,7 @@ async function runPipeline() {
           clearInterval(state.runPollInterval);
           state.runPollInterval = null;
           const fallbackLine = data.copy_generation_failures
-            ? `\nCopy fallbacks: ${data.copy_generation_failures} failed ad(s); log: ${data.copy_fallback_log || "run logs"}`
+            ? `\nCopy failures: ${data.copy_generation_failures} ad(s)`
             : "";
           const warningLine = data.copy_generation_warnings
             ? `\nCopy warnings: ${data.copy_generation_warnings}; log: ${data.copy_warning_log || "run logs"}`

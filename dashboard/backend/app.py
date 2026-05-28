@@ -51,7 +51,6 @@ CONVERT_916_TEMPLATE_PATH = ROOT / "input" / "prompt_916_from_45.txt"
 PERSONA_SEEDS_PATH = ROOT / "persona_seeds.json"
 COPY_ARCH_PATH = ROOT / "dashboard" / "backend" / "copy_architecture.json"
 COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
-FALLBACK_TEMPLATES_PATH = ROOT / "dashboard" / "backend" / "fallback_templates.json"
 STARTING_PROMPT_PATH = ROOT / "input" / "startingprompt.txt"
 
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
@@ -61,6 +60,48 @@ OPENCODE_AD_TIMEOUT_SECONDS = 600
 OPENCODE_MAX_CONCURRENT = 2
 OPENCODE_QUEUE_DIR = RUNTIME_ROOT / "opencode_queue"
 OPENCODE_QUEUE_LOG = OPENCODE_QUEUE_DIR / "queue.log"
+
+_PERSONA_SEED_MAPPING: dict[str, Any] = {
+    "seed_to_payload": {
+        "core_pattern": {"field": "pain_points", "wrap_list": True, "prefix": None},
+        "common_indian_moments": {"field": "trust_anchors", "wrap_list": True, "prefix": None},
+        "objections_raw": {"field": "objections", "wrap_list": True, "prefix": None},
+        "how_kit_solves": {"field": "how_kit_solves", "wrap_list": False, "prefix": None},
+        "guardrail": {"field": "guardrails", "wrap_list": True, "prefix": "Guardrail: "},
+    },
+    "persona_fallbacks": {
+        "core_pattern": "Daily routine feels heavy and hard to sustain.",
+        "common_indian_moments": "Everyday situations make it harder to stay consistent.",
+        "objections_raw": "Past plans felt too strict and difficult to maintain.",
+        "how_kit_solves": {},
+        "guardrail": "",
+    },
+    "static_fields": {
+        "trigger_scenarios": [],
+        "language_bank": [],
+        "grounded_mechanism_map": [],
+    },
+    "hindi_ready_default": "टोन संकेत: सरल, भरोसेमंड, व्यावहारिक",
+}
+
+_TESTIMONIAL_GUIDANCE: dict[str, Any] = {
+    "EN": {
+        "first_person_pattern": "\\b(i|i'm|i've|i'd|my|me)\\b",
+        "weight_pattern": "\\b(weight|obesity|excess\\s*weight|kg|kilo)\\b",
+        "suffix": "It finally fit my weight-loss routine.",
+        "desire_template": "\"I finally found {desire_phrase} for my weight-loss goal.\"",
+        "fallback": "\"I finally found a routine I can follow for weight loss every day.\"",
+        "desire_field": "desire_en",
+    },
+    "HI": {
+        "first_person_pattern": "(मैं|मेरी|मेरा|मुझे|मैंने)",
+        "weight_pattern": "(वजन|मोटापा|किलो|kg)",
+        "suffix": "यह मेरे वजन घटाने के लिए काम आया।",
+        "desire_template": "\"मुझे आखिर {desire_phrase} वाला रूटीन मिला जो वजन घटाने में मदद करता है।\"",
+        "fallback": "\"मुझे आखिर ऐसा रूटीन मिला जिसे मैं रोज निभा सकूं और वजन घटा सकूं।\"",
+        "desire_field": "desire_hi",
+    },
+}
 
 # Pipeline cancellation signal, keyed by run_id.
 _cancel_events: dict[str, threading.Event] = {}
@@ -269,12 +310,12 @@ def _load_copy_architecture() -> dict[str, Any]:
     path = COPY_ARCH_PATH
     if not path.exists():
         print(f"WARNING: {path} not found. Copy architecture templates disabled.", file=sys.stderr)
-        return {"headline_architectures": {}, "support_line_architectures": {"rotation_order": [], "definitions": {}}}
+        return {"headline_architectures": {}}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         print(f"WARNING: Failed to load {path}: {exc}", file=sys.stderr)
-        return {"headline_architectures": {}, "support_line_architectures": {"rotation_order": [], "definitions": {}}}
+        return {"headline_architectures": {}}
 
 
 COPY_ARCH = _load_copy_architecture()
@@ -328,24 +369,12 @@ def _build_hypothesis_variables() -> dict[str, dict[str, Any]]:
 
 COPY_PROMPTS = _load_copy_prompts()
 
-def _load_fallback_templates() -> dict[str, Any]:
-    path = FALLBACK_TEMPLATES_PATH
-    if not path.exists():
-        print(f"WARNING: {path} not found. Fallback templates disabled.", file=sys.stderr)
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        print(f"WARNING: Failed to load {path}: {exc}", file=sys.stderr)
-        return {}
-
-FALLBACKS = _load_fallback_templates()
 HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
 
 
 def _invalidate_config_cache(full_path: Path) -> None:
     """Reload the in-memory global for a config file that was just saved."""
-    global PERSONA_SEED_INPUTS, COPY_ARCH, HYPOTHESIS_VARIABLES, COPY_PROMPTS, FALLBACKS
+    global PERSONA_SEED_INPUTS, COPY_ARCH, HYPOTHESIS_VARIABLES, COPY_PROMPTS
     if full_path == PERSONA_SEEDS_PATH:
         PERSONA_SEED_INPUTS = _load_persona_seeds()
     elif full_path == COPY_ARCH_PATH:
@@ -353,8 +382,6 @@ def _invalidate_config_cache(full_path: Path) -> None:
         HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
     elif full_path == COPY_PROMPTS_PATH:
         COPY_PROMPTS = _load_copy_prompts()
-    elif full_path == FALLBACK_TEMPLATES_PATH:
-        FALLBACKS = _load_fallback_templates()
     # prompt_assembler_templates.json and background_variant.json are used by
     # subprocess scripts (generate_ads.py, chatgpt_web_sutomation.py),
     # not cached in this process — no reload needed.
@@ -402,51 +429,6 @@ def _hypothesis_guidance(hyp_type: str, variant: str) -> str:
     return ""
 
 
-def _support_line_strategy_item(group: str, item_id: str) -> dict[str, Any]:
-    source_map = {
-        "by_concept_angle": ("headline_architectures", "concept_angle"),
-        "by_hook_structure": ("headline_architectures", "hook_structure"),
-    }
-    root_key, arch_group = source_map.get(group, ("", ""))
-    entry = COPY_ARCH.get(root_key, {}).get(arch_group, {}).get(item_id) if root_key else None
-    if not isinstance(entry, dict):
-        return {"source": group, "variant": item_id, "intent": "", "avoid": ""}
-    strategy = entry.get("support_strategy") if isinstance(entry.get("support_strategy"), dict) else {}
-    return {
-        "source": group,
-        "variant": item_id,
-        "intent": entry.get("support_role") or entry.get("intent") or strategy.get("direction") or "",
-        "avoid": entry.get("avoid") or strategy.get("avoid") or "",
-    }
-
-
-def _build_support_line_strategy(concept_angle: str) -> dict[str, Any]:
-    support_arch = COPY_ARCH.get("support_line_architectures", {})
-    return {
-        "composition_rule": support_arch.get(
-            "composition_rule",
-            "Final support line = active support strategy meaning + assigned support_line_architecture sentence shape.",
-        ),
-        "active": _support_line_strategy_item("by_concept_angle", concept_angle),
-        "selection_note": "Use active as a support-line preference only. Do not turn it into a sentence template.",
-    }
-
-
-def _set_active_support_line_strategy(copy_req: dict[str, Any], group: str, variant: str) -> None:
-    strategy = copy_req.get("support_line_strategy")
-    if not isinstance(strategy, dict):
-        return
-    active = _support_line_strategy_item(group, variant)
-    strategy["active"] = active
-    strategy["selection_note"] = (
-        f"Active support strategy selected from {group}.{variant} because the current hypothesis/variant controls the headline. "
-        "Use this as support-line intent only; do not force a sentence template."
-    )
-
-
-# Feature-lane-driven headline concept selection removed.
-
-
 def _select_headline_architecture(persona_number: int, fmt: str) -> dict[str, Any]:
     arch = COPY_ARCH.get("headline_architectures", {})
     hook_arch = arch.get("hook_structure", {})
@@ -456,29 +438,6 @@ def _select_headline_architecture(persona_number: int, fmt: str) -> dict[str, An
         hook_id = hook_keys[idx]
         return {"source": "hook_structure", "variant": hook_id, **hook_arch[hook_id]}
     return {"source": "four_us", "variant": "four_us", "template": "", "examples": []}
-
-
-def _select_support_line_architecture(persona_number: int, fmt: str, format_sequence_index: int) -> dict[str, Any]:
-    sla = COPY_ARCH.get("support_line_architectures", {})
-    rotation = sla.get("rotation_order", [])
-    defs = sla.get("definitions", {})
-    if not rotation:
-        return {"variant": "none", "template": "", "examples": []}
-    idx = (persona_number + format_sequence_index) % len(rotation)
-    arch_id = rotation[idx]
-    entry = defs.get(arch_id, {})
-    return {"variant": arch_id, **entry}
-
-
-def _creative_direction(concept_angle: str) -> dict[str, Any]:
-    arch = COPY_ARCH.get("headline_architectures", {})
-    direction: dict[str, Any] = {}
-    entry = arch.get("concept_angle", {}).get(concept_angle)
-    if isinstance(entry, dict):
-        direction["concept_angle"] = _compact_creative_entry(concept_angle, entry)
-    else:
-        direction["concept_angle"] = {"id": concept_angle}
-    return direction
 
 
 def _persona_theme(persona_seed: dict[str, Any]) -> str:
@@ -648,7 +607,10 @@ def build_generation_payload_for_llm(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list[dict[str, Any]]) -> str | None:
+TARGET_LANGS_MAP = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
+
+def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list[dict[str, Any]], language_mode: str = "ALL") -> str | None:
+    target_langs = TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"])
     ads = copy_json.get("ads") if isinstance(copy_json, dict) else None
     if not isinstance(ads, list):
         return "Generated payload did not include an ads array"
@@ -673,7 +635,7 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
             return f"Generated ad for format {fmt or '?'} is missing persona number"
         seen_keys.add((fmt, persona_number))
         copy = ad.get("copy") if isinstance(ad.get("copy"), dict) else {}
-        for lang in ["EN", "HI"]:
+        for lang in target_langs:
             block = copy.get(lang) if isinstance(copy.get(lang), dict) else {}
             if not str(block.get("headline") or "").strip():
                 return f"Generated ad {fmt}/P{persona_number} is missing {lang} headline"
@@ -905,6 +867,10 @@ def hydrate_generated_ad_candidate(candidate: dict[str, Any], planned_ad: dict[s
         clean_name = persona_name.strip()
         merged_persona["name"] = clean_name
         merged_persona["persona_name"] = clean_name
+    for k in ["pain_en", "desire_en", "friction_en", "proof_needed_en", "tone_cue_en",
+              "pain_hi", "desire_hi", "friction_hi", "proof_needed_hi", "tone_cue_hi"]:
+        if k not in merged_persona and k in planned_persona:
+            merged_persona[k] = planned_persona[k]
     if merged_persona:
         hydrated["persona"] = merged_persona
 
@@ -955,7 +921,7 @@ def build_persona_payload(persona_number: int, personas: list[dict[str, Any]]) -
                 persona_name = name
             break
     seed = PERSONA_SEED_INPUTS.get(persona_number, {})
-    mapping = FALLBACKS.get("persona_mapping", {})
+    mapping = _PERSONA_SEED_MAPPING
     seed_to_payload = mapping.get("seed_to_payload", {})
     fallbacks = mapping.get("persona_fallbacks", {})
 
@@ -1098,7 +1064,6 @@ def api_input_prompt(prompt_type: str = "916_conversion") -> dict[str, Any]:
     path_map = {
         "916_conversion": CONVERT_916_TEMPLATE_PATH,
         "starting_prompt": STARTING_PROMPT_PATH,
-        "to_45_perfect": ROOT / "input" / "to_45_perfect.txt",
     }
     p = path_map.get(prompt_type)
     if not p or not p.exists():
@@ -1113,11 +1078,10 @@ def api_save_input_prompt(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
     path_map = {
         "916_conversion": CONVERT_916_TEMPLATE_PATH,
         "starting_prompt": STARTING_PROMPT_PATH,
-        "to_45_perfect": ROOT / "input" / "to_45_perfect.txt",
     }
     p = path_map.get(prompt_type)
     if not p:
-        raise HTTPException(status_code=400, detail="prompt_type must be '916_conversion', 'starting_prompt', or 'to_45_perfect'")
+        raise HTTPException(status_code=400, detail="prompt_type must be '916_conversion' or 'starting_prompt'")
     p.write_text(content, encoding="utf-8")
     return {"status": "saved", "path": str(p.relative_to(ROOT))}
 
@@ -2181,7 +2145,7 @@ def concept_ids_from_requirements(copy_req: dict[str, Any]) -> dict[str, str]:
 
 def ensure_testimonial_headline(headline: str, lang: str, persona: dict[str, Any]) -> str:
     clean = shorten_copy_line(headline)
-    guidance = FALLBACKS.get("testimonial_headline_guidance", {})
+    guidance = _TESTIMONIAL_GUIDANCE
     cfg = guidance.get(lang, guidance.get("EN", {}))
     first_pat = cfg.get("first_person_pattern", "")
     weight_pat = cfg.get("weight_pattern", "")
@@ -2233,12 +2197,85 @@ def _persona_name_from_candidate(candidate: dict[str, Any]) -> str:
     return _clean_str(persona.get("name") or persona.get("persona_name") or "")
 
 
+def _build_copy_skeleton(context: dict[str, Any], run_id: str) -> dict[str, Any]:
+    ads: list[dict[str, Any]] = []
+    token = run_id[-4:]
+    for idx, item in enumerate(context["ads"], start=1):
+        persona = item["persona"]
+        fmt = item["format"]
+        persona_num = int(persona["persona_number"])
+        persona_name = persona["persona_name"]
+        copy_req = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
+        concept_ids = concept_ids_from_requirements(copy_req)
+
+        pain_en = choose_text(persona.get("pain_points", []), f"Daily routine feels heavy and hard to sustain for persona {persona_num}.")
+        desire_en = choose_text(persona.get("core_message", []), "A practical routine that feels easy to follow.")
+        friction_en = choose_text(persona.get("objections", []), "Past plans felt too strict and difficult to maintain.")
+        proof_en = choose_text(persona.get("trust_anchors", []), "Needs proof through clear structure and believable support.")
+        tone_en = "Practical, empathetic, and confidence-building"
+        pain_hi = "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।"
+        desire_hi = "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।"
+        friction_hi = "पहले के प्लान बहुत सख्त और मुश्किल थे।"
+        proof_hi = "साफ कदम, भरोसेमंद सपोर्ट और व्यावहारिक प्रमाण चाहिए।"
+        tone_hi = "सरल, भरोसेमंद, और व्यावहारिक"
+
+        if fmt in {"HERO", "UGC"}:
+            copy_en: dict[str, Any] = {"headline": "", "support_line": "", "cta": ""}
+            copy_hi: dict[str, Any] = {"headline": "", "support_line": "", "cta": ""}
+            copy_hing: dict[str, Any] = {"headline": "", "support_line": "", "cta": ""}
+        elif fmt in {"BA", "FEAT"}:
+            copy_en = {"headline": "", "bullets": [], "cta": ""}
+            copy_hi = {"headline": "", "bullets": [], "cta": ""}
+            copy_hing = {"headline": "", "bullets": [], "cta": ""}
+        else:
+            copy_en = {"headline": "", "trust_line": "", "cta": ""}
+            copy_hi = {"headline": "", "trust_line": "", "cta": ""}
+            copy_hing = {"headline": "", "trust_line": "", "cta": ""}
+
+        ad_payload = {
+            "format": fmt,
+            "headline_angle": "",
+            "concept_angle": concept_ids["concept_angle"],
+            "persona": {
+                "number": persona_num,
+                "name": persona_name,
+                "pain_en": pain_en,
+                "desire_en": desire_en,
+                "friction_en": friction_en,
+                "proof_needed_en": proof_en,
+                "tone_cue_en": tone_en,
+                "pain_hi": pain_hi,
+                "desire_hi": desire_hi,
+                "friction_hi": friction_hi,
+                "proof_needed_hi": proof_hi,
+                "tone_cue_hi": tone_hi,
+            },
+            "copy": {"EN": copy_en, "HI": copy_hi, "HINGLISH": copy_hing},
+        }
+        hypothesis = item.get("hypothesis") if isinstance(item.get("hypothesis"), dict) else None
+        if hypothesis:
+            ad_payload["hypothesis"] = hypothesis
+        for key in [
+            "visual_archetype",
+            "visual_pattern_reused_from_run_id",
+            "visual_pattern_reuse_key",
+            "creative_index",
+            "creative_total",
+            "background_group_key",
+        ]:
+            if key in item:
+                ad_payload[key] = item[key]
+        ads.append(ad_payload)
+
+    return {"default_aspect_ratio": "4:5", "ads": ads}
+
+
 def normalize_generated_copy(
     generated: dict[str, Any] | None,
     context: dict[str, Any],
     run_id: str,
 ) -> dict[str, Any]:
-    base = build_template_copy(context, run_id)
+    base = _build_copy_skeleton(context, run_id)
     ads_generated = generated.get("ads") if isinstance(generated, dict) else None
     candidates = ads_generated if isinstance(ads_generated, list) else []
     for cand in candidates:
@@ -2294,7 +2331,9 @@ def normalize_generated_copy(
                 ad[key] = value
 
         cand_copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
-        for lang in ["EN", "HI"]:
+        for lang in ["EN", "HI", "HINGLISH"]:
+            if lang not in ad["copy"]:
+                continue
             base_lang = ad["copy"][lang]
             src_lang = cand_copy.get(lang) if isinstance(cand_copy.get(lang), dict) else {}
 
@@ -2327,168 +2366,8 @@ def normalize_generated_copy(
     return base
 
 
-def _template_copy(primary_key: str, secondary_key: str, concept_angle: str, pain: str, lang: str) -> str:
-    templates = FALLBACKS.get("template_copy_headline_sentence", {})
-    template = templates.get(lang, templates.get("EN", ""))
-    return template.format(primary_key=primary_key, secondary_key=secondary_key, pain=pain)
-
-
-def template_headline(primary_key: str, concept_angle: str, pain: str, lang: str) -> str:
-    return _template_copy(primary_key, concept_angle, concept_angle, pain, lang)
-
-
-def template_support(primary_key: str, secondary_key: str, lang: str) -> str:
-    templates = FALLBACKS.get("template_copy_support_sentence", {})
-    template = templates.get(lang, templates.get("EN", ""))
-    return template.format(primary_key=primary_key, secondary_key=secondary_key)
-
-
-def feature_template(key: str) -> dict[str, str]:
-    templates = FALLBACKS.get("feature_templates", {})
-    entry = templates.get(key)
-    if entry:
-        return {"support_en": entry.get("EN", ""), "support_hi": entry.get("HI", "")}
-    default = templates.get("_default", {})
-    return {"support_en": default.get("EN", "Structured system for consistent progress."), "support_hi": default.get("HI", "लगातार प्रगति के लिए व्यवस्थित सिस्टम।")}
-
-
-def build_template_copy(context: dict[str, Any], run_id: str) -> dict[str, Any]:
-    ads: list[dict[str, Any]] = []
-    token = run_id[-4:]
-    for idx, item in enumerate(context["ads"], start=1):
-        persona = item["persona"]
-        fmt = item["format"]
-        persona_num = int(persona["persona_number"])
-        persona_name = persona["persona_name"]
-        unique = f"{token}-{idx:02d}-{fmt.lower()}"
-        copy_req = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
-        concept_ids = concept_ids_from_requirements(copy_req)
-        primary_key = _clean_str(copy_req.get("primary_feature_key")) or "structured_system"
-        secondary_key = _clean_str(copy_req.get("secondary_feature_key")) or "cravings_down"
-
-        pain_en = choose_text(persona.get("pain_points", []), f"Daily routine feels heavy and hard to sustain for persona {persona_num}.")
-        desire_en = choose_text(persona.get("core_message", []), "A practical routine that feels easy to follow.")
-        friction_en = choose_text(persona.get("objections", []), "Past plans felt too strict and difficult to maintain.")
-        proof_en = choose_text(persona.get("trust_anchors", []), "Needs proof through clear structure and believable support.")
-        en_fallbacks = FALLBACKS.get("template_copy_en_fallbacks", {})
-        tone_en = en_fallbacks.get("tone", "Practical, empathetic, and confidence-building")
-
-        hi_fallbacks = FALLBACKS.get("template_copy_hi_fallbacks", {})
-        pain_hi = hi_fallbacks.get("pain", "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।")
-        desire_hi = hi_fallbacks.get("desire", "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।")
-        friction_hi = hi_fallbacks.get("friction", "पहले के प्लान बहुत सख्त और मुश्किल थे।")
-        proof_hi = hi_fallbacks.get("proof", "साफ कदम, भरोसेमंद सपोर्ट और व्यावहारिक प्रमाण चाहिए।")
-        tone_hi = hi_fallbacks.get("tone", "सरल, भरोसेमंद, और व्यावहारिक")
-
-        concept_angle = concept_ids["concept_angle"]
-        headline_en = template_headline(primary_key, concept_angle, pain_en, "EN")
-        headline_hi = template_headline(primary_key, concept_angle, pain_en, "HI")
-        fmt_overrides = FALLBACKS.get("template_copy_format_overrides", {})
-        fo = fmt_overrides.get(fmt, {})
-        if fo.get("headline"):
-            headline_en = fo["headline"].get("EN", headline_en)
-            headline_hi = fo["headline"].get("HI", headline_hi)
-
-        cta_map = FALLBACKS.get("template_copy_cta_map", {})
-        default_cta = cta_map.get("_default", {"EN": "Start Today", "HI": "आज शुरू करें"})
-        fmt_cta = cta_map.get(fmt, default_cta)
-        cta_en = fmt_cta.get("EN", "Start Today")
-        cta_hi = fmt_cta.get("HI", "आज शुरू करें")
-
-        copy_en: dict[str, Any]
-        copy_hi: dict[str, Any]
-        if fmt in {"HERO", "UGC"}:
-            support_en = template_support(primary_key, secondary_key, "EN")
-            support_hi = template_support(primary_key, secondary_key, "HI")
-            if fo.get("support_override"):
-                support_en = fo["support_override"].get("EN", support_en)
-                support_hi = fo["support_override"].get("HI", support_hi)
-            copy_en = {"headline": headline_en, "support_line": support_en, "cta": cta_en}
-            copy_hi = {"headline": headline_hi, "support_line": support_hi, "cta": cta_hi}
-        elif fmt == "BA":
-            bullets_en = [
-                pain_en.rstrip("."),
-                friction_en.rstrip("."),
-                feature_template(primary_key)["support_en"].rstrip("."),
-                feature_template(secondary_key)["support_en"].rstrip("."),
-            ]
-            bullets_hi = [
-                pain_hi.rstrip("।"),
-                friction_hi.rstrip("।"),
-                feature_template(primary_key)["support_hi"].rstrip("।"),
-                feature_template(secondary_key)["support_hi"].rstrip("।"),
-            ]
-            copy_en = {"headline": headline_en, "bullets": bullets_en, "cta": cta_en}
-            copy_hi = {"headline": headline_hi, "bullets": bullets_hi, "cta": cta_hi}
-        elif fmt == "FEAT":
-            feat_bullets_en = fo.get("bullets", {}).get("EN", [])
-            feat_bullets_hi = fo.get("bullets", {}).get("HI", [])
-            bullets_en = feat_bullets_en or [
-                "Morning OK Liquid helps reduce hunger and random snacking for weight loss.",
-                "Night Tablet + Powder support digestion and lighter mornings in obesity routine.",
-                "Built for visible 15-day weight-loss support without crash-diet pressure.",
-            ]
-            bullets_hi = feat_bullets_hi or [
-                "सुबह का OK Liquid वजन घटाने के लिए भूख और अचानक खाने की आदत कम करने में सहायक है।",
-                "रात का Tablet + Powder मोटापा-नियंत्रण दिनचर्या में पाचन-सपोर्ट देता है।",
-                "कठोर डाइट दबाव के बिना 15 दिन के वजन-सपोर्ट के लिए बनाया गया।",
-            ]
-            copy_en = {"headline": headline_en, "bullets": bullets_en, "cta": cta_en}
-            copy_hi = {"headline": headline_hi, "bullets": bullets_hi, "cta": cta_hi}
-        else:
-            trust_en = fo.get("trust_line", {}).get("EN", "Structured morning-night steps for visible weight-loss progress and obesity control.")
-            trust_hi = fo.get("trust_line", {}).get("HI", "सुबह-रात के स्पष्ट कदमों से वजन घटाने और मोटापा नियंत्रण का भरोसेमंद सपोर्ट।")
-            copy_en = {
-                "headline": headline_en,
-                "trust_line": trust_en,
-                "cta": cta_en,
-            }
-            copy_hi = {
-                "headline": headline_hi,
-                "trust_line": trust_hi,
-                "cta": cta_hi,
-            }
-
-        ad_payload = {
-            "format": fmt,
-            "headline_angle": "mechanism",
-            "concept_angle": concept_ids["concept_angle"],
-            "persona": {
-                "number": persona_num,
-                "name": persona_name,
-                "pain_en": pain_en,
-                "desire_en": desire_en,
-                "friction_en": friction_en,
-                "proof_needed_en": proof_en,
-                "tone_cue_en": tone_en,
-                "pain_hi": pain_hi,
-                "desire_hi": desire_hi,
-                "friction_hi": friction_hi,
-                "proof_needed_hi": proof_hi,
-                "tone_cue_hi": tone_hi,
-            },
-            "copy": {"EN": copy_en, "HI": copy_hi},
-        }
-        hypothesis = item.get("hypothesis") if isinstance(item.get("hypothesis"), dict) else None
-        if hypothesis:
-            ad_payload["hypothesis"] = hypothesis
-        for key in [
-            "visual_archetype",
-            "visual_pattern_reused_from_run_id",
-            "visual_pattern_reuse_key",
-            "creative_index",
-            "creative_total",
-            "background_group_key",
-        ]:
-            if key in item:
-                ad_payload[key] = item[key]
-        ads.append(ad_payload)
-
-    return {"default_aspect_ratio": "4:5", "ads": ads}
-
-
 def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], run_dir: Path, reserved_batch: str | None = None, language_mode: str | None = None) -> dict[str, Any] | None:
-    api_url = (config.get("opencode_api_url") or "").strip()
+    api_url = (config.get("opencode_api_url") or "").strip() or DEFAULT_OPENCODE_API_URL
     api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
     model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
     config["opencode_model"] = model
@@ -2496,8 +2375,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     if not provider and "/" in model:
         provider = model.split("/", 1)[0]
     config["opencode_provider"] = provider
-    if not api_url:
-        return None
 
     print(f"[call_opencode_compatible] api_url={api_url}, model={model}", file=sys.stderr)
 
@@ -2653,8 +2530,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         all_items = context.get("ads") or []
         total_items = len(all_items)
         batch_size = int(config.get("batch_size") or 10)
-        target_langs_map = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
-
         def _build_previous_same_format(fmt: str, persona_num: int | None) -> list[dict[str, Any]]:
             result: list[dict[str, Any]] = []
             for prev in generated_ads:
@@ -2709,12 +2584,12 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 "context": build_generation_payload_for_llm(batch_context),
                 "already_used_ads_DO_NOT_REUSE": previous_same_format,
                 "constraints": {
-                    "language": target_langs_map.get(language_mode, ["EN", "HI"]),
+                    "language": TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"]),
                     "language_mode": language_mode,
                     "return_json_only": True,
                 },
             }
-            target_langs_list = target_langs_map.get(language_mode, ["EN", "HI"])
+            target_langs_list = TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"])
             hyp_meta = first_ad.get("hypothesis") if isinstance(first_ad.get("hypothesis"), dict) else {}
             hyp_type = str(hyp_meta.get("type") or "none").strip().lower()
             concept_angle_rules = ""
@@ -5677,7 +5552,6 @@ async def api_run_execute(
             concept = copy_req.get("concept_variation") or {}
             if hyp_type == "concept_angle" and variant:
                 concept["concept_angle"] = _framework_item("concept_angle", variant)
-                _set_active_support_line_strategy(copy_req, "by_concept_angle", variant)
                 direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
                 entry = COPY_ARCH.get("headline_architectures", {}).get("concept_angle", {}).get(variant)
                 if isinstance(entry, dict):
@@ -5685,7 +5559,6 @@ async def api_run_execute(
                     copy_req["creative_direction"] = direction
             elif hyp_type == "hook_structure" and variant:
                 concept["hook_structure_override"] = variant
-                _set_active_support_line_strategy(copy_req, "by_hook_structure", variant)
                 direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
                 entry = COPY_ARCH.get("headline_architectures", {}).get("hook_structure", {}).get(variant)
                 if isinstance(entry, dict):
@@ -5745,20 +5618,17 @@ def _run_pipeline_background(
         language_mode = assembler_language_mode(cfg)
         llm_mode = "opencode"
         copy_json = call_opencode_compatible(cfg, full_context, run_dir, reserved_batch=reserved_batch, language_mode=language_mode)
-        used_template_fallback = False
         if not copy_json:
-            llm_mode = "fallback_template"
-            used_template_fallback = True
-            (run_dir / "logs" / "opencode_fallback.txt").write_text(
-                "OpenCode copy generation unavailable; using deterministic schema-compatible fallback copy.\n", encoding="utf-8")
-            copy_json = build_template_copy(full_context, run_dir.name)
+            error_msg = "OpenCode copy generation unavailable (no LLM response) and fallback template has been removed."
+            (run_dir / "partial").mkdir(parents=True, exist_ok=True)
+            (run_dir / "partial" / "error.txt").write_text(error_msg, encoding="utf-8")
+            print(f"[PIPELINE ERROR] {error_msg}", file=sys.stderr)
+            return
         opencode_failures = copy_json.pop("_opencode_failures", []) if isinstance(copy_json, dict) else []
         opencode_warnings = copy_json.pop("_opencode_warnings", []) if isinstance(copy_json, dict) else []
         opencode_session_rollovers = int(copy_json.pop("_opencode_session_rollovers", 0) or 0) if isinstance(copy_json, dict) else 0
-        if opencode_failures and llm_mode == "opencode":
+        if opencode_failures:
             llm_mode = "opencode_partial_fallback"
-            (run_dir / "logs" / "opencode_fallback.txt").write_text(
-                "Some OpenCode ad generations failed; normalize_generated_copy filled those outputs with deterministic template copy.\n\n" + "\n\n---\n\n".join(opencode_failures), encoding="utf-8")
         copy_json = normalize_generated_copy(copy_json, full_context, run_dir.name)
         copy_json = strip_internal_markers_from_payload(copy_json)
         copy_json = enforce_unique_ctas(copy_json, full_context)
@@ -5768,9 +5638,10 @@ def _run_pipeline_background(
             locks = collect_background_reuse_locks(reuse_backgrounds_from_run_id)
             copy_json, applied_locks = apply_background_reuse_locks(copy_json, locks, share_across_personas=bool(cfg.get("share_background_across_personas")))
             (run_dir / "context" / "background_reuse.json").write_text(json.dumps({"source_run_id": reuse_backgrounds_from_run_id, "available_locks": len(locks), "applied_ads": applied_locks, "share_background_across_personas": bool(cfg.get("share_background_across_personas"))}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        generated_copy_error = validate_generated_copy_payload(copy_json, ads_context)
+        generated_copy_error = validate_generated_copy_payload(copy_json, ads_context, language_mode)
         if generated_copy_error:
             (run_dir / "logs" / "opencode_error.txt").write_text(generated_copy_error + "\n\nGenerated payload:\n" + json.dumps(copy_json, ensure_ascii=False, indent=2), encoding="utf-8")
+            (run_dir / "partial").mkdir(parents=True, exist_ok=True)
             (run_dir / "partial" / "error.txt").write_text(f"OpenCode copy generation returned incomplete copy: {generated_copy_error}", encoding="utf-8")
             print(f"[PIPELINE ERROR] {generated_copy_error}", file=sys.stderr)
             return
@@ -5782,6 +5653,7 @@ def _run_pipeline_background(
         if assembler_result.returncode != 0:
             assembler_error = assembler_result.stderr or assembler_result.stdout
             (run_dir / "logs" / "assembler_error.txt").write_text(assembler_error, encoding="utf-8")
+            (run_dir / "partial").mkdir(parents=True, exist_ok=True)
             (run_dir / "partial" / "error.txt").write_text(f"Prompt assembly failed: {assembler_error}", encoding="utf-8")
             print(f"[PIPELINE ERROR] Prompt assembly failed: {assembler_error}", file=sys.stderr)
             return
@@ -5791,17 +5663,9 @@ def _run_pipeline_background(
         manifest = collect_run_result(run_dir, batch, image_generated=False)
         manifest["llm_mode"] = llm_mode
         manifest["copy_source"] = "opencode generated copy"
-        if llm_mode == "fallback_template":
-            manifest["copy_source"] = "deterministic fallback template"
-        elif llm_mode == "opencode_partial_fallback":
-            manifest["copy_source"] = f"opencode generated copy with template fallback for {len(opencode_failures)} failed ad(s)"
         if opencode_failures:
             manifest["copy_generation_failures"] = len(opencode_failures)
-            manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
-        if used_template_fallback:
-            manifest["copy_generation_failures"] = max(int(manifest.get("copy_generation_failures") or 0), 1)
-            manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
-            manifest["copy_generation_notes"] = ["OpenCode copy generation unavailable; deterministic fallback copy was used."]
+            manifest["copy_generation_notes"] = [f"{len(opencode_failures)} ad(s) had generation failures"]
         if opencode_warnings:
             manifest["copy_generation_warnings"] = len(opencode_warnings)
             manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
@@ -5828,6 +5692,7 @@ def _run_pipeline_background(
         print(f"[PIPELINE DONE] Run {run_dir.name} completed, batch={batch}", file=sys.stderr)
     except Exception as exc:
         (run_dir / "logs" / "pipeline_error.txt").write_text(f"Pipeline background task failed: {exc}\n{traceback.format_exc()}", encoding="utf-8")
+        (run_dir / "partial").mkdir(parents=True, exist_ok=True)
         (run_dir / "partial" / "error.txt").write_text(f"Pipeline failed: {exc}", encoding="utf-8")
         print(f"[PIPELINE ERROR] {exc}", file=sys.stderr)
 

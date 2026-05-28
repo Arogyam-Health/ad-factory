@@ -47,7 +47,6 @@ SUPPORTED_CONCEPT_ANGLES = {
     "comparison",
     "offer",
 }
-SUPPORTED_CONCEPT_STRUCTURES = {"pas", "bab", "fab", "four_us", "pab"}
 HEADLINE_ANGLE_TO_CONCEPT = {
     "pain": "pain_point",
     "objection": "comparison",
@@ -55,13 +54,6 @@ HEADLINE_ANGLE_TO_CONCEPT = {
     "time": "offer",
     "proof": "social_proof",
     "sacrifice_reduction": "comparison",
-}
-FORMAT_DEFAULT_STRUCTURE = {
-    "HERO": "pab",
-    "BA": "bab",
-    "TEST": "pas",
-    "FEAT": "fab",
-    "UGC": "pas",
 }
 
 def _load_visual_archetypes() -> dict[str, list[dict[str, Any]]]:
@@ -269,21 +261,10 @@ def clean_id(value: Any) -> str:
 
 def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]) -> dict[str, Any]:
     angle = clean_id(ad.get("concept_angle"))
-    structure = clean_id(ad.get("concept_structure"))
-    explicit = bool(angle or structure)
-
     if angle not in SUPPORTED_CONCEPT_ANGLES:
         headline_angle = clean_id(ad.get("headline_angle"))
         angle = HEADLINE_ANGLE_TO_CONCEPT.get(headline_angle, "desired_outcome")
-
-    if structure not in SUPPORTED_CONCEPT_STRUCTURES:
-        structure = FORMAT_DEFAULT_STRUCTURE.get(fmt, "four_us")
-
-    return {
-        "concept_angle": angle,
-        "concept_structure": structure,
-        "explicit": explicit,
-    }
+    return {"concept_angle": angle}
 
 
 def append_concept_combo_index(
@@ -302,7 +283,6 @@ def append_concept_combo_index(
             "format": fmt,
             "persona_number": persona_number,
             "concept_angle": concept["concept_angle"],
-            "concept_structure": concept["concept_structure"],
         }
     )
     if len(recent) > 500:
@@ -603,7 +583,6 @@ def render_prompt(
             f"- Proof needed: {proof}",
             f"- Tone cue: {tone}",
             f"- Concept angle: {concept['concept_angle']}",
-            f"- Concept structure: {concept['concept_structure']}",
             "- Concept path is strategy only; do not render these labels on-image.",
         ]
     )
@@ -1015,7 +994,6 @@ def main() -> int:
                 "background_group_key": background_group_key,
                 "headline_angle": angle or None,
                 "concept_angle": concept.get("concept_angle", ""),
-                "concept_structure": concept.get("concept_structure", ""),
                 "hypothesis": ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {},
                 "hypothesis_type": (ad.get("hypothesis") or {}).get("type", "") if isinstance(ad.get("hypothesis"), dict) else "",
                 "hypothesis_variant": (ad.get("hypothesis") or {}).get("variant", "") if isinstance(ad.get("hypothesis"), dict) else "",
@@ -1083,7 +1061,6 @@ def main() -> int:
             "persona_name": persona["name"],
             "headline_angle": angle or None,
             "concept_angle": concept["concept_angle"],
-            "concept_structure": concept["concept_structure"],
             "visual_archetype": visual_archetype["id"],
             "headline_en": headline_en,
             "headline_hi": headline_hi,

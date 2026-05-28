@@ -363,7 +363,6 @@ def build_test_variables(job: PromptJob, prompt_metadata: dict[str, Any], effect
         "headline_angle": prompt_metadata.get("headline_angle", ""),
         "awareness_stage": prompt_metadata.get("awareness_stage", ""),
         "concept_angle": prompt_metadata.get("concept_angle", ""),
-        "concept_structure": prompt_metadata.get("concept_structure", ""),
         "visual_pattern": visual_pattern,
         "visual_archetype": visual_archetype,
         "background": prompt_metadata.get("background", {}),

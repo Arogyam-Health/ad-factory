@@ -276,7 +276,6 @@ def render_prompt(
     persona_tone: str,
     awareness_stage: str,
     concept_angle: str,
-    concept_structure: str,
     exact_on_image_copy_block: str,
     bg: dict[str, Any],
     bg_seed: int,
@@ -365,7 +364,6 @@ def render_prompt(
         f"- Tone cue: {tone}",
         f"- Awareness stage: {awareness_stage}",
         f"- Concept angle: {concept_angle}",
-        f"- Concept structure: {concept_structure}",
         "- Concept path is strategy only; do not render these labels on-image.",
     ])
     lines.append("")
@@ -596,7 +594,6 @@ def main() -> int:
         persona_tone = row.get("persona_tone", "").strip()
         awareness_stage = row.get("persona_awareness_stage", "").strip() or row.get("awareness_stage", "").strip()
         concept_angle = row.get("concept_angle", "").strip()
-        concept_structure = row.get("concept_structure", "").strip()
         exact_block = row.get("exact_on_image_copy_block", "").strip()
         headline_copy = row.get("headline_copy", "").strip()
 
@@ -633,7 +630,6 @@ def main() -> int:
             persona_tone=persona_tone,
             awareness_stage=awareness_stage,
             concept_angle=concept_angle,
-            concept_structure=concept_structure,
             exact_on_image_copy_block=exact_block,
             bg=bg,
             bg_seed=bg_seed,
@@ -665,10 +661,8 @@ def main() -> int:
             "creative_total": creative_total,
             "multiplier": creative_total,
             "background_group_key": background_group_key,
-            "headline_angle": concept_structure,
             "awareness_stage": awareness_stage,
             "concept_angle": concept_angle,
-            "concept_structure": concept_structure,
             "hypothesis": {},
             "hypothesis_type": hypothesis_type,
             "hypothesis_variant": hypothesis_variant,
@@ -724,7 +718,6 @@ def main() -> int:
             },
             "awareness_stage": awareness_stage,
             "concept_angle": concept_angle,
-            "concept_structure": concept_structure,
             "hypothesis": {
                 "type": hypothesis_type,
                 "variant": hypothesis_variant,

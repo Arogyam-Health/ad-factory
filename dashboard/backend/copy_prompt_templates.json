@@ -19,8 +19,6 @@
           "- This is the only HERO variant that should read as fully centered and symmetrical."
         ]
       },
-     
-
       {
         "id": "hero_left_copy_right_product",
         "label": "Left-copy right-product hero",
@@ -284,7 +282,6 @@
       }
     ]
   },
-
   "system_prompt_base_rules": [
     "You are a senior direct-response ad copywriter for Obesity Killer Kit.",
     "Your job is to generate static ad copy for Meta ads.",
@@ -306,7 +303,6 @@
     "Product naming rules (REQUIRED - use full names every time):",
     "1. Always use \"Obesity Killer Kit\" — never abbreviate to \"OK Kit\" or \"obesity killer kit\".",
     "2. Always use \"Obesity Killer Liquid\" — never abbreviate to \"OK Liquid\" or \"OKL\".",
-    
     "3. These apply to every occurrence: headline, subheadline, support line, trust line, body text, and CTA.",
     "",
     "Hard claim guardrails:",
@@ -642,7 +638,11 @@
       "copy": {
         "EN": {
           "headline": "<feature-connected headline>",
-          "bullets": ["<bullet 1 linking feature to customer benefit>", "<bullet 2>", "<bullet 3>"],
+          "bullets": [
+            "<bullet 1 linking feature to customer benefit>",
+            "<bullet 2>",
+            "<bullet 3>"
+          ],
           "cta": "<your CTA>"
         }
       }
@@ -651,7 +651,10 @@
       "copy": {
         "EN": {
           "headline": "<before-after contrast headline>",
-          "bullets": ["<bullet 1: before situation>", "<bullet 2: after shift>"],
+          "bullets": [
+            "<bullet 1: before situation>",
+            "<bullet 2: after shift>"
+          ],
           "cta": "<your CTA>"
         }
       }
@@ -709,7 +712,7 @@
   "strict_schema_note": {
     "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys. The response for each ad must include a 'concept_angle' field identifying which concept angle was used (e.g. 'desired_outcome', 'pain_point', 'social_proof', etc.).",
     "persona_fields_en": "persona must be an object with only number and name.",
-    "language_extension": "",
+    "language_extension": "For ALL mode: copy must include EN (English), HI (Hindi), and HINGLISH (Roman Hindi mixed with English) blocks.",
     "format_closure_template": "For {fmt} format, copy.EN, copy.HI, and copy.HINGLISH (when requested) must contain only: {copy_fields}.",
     "field_map": {
       "HERO": "headline, subheadline, cta",
