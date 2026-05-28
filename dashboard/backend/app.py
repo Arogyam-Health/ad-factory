@@ -393,11 +393,11 @@ def _headline_architecture_group(group: str) -> str:
 
 
 def _entry_direction(entry: dict[str, Any]) -> str:
-    return str(entry.get("intent") or entry.get("direction") or entry.get("template") or "")
+    return str(entry.get("meaning") or entry.get("intent") or entry.get("direction") or entry.get("template") or "")
 
 
 def _compact_creative_entry(entry_id: str, entry: dict[str, Any]) -> dict[str, Any]:
-    allowed_keys = ["intent", "headline_role", "support_role", "avoid_skeletons", "avoid"]
+    allowed_keys = ["meaning", "intent", "headline_role", "support_role", "avoid_skeletons", "avoid"]
     out: dict[str, Any] = {"id": entry_id}
     for key in allowed_keys:
         value = entry.get(key)
@@ -479,24 +479,22 @@ def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index
 
 
 def compact_format_rules_for_copy(fmt: str, format_rules: dict[str, Any]) -> dict[str, Any]:
-    return {"format": fmt.strip().upper(), "rules": []}
+    return {"format": fmt, "rules": []}
 
-def build_ad_copy_system_prompt(fmt: str) -> str:
+def build_ad_copy_system_prompt(fmt: str, formats: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
     prompts = COPY_PROMPTS
     base_rules = prompts.get("system_prompt_base_rules", [])
-    format_rules = prompts.get("system_prompt_format_rules", {})
-    if fmt == "ALL":
-        fmt_lines = []
-        for f in ["HERO", "UGC", "BA", "FEAT", "TEST"]:
-            lines = format_rules.get(f, [])
-            if lines:
-                fmt_lines.append(f"Ad format rules for {f}:")
-                fmt_lines.extend(lines)
-                fmt_lines.append("")
-        return " ".join(base_rules + fmt_lines)
-    fmt_rules = format_rules.get(fmt, [])
-    return " ".join(base_rules + fmt_rules)
+    parts = list(base_rules)
+    if formats:
+        fr_map = prompts.get("system_prompt_format_rules", {})
+        for f in sorted(formats):
+            rules = fr_map.get(f)
+            if rules:
+                parts.append("")
+                parts.append(f"Ad format rules for {f}:")
+                parts.extend(rules)
+    return "\n".join(parts)
 
 
 def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> str:
@@ -2600,7 +2598,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             chunk_formats = sorted({str(ad.get("format") or "").strip().upper() for ad in chunk_ads if isinstance(ad, dict)})
             cli_prompt = (
                 "SYSTEM:\n"
-                f"{build_ad_copy_system_prompt('ALL')}{concept_angle_rules}\n\n"
+                f"{build_ad_copy_system_prompt('ALL', formats=chunk_formats)}{concept_angle_rules}\n\n"
                 "USER_PAYLOAD_JSON:\n"
                 f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
                 f"{build_ad_prompt_tail('ALL', formats=chunk_formats)}\n\n"
@@ -4326,7 +4324,7 @@ def _get_architecture_definition(arch: dict[str, Any], group: str, variant: str)
     headline_archs = arch.get("headline_architectures") or {}
     group_data = headline_archs.get(group) or {}
     variant_data = group_data.get(variant) or {}
-    return str(variant_data.get("intent") or variant_data.get("direction") or variant_data.get("template") or "").strip()
+    return str(variant_data.get("meaning") or variant_data.get("intent") or variant_data.get("direction") or variant_data.get("template") or "").strip()
 
 
 def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt_rel_path: str, batch_vn: str = "") -> dict[str, Any]:
@@ -5552,18 +5550,8 @@ async def api_run_execute(
             concept = copy_req.get("concept_variation") or {}
             if hyp_type == "concept_angle" and variant:
                 concept["concept_angle"] = _framework_item("concept_angle", variant)
-                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
-                entry = COPY_ARCH.get("headline_architectures", {}).get("concept_angle", {}).get(variant)
-                if isinstance(entry, dict):
-                    direction["concept_angle"] = _compact_creative_entry(variant, entry)
-                    copy_req["creative_direction"] = direction
             elif hyp_type == "hook_structure" and variant:
                 concept["hook_structure_override"] = variant
-                direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
-                entry = COPY_ARCH.get("headline_architectures", {}).get("hook_structure", {}).get(variant)
-                if isinstance(entry, dict):
-                    direction["hook_structure"] = _compact_creative_entry(variant, entry)
-                    copy_req["creative_direction"] = direction
             copy_req["concept_variation"] = concept
             copy_req["selection_mode"] = "locked"
         if not concept.get("concept_angle"):
