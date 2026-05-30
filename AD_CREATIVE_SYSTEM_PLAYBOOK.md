@@ -203,7 +203,7 @@ Headline construction sequence:
 Concept angle menu:
 - `pain_point`: open with the specific problem.
 - `desired_outcome`: open with the result or felt outcome.
-- `social_proof`: open with others' trust, user scale, or review logic.
+- `customer_scale_70k`: open with others' trust, user scale, or review logic.
 - `authority`: open with doctor formulation, Ayurveda credibility, or expertise.
 - `story`: open with a real-life routine moment or first-person situation.
 - `curiosity`: open with an information gap or mechanism question.
@@ -450,7 +450,7 @@ In production mode:
 - persona_name: readable name
 - headline_angle: pain / objection / mechanism / time / proof / sacrifice_reduction
 - awareness_stage: unaware / problem_aware / solution_aware / product_aware
-- concept_angle: pain_point / desired_outcome / social_proof / authority / story / curiosity / comparison / offer
+- concept_angle: pain_point / desired_outcome / customer_scale_70k / authority / story / curiosity / comparison / offer
 - concept_structure: pas / bab / fab / four_us
 - headline_en: exact English headline used
 - headline_hi: exact Hindi headline used
@@ -465,7 +465,7 @@ In production mode:
 - opening_pattern_4tok_en/opening_pattern_4tok_hi: first 4-token normalized opening pattern of headline
 - copy_skeleton: high-level copy structure tag (for example: pain_mechanism_time)
 - hook_structure_class: hook composition class (question_led / contrast_loop / command_led / confession_led / proof_led)
-- proof_style_class: trust framing class (social_proof / mechanism_explainer / authority_anchor / routine_clarity / objection_flip)
+- proof_style_class: trust framing class (customer_scale_70k / mechanism_explainer / authority_anchor / routine_clarity / objection_flip)
 - cta_voice_class: CTA intent class (urgent_start / guided_next_step / reassurance_start / challenge_action / discovery_action)
 - language: EN / HI / BOTH
 - output_quality: approved / rejected / pending
@@ -495,7 +495,7 @@ Every ad must be tagged before finalization using these 4 axes and rotated inten
   - `confession_led`
   - `proof_led`
 - proof_style_class:
-  - `social_proof`
+  - `customer_scale_70k`
   - `mechanism_explainer`
   - `authority_anchor`
   - `routine_clarity`
@@ -523,7 +523,7 @@ Concept-combo matrix (mandatory for headline ideation):
 - concept_angle:
   - `pain_point`
   - `desired_outcome`
-  - `social_proof`
+  - `customer_scale_70k`
   - `authority`
   - `story`
   - `curiosity`
@@ -1351,7 +1351,7 @@ Follow these rules strictly:
 - Headline must do two things: scroll stop + pain-solution fit.
 - Every ad must use one concept path: awareness_stage + concept_angle + concept_structure.
 - Awareness stages are unaware, problem_aware, solution_aware, and product_aware. If missing, infer from persona pain/friction/proof needed.
-- Concept angles are pain_point, desired_outcome, social_proof, authority, story, curiosity, comparison, and offer.
+- Concept angles are pain_point, desired_outcome, customer_scale_70k, authority, story, curiosity, comparison, and offer.
 - Concept structures are pas, bab, fab, and four_us.
 - Use the 4U lens while writing headlines: Useful, honestly Urgent, Unique, and Ultra-specific. This is an AI/operator writing guideline, not a machine-scored blocker.
 - Caption must increase Value = (Dream Outcome x Likelihood) / (Time Delay x Sacrifice).

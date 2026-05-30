@@ -557,7 +557,7 @@
       "Identify the persona-specific headline anchor.",
       "",
       "Example:",
-      "For PCOD Support Seeker, headline anchor = PCOD/PCOS + weight loss feels harder/slower/craving-led/needs structure.",
+      "For PCOD Weight-Loss Struggler, headline anchor = PCOD/PCOS + weight loss feels harder/slower/craving-led/needs structure.",
       "",
       "Step 2:",
       "Identify the selected format and use its internal writing logic.",
@@ -710,7 +710,7 @@
     ]
   },
   "strict_schema_note": {
-    "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys. The response for each ad must include a 'concept_angle' field identifying which concept angle was used (e.g. 'desired_outcome', 'pain_point', 'social_proof', etc.).",
+    "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys. The response for each ad must include a 'concept_angle' field identifying which concept angle was used (e.g. 'desired_outcome', 'pain_point', 'customer_scale_70k', etc.).",
     "persona_fields_en": "persona must be an object with only number and name.",
     "language_extension": "For ALL mode: copy must include EN (English), HI (Hindi), and HINGLISH (Roman Hindi mixed with English) blocks.",
     "format_closure_template": "For {fmt} format, copy.EN, copy.HI, and copy.HINGLISH (when requested) must contain only: {copy_fields}.",
