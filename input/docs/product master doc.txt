@@ -1,85 +1,115 @@
 Single Source of Truth: Product Foundation Document
 PRODUCT TRUTH LIBRARY
 
-1. hunger_craving_control
+1. allowed_food_guidance
+Category: Structure
+Product Truth: The course includes clear allowed and not-allowed food guidance, so customers know what to eat.
+Use When: Confused beginners, failed dieters, support seekers.
+Avoid Saying: Eat freely without rules.
+
+2. arogyam_hospital_backing
+Category: Authority
+Product Truth: Obesity Killer Kit is linked to Arogyam Hospital & Research Center in Jodhpur.
+Use When: Trust-first buyer, authority angle, skeptical buyer, tried everything else.
+Avoid Saying: Hospital cure or disease treatment.
+
+3. caloric_deficit_support
 Category: Mechanism
-Plain-English product truth: OK Liquid helps reduce hunger and cravings, making it easier to eat less without constantly fighting food urges.
-Use when persona cares about: Snacking, sweet cravings, emotional eating, late-night eating, failed diets, PCOD/thyroid weight-loss support
-Do not say: Cures binge eating, stress, PCOD, thyroid, hormones, or medical conditions
+Product Truth: The course helps make calorie deficit easier by reducing hunger and improving consistency.
+Use When: Educated buyer, feature-led ads, skeptical users.
+Avoid Saying: Burns fat without eating less.
 
-2. clear_15_day_structure
+4. clear_15_day_structure
 Category: Structure
-Plain-English product truth: OK Kit gives a clear 15-day routine, so the customer is not guessing what to do every day.
-Use when persona cares about: Beginners, diet failure users, PCOD support seekers, skeptical buyers, event deadline users
-Do not say: Guaranteed results without following the course
+Product Truth: Obesity Killer Kit gives a clear 15-day routine. The kit includes 15 pre-packed pouches, one for each day, along with the correct quantity of tablet and powder. The course rules are simple and reduce guesswork.
+Use When: Beginners, failed dieters, busy users, event deadline, PCOD, thyroid.
+Avoid Saying: Results without following the course.
 
-3. homemade_food_fit
-Category: Food/Ease
-Plain-English product truth: The course works with regular homemade vegetables and salads. No separate meal prep is required.
-Use when persona cares about: Busy professionals, homemakers, beginners, people who hate strict dieting
-Do not say: Eat anything and still lose weight; dal as a recommended option
-
-4. low_workout_requirement
-Category: Effort
-Plain-English product truth: No heavy workout is required. Walking or yoga can support results.
-Use when persona cares about: Busy people, no-gym users, older users, low-energy users
-Do not say: No effort needed, no movement needed, no discipline needed
-
-5. tracker_coach_support
+5. coach_chat_call_support
 Category: Support
-Plain-English product truth: Tracker and coach support help customers stay consistent and resolve course-related doubts.
-Use when persona cares about: People who fall off plans, beginners, skeptical users, emotional eaters
-Do not say: Personal medical treatment or therapy
+Product Truth: Expert coaches guide customers through chat and calls, helping with course-related doubts, tracker sharing, and consistency.
+Use When: Accountability seekers, beginners, PCOD, support-dependent users.
+Avoid Saying: Medical treatment, therapy, doctor consultation for every issue.
 
-6. doctor_hospital_proof
-Category: Trust
-Plain-English product truth: The course is doctor-designed, hospital-backed, and built from Arogyam’s weight-loss experience.
-Use when persona cares about: Skeptical buyers, safety-conscious customers, natural solution seekers
-Do not say: Medical cure or disease treatment
+6. customer_scale_70k
+Category: Social Proof
+Product Truth: Obesity Killer Kit is trusted by 70,000+ customers in India.
+Use When: Skeptical buyer, social proof angle, broad trust.
+Avoid Saying: Everyone gets the same result.
 
-7. social_proof
-Category: Trust
-Plain-English product truth: Trusted by 70,000+ customers with many real customer stories and testimonials.
-Use when persona cares about: Skeptical buyers, expensive-product objectors, first-time buyers
-Do not say: Everyone will get the same result
+7. daily_tracker_data
+Category: Support
+Product Truth: Course comes with a tracker that records weight, meals, water, sleep, and steps, helping customers see progress, notice patterns, and share data with coaches for feedback.
+Use When: Office snackers, stress snackers, plateau users, accountability seekers.
+Avoid Saying: Tracker itself causes weight loss.
 
-8. natural_ayurvedic
-Category: Safety/Positioning
-Plain-English product truth: Ayurvedic and positioned as natural, with no reported side effects across thousands of users.
-Use when persona cares about: Natural solution seekers, safety-conscious buyers, medicine-averse users
-Do not say: Safe for everyone in every condition
-
-9. visible_15_day_result
-Category: Result
-Plain-English product truth: Customers can lose 3–5 kg in 15 days when they follow the course properly.
-Use when persona cares about: Event deadline users, result seekers, skeptical buyers
-Do not say: Guaranteed weight loss for everyone
-
-10. money_back_terms
-Category: Trust/Risk reversal
-Plain-English product truth: There is a money-back guarantee if the customer follows the plan and the terms are met.
-Use when persona cares about: Skeptical buyers, price-sensitive buyers
-Do not say: Unconditional refund without terms
-
-11. no_separate_meal_prep
-Category: Ease
-Plain-English product truth: Customers do not need separate diet cooking. The course can be followed with normal homemade vegetables and salads made with regular ghee or oil.
-Use when persona cares about: Busy professionals, homemakers, beginners, people tired of strict diets
-Do not say: Only boiled food, only sautéed food, fancy diet food
-
-12. daywise_pouches
+8. daywise_pouches
 Category: Structure
-Plain-English product truth: The kit has day-wise pouches, so the customer follows a fixed course instead of improvising daily.
-Use when persona cares about: Beginners, inconsistent users, people overwhelmed by diet planning
-Do not say: Magic or effortless transformation
+Product Truth: Each pouch is marked day-wise, so the customer follows a fixed course instead of figuring it out alone.
+Use When: Confused beginners, support-dependent users, structured-course ads.
+Avoid Saying: Magic routine or effortless transformation.
 
-13. craving_plus_structure
-Category: Combination
-Plain-English product truth: The product helps with cravings and gives structure, so customers are not relying only on willpower.
-Use when persona cares about: PCOD support, stress eating, diet failure, sweet cravings
-Do not say: Stops all cravings forever
+9. developed_over_decades
+Category: Authority
+Product Truth: OK Kit was developed through decades of obesity-focused Ayurvedic practice, patient learning, and refinement. This made the course effective, safe, and practical to follow.
+Use When: Trust-first buyer, authority angle, skeptical buyer, natural seekers, PCOD, thyroid, tried everything else.
+Avoid Saying: Ayurveda guarantees cure.
 
-14. Brand design system
+10. doctor_34_years
+Category: Authority
+Product Truth: Obesity Killer Kit was created by Dr. Arun Tyagi, an Ayurvedic doctor with 34 years of practice.
+Use When: Trust-first buyer, authority ads, PCOD, thyroid, natural seekers, tried everything else.
+Avoid Saying: Doctor guarantees cure.
+
+11. eat_only_when_hungry_rule
+Category: Behaviour
+Product Truth: The course encourages customers to eat only when genuinely hungry, helping them notice unnecessary eating.
+Use When: Office snacker, night snacker, stress snacker, homemaker.
+Avoid Saying: Cures emotional eating.
+
+12. eligibility_exclusions
+Category: Guardrail
+Product Truth: Not for pregnant women, women within 6 months postpartum, people actively taking insulin, and doctor-review cases like multiple psychiatric medicines or multiple surgeries.
+Use When: Safety check only.
+Avoid Saying: Suitable for everyone.
+
+13. five_minute_routine
+Category: Ease
+Product Truth: The daily product routine is simple: OK Liquid in the morning and OK Tablet plus OK Powder at night.
+Use When: Busy professionals, parents, homemakers, gym-averse users.
+Avoid Saying: Zero effort or no discipline needed.
+
+14. guided_system_not_product
+Category: Positioning
+Product Truth: Obesity Killer Kit is a guided course, not just a loose supplement or random pill.
+Use When: Tried everything else, comparison angle, failed product users.
+Avoid Saying: Other brands are fake or useless.
+
+15. harder_weight_loss_context
+Category: Relevance
+Product Truth: Obesity Killer Kit is relevant for people whose weight-loss journey feels harder due to PCOD, thyroid, menopause, genetics, medication, or chronic conditions.
+Use When: PCOD, thyroid, menopause, 35+ slow progress.
+Avoid Saying: Treats conditions, fixes hormones, replaces medicine.
+
+16. hero_3_5kg_15days
+Category: Result
+Product Truth: Obesity Killer Kit is designed to help users lose 3–5 kg in 15 days when followed properly.
+Use When: Result-led, offer, event deadline, skeptical buyer, hero ads.
+Avoid Saying: Guaranteed result for everyone.
+
+17. homemade_food_guidance
+Category: Food Guidance
+Product Truth: The course works with homemade vegetables and salads within course food guidance. No complex meal prep is required. Users can choose from allowed foods based on their preferences.
+Use When: Busy users, homemakers, parents, beginners.
+Avoid Saying: Normal chapati/rice freely, eat anything and lose weight.
+
+18. hunger_craving_control
+Category: Mechanism
+Product Truth: OK Liquid helps reduce hunger and cravings, making it easier to eat less and stay in a calorie deficit without constantly fighting food urges. This means the customer is not relying only on willpower to follow the plan.
+Use When: Hungry all the time, stress snacking, late-night eating, office snacking, PCOD, failed diets.
+Avoid Saying: Cures binge eating, stress, PCOD, thyroid, or hormones.
+
+19. Brand design system
 Typography:
 - Headline: Poppins Bold
 - Body: Poppins Regular
