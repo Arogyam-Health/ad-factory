@@ -25903,6 +25903,231 @@
       "test_group": "",
       "variant_variable": "concept_angle",
       "variant_value": "authority"
+    },
+    {
+      "id": "entry_551",
+      "timestamp": "2026-05-30T10:24:09Z",
+      "format": "HERO",
+      "persona_number": 1,
+      "persona_name": "Always Hungry",
+      "headline_angle": null,
+      "concept_angle": "pain_point",
+      "visual_archetype": "hero_close_crop_pedestal",
+      "headline_en": "Always hungry? Make weight loss feel easier",
+      "headline_hi": "",
+      "support_line_en": "When cravings keep pulling you back to snacks, Obesity Killer Liquid helps reduce hunger and cravings so eating less feels more doable during the Obesity Killer Kit course",
+      "support_line_hi": "",
+      "cta_en": "Learn More",
+      "cta_hi": "",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-464",
+      "background_name": "Minimalist dark floor",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v67; aspect_ratio=4:5; seed=937021702; visual_archetype=hero_close_crop_pedestal",
+      "opening_pattern_4tok_en": "always_hungry_make_weight",
+      "opening_pattern_4tok_hi": "",
+      "copy_skeleton": "question_mechanism_cta",
+      "hook_structure_class": "question_led",
+      "proof_style_class": "mechanism_explainer",
+      "cta_voice_class": "discovery_action",
+      "headline_word_count": 7,
+      "support_line_word_count": 28,
+      "has_protocol_mechanics": true,
+      "has_social_proof_number": false,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_552",
+      "timestamp": "2026-05-30T10:24:09Z",
+      "format": "BA",
+      "persona_number": 2,
+      "persona_name": "Busy Professional",
+      "headline_angle": null,
+      "concept_angle": "desired_outcome",
+      "visual_archetype": "ba_emotion_to_control",
+      "headline_en": "Office days: no time for diet charts, weight stays stuck",
+      "headline_hi": "",
+      "support_line_en": "Obesity Killer Kit keeps it simple: Obesity Killer Liquid in the morning + a quick night routine, with homemade veggies/salads within course food guidance",
+      "support_line_hi": "",
+      "cta_en": "See How It Works",
+      "cta_hi": "",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-261",
+      "background_name": "Stone pestle closeup",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v67; aspect_ratio=4:5; seed=937021702; visual_archetype=ba_emotion_to_control",
+      "opening_pattern_4tok_en": "office_days_no_time",
+      "opening_pattern_4tok_hi": "",
+      "copy_skeleton": "pain_mechanism_time",
+      "hook_structure_class": "proof_led",
+      "proof_style_class": "routine_clarity",
+      "cta_voice_class": "discovery_action",
+      "headline_word_count": 10,
+      "support_line_word_count": 24,
+      "has_protocol_mechanics": true,
+      "has_social_proof_number": false,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_553",
+      "timestamp": "2026-05-30T10:24:09Z",
+      "format": "TEST",
+      "persona_number": 3,
+      "persona_name": "Stress Snacker",
+      "headline_angle": null,
+      "concept_angle": "desired_outcome",
+      "visual_archetype": "test_minimal_review_poster",
+      "headline_en": "Trusted by 70,000+ customers in India",
+      "headline_hi": "\"मुझे आखिर ऐसा आसान सिस्टम चाहिए जो रोज निभ सके वाला रूटीन मिला जो वजन घटाने में मदद करता है।\"",
+      "support_line_en": "Many choose Obesity Killer Kit because Obesity Killer Liquid helps reduce hunger and cravings when stress triggers “just one snack.”",
+      "support_line_hi": "",
+      "cta_en": "Learn More",
+      "cta_hi": "",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-018",
+      "background_name": "Festive subtle lights",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v67; aspect_ratio=4:5; seed=937021702; visual_archetype=test_minimal_review_poster",
+      "opening_pattern_4tok_en": "trusted_by_customers_in",
+      "opening_pattern_4tok_hi": "मुझे_आखिर_ऐसा_आसान",
+      "copy_skeleton": "proof_then_routine",
+      "hook_structure_class": "proof_led",
+      "proof_style_class": "social_proof",
+      "cta_voice_class": "discovery_action",
+      "headline_word_count": 6,
+      "support_line_word_count": 20,
+      "has_protocol_mechanics": true,
+      "has_social_proof_number": true,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_554",
+      "timestamp": "2026-05-30T10:24:09Z",
+      "format": "FEAT",
+      "persona_number": 4,
+      "persona_name": "Stuck Scale Dieter",
+      "headline_angle": null,
+      "concept_angle": "comparison",
+      "visual_archetype": "feat_mechanism_steps",
+      "headline_en": "Scale not moving? Try a clear 15-day course",
+      "headline_hi": "",
+      "support_line_en": "",
+      "support_line_hi": "",
+      "cta_en": "Start the Course",
+      "cta_hi": "",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [
+        "Obesity Killer Kit gives a defined 15-day routine so you stop guessing what to change",
+        "Built-in structure makes consistency easier than random diet switches",
+        "Daily tracker helps you record weight, meals, water, sleep, and steps to spot patterns",
+        "Share tracker data with coaches for course-related guidance"
+      ],
+      "bullets_hi": [],
+      "background_slot": "BG-126",
+      "background_name": "Steel shelf industrial",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v67; aspect_ratio=4:5; seed=937021702; visual_archetype=feat_mechanism_steps",
+      "opening_pattern_4tok_en": "scale_not_moving_try",
+      "opening_pattern_4tok_hi": "",
+      "copy_skeleton": "micro_story_then_action",
+      "hook_structure_class": "question_led",
+      "proof_style_class": "routine_clarity",
+      "cta_voice_class": "urgent_start",
+      "headline_word_count": 8,
+      "support_line_word_count": 0,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": true,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
+    },
+    {
+      "id": "entry_555",
+      "timestamp": "2026-05-30T10:24:09Z",
+      "format": "UGC",
+      "persona_number": 5,
+      "persona_name": "PCOD Weight-Loss Struggler",
+      "headline_angle": null,
+      "concept_angle": "story",
+      "visual_archetype": "ugc_morning_routine",
+      "headline_en": "With PCOD, my weight loss felt extra hard",
+      "headline_hi": "",
+      "support_line_en": "I needed something simple for 15 days. Obesity Killer Kit gave me a clear routine, and Obesity Killer Liquid helped reduce cravings so I wasn’t fighting urges all day.",
+      "support_line_hi": "",
+      "cta_en": "Check Eligibility",
+      "cta_hi": "",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-408",
+      "background_name": "Afternoon kitchen radio",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v67; aspect_ratio=4:5; seed=937021702; visual_archetype=ugc_morning_routine",
+      "opening_pattern_4tok_en": "with_pcod_my_weight",
+      "opening_pattern_4tok_hi": "",
+      "copy_skeleton": "pain_mechanism_time",
+      "hook_structure_class": "confession_led",
+      "proof_style_class": "routine_clarity",
+      "cta_voice_class": "guided_next_step",
+      "headline_word_count": 8,
+      "support_line_word_count": 29,
+      "has_protocol_mechanics": true,
+      "has_social_proof_number": true,
+      "background_scene_category": "kitchen",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
     }
   ],
   "indexes": {
@@ -26455,7 +26680,12 @@
         "Trusted by 70,000+ customers who struggle with cravings",
         "Back-to-Back Calls, Weight Loss Still Pending?",
         "Stress Eating Blocking Weight Loss?",
-        "Busy Schedule, Weight Loss Still Pending?"
+        "Busy Schedule, Weight Loss Still Pending?",
+        "Always hungry? Make weight loss feel easier",
+        "Office days: no time for diet charts, weight stays stuck",
+        "Trusted by 70,000+ customers in India",
+        "Scale not moving? Try a clear 15-day course",
+        "With PCOD, my weight loss felt extra hard"
       ],
       "cta_en": [
         "Get the 15-day guided kit",
@@ -27005,7 +27235,12 @@
         "Learn More",
         "See How It Works",
         "See How It Works",
-        "Start the Course"
+        "Start the Course",
+        "Learn More",
+        "See How It Works",
+        "Learn More",
+        "Start the Course",
+        "Check Eligibility"
       ],
       "support_line_en": [
         "Strict diets flare acidity and constipation; this doctor-formulated Ayurvedic system supports 3–5 kg loss in 15 days with digestion support and homemade-food fit.",
@@ -27433,7 +27668,10 @@
         "Obesity Killer Kit gives you a clear 15-day day-wise routine, so you’re not guessing what to do each day.",
         "Obesity Killer Kit is doctor-designed, hospital-backed, and Obesity Killer Liquid helps reduce hunger and cravings so the routine feels easier to follow.",
         "Obesity Killer Kit gives a clear day-wise routine that fits regular homemade food, with no heavy workout required.",
-        "Obesity Killer Kit is a doctor-designed, hospital-backed 15-day routine that works with regular homemade vegetables and salads, with no heavy workout required."
+        "Obesity Killer Kit is a doctor-designed, hospital-backed 15-day routine that works with regular homemade vegetables and salads, with no heavy workout required.",
+        "When cravings keep pulling you back to snacks, Obesity Killer Liquid helps reduce hunger and cravings so eating less feels more doable during the Obesity Killer Kit course",
+        "Many choose Obesity Killer Kit because Obesity Killer Liquid helps reduce hunger and cravings when stress triggers “just one snack.”",
+        "I needed something simple for 15 days. Obesity Killer Kit gave me a clear routine, and Obesity Killer Liquid helped reduce cravings so I wasn’t fighting urges all day."
       ],
       "bullets_en": [
         "Meetings, travel, late lunches and your plan collapses by day 3",
@@ -27789,7 +28027,11 @@
         "Stress day = random snacking + “I’ll restart tomorrow”",
         "A clear 15-day plan with Obesity Killer Kit that helps reduce hunger and cravings, so sticking to weight loss feels more doable",
         "Stress hits and you reach for snacks, then feel stuck with weight loss.",
-        "Follow a doctor-designed, hospital-backed 15-day course where Obesity Killer Liquid helps reduce hunger and cravings so eating less feels easier."
+        "Follow a doctor-designed, hospital-backed 15-day course where Obesity Killer Liquid helps reduce hunger and cravings so eating less feels easier.",
+        "Obesity Killer Kit gives a defined 15-day routine so you stop guessing what to change",
+        "Built-in structure makes consistency easier than random diet switches",
+        "Daily tracker helps you record weight, meals, water, sleep, and steps to spot patterns",
+        "Share tracker data with coaches for course-related guidance"
       ],
       "headline_hi": [
         "Office Snacks Ki Wajah Se Weight Loss Stop Ho Raha?",
@@ -27805,6 +28047,15 @@
       "bullets_hi": [
         "Chai ke saath biscuit/namkeen aur pantry trips bar-bar ho jaate hain",
         "Day-wise routine jise office ke saath follow karna easier lagta hai"
+      ],
+      "before_panel_en": [
+        "Office days: no time for diet charts, weight stays stuck"
+      ],
+      "bridge_en": [
+        "Obesity Killer Kit keeps it simple: Obesity Killer Liquid in the morning + a quick night routine, with homemade veggies/salads within course food guidance"
+      ],
+      "after_panel_en": [
+        "A weight-loss routine you can follow even on packed workdays"
       ]
     },
     "slot_exhaustion_tracker": {
@@ -27886,10 +28137,10 @@
           "BG-389",
           "BG-333",
           "BG-169",
-          "BG-288"
+          "BG-288",
+          "BG-464"
         ],
         "remaining": [
-          "BG-464",
           "BG-472",
           "BG-153",
           "BG-157",
@@ -28023,10 +28274,10 @@
           "BG-247",
           "BG-124",
           "BG-148",
-          "BG-279"
+          "BG-279",
+          "BG-018"
         ],
         "remaining": [
-          "BG-018",
           "BG-178",
           "BG-074",
           "BG-271",
@@ -28212,10 +28463,10 @@
           "BG-214",
           "BG-460",
           "BG-267",
-          "BG-249"
+          "BG-249",
+          "BG-261"
         ],
         "remaining": [
-          "BG-261",
           "BG-188",
           "BG-280",
           "BG-030",
@@ -28433,10 +28684,10 @@
           "BG-175",
           "BG-333",
           "BG-001",
-          "BG-459"
+          "BG-459",
+          "BG-126"
         ],
         "remaining": [
-          "BG-126",
           "BG-304",
           "BG-414",
           "BG-496",
@@ -28661,10 +28912,10 @@
           "BG-282",
           "BG-042",
           "BG-147",
-          "BG-123"
+          "BG-123",
+          "BG-408"
         ],
         "remaining": [
-          "BG-408",
           "BG-364",
           "BG-453",
           "BG-039",
@@ -30680,6 +30931,12 @@
           "timestamp": "2026-05-28T08:26:36Z",
           "background_slot": "BG-288",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_551",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "background_slot": "BG-464",
+          "background_source": "catalog"
         }
       ],
       "TEST": [
@@ -31096,6 +31353,12 @@
           "timestamp": "2026-05-28T08:21:18Z",
           "background_slot": "BG-279",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_553",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "background_slot": "BG-018",
+          "background_source": "catalog"
         }
       ],
       "BA": [
@@ -31500,6 +31763,12 @@
           "timestamp": "2026-05-28T08:26:36Z",
           "background_slot": "BG-249",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_552",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "background_slot": "BG-261",
+          "background_source": "catalog"
         }
       ],
       "FEAT": [
@@ -31838,6 +32107,12 @@
           "timestamp": "2026-05-28T06:32:03Z",
           "background_slot": "BG-459",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_554",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "background_slot": "BG-126",
+          "background_source": "catalog"
         }
       ],
       "UGC": [
@@ -32152,56 +32427,17 @@
           "timestamp": "2026-05-28T07:56:12Z",
           "background_slot": "BG-123",
           "background_source": "catalog"
+        },
+        {
+          "entry_id": "entry_555",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "background_slot": "BG-408",
+          "background_source": "catalog"
         }
       ]
     },
     "concept_combos": {
       "recent": [
-        {
-          "entry_id": "entry_051",
-          "timestamp": "2026-05-22T13:18:12Z",
-          "format": "HERO",
-          "persona_number": 25,
-          "awareness_stage": "solution_aware",
-          "concept_angle": "desired_outcome",
-          "concept_structure": "bab"
-        },
-        {
-          "entry_id": "entry_052",
-          "timestamp": "2026-05-22T13:18:12Z",
-          "format": "HERO",
-          "persona_number": 25,
-          "awareness_stage": "problem_aware",
-          "concept_angle": "curiosity",
-          "concept_structure": "pab"
-        },
-        {
-          "entry_id": "entry_053",
-          "timestamp": "2026-05-23T06:31:07Z",
-          "format": "HERO",
-          "persona_number": 1,
-          "awareness_stage": "problem_aware",
-          "concept_angle": "desired_outcome",
-          "concept_structure": "pab"
-        },
-        {
-          "entry_id": "entry_054",
-          "timestamp": "2026-05-23T06:31:07Z",
-          "format": "BA",
-          "persona_number": 2,
-          "awareness_stage": "problem_aware",
-          "concept_angle": "desired_outcome",
-          "concept_structure": "bab"
-        },
-        {
-          "entry_id": "entry_055",
-          "timestamp": "2026-05-23T06:31:07Z",
-          "format": "TEST",
-          "persona_number": 4,
-          "awareness_stage": "solution_aware",
-          "concept_angle": "desired_outcome",
-          "concept_structure": "pas"
-        },
         {
           "entry_id": "entry_056",
           "timestamp": "2026-05-23T06:31:07Z",
@@ -36282,6 +36518,41 @@
           "format": "HERO",
           "persona_number": 3,
           "concept_angle": "authority"
+        },
+        {
+          "entry_id": "entry_551",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "format": "HERO",
+          "persona_number": 1,
+          "concept_angle": "pain_point"
+        },
+        {
+          "entry_id": "entry_552",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "format": "BA",
+          "persona_number": 2,
+          "concept_angle": "desired_outcome"
+        },
+        {
+          "entry_id": "entry_553",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "format": "TEST",
+          "persona_number": 3,
+          "concept_angle": "desired_outcome"
+        },
+        {
+          "entry_id": "entry_554",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "format": "FEAT",
+          "persona_number": 4,
+          "concept_angle": "comparison"
+        },
+        {
+          "entry_id": "entry_555",
+          "timestamp": "2026-05-30T10:24:09Z",
+          "format": "UGC",
+          "persona_number": 5,
+          "concept_angle": "story"
         }
       ]
     },
