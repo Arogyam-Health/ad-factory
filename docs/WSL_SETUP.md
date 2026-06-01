@@ -1,5 +1,12 @@
 # WSL Setup Guide - OpenCode Ad Dashboard
 
+> **Works on both Windows on x86_64 and Windows on ARM (Snapdragon / Qualcomm).**
+> All Python wheels, Node.js, Chrome for Linux, and the PowerShell scripts
+> ship ARM64 builds. The only ARM-specific risk is WSL installing the
+> **x86_64** Ubuntu build instead of the **ARM64** one — verify with
+> `uname -m` (must print `aarch64`, not `x86_64`). See the
+> [ARM / Snapdragon verification](#arm--snapdragon-verification) section.
+
 ## Prerequisites (Windows side)
 
 1. **Install WSL** (PowerShell as Administrator):
@@ -7,6 +14,15 @@
    wsl --install -d Ubuntu
    ```
    Reboot when prompted.
+
+   > **On Snapdragon / Windows on ARM:** the command above installs the
+   > ARM64 build of Ubuntu by default. If you ever see `x86_64` from
+   > `uname -m` inside WSL, force the ARM64 build with:
+   > ```powershell
+   > wsl --unregister Ubuntu
+   > wsl --install -d Ubuntu --web-download
+   > ```
+   > then pick the `arm64` variant from the download page.
 
 2. **Disable Windows PATH in WSL** (prevents npm/CLI conflicts):
    ```powershell
@@ -188,3 +204,62 @@ pkill -f uvicorn
 - **Image Upload**: Images copied from WSL filesystem to Windows temp folder before CDP upload
 
 All backend components run inside WSL. Windows hosts Chrome browser and handles port forwarding.
+
+## ARM / Snapdragon verification
+
+The `windows-setup` branch is arch-agnostic. These checks confirm you're
+running natively on ARM64, not under x86_64 emulation:
+
+```bash
+# 1. WSL is ARM64 (must say aarch64, NOT x86_64)
+uname -m
+# aarch64   <-- correct on Snapdragon
+# x86_64    <-- WSL is emulating x86; reinstall with --web-download (see step 1 above)
+
+# 2. Python is the Linux/ARM64 build
+python3 -c "import platform; print(platform.machine())"
+# aarch64
+
+# 3. Node.js is the Linux/ARM64 build
+node -e "console.log(process.arch)"
+# arm64
+
+# 4. Chrome in WSL is the ARM64 build (if installed via setup_wsl.sh)
+file "$(which google-chrome)" | head -1
+# ELF 64-bit LSB pie executable, ARM aarch64 ...
+
+# 5. Inside the venv, all pip packages resolved as manylinux / py3-none-any
+.venv/bin/pip list --format=columns | head
+```
+
+### What works on ARM out-of-the-box
+
+| Component | ARM64 availability |
+| --- | --- |
+| `psutil 7.2.2` | manylinux `aarch64` wheel |
+| `Pillow 12.2.0` | manylinux `aarch64` wheel |
+| `playwright 1.59.0` | `manylinux_2_17_aarch64` wheel + ARM64 Chromium |
+| `selenium 4.32.0` | pure Python (`py3-none-any`) |
+| `fastapi`, `uvicorn`, `openpyxl`, `opencode-ai`, `python-multipart` | pure Python |
+| Node.js LTS (20.x / 22.x) | ARM64 Linux binary via nodesource |
+| Google Chrome stable (Linux) | ARM64 `.deb` from dl.google.com |
+| `netsh portproxy`, `New-NetFirewallRule` (Windows host) | arch-agnostic — identical on x64 and ARM |
+| Windows host Chrome | native ARM64 build auto-installed by Chrome installer |
+
+### ARM-specific gotchas
+
+- **Slow first-time `pip install`**: ARM64 wheels for some packages
+  (especially `playwright`) are larger than x86_64 equivalents. Allow
+  extra time on first run.
+- **Playwright Chromium download**: the `playwright install chromium`
+  command downloads the correct ARM64 build automatically; no extra
+  flags needed.
+- **Windows Chrome under emulation**: if you accidentally install the
+  x86_64 Chrome on Windows on ARM, it runs under Prism emulation (slow).
+  Always pick the ARM64 installer from <https://google.com/chrome/> when
+  offered.
+- **No code changes needed**: the dashboard's `run_opencode`,
+  `gemini_web_automation.py`, `chatgpt_web_sutomation.py` all use
+  hardcoded Linux paths (`/usr/bin/google-chrome`, etc.) that are
+  identical on x64 and ARM64 Ubuntu.
+
