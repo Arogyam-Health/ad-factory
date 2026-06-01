@@ -2443,7 +2443,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         cmd.extend(["--", prompt])
         return cmd
 
-<<<<<<< HEAD
     def run_opencode(prompt: str) -> tuple[dict[str, Any] | None, str, str, int]:
         use_session = bool(session_id)
         cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=not use_session)
@@ -2484,7 +2483,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             f"{now_iso()} Starting OpenCode product-doc session ({reason}) with file: {product_file}",
         )
         bootstrap_cmd = build_cmd(build_product_doc_bootstrap_prompt(), use_session=False, attach_product_doc=True)
-<<<<<<< HEAD
         proc = subprocess.Popen(bootstrap_cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         bootstrap_timeout = 120
         poll_start = time.time()
