@@ -641,7 +641,8 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
                 return f"Generated ad {fmt}/P{persona_number} is missing {lang} subheadline"
             if fmt in {"BA", "FEAT"}:
                 bullets = block.get("bullets") if isinstance(block.get("bullets"), list) else []
-                if len([item for item in bullets if isinstance(item, str) and item.strip()]) < 2:
+                min_bullets = 4 if fmt == "BA" else 2
+                if len([item for item in bullets if isinstance(item, str) and item.strip()]) < min_bullets:
                     return f"Generated ad {fmt}/P{persona_number} has insufficient {lang} bullets"
 
     missing = sorted(planned_keys - seen_keys)
@@ -2352,7 +2353,8 @@ def normalize_generated_copy(
                     base_lang["support_line"] = shorten_copy_line(support)
             elif fmt in {"BA", "FEAT"}:
                 bullets = _clean_bullets(src_lang.get("bullets"))
-                if len(bullets) >= 2:
+                min_bullets = 4 if fmt == "BA" else 2
+                if len(bullets) >= min_bullets:
                     if fmt == "BA":
                         bullets = [strip_ba_panel_label(b) for b in bullets]
                     base_lang["bullets"] = [shorten_copy_line(b) for b in bullets]

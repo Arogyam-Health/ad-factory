@@ -857,8 +857,9 @@ def main() -> int:
             if fmt in {"HERO", "UGC"} and not cb.support_line:
                 raise RuntimeError(f"{ctx}.copy.{lang}.support_line required for {fmt}")
             if fmt in {"BA", "FEAT"}:
-                if not cb.bullets or len(cb.bullets) < 2:
-                    raise RuntimeError(f"{ctx}.copy.{lang}.bullets must have >=2 items for {fmt}")
+                min_bullets = 4 if fmt == "BA" else 2
+                if not cb.bullets or len(cb.bullets) < min_bullets:
+                    raise RuntimeError(f"{ctx}.copy.{lang}.bullets must have >={min_bullets} items for {fmt}")
             if fmt == "TEST":
                 if not cb.trust_line:
                     raise RuntimeError(f"{ctx}.copy.{lang}.trust_line required for TEST")

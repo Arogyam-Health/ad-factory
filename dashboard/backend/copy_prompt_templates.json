@@ -117,6 +117,21 @@
           "- Archetype direction: human emotional contrast leads, product proof anchors, environment stays secondary.",
           "- Contrast behavior: subtle mood correction rather than exaggerated transformation theatrics."
         ]
+      },
+      {
+        "id": "ba_bridge_split",
+        "label": "3-zone bridge split",
+        "layout_lines": [
+          "- Archetype: 3-zone horizontal split — left panel = struggle, center = OK Kit as bridge, right panel = control.",
+          "- The center zone carries the product cluster prominently as the visual and narrative bridge between the two states.",
+          "- Background, lighting, and mood shift subtly across the three zones: left feels stuck or heavy, center feels clear and actionable, right feels lighter and more in control.",
+          "- Keep the product cluster large enough in the center so it reads as the answer, not just decoration."
+        ],
+        "direction_lines": [
+          "- Archetype direction: disciplined 3-zone composition where the product is the literal and visual centerpiece.",
+          "- Zone behavior: left third uses muted/warmer tones with friction cues; center third is brighter with clean product focus; right third shifts toward ease with subtle environmental clarity.",
+          "- This variant must clearly read as a journey (struggle → solution → control), not a static comparison."
+        ]
       }
     ],
     "TEST": [
@@ -296,10 +311,10 @@
     "The static ad design may carry this badge separately:",
     "Lose 3-5 kg in 15 days*",
     "*When followed properly",
-    "Because this badge may already be present visually, do not force \u201c3-5 kg in 15 days\u201d into every headline or subheadline. Use it in copy only when it naturally fits the selected concept angle, especially Hero, Offer, Social proof, Desired outcome, Wedding/Event, or result-led ads.",
+    "Because this badge may already be present visually, do not force “3-5 kg in 15 days” into every headline or subheadline. Use it in copy only when it naturally fits the selected concept angle, especially Hero, Offer, Social proof, Desired outcome, Wedding/Event, or result-led ads.",
     "",
     "TAG USAGE RULE:",
-    "For any ad batch, use only the selected persona\u2019s recommended tag pool.",
+    "For any ad batch, use only the selected persona’s recommended tag pool.",
     "Do not pull in the full product truth library.",
     "Use 1 to 2 product truths per ad.",
     "Never write tag names in copy.",
@@ -310,7 +325,7 @@
     "For each persona, Main product levers are the product truths that should drive most ads.",
     "Use when relevant tags are for variation, concept angle, trust, proof, support, or format fit.",
     "Do not mechanically use one main lever, one use-when-relevant tag, and one proof tag in every ad.",
-    "The ad must first be built around the persona\u2019s real-life problem.",
+    "The ad must first be built around the persona’s real-life problem.",
     "",
     "FORMAT-SPECIFIC MAX PRODUCT TRUTHS:",
     "Hero: maximum 3 truths",
@@ -320,8 +335,8 @@
     "Before-after: maximum 2 truths",
     "",
     "Product naming rules (REQUIRED - use full names every time):",
-    "1. Always use \"Obesity Killer Kit\" \u2014 never abbreviate to \"OK Kit\" or \"obesity killer kit\".",
-    "2. Always use \"Obesity Killer Liquid\" \u2014 never abbreviate to \"OK Liquid\" or \"OKL\".",
+    "1. Always use \"Obesity Killer Kit\" — never abbreviate to \"OK Kit\" or \"obesity killer kit\".",
+    "2. Always use \"Obesity Killer Liquid\" — never abbreviate to \"OK Liquid\" or \"OKL\".",
     "3. These apply to every occurrence: headline, subheadline, support line, trust line, body text, and CTA.",
     "4. Do not use vague noun phrases like \"hunger support,\" \"craving support,\" \"digestion support,\" \"metabolism support,\" or \"weight-loss support\" in final ad copy. Use direct action language instead: \"reduces hunger,\" \"reduces cravings,\" \"improves digestion,\" \"improves metabolism,\" or \"helps with weight loss.\"",
     "",
@@ -384,7 +399,7 @@
     "1. Do not start every subheadline with \"OK Kit helps.\"",
     "2. Do not blurt product facts.",
     "3. Do not use more than 1 or 2 product truths.",
-    "4. First acknowledge the persona\u2019s actual problem, then bring in the product.",
+    "4. First acknowledge the persona’s actual problem, then bring in the product.",
     "5. The subheadline must not work unchanged for another persona.",
     "6. The headline and subheadline must feel like they belong to the same ad.",
     "7. Avoid robotic phrases: supports weight-loss behaviour, hunger pressure, metabolic support, bridges the gap, empowers your journey, holistic wellness solution, some users may",
@@ -403,7 +418,7 @@
     "Write like a real Indian customer-facing brand.",
     "Use simple English.",
     "Light Roman Hindi is allowed only if natural.",
-    "Avoid fancy words and marketing clich\u00e9s.",
+    "Avoid fancy words and marketing clichés.",
     "Avoid exaggerated urgency.",
     "Do not use emojis.",
     "Do not use em dashes.",
@@ -451,7 +466,7 @@
     "Step 5:",
     "Use mapped product tags only as supporting material. Even if internal inputs use \"OK Kit,\" final ad copy must say \"Obesity Killer Kit.\"",
     "Do not simply expand tags into product facts.",
-    "Every product truth must be connected back to the persona\u2019s real-life problem.",
+    "Every product truth must be connected back to the persona’s real-life problem.",
     "",
     "Step 6:",
     "Use the selected format.",
@@ -477,13 +492,6 @@
     "12. The copy uses tag names or framework names.",
     "13. The copy makes a risky medical claim.",
     "14. The copy includes a guardrail as a visible disclaimer.",
-    "",
-    "For Before-after ads, additionally reject any output where:",
-    "1. The Before panel is generic.",
-    "2. The Bridge does not clearly mention OK Kit\u2019s role.",
-    "3. The After panel promises unrealistic transformation.",
-    "4. The copy body-shames the customer.",
-    "5. The output uses the normal Headline/Subheadline format instead of Before/Bridge/After.",
     "",
     "Persona input framework:",
     "When I give you a persona, use this thinking:",
@@ -643,7 +651,7 @@
       "Contrast-led, simple, believable.",
       "",
       "Required copy fields:",
-      "headline, bullets (array of 2: before state, after state), cta",
+      "headline, bullets (array of 4: 2 left-side struggle, 2 right-side shift), cta",
       "",
       "Internal writing logic:",
       "Before struggle -> after shift -> bridge through Obesity Killer Kit.",
@@ -741,8 +749,10 @@
         "EN": {
           "headline": "<before-after contrast headline>",
           "bullets": [
-            "<bullet 1: before situation>",
-            "<bullet 2: after shift>"
+            "<bullet 1: left-side struggle 1>",
+            "<bullet 2: left-side struggle 2>",
+            "<bullet 3: right-side shift 1>",
+            "<bullet 4: right-side shift 2>"
           ],
           "cta": "<your CTA>"
         }
@@ -758,7 +768,7 @@
       "Choose the best concept angle based on persona and format. Do not mention Auto in output.",
       "",
       "2. Pain point:",
-      "Lead with the customer\u2019s struggle.",
+      "Lead with the customer’s struggle.",
       "",
       "3. Desired outcome:",
       "Lead with the result or state the customer wants.",
