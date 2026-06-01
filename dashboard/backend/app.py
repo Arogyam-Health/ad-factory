@@ -6383,12 +6383,16 @@ async def api_replace_image(run_id: str, image_file: str = Form(...), replacemen
 
 
 def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, str]:
-    """Extract format, persona, language from an image's companion JSON metadata
-    and build a human-readable stem for download naming."""
+    """Extract format, persona, language, concept_angle from an image's companion
+    JSON metadata and build a human-readable stem for download naming.
+
+    Stem format mirrors the canonical prompt filename:
+        <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].<ext>
+    """
     full_path = ROOT / image_path_str
     meta_path = full_path.with_suffix(".json")
     legacy_meta_path = full_path.with_suffix(full_path.suffix + ".json")
-    base = {"format": "UNKNOWN", "persona": "00", "lang": "EN", "stem": "image"}
+    base = {"format": "UNKNOWN", "persona": "00", "lang": "EN", "concept_angle": "", "stem": "image"}
     hyp_label = ""
 
     if meta_path.exists() or legacy_meta_path.exists():
@@ -6401,6 +6405,7 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
         fmt_value = str(meta.get("format") or meta.get("format_id") or "").strip().upper()
         persona_value = str(meta.get("persona") or meta.get("persona_id") or "").strip().upper()
         lang_value = str(meta.get("language") or meta.get("lang") or meta.get("lang_id") or "").strip().upper()
+        angle_value = str(meta.get("concept_angle") or "").strip()
         if fmt_value:
             base["format"] = fmt_value
         persona_match = re.search(r"P?(\d+)", persona_value)
@@ -6408,15 +6413,17 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
             base["persona"] = f"P{int(persona_match.group(1)):02d}"
         if lang_value:
             base["lang"] = lang_value
+        if angle_value:
+            base["concept_angle"] = angle_value
         prompt_file = str(meta.get("prompt_file_relative") or meta.get("prompt_file") or "").strip().replace("\\", "/")
-        if not prompt_file:
-            prompt_file = str(meta.get("prompt_file_relative") or meta.get("prompt_file") or "").strip().replace("\\", "/")
-        parsed = parse_prompt_filename(prompt_file)
+        parsed = parse_prompt_filename_full(prompt_file)
         if parsed:
-            fmt, lang, persona_num = parsed
+            fmt, lang, persona_num, angle, _variant = parsed
             base["format"] = fmt
             base["persona"] = f"P{persona_num:02d}" if persona_num else "P00"
             base["lang"] = lang
+            if angle:
+                base["concept_angle"] = angle
         creative_total = int(meta.get("creative_total") or 1) if str(meta.get("creative_total") or "1").isdigit() else 1
         creative_index = int(meta.get("creative_index") or 1) if str(meta.get("creative_index") or "1").isdigit() else 1
         if creative_total > 1:
@@ -6433,13 +6440,15 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
 
     if base["format"] == "UNKNOWN" or base["persona"] in {"00", "P00"}:
         name = Path(image_path_str).stem.lower()
-        match = re.search(r"(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<num>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<creative>\d+))?", name)
+        match = re.search(r"(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<num>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<creative>\d+))?(?:-(?P<angle>[a-z_]+))?", name)
         if match:
             base["format"] = match.group("fmt").upper()
             base["persona"] = f"P{int(match.group('num')):02d}"
             base["lang"] = match.group("lang").upper()
             if match.group("creative"):
                 base["creative_suffix"] = f"_A{int(match.group('creative')):02d}"
+            if match.group("angle"):
+                base["concept_angle"] = match.group("angle")
 
     # Try hypothesis
     if run_dir is not None:
@@ -6458,7 +6467,8 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
                 pass
 
     ext = Path(image_path_str).suffix
-    stem = f"{base['format']}_{base['persona']}_{base['lang']}{base.get('creative_suffix', '')}{hyp_label}"
+    angle_part = f"_{base['concept_angle']}" if base.get("concept_angle") else ""
+    stem = f"{base['format']}_{base['persona']}_{base['lang']}{angle_part}{base.get('creative_suffix', '')}{hyp_label}"
     base["stem"] = stem
     base["ext"] = ext
     return base
