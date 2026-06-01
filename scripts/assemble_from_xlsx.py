@@ -476,7 +476,21 @@ def parse_xlsx(xlsx_path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str = "", creative_index: int = 1, creative_total: int = 1) -> str:
+def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str, creative_index: int = 1, creative_total: int = 1) -> str:
+    """Canonical prompt filename: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt.
+
+    The concept_angle is REQUIRED and is the dedup key for the on-image copy.
+    The optional _A<NN> suffix is for multiplier runs (same fmt+persona+lang
+    with N creative variations). The same stem (without extension) is reused
+    for the generated image filename by the web automation scripts.
+    """
+    if not concept_angle:
+        raise ValueError("concept_angle is required for prompt_filename()")
+    variant_suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
+    return f"{fmt}_P{persona_number:02d}_{lang}_{concept_angle}{variant_suffix}.txt"
+
+
+def _legacy_prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str = "", creative_index: int = 1, creative_total: int = 1) -> str:
     suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
     angle_part = f"_{concept_angle}" if concept_angle else ""
     return f"{fmt}_P{persona_number:02d}_{lang}{suffix}{angle_part}.txt"

@@ -3206,13 +3206,55 @@ def parse_background_lock_from_prompt(prompt_text: str) -> tuple[str, int] | Non
 
 
 def parse_prompt_filename(prompt_path: str) -> tuple[str, str, int | None] | None:
+    """Parse a prompt file name. Returns (format, lang, persona_number) or None.
+
+    Accepted canonical form:  <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt
+                              e.g. BA_P01_EN_pain_point.txt,
+                                   HERO_P03_HI_desired_outcome_A01.txt
+    Also accepts legacy forms for backward compatibility with existing files:
+      - <FMT>_P<NN>_<LANG>[_A<NN>].txt   (no angle, with or without variant)
+      - <FMT>_P<NN>_<LANG>_<angle>.txt  (no variant)
+      - <FMT>_P<NN>_<LANG>.txt          (no angle, no variant)
+    Also strips legacy ``OUTPUT_`` / ``FINAL_`` prefixes.
+    """
     name = Path(prompt_path).name
-    match = re.match(r"^([A-Z]+)(?:_P(\d+))?_(EN|HI|HINGLISH)(?:_(?:V|A)\d+)?(?:_[a-z_]+)?\.txt$", name)
-    if not match:
-        return None
-    persona_raw = match.group(2)
-    persona_number = int(persona_raw) if persona_raw else None
-    return (match.group(1), match.group(3), persona_number)
+    patterns = [
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)_([a-z][a-z_]*?)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)\.txt$",
+    ]
+    for pat in patterns:
+        m = re.match(pat, name, re.IGNORECASE)
+        if m:
+            return (m.group(1).upper(), m.group(3).upper(), int(m.group(2)))
+    return None
+
+
+def parse_prompt_filename_full(prompt_path: str) -> tuple[str, str, int, str, str] | None:
+    """Like ``parse_prompt_filename`` but also extracts the concept_angle and variant.
+
+    Returns ``(format, lang, persona_number, concept_angle, variant)`` or ``None``.
+    ``concept_angle`` defaults to ``""`` if the filename has no angle component
+    (legacy form). ``variant`` is the ``A01``/``V01`` string, or ``""`` if absent.
+    """
+    name = Path(prompt_path).name
+    patterns = [
+        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_P(?P<num>\d+)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+        # angle + variant (angle present, but regex below catches both)
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_P(?P<num>\d+)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+    ]
+    for pat in patterns:
+        m = re.match(pat, name, re.IGNORECASE)
+        if m:
+            return (
+                m.group("fmt").upper(),
+                m.group("lang").upper(),
+                int(m.group("num")),
+                m.groupdict().get("angle", "") or "",
+                m.groupdict().get("variant", "") or "",
+            )
+    return None
 
 
 def parse_prompt_creative_index(prompt_path: str) -> int:
@@ -3221,20 +3263,35 @@ def parse_prompt_creative_index(prompt_path: str) -> int:
 
 
 def _parse_generated_image_name(image_rel_path: str) -> dict[str, Any]:
-    stem = Path(image_rel_path).stem.lower()
-    match = re.search(
-        r"^(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<persona>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<image_index>\d+))?$",
-        stem,
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return {}
-    return {
-        "format": match.group("fmt").upper(),
-        "persona_number": int(match.group("persona")),
-        "language": match.group("lang").upper(),
-        "image_index": int(match.group("image_index")) if match.group("image_index") else None,
-    }
+    """Parse a generated image filename. Returns dict with format, persona_number,
+    language, concept_angle, image_index; missing keys mean the stem is unparseable.
+
+    Canonical form: ``<FMT>_P<NN>_<LANG>_<angle>[_A<NN>].<ext>``
+                    e.g. BA_P01_EN_pain_point.png,
+                         HERO_P03_HI_desired_outcome_A01.jpg
+    Also accepts legacy ``gemini-``/``chatgpt-`` prefixed stems for older runs.
+    """
+    stem = Path(image_rel_path).stem
+    patterns = [
+        # legacy tool-prefixed: gemini-hero-p01-en[-a01][-<angle>]
+        r"^(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<persona>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<image_index>\d+))?(?:-(?P<angle>[a-z_]+))?$",
+        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>]
+        r"^(?P<fmt>[A-Z]+)_P(?P<persona>\d+)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_A(?P<image_index>\d+))?$",
+        # angle-less legacy: <FMT>_P<NN>_<LANG>[_A<NN>]
+        r"^(?P<fmt>[A-Z]+)_P(?P<persona>\d+)_(?P<lang>EN|HI|HINGLISH)(?:_A(?P<image_index>\d+))?$",
+    ]
+    for pat in patterns:
+        m = re.search(pat, stem, flags=re.IGNORECASE)
+        if not m:
+            continue
+        return {
+            "format": m.group("fmt").upper(),
+            "persona_number": int(m.group("persona")),
+            "language": m.group("lang").upper(),
+            "concept_angle": m.groupdict().get("angle", "") or "",
+            "image_index": int(m.group("image_index")) if m.groupdict().get("image_index") else None,
+        }
+    return {}
 
 
 def _sorted_prompt_candidates(

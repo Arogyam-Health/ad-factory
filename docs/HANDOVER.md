@@ -35,9 +35,9 @@ info/
 ├── output/
 │   └── v1..v{latest}/
 │       ├── 45/                          # 4:5 ratio prompts
-│       │   └── OUTPUT_{FORMAT}_P{NN}_{EN|HI}.txt  (+ sidecar .json per file)
+│       │   └── {FORMAT}_P{NN}_{EN|HI}_{angle}.txt  (+ sidecar .json per file)
 │       └── 96/                          # 9:16 ratio prompts
-│           └── OUTPUT_{FORMAT}_P{NN}_{EN|HI}.txt
+│           └── {FORMAT}_P{NN}_{EN|HI}_{angle}.txt
 ├── runtime/
 │   ├── context_canonical.json           # Extracted product context (placeholder/broken currently)
 │   ├── product_context_cache.json       # Cache of same
@@ -566,7 +566,7 @@ If any check fails → `RuntimeError`, no file written.
 
 ### Phase 10: Write to Disk
 
-File path: `output/v{N}/{45|96}/OUTPUT_{FORMAT}_P{NN}_{EN|HI}.txt`
+File path: `output/v{N}/{45|96}/{FORMAT}_P{NN}_{EN|HI}_{angle}.txt`
 
 Also writes a sidecar `.json` file at the same path with full metadata:
 - prompt_type, format, persona, language, aspect_ratio, creative_index
@@ -712,8 +712,9 @@ Utility. Parses `AD_CREATIVE_SYSTEM_PLAYBOOK.md` and extracts a specific format 
 - Output dirs are `output/v1/`, `output/v2/`, etc.
 - `next_batch_name()` scans existing dirs, finds max N, returns `v{N+1}`
 - Within a batch dir, subdirs: `45/` for 4:5, `96/` for 9:16
-- File naming: `OUTPUT_{FORMAT}_P{NN}_{LANG}.txt`
-- Multipliers (same format+persona, multiple creative variations): `OUTPUT_{FORMAT}_P{NN}_{LANG}_A01.txt`, `_A02.txt`, etc.
+- File naming: `{FORMAT}_P{NN}_{LANG}_{angle}.txt` (canonical — `angle` is the concept_angle, e.g. `BA_P01_EN_pain_point.txt`)
+- Multipliers (same format+persona, multiple creative variations): `{FORMAT}_P{NN}_{LANG}_{angle}_A01.txt`, `_A02.txt`, etc.
+- Generated images use the **same stem** as the prompt file: `BA_P01_EN_pain_point.png`
 
 ---
 

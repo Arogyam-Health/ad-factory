@@ -14,7 +14,18 @@ let batchDropdownInitialized = false;
 
 function parsePromptPath(path) {
   const name = path.split("/").pop() || path;
-  const match = name.match(/^([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)(?:_A(\d+))?(?:_([a-z_]+))?\.txt$/i);
+  // Canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt  (angle required)
+  // Legacy:    <FMT>_P<NN>_<LANG>[_A<NN>][_<angle>].txt  (angle optional)
+  // Both also accept optional OUTPUT_ / FINAL_ prefixes.
+  const canonical = name.match(
+    /^(?:(?:OUTPUT|FINAL)_)?([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)_([a-z][a-z_]*?)(?:_A(\d+))?\.txt$/i
+  );
+  const legacy = !canonical && name.match(
+    /^(?:(?:OUTPUT|FINAL)_)?([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)(?:_A(\d+))?(?:_([a-z_]+))?\.txt$/i
+  );
+  const match = canonical || legacy;
+  const angle = canonical ? canonical[4] : (legacy && legacy[5] ? legacy[5] : null);
+  const creative = canonical ? canonical[5] : (legacy ? legacy[4] : null);
   const aspect = path.includes("/916/") || path.includes("/96/") ? "9:16" : path.includes("/45/") ? "4:5" : "Other";
   return {
     name,
@@ -22,8 +33,8 @@ function parsePromptPath(path) {
     format: match ? match[1].toUpperCase() : "PROMPT",
     persona: match ? `P${String(Number(match[2])).padStart(2, "0")}` : "P--",
     lang: match ? match[3].toUpperCase() : "--",
-    creative: match && match[4] ? `A${String(Number(match[4])).padStart(2, "0")}` : "A01",
-    conceptAngle: match && match[5] ? match[5] : null,
+    creative: creative ? `A${String(Number(creative)).padStart(2, "0")}` : "A01",
+    conceptAngle: angle,
   };
 }
 

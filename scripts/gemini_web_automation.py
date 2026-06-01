@@ -75,6 +75,7 @@ class PromptJob:
     variant_id: str
     job_key: str
     output_stem: str
+    concept_angle: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -87,8 +88,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-dir", required=True, help="Directory containing prompt files")
     parser.add_argument(
         "--prompt-glob",
-        default="FINAL_*_P*_EN.txt",
-        help="Prompt glob. Use 'FINAL_HERO_P*_EN.txt' for HERO only.",
+        default="*_P*_EN.txt",
+        help="Prompt glob. Examples: '*_P*_EN.txt' for all English, "
+             "'BA_P*_EN_pain_point.txt' for a single angle, "
+             "'*_P*_*.txt' for every language.",
     )
     parser.add_argument(
         "--starting-prompt-file",
@@ -209,13 +212,21 @@ def _format_sort_key(fmt: str) -> tuple[int, str]:
     return (999, fmt_up)
 
 
-def _parse_prompt_name(path: Path) -> tuple[str, str, str, str]:
+def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
+    """Parse a prompt file name. Returns ``(fmt, persona, lang, variant, concept_angle)``.
+
+    Canonical form:  ``<FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt``
+    Legacy forms also accepted (with ``OUTPUT_``/``FINAL_`` prefix and/or missing
+    angle component) for backward compatibility with older files.
+    """
     stem = path.stem
     patterns = [
-        r"^(?:FINAL|OUTPUT)_(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?$",
-        r"^(?:FINAL|OUTPUT)_(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)$",
-        r"^(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?$",
-        r"^(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)$",
+        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>]
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
+        # legacy: <FMT>_P<NN>_<LANG>[_A<NN>] with optional trailing angle
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
+        # legacy: <FMT>_P<NN>_<LANG>
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)$",
     ]
     for pat in patterns:
         m = re.search(pat, stem, flags=re.IGNORECASE)
@@ -224,7 +235,8 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str]:
             persona = f"P{int(m.group('num')):02d}"
             lang = m.group("lang").upper() if "lang" in m.groupdict() and m.group("lang") else "XX"
             variant = m.group("variant").upper() if "variant" in m.groupdict() and m.group("variant") else ""
-            return fmt, persona, lang, variant
+            angle = m.group("angle") if "angle" in m.groupdict() and m.group("angle") else (m.group("angle2") if "angle2" in m.groupdict() and m.group("angle2") else "")
+            return fmt, persona, lang, variant, angle
 
     # Defensive fallback: find a known format token anywhere before Pxx.
     m_persona = re.search(r"(?:^|_)P(?P<num>\d+)(?:_|$)", stem, flags=re.IGNORECASE)
@@ -233,10 +245,10 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str]:
     known_formats = ["BA", "FEAT", "HERO", "TEST", "UGC"]
     for token in tokens:
         if token in known_formats:
-            return token, persona_id, "XX", ""
+            return token, persona_id, "XX", "", ""
 
     fmt = next((t for t in tokens if t not in {"FINAL", "OUTPUT", persona_id}), "PROMPT")
-    return fmt, persona_id, "XX", ""
+    return fmt, persona_id, "XX", "", ""
 
 
 def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool) -> tuple[list[PromptJob], list[PromptJob]]:
@@ -246,10 +258,17 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
 
     raw_jobs: list[PromptJob] = []
     for path in raw_paths:
-        fmt, persona, lang, variant = _parse_prompt_name(path)
+        fmt, persona, lang, variant, concept_angle = _parse_prompt_name(path)
         variant_suffix = f"_{variant}" if variant else ""
         key = f"{fmt}_{persona}_{lang}{variant_suffix}"
-        safe_stem = f"gemini-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}"
+        if concept_angle and concept_angle not in key:
+            key += f"_{concept_angle}"
+        # Reuse the prompt's stem verbatim so the generated image matches the
+        # prompt file 1:1 (only the extension changes). E.g. BA_P01_EN_pain_point.
+        if concept_angle:
+            safe_stem = f"{fmt}_P{int(persona[1:]):02d}_{lang}_{concept_angle}{variant_suffix}"
+        else:
+            safe_stem = f"gemini-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}"
         raw_jobs.append(
             PromptJob(
                 prompt_path=path.resolve(),
@@ -259,6 +278,7 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
                 variant_id=variant,
                 job_key=key,
                 output_stem=safe_stem,
+                concept_angle=concept_angle,
             )
         )
 
