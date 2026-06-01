@@ -5224,6 +5224,8 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[
             "--upload-dir", str(INPUT_IMAGES_DIR),
             "--aspect-ratio", "4:5",
         ]
+        if Path("/mnt/c").exists():
+            cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
     else:
         cmd = [
             sys.executable, "scripts/gemini_web_automation.py",
