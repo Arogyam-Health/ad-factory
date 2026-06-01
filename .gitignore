@@ -8,7 +8,7 @@ __pycache__/
 .venv/
 
 output/*
-trash/
+
 
 generated_images/*
 graphify-out/*

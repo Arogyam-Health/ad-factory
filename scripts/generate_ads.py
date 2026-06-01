@@ -267,28 +267,6 @@ def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]
     return {"concept_angle": angle}
 
 
-def append_concept_combo_index(
-    registry: dict[str, Any],
-    entry_id: str,
-    timestamp: str,
-    fmt: str,
-    persona_number: int,
-    concept: dict[str, Any],
-) -> None:
-    recent = registry.setdefault("indexes", {}).setdefault("concept_combos", {}).setdefault("recent", [])
-    recent.append(
-        {
-            "entry_id": entry_id,
-            "timestamp": timestamp,
-            "format": fmt,
-            "persona_number": persona_number,
-            "concept_angle": concept["concept_angle"],
-        }
-    )
-    if len(recent) > 500:
-        del recent[:-500]
-
-
 def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
     ctx = f"ads[].copy.{lang} for format={fmt}"
     headline = require_str(raw, "headline", ctx)
@@ -391,11 +369,6 @@ def next_entry_id(registry: dict[str, Any]) -> str:
     if not m:
         return f"entry_{len(entries) + 1:03d}"
     return f"entry_{int(m.group(1)) + 1:03d}"
-
-
-def append_background_index(registry: dict[str, Any], fmt: str, entry_id: str, timestamp: str, bg_id: str) -> None:
-    idx = registry.setdefault("indexes", {}).setdefault("backgrounds_by_format", {}).setdefault(fmt, [])
-    idx.append({"entry_id": entry_id, "timestamp": timestamp, "background_slot": bg_id, "background_source": "catalog"})
 
 
 def stable_signature_seed(*parts: Any) -> int:
@@ -1103,8 +1076,6 @@ def main() -> int:
         }
 
         registry.setdefault("entries", []).append(entry)
-        append_background_index(registry, fmt, entry_id, timestamp, bg["id"])
-        append_concept_combo_index(registry, entry_id, timestamp, fmt, int(persona["number"]), concept)
 
         # used_text updates
         if "EN" in render_langs:

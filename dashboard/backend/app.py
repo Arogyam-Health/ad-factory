@@ -1856,33 +1856,6 @@ def strip_internal_markers_from_payload(payload: dict[str, Any]) -> dict[str, An
     return payload
 
 
-def registry_banlist_values(context: dict[str, Any]) -> set[str]:
-    banlist = context.get("banlist") if isinstance(context.get("banlist"), dict) else {}
-    buckets = banlist.get("buckets") if isinstance(banlist.get("buckets"), dict) else {}
-    values: set[str] = set()
-    for arr in buckets.values():
-        if not isinstance(arr, list):
-            continue
-        for item in arr:
-            if isinstance(item, str) and item.strip():
-                values.add(item.strip())
-    registry_path = ROOT / "AD_GENERATION_REGISTRY.JSON"
-    if registry_path.exists():
-        try:
-            registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        except Exception:
-            registry = {}
-        used_text = ((registry.get("indexes") or {}).get("used_text") or {}) if isinstance(registry, dict) else {}
-        if isinstance(used_text, dict):
-            for arr in used_text.values():
-                if not isinstance(arr, list):
-                    continue
-                for item in arr:
-                    if isinstance(item, str) and item.strip():
-                        values.add(item.strip())
-    return values
-
-
 def enforce_unique_ctas(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     return payload
 
