@@ -5900,8 +5900,9 @@ def api_launch_visible_browser() -> dict[str, Any]:
 
         print(f"[chrome-launch] Running PowerShell script: {win_script_path}")
 
+        ps_path = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
         result = subprocess.run(
-            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", win_script_path],
+            [ps_path, "-ExecutionPolicy", "Bypass", "-File", win_script_path],
             capture_output=True, text=True, timeout=60,
         )
 
