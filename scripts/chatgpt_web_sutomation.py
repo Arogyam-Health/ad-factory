@@ -197,7 +197,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--send-confirm-timeout", type=float, default=35.0)
     parser.add_argument("--continue-on-error", action="store_true")
-<<<<<<< HEAD
     parser.add_argument("--cdp-url", default="", help="CDP URL for connecting to existing Chrome (e.g. http://172.18.160.1:9222)")
     parser.add_argument(
         "--aspect-ratio",
