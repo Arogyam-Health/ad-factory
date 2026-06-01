@@ -43,6 +43,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "output"
 BACKGROUNDS_PATH = ROOT / "background_variant.json"
+COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
 REGISTRY_PATH = ROOT / "AD_GENERATION_REGISTRY.JSON"
 STORAGE_ROOT = ROOT / "dashboard_storage"
 RUNS_ROOT = STORAGE_ROOT / "runs"
@@ -227,7 +228,8 @@ def safezone_enforcement_block(aspect_ratio: str) -> str:
         "- Restricted bands: top 10% (0-135px), bottom 15% (1148-1350px), side edges outer 8% (0-86px and 994-1080px).\n"
         "- Keep all products and all on-image text fully inside the central safe field: x=86-994 and y=135-1148.\n"
         "- Product cluster may be centered or left/right weighted according to the selected archetype, with mild upward bias allowed, but must not touch any restricted band.\n"
-        "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones."
+        "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones.\n"
+        "- HARD DIMENSION LOCK: output must be exactly 1080×1350 pixels. If the generated image is any other size or aspect ratio, reject and regenerate until it matches exactly 1080×1350."
     )
 
 
@@ -248,48 +250,7 @@ def outpaint_lock_block(aspect_ratio: str) -> str:
 
 
 def base_layout_lines_for_format(fmt: str) -> list[str]:
-    if fmt == "HERO":
-        return [
-            "- HERO format: strong headline, one support line, and one CTA.",
-            "- Focal hierarchy: product dominant, text secondary, background tertiary.",
-            "- Product zone: all key pack details stay away from edge-risk zones, but left/right weighting must follow the selected archetype rather than defaulting to a centered stack.",
-            "- CTA must be rendered as a filled rounded button chip (high-contrast), never as plain text.",
-            "- Camera framing should feel stable, premium, and label-safe.",
-            "- Do not collapse every HERO into centered text over centered products unless the selected archetype explicitly requires a centered composition.",
-        ]
-    if fmt == "BA":
-        return [
-            "- Format: BA.",
-            "- Build a clear struggle-to-progress contrast story without literal BEFORE/AFTER labels on-image.",
-            "- Contrast must be visible in scene, props, posture, and lighting, not text alone.",
-            "- Keep products grouped near lower center as the bridge between both states.",
-            "- CTA must be rendered as a filled rounded button chip centered in lower safe band, never plain text.",
-        ]
-    if fmt == "TEST":
-        return [
-            "- Format: TEST.",
-            "- This must read testimonial-first, not HERO with a person added.",
-            "- Quote, attribution, and trust proof hierarchy must be obvious on first scroll.",
-            "- Human presence can support credibility, but the testimonial message remains primary.",
-            "- CTA must be rendered as a filled rounded button chip in lower safe band, never plain text.",
-        ]
-    if fmt == "FEAT":
-        return [
-            "- Format: FEAT.",
-            "- Build a clean information hierarchy with headline, 3-4 concise feature points, and one CTA.",
-            "- Product cluster must stay fully visible as proof while information remains fast to scan.",
-            "- Bullets or callouts must be functional benefits only; short, concrete, and readable.",
-            "- CTA must be rendered as a filled rounded button chip, never plain text.",
-        ]
-    if fmt == "UGC":
-        return [
-            "- Format: UGC.",
-            "- Creator-style authenticity with premium cleanliness; avoid stock-template look.",
-            "- Subject and product should feel naturally integrated into a believable routine moment.",
-            "- Headline/support/context/CTA stack must stay compact and mobile-readable.",
-            "- Hands must look anatomically correct; no extra fingers or warped nails.",
-        ]
-    raise RuntimeError(f"Unsupported format: {fmt}")
+    return []
 
 
 
@@ -315,7 +276,6 @@ def render_prompt(
     persona_tone: str,
     awareness_stage: str,
     concept_angle: str,
-    concept_structure: str,
     exact_on_image_copy_block: str,
     bg: dict[str, Any],
     bg_seed: int,
@@ -404,7 +364,6 @@ def render_prompt(
         f"- Tone cue: {tone}",
         f"- Awareness stage: {awareness_stage}",
         f"- Concept angle: {concept_angle}",
-        f"- Concept structure: {concept_structure}",
         "- Concept path is strategy only; do not render these labels on-image.",
     ])
     lines.append("")
@@ -517,9 +476,24 @@ def parse_xlsx(xlsx_path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def prompt_filename(fmt: str, persona_number: int, lang: str, creative_index: int = 1, creative_total: int = 1) -> str:
+def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str, creative_index: int = 1, creative_total: int = 1) -> str:
+    """Canonical prompt filename: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt.
+
+    The concept_angle is REQUIRED and is the dedup key for the on-image copy.
+    The optional _A<NN> suffix is for multiplier runs (same fmt+persona+lang
+    with N creative variations). The same stem (without extension) is reused
+    for the generated image filename by the web automation scripts.
+    """
+    if not concept_angle:
+        raise ValueError("concept_angle is required for prompt_filename()")
+    variant_suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
+    return f"{fmt}_P{persona_number:02d}_{lang}_{concept_angle}{variant_suffix}.txt"
+
+
+def _legacy_prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str = "", creative_index: int = 1, creative_total: int = 1) -> str:
     suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
-    return f"OUTPUT_{fmt}_P{persona_number:02d}_{lang}{suffix}.txt"
+    angle_part = f"_{concept_angle}" if concept_angle else ""
+    return f"{fmt}_P{persona_number:02d}_{lang}{suffix}{angle_part}.txt"
 
 
 def aspect_ratio_folder(aspect_ratio: str) -> str:
@@ -634,7 +608,6 @@ def main() -> int:
         persona_tone = row.get("persona_tone", "").strip()
         awareness_stage = row.get("persona_awareness_stage", "").strip() or row.get("awareness_stage", "").strip()
         concept_angle = row.get("concept_angle", "").strip()
-        concept_structure = row.get("concept_structure", "").strip()
         exact_block = row.get("exact_on_image_copy_block", "").strip()
         headline_copy = row.get("headline_copy", "").strip()
 
@@ -671,7 +644,6 @@ def main() -> int:
             persona_tone=persona_tone,
             awareness_stage=awareness_stage,
             concept_angle=concept_angle,
-            concept_structure=concept_structure,
             exact_on_image_copy_block=exact_block,
             bg=bg,
             bg_seed=bg_seed,
@@ -682,9 +654,13 @@ def main() -> int:
         creative_index = row.get("_creative_index", 1)
         creative_total = row.get("_creative_total", 1)
 
-        filename = prompt_filename(fmt, persona_number, lang, creative_index, creative_total)
+        filename = prompt_filename(fmt, persona_number, lang, concept_angle, creative_index, creative_total)
         out_path = ratio_dir / filename
         out_path.write_text(prompt_text, encoding="utf-8")
+
+        hypothesis_type = row.get("hypothesis_type", "").strip()
+        hypothesis_variant = row.get("hypothesis_variant", "").strip()
+        background_group_key = f"{fmt}::P{persona_number:02d}"
 
         # Write metadata sidecar
         prompt_meta = {
@@ -698,16 +674,47 @@ def main() -> int:
             "creative_index": creative_index,
             "creative_total": creative_total,
             "multiplier": creative_total,
+            "background_group_key": background_group_key,
+            "awareness_stage": awareness_stage,
+            "concept_angle": concept_angle,
+            "hypothesis": {},
+            "hypothesis_type": hypothesis_type,
+            "hypothesis_variant": hypothesis_variant,
             "background": {
                 "slot": bg["id"],
                 "name": bg.get("title", ""),
                 "source": "catalog",
                 "seed": bg_seed,
                 "seeded_direction": seeded_sentence,
+                "scene_category": "studio",
+                "base": bg.get("base", ""),
+                "formats": bg.get("formats", []),
             },
             "visual_archetype": {
                 "id": visual_archetype["id"],
                 "label": visual_archetype["label"],
+                "forced": False,
+                "reused_from_run_id": "",
+                "reuse_key": "",
+            },
+            "visual_pattern": {
+                "id": visual_archetype["id"],
+                "label": visual_archetype["label"],
+                "selected_by_user": False,
+                "selection_mode": "auto_rotate",
+                "reused_from_run_id": "",
+                "reuse_key": "",
+            },
+            "background_decisions": {
+                "forced_background": False,
+                "forced_seed": False,
+                "reused_from_run_id": "",
+                "reuse_key": "",
+                "shared_by_multiplier": creative_total > 1,
+                "shared_across_personas": False,
+                "visual_lock_applied": False,
+                "aspect_ratio": aspect_ratio,
+                "assembler_seed": bg_seed,
             },
         }
         out_path.with_suffix(".json").write_text(json.dumps(prompt_meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -725,13 +732,17 @@ def main() -> int:
             },
             "awareness_stage": awareness_stage,
             "concept_angle": concept_angle,
-            "concept_structure": concept_structure,
             "hypothesis": {
-                "type": row.get("hypothesis_type", "").strip(),
-                "variant": row.get("hypothesis_variant", "").strip(),
+                "type": hypothesis_type,
+                "variant": hypothesis_variant,
             },
             "creative_index": creative_index,
             "creative_total": creative_total,
+            "background_group_key": background_group_key,
+            "visual_archetype": visual_archetype["id"],
+            "background_slot": bg["id"],
+            "background_seed": bg_seed,
+            "share_background_across_personas": False,
         })
 
         print(f"  Wrote: {rel_path}")
@@ -769,7 +780,7 @@ def main() -> int:
     print()
     print("Next: run gemini_web_automation.py or chatgpt_web_sutomation.py with:")
     print(f"  --prompt-dir {ratio_dir}")
-    print(f"  --prompt-glob 'OUTPUT_*_P*_{lang}.txt'")
+    print(f"  --prompt-glob '{fmt}_P*_{lang}*.txt'")
     print(f"  --out-dir {ROOT / 'generated_images' / batch_name}")
     return 0
 

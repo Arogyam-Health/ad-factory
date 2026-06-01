@@ -2,8 +2,9 @@
 """
 Export a "do-not-repeat" banlist from AD_GENERATION_REGISTRY.JSON for LLM copy generation.
 
-This is intentionally simple:
-  - Exact-string banning only (matches playbook rule).
+This is intentionally compact:
+  - Exact-string copy bans from used_text.
+  - Lightweight skeleton/opening metadata from recent registry entries.
   - Use `--last` to limit size so prompts stay manageable.
 """
 
@@ -57,7 +58,25 @@ def main() -> int:
         strings = [s for s in arr if isinstance(s, str) and s.strip()]
         out[b] = strings[-args.last :] if args.last > 0 else strings
 
-    payload = {"source": str(REGISTRY_PATH), "last": args.last, "buckets": out}
+    entries = registry.get("entries") or []
+    recent_entries = entries[-args.last :] if isinstance(entries, list) and args.last > 0 else entries
+    derived: list[dict[str, Any]] = []
+    if isinstance(recent_entries, list):
+        for entry in recent_entries:
+            if not isinstance(entry, dict):
+                continue
+            derived.append(
+                {
+                    "format": entry.get("format"),
+                    "opening_pattern_4tok": entry.get("opening_pattern_4tok_en"),
+                    "copy_skeleton": entry.get("copy_skeleton"),
+                    "hook_structure_class": entry.get("hook_structure_class"),
+                    "proof_style_class": entry.get("proof_style_class"),
+                    "cta_voice_class": entry.get("cta_voice_class"),
+                }
+            )
+
+    payload = {"source": str(REGISTRY_PATH), "last": args.last, "buckets": out, "derived_recent": derived}
     raw = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
     if args.out:
@@ -69,4 +88,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

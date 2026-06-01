@@ -6,7 +6,7 @@ What this script does:
   - Reads externally-generated ad copy from a JSON file (no copy generation here).
   - Selects catalog background slots with exhaustive per-format rotation.
   - Builds seeded background sentence from `background_variant.json`.
-  - Assembles full 9-section prompts per playbook and writes `output/vN/OUTPUT_<FORMAT>_(EN|HI).txt`.
+  - Assembles full 9-section prompts per playbook and writes `output/vN/<FORMAT>_<persona>_<lang>.txt`.
   - Enforces safe-zone rules by embedding an explicit SAFE-ZONE ENFORCEMENT block.
   - Appends entries to `AD_GENERATION_REGISTRY.JSON` and updates indexes (background rotation + used_text).
 
@@ -38,11 +38,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "AD_GENERATION_REGISTRY.JSON"
 BACKGROUNDS_PATH = ROOT / "background_variant.json"
+COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
 OUTPUT_DIR = ROOT / "output"
 
 SUPPORTED_FORMATS = {"HERO", "BA", "TEST", "FEAT", "UGC"}
 SUPPORTED_LANGS = {"EN", "HI", "HINGLISH"}
-SUPPORTED_AWARENESS_STAGES = {"unaware", "problem_aware", "solution_aware", "product_aware"}
 SUPPORTED_CONCEPT_ANGLES = {
     "pain_point",
     "desired_outcome",
@@ -53,7 +53,6 @@ SUPPORTED_CONCEPT_ANGLES = {
     "comparison",
     "offer",
 }
-SUPPORTED_CONCEPT_STRUCTURES = {"pas", "bab", "fab", "four_us"}
 HEADLINE_ANGLE_TO_CONCEPT = {
     "pain": "pain_point",
     "objection": "comparison",
@@ -62,295 +61,21 @@ HEADLINE_ANGLE_TO_CONCEPT = {
     "proof": "social_proof",
     "sacrifice_reduction": "comparison",
 }
-FORMAT_DEFAULT_STRUCTURE = {
-    "HERO": "four_us",
-    "BA": "bab",
-    "TEST": "pas",
-    "FEAT": "fab",
-    "UGC": "pas",
-}
 
-FORMAT_VISUAL_ARCHETYPES: dict[str, list[dict[str, Any]]] = {
-    "HERO": [
-        {
-            "id": "hero_center_stage",
-            "label": "Centered premium packshot",
-            "layout_lines": [
-                "- Archetype: centered premium packshot with headline centered above the product block.",
-                "- Keep the product cluster compact in the middle third with a balanced pedestal feel and strong whitespace around it.",
-                "- Use symmetrical spacing so the ad reads as premium and stable rather than busy or collage-like.",
-                "- Keep both text and product centered; do not introduce obvious left/right asymmetry in this variant.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: centered composition with soft pedestal energy and minimal side distractions.",
-                "- Text placement: headline/support centered in upper safe field; CTA centered below support with generous breathing room.",
-                "- This is the only HERO variant that should read as fully centered and symmetrical.",
-            ],
-        },
-        {
-            "id": "hero_left_copy_right_product",
-            "label": "Left-copy right-product hero",
-            "layout_lines": [
-                "- Archetype: left-aligned copy block with product cluster weighted to the right half.",
-                "- Build a clear asymmetric composition where text owns the left safe field and product owns the right safe field.",
-                "- Preserve clean negative space between copy and product so the frame feels intentional, not cramped.",
-                "- Headline, support, and CTA must align left in a clean copy column; do not center the typography in this variant.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: editorial left-copy/right-product split with crisp column alignment.",
-                "- Product emphasis: kit box and product stack dominate the right-center while copy stays in a protected left column.",
-                "- Force visible asymmetry: if the result reads centered at a glance, reject and regenerate.",
-            ],
-        },
-        {
-            "id": "hero_close_crop_pedestal",
-            "label": "Close crop pedestal hero",
-            "layout_lines": [
-                "- Archetype: larger, tighter product crop with the pack cluster feeling closer to camera.",
-                "- Let product presence feel slightly oversized while keeping every label readable and fully inside safe field.",
-                "- Copy should sit in a compact high-contrast block occupying one upper corner rather than a wide centered text stack.",
-                "- Crop the product group noticeably larger than other HERO variants so the pack mass dominates the lower half.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: premium close crop with a luxury pedestal feel and shallow scene complexity.",
-                "- Visual balance: oversized product hero, minimal props, restrained typography footprint.",
-                "- Composition should feel tighter and more zoomed-in than the centered or split variants; reject if it reads like a standard balanced packshot.",
-            ],
-        },
-        {
-            "id": "hero_soft_lifestyle_frame",
-            "label": "Lifestyle-assisted premium hero",
-            "layout_lines": [
-                "- Archetype: premium hero layout softened by subtle lifestyle context, not pure studio isolation.",
-                "- Keep product dominant while allowing background context cues to add warmth and realism.",
-                "- Headline and support should sit in a calm editorial block with more atmospheric breathing room than strict commercial grid.",
-                "- Product cluster should sit lower-left or lower-right with the opposite upper zone reserved for copy; do not center both elements together.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: premium lifestyle frame with product dominance preserved over the environment.",
-                "- Background behavior: warm believable context adds credibility but never competes with the packshot.",
-                "- This variant must feel more environmental and editorial than the studio-centered HERO options.",
-            ],
-        },
-    ],
-    "BA": [
-        {
-            "id": "ba_classic_split",
-            "label": "Classic vertical split contrast",
-            "layout_lines": [
-                "- Archetype: strict left/right split with a clear vertical divider and fast-scroll readability.",
-                "- Left side must instantly read as friction; right side must instantly read as first practical win.",
-                "- Keep products bridging the lower center so both panels still feel like one branded story.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: disciplined vertical split with highly legible contrast in mood, props, and posture.",
-                "- Contrast behavior: same overall palette family, different clarity and routine signals on each side.",
-            ],
-        },
-        {
-            "id": "ba_soft_diagonal_transition",
-            "label": "Soft diagonal transition",
-            "layout_lines": [
-                "- Archetype: transition from struggle to control happens along a soft diagonal flow instead of a hard binary panel wall.",
-                "- Use composition to move the eye from upper-left friction toward lower-right control without losing split-story clarity.",
-                "- Keep the product cluster near lower center as the bridge that unifies the two states.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: diagonal story flow with subtle transition edge and premium editorial polish.",
-                "- Panel behavior: struggle cues and control cues remain distinct even without a thick central divider.",
-            ],
-        },
-        {
-            "id": "ba_desk_to_discipline",
-            "label": "Desk-scene routine contrast",
-            "layout_lines": [
-                "- Archetype: same broad routine surface evolves from cluttered impulsive setup to clean repeatable setup.",
-                "- Let props and orderliness carry much of the contrast, not only facial expression.",
-                "- Keep the headline spanning both states while the lower product bridge anchors the solution.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: one routine zone shown in two states, emphasizing practical environmental contrast.",
-                "- Visual proof: clutter-to-clarity progression should feel plausible and grounded, never dramatic or fake.",
-            ],
-        },
-        {
-            "id": "ba_emotion_to_control",
-            "label": "Emotion-to-control contrast",
-            "layout_lines": [
-                "- Archetype: subject emotion shift is the primary contrast driver, with supporting routine cues around it.",
-                "- The left panel should feel mentally stuck; the right panel should feel calmer, steadier, and more in control.",
-                "- Product cluster remains stable and premium so the frame does not become too portrait-heavy.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: human emotional contrast leads, product proof anchors, environment stays secondary.",
-                "- Contrast behavior: subtle mood correction rather than exaggerated transformation theatrics.",
-            ],
-        },
-    ],
-    "TEST": [
-        {
-            "id": "test_editorial_quote_card",
-            "label": "Editorial quote card",
-            "layout_lines": [
-                "- Archetype: large editorial quote card is the primary visual element, with strong quote-first hierarchy.",
-                "- Quote card should occupy the upper safe field prominently while product remains a secondary but visible proof anchor below.",
-                "- Use clean premium spacing so the testimonial feels designed, not templated.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: oversized quote card with calm editorial rhythm and a restrained premium card treatment.",
-                "- Product placement: compact bottom-right or bottom-center proof anchor beneath the quote hierarchy.",
-            ],
-        },
-        {
-            "id": "test_portrait_overlay_card",
-            "label": "Portrait with floating review card",
-            "layout_lines": [
-                "- Archetype: believable human portrait is more visible, while the review card floats over part of the scene.",
-                "- The quote must still win attention first, but the portrait should noticeably increase authenticity and relatability.",
-                "- Product cluster should remain smaller than in HERO and act as proof, not main subject.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: portrait-led testimonial with floating review panel overlap and controlled depth.",
-                "- Layering: quote card overlaps portrait space without obscuring the face or reducing readability.",
-            ],
-        },
-        {
-            "id": "test_minimal_review_poster",
-            "label": "Minimal review poster",
-            "layout_lines": [
-                "- Archetype: very large typography with minimal card chrome, almost like an editorial poster.",
-                "- Reduce decorative panel treatment and let type scale, spacing, and contrast carry the testimonial weight.",
-                "- Product cluster should stay compact and lower in frame so the quote remains the unmistakable hero.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: minimal poster-like layout, premium typography-first attitude, almost no ornamental card styling.",
-                "- Hierarchy: quote dominates first, proof strip and product sit as controlled secondary anchors.",
-            ],
-        },
-        {
-            "id": "test_proof_strip_layout",
-            "label": "Proof-strip testimonial",
-            "layout_lines": [
-                "- Archetype: compact quote block with a clearer verification/proof strip and slightly stronger product presence.",
-                "- Trust line should feel like a deliberate proof rail, not just a small subheading.",
-                "- Product cluster can be larger here than other TEST variants, but testimonial hierarchy must still stay primary.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: compact testimonial card plus strong proof strip and polished product confirmation below.",
-                "- Structure: quote block -> attribution -> proof strip -> product cluster -> CTA with clean separation between each layer.",
-            ],
-        },
-    ],
-    "FEAT": [
-        {
-            "id": "feat_bullet_panel",
-            "label": "Classic bullet panel",
-            "layout_lines": [
-                "- Archetype: structured bullet panel on one side and product proof on the opposite side.",
-                "- Bullets should read as a calm functional stack, never as dense paragraph copy.",
-                "- Keep the information panel crisp and balanced against the product cluster.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: classic info-column layout with bullets grouped neatly in one protected text panel.",
-                "- Product placement: kit stack occupies the opposite side as a clear proof anchor.",
-            ],
-        },
-        {
-            "id": "feat_modular_cards",
-            "label": "Modular feature cards",
-            "layout_lines": [
-                "- Archetype: features appear as small modular cards or tiles rather than one continuous bullet column.",
-                "- Maintain generous spacing between feature modules so each benefit scans instantly on mobile.",
-                "- Product cluster remains visually stable while feature modules create structured variation around it.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: modular information architecture with 3-4 clearly separated feature tiles.",
-                "- Layout behavior: feature cards can wrap around the product zone without feeling cluttered.",
-            ],
-        },
-        {
-            "id": "feat_mechanism_steps",
-            "label": "Mechanism step stack",
-            "layout_lines": [
-                "- Archetype: present features as a clear step-by-step or mechanism ladder instead of isolated bullets.",
-                "- Create a directional reading flow from headline into numbered or sequenced feature logic.",
-                "- Product cluster should support the mechanism story rather than overpower it.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: vertical step stack with ordered reading rhythm and low-noise spacing.",
-                "- Information behavior: each feature line should feel like one stage of a practical routine or benefit chain.",
-            ],
-        },
-        {
-            "id": "feat_callout_annotations",
-            "label": "Annotated product callouts",
-            "layout_lines": [
-                "- Archetype: feature lines behave like concise callout annotations pointing toward the product group.",
-                "- Keep annotation lines short and clean so the frame still reads premium, not technical or noisy.",
-                "- Product cluster stays central enough that the callouts feel attached to a real focal object.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: annotated product explainer with short callout labels and disciplined connector logic.",
-                "- Visual balance: callouts orbit the product safely without crowding the safe zones.",
-            ],
-        },
-    ],
-    "UGC": [
-        {
-            "id": "ugc_selfie_hold",
-            "label": "Selfie beside-product frame",
-            "layout_lines": [
-                "- Archetype: creator appears beside the kit in a selfie-like composition while products rest on a surface at correct scale.",
-                "- The frame should feel personal and immediate without losing product label readability.",
-                "- Text should stay compact and social-native, with clear protected space around the face and product.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: near-product selfie shot with intimate creator energy and stable phone realism, but products remain placed on a table/counter.",
-                "- Subject behavior: easy facial expression and optional open-palm gesture toward the product, never holding or gripping any package.",
-            ],
-        },
-        {
-            "id": "ugc_desk_review",
-            "label": "Desk review setup",
-            "layout_lines": [
-                "- Archetype: creator is seated or standing by a desk/surface, presenting the kit like a practical recommendation.",
-                "- Product cluster sits on the routine surface while one hand or gesture supports explanation.",
-                "- Text can occupy a cleaner side of the frame as if added to a real review moment.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: review-at-desk composition with believable routine props and calm speaking posture.",
-                "- Product behavior: some products rest on the desk while the kit box stays clearly visible in the creator zone.",
-            ],
-        },
-        {
-            "id": "ugc_morning_routine",
-            "label": "Morning routine scene",
-            "layout_lines": [
-                "- Archetype: morning-routine context with subtle vanity, counter, or getting-ready cues.",
-                "- The scene should feel like a real use moment, not a polished set or stock ad template.",
-                "- Keep text lighter and more integrated so the environment can carry authenticity.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: morning routine realism with warm, soft, believable domestic context.",
-                "- Environment behavior: lightly styled vanity or counter cues, never cluttered or glamorous.",
-            ],
-        },
-        {
-            "id": "ugc_unboxing_reaction",
-            "label": "Soft unboxing / discovery moment",
-            "layout_lines": [
-                "- Archetype: creator appears near an already-opened kit in a first-impression style frame, with all products placed on the surface.",
-                "- No product is held closer to camera; the full set remains grouped visibly at real-world package scale.",
-                "- Preserve premium cleanliness so the ad feels authentic but not sloppy.",
-            ],
-            "direction_lines": [
-                "- Archetype direction: discovery moment with a pointing/open-palm reaction beside the arranged pack, not a hand-held reveal.",
-                "- Subject behavior: natural curiosity and calm approval, no exaggerated reaction faces.",
-            ],
-        },
-    ],
-}
+def _load_visual_archetypes() -> dict[str, list[dict[str, Any]]]:
+    path = COPY_PROMPTS_PATH
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data.get("visual_archetypes") or {}
+    except Exception:
+        return {}
 
+FORMAT_VISUAL_ARCHETYPES = _load_visual_archetypes()
+
+PROMPT_ASSEMBLER_DIR = Path(__file__).resolve().parent
+PROMPT_ASSEMBLER_TEMPLATES = json.loads((PROMPT_ASSEMBLER_DIR / "prompt_assembler_templates.json").read_text(encoding="utf-8"))
 
 @dataclass(frozen=True)
 class CopyBlock:
@@ -520,62 +245,6 @@ def build_seeded_background_sentence(bg: dict[str, Any], seed: int, aspect_ratio
     )
 
 
-def build_ugc_subject_line(seed: int) -> str:
-    rng = random.Random(seed)
-    age_band = rng.choice(["24-29", "27-33", "30-36", "32-38"])
-    tone = rng.choice(["calm confident", "warm assured", "focused optimistic", "grounded and practical"])
-    attire = rng.choice([
-        "solid kurta",
-        "casual cotton shirt",
-        "minimal blouse",
-        "everyday premium casual wear",
-    ])
-    hair = rng.choice([
-        "neat tied-back hair",
-        "simple ponytail",
-        "natural shoulder-length hair",
-        "clean center-part tied style",
-    ])
-    return f"Indian woman {age_band}, {tone} expression, {attire}, {hair}; natural and unposed."
-
-
-def safezone_enforcement_block(aspect_ratio: str) -> str:
-    # Keep wording stable so downstream validators can key off consistent tokens.
-    if aspect_ratio == "9:16":
-        return (
-            "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n"
-            "- Keep all critical content inside the 14%-65% vertical safe band.\n"
-            "- Reserve the lower 35% as quiet space; no product labels or headline copy in this band.\n"
-            "- Keep side margins clean; no key content touching left or right frame edges.\n"
-            "- Product cluster may be centered or left/right weighted according to the selected archetype, but must remain fully inside safe zones.\n"
-            "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones."
-        )
-    return (
-        "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n"
-        "- Frame: 1080x1350 (4:5).\n"
-        "- Restricted bands: top 10% (0-135px), bottom 15% (1148-1350px), side edges outer 8% (0-86px and 994-1080px).\n"
-        "- Keep all products and all on-image text fully inside the central safe field: x=86-994 and y=135-1148.\n"
-        "- Product cluster may be centered or left/right weighted according to the selected archetype, with mild upward bias allowed, but must not touch any restricted band.\n"
-        "- Reject and regenerate if any headline, CTA, or product detail crosses restricted zones."
-    )
-
-
-def outpaint_lock_block(aspect_ratio: str) -> str:
-    if aspect_ratio != "9:16":
-        return ""
-    return (
-        "9:16 CONVERSION LOCK (OUTPAINT ONLY)\n"
-        "- Treat base 4:5 composition as fixed ground truth; preserve it exactly.\n"
-        "- Extend canvas vertically only; top/bottom extension zones are background only.\n"
-        "- Do not stretch, warp, zoom, crop, or recomposite existing content.\n"
-        "- Keep product cluster size, spacing, and relative proportions identical to base 4:5.\n"
-        "- Keep product cluster anchored at roughly same visual vertical position (~45%).\n"
-        "- Keep headline/support/CTA hierarchy and spacing tight; do not add vertical gaps.\n"
-        "- Keep all critical text+product content inside the central active band; do not push into extension zones.\n"
-        "- If any distortion, spacing drift, or repositioning appears, reject and regenerate."
-    )
-
-
 def require_str(obj: dict[str, Any], key: str, ctx: str) -> str:
     val = obj.get(key)
     if not isinstance(val, str) or not val.strip():
@@ -596,63 +265,12 @@ def clean_id(value: Any) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", value.strip().lower()).strip("_")
 
 
-def infer_awareness_stage(persona: dict[str, Any]) -> str:
-    text = " ".join(str(persona.get(k) or "") for k in ["pain_en", "friction_en", "proof_needed_en", "tone_cue_en"]).lower()
-    if any(term in text for term in ["doctor", "trust", "proof", "safe", "natural", "guarantee", "budget", "value"]):
-        return "product_aware"
-    if any(term in text for term in ["past", "failed", "plateau", "rebound", "stubborn", "skeptic", "strict"]):
-        return "solution_aware"
-    if any(term in text for term in ["craving", "hunger", "snack", "stress", "busy", "schedule", "time", "routine"]):
-        return "problem_aware"
-    return "unaware"
-
-
 def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]) -> dict[str, Any]:
-    awareness = clean_id(ad.get("awareness_stage"))
     angle = clean_id(ad.get("concept_angle"))
-    structure = clean_id(ad.get("concept_structure"))
-    explicit = bool(awareness or angle or structure)
-
-    if awareness not in SUPPORTED_AWARENESS_STAGES:
-        awareness = infer_awareness_stage(persona)
-
     if angle not in SUPPORTED_CONCEPT_ANGLES:
         headline_angle = clean_id(ad.get("headline_angle"))
         angle = HEADLINE_ANGLE_TO_CONCEPT.get(headline_angle, "desired_outcome")
-
-    if structure not in SUPPORTED_CONCEPT_STRUCTURES:
-        structure = FORMAT_DEFAULT_STRUCTURE.get(fmt, "four_us")
-
-    return {
-        "awareness_stage": awareness,
-        "concept_angle": angle,
-        "concept_structure": structure,
-        "explicit": explicit,
-    }
-
-
-def append_concept_combo_index(
-    registry: dict[str, Any],
-    entry_id: str,
-    timestamp: str,
-    fmt: str,
-    persona_number: int,
-    concept: dict[str, Any],
-) -> None:
-    recent = registry.setdefault("indexes", {}).setdefault("concept_combos", {}).setdefault("recent", [])
-    recent.append(
-        {
-            "entry_id": entry_id,
-            "timestamp": timestamp,
-            "format": fmt,
-            "persona_number": persona_number,
-            "awareness_stage": concept["awareness_stage"],
-            "concept_angle": concept["concept_angle"],
-            "concept_structure": concept["concept_structure"],
-        }
-    )
-    if len(recent) > 500:
-        del recent[:-500]
+    return {"concept_angle": angle}
 
 
 def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
@@ -663,7 +281,8 @@ def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
     if re.search(r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b", headline, flags=re.IGNORECASE):
         raise RuntimeError(f"{ctx}.headline contains protocol mechanics; move to support/bullets")
     cta = require_str(raw, "cta", ctx)
-    support_line = (raw.get("support_line") or "").strip() if isinstance(raw.get("support_line"), str) else ""
+    sub_val = raw.get("subheadline") or raw.get("support_line")
+    support_line = (sub_val or "").strip() if isinstance(sub_val, str) else ""
     context_line = (raw.get("context_line") or "").strip() if isinstance(raw.get("context_line"), str) else ""
     trust_line = (raw.get("trust_line") or "").strip() if isinstance(raw.get("trust_line"), str) else ""
     attribution = (raw.get("attribution") or "").strip() if isinstance(raw.get("attribution"), str) else ""
@@ -758,60 +377,10 @@ def next_entry_id(registry: dict[str, Any]) -> str:
     return f"entry_{int(m.group(1)) + 1:03d}"
 
 
-def append_background_index(registry: dict[str, Any], fmt: str, entry_id: str, timestamp: str, bg_id: str) -> None:
-    idx = registry.setdefault("indexes", {}).setdefault("backgrounds_by_format", {}).setdefault(fmt, [])
-    idx.append({"entry_id": entry_id, "timestamp": timestamp, "background_slot": bg_id, "background_source": "catalog"})
-
-
 def stable_signature_seed(*parts: Any) -> int:
     joined = "|".join(str(part or "") for part in parts)
     digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()
     return int(digest[:8], 16) or 1
-
-
-def base_layout_lines_for_format(fmt: str) -> list[str]:
-    if fmt == "HERO":
-        return [
-            "- HERO format: strong headline, one support line, and one CTA.",
-            "- Focal hierarchy: product dominant, text secondary, background tertiary.",
-            "- Product zone: all key pack details stay away from edge-risk zones, but left/right weighting must follow the selected archetype rather than defaulting to a centered stack.",
-            "- CTA must be rendered as a filled rounded button chip (high-contrast), never as plain text.",
-            "- Camera framing should feel stable, premium, and label-safe.",
-            "- Do not collapse every HERO into centered text over centered products unless the selected archetype explicitly requires a centered composition.",
-        ]
-    if fmt == "BA":
-        return [
-            "- Format: BA.",
-            "- Build a clear struggle-to-progress contrast story without literal BEFORE/AFTER labels on-image.",
-            "- Contrast must be visible in scene, props, posture, and lighting, not text alone.",
-            "- Keep products grouped near lower center as the bridge between both states.",
-            "- CTA must be rendered as a filled rounded button chip centered in lower safe band, never plain text.",
-        ]
-    if fmt == "TEST":
-        return [
-            "- Format: TEST.",
-            "- This must read testimonial-first, not HERO with a person added.",
-            "- Quote, attribution, and trust proof hierarchy must be obvious on first scroll.",
-            "- Human presence can support credibility, but the testimonial message remains primary.",
-            "- CTA must be rendered as a filled rounded button chip in lower safe band, never plain text.",
-        ]
-    if fmt == "FEAT":
-        return [
-            "- Format: FEAT.",
-            "- Build a clean information hierarchy with headline, 3-4 concise feature points, and one CTA.",
-            "- Product cluster must stay fully visible as proof while information remains fast to scan.",
-            "- Bullets or callouts must be functional benefits only; short, concrete, and readable.",
-            "- CTA must be rendered as a filled rounded button chip, never plain text.",
-        ]
-    if fmt == "UGC":
-        return [
-            "- Format: UGC.",
-            "- Creator-style authenticity with premium cleanliness; avoid stock-template look.",
-            "- Subject and product should feel naturally integrated into a believable routine moment.",
-            "- Headline/support/context/CTA stack must stay compact and mobile-readable.",
-            "- Hands must look anatomically correct; no extra fingers or warped nails.",
-        ]
-    raise RuntimeError(f"Unsupported format: {fmt}")
 
 
 def find_visual_archetype(fmt: str, archetype_id: str) -> dict[str, Any]:
@@ -907,10 +476,11 @@ def render_prompt(
 
     persona_number = require_int(persona, "number", "ads[].persona")
 
-    layout_lines = base_layout_lines_for_format(fmt) + list(visual_archetype.get("layout_lines") or [])
+    T = PROMPT_ASSEMBLER_TEMPLATES
+
+    layout_lines = list(visual_archetype.get("layout_lines") or [])
     archetype_direction_lines = [str(line) for line in (visual_archetype.get("direction_lines") or []) if isinstance(line, str) and line.strip()]
 
-    # Copy block: render EXACTLY what was provided.
     copy_lines: list[str] = []
     if fmt == "HERO":
         copy_lines = [
@@ -944,67 +514,40 @@ def render_prompt(
     else:  # TEST
         copy_lines = [
             f"- Headline: {copy.headline}",
-            f"- Attribution: {copy.attribution}",
             f"- Trust line: {copy.trust_line}",
             f"- CTA: {copy.cta}",
         ]
 
+    copy_lines.append(f"- Proof bar: 70,000+ Users | 3-5 kg loss with 1 Kit | 100% Ayurvedic")
+
     lock = visual_lock if isinstance(visual_lock, dict) else {}
     subject_line = (lock.get("subject") or "").strip() if isinstance(lock.get("subject"), str) else ""
     if not subject_line:
-        if fmt == "UGC":
-            subject_line = build_ugc_subject_line(bg_seed)
-        elif fmt == "BA":
-            subject_line = "Same adult subject identity appears in both panels: left shows routine struggle, right shows practical control; no body-shaming or body-morph visuals."
-        else:
-            subject_line = "No human subject, products only."
-    action_line = (
-        "Products arranged on a clean table/counter at correct scale; creator may point or gesture near them but must not touch, hold, grab, lift, or open any product or box."
-        if fmt == "UGC"
-        else "Arrange all 5 products as a cohesive premium cluster; kit box acts as anchor."
-    )
-    if fmt == "BA":
-        action_line = "Split action: BEFORE panel shows rushed/impulsive routine cue; AFTER panel shows one clear repeatable step with cleaner setup and calmer behavior."
-    if isinstance(lock.get("action"), str) and lock.get("action").strip():
-        action_line = lock.get("action").strip()
-    camera_line = "Handheld close-to-medium framing, phone-like realism, stable focus on labels." if fmt == "UGC" else "Eye-level medium framing with clean edge discipline."
-    if isinstance(lock.get("camera"), str) and lock.get("camera").strip():
-        camera_line = lock.get("camera").strip()
-    realism_line = (
-        "True-to-life proportions; no stock-template look; natural skin and correct hand anatomy."
-        if fmt == "UGC"
-        else "True-to-life proportions; no stock-template look."
-    )
-    if isinstance(lock.get("realism"), str) and lock.get("realism").strip():
-        realism_line = lock.get("realism").strip()
+        subject_line = T["subject_lines"].get(fmt) or T["subject_lines"]["default"]
+    action_line = (lock.get("action") or "").strip() if isinstance(lock.get("action"), str) and lock.get("action").strip() else (T["action_lines"].get(fmt) or T["action_lines"]["default"])
+    camera_line = (lock.get("camera") or "").strip() if isinstance(lock.get("camera"), str) and lock.get("camera").strip() else (T["camera_lines"].get(fmt) or T["camera_lines"]["default"])
+    realism_line = (lock.get("realism") or "").strip() if isinstance(lock.get("realism"), str) and lock.get("realism").strip() else (T["realism_lines"].get(fmt) or T["realism_lines"]["default"])
 
     lines: list[str] = []
     canvas_spec = "1080 x 1920" if aspect_ratio == "9:16" else "1080 x 1350"
     lines.append("PRODUCT LOCK BLOCK")
-    lines.extend(
-        [
-            "- Use the uploaded Obesity Killer product packshot images as absolute visual truth.",
-            "- Use provided product references as exact appearance truth for pack shape, label, and color.",
-            "- Do not redesign, redraw, relabel, or alter any product or packaging in any way.",
-            "- Do not change brand name, label colors, illustrations, proportions, or any text (Hindi or English).",
-            "- If any label text is unclear, preserve the original image as-is. Do not reinterpret it.",
-            "- Only permitted: placement, scaling, subtle drop shadows, mild warm lighting correction.",
-        ]
-    )
+    lines.extend(T["product_lock_block"])
+    lines.append("")
+    lines.append("PROOF BAR BLOCK")
+    lines.extend(T["proof_bar_block"])
     lines.append("")
     lines.append("OUTPUT SPEC")
-    lines.extend(
-        [
-            f"- Canvas: {canvas_spec} pixels. Portrait. {aspect_ratio} ratio.",
-            f"- Style: {style}",
-            f"- Visual archetype: {visual_archetype['id']} ({visual_archetype['label']})",
-            "- Full-bleed requirement: scene must reach all canvas edges; no inset poster card, no inner frame, no side matte bands, no faux border margins.",
-            "- Text policy: low text by default; all copy minimal and mobile-readable at 375px width.",
-            "- Rendering: no compression artifacts; no soft edges on text or product labels.",
-            "- All 5 products present, proportionally sized per reference dimensions, unmodified.",
-            "- Readability: maintain high-contrast foreground/background treatment for ad-platform legibility.",
-        ]
-    )
+    style_description = T["style_descriptions"].get(fmt) or ""
+    archetype_id = visual_archetype['id']
+    archetype_label = visual_archetype['label']
+    for line_tpl in T["output_spec_lines"]:
+        lines.append(line_tpl.format(
+            canvas_spec=canvas_spec,
+            aspect_ratio=aspect_ratio,
+            style_description=style_description,
+            archetype_id=archetype_id,
+            archetype_label=archetype_label,
+        ))
     lines.append("")
     lines.append("FORMAT LAYOUT INSTRUCTIONS")
     lines.extend(layout_lines)
@@ -1018,9 +561,7 @@ def render_prompt(
             f"- Friction: {friction}",
             f"- Proof needed: {proof}",
             f"- Tone cue: {tone}",
-            f"- Awareness stage: {concept['awareness_stage']}",
             f"- Concept angle: {concept['concept_angle']}",
-            f"- Concept structure: {concept['concept_structure']}",
             "- Concept path is strategy only; do not render these labels on-image.",
         ]
     )
@@ -1028,104 +569,64 @@ def render_prompt(
     lines.append("EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING")
     lines.extend(copy_lines)
     lines.append("Render every character exactly as written. No paraphrasing, no punctuation changes, no autocorrection.")
+    lines.append("- Proof bar is present exactly once, fully readable, horizontally centered, and does not enter the bottom restricted band.")
     lines.append("")
     lines.append("NEGATIVE CONSTRAINTS")
-    negative = [
-        "- Do not recreate or redraw any product.",
-        "- Do not blur, approximate, or rewrite any label text.",
-        "- Do not use sale badges, burst graphics, or stickers.",
-        "- Do not show body transformations or weight-loss visuals.",
-        "- Do not use colors outside the defined palette.",
-        "- Do not use more than 2 font weights.",
-        "- Do not overcrowd the layout.",
-        "- Do not add edge glows, tinted borders, amber/orange side casts, or decorative vignette frames.",
-        "- Do not create inset-canvas look: no white frame border, no inner-card composition, no side fade bands, no outer padding effect.",
-        "- Do not shrink main scene inside margins; composition must remain full-bleed to all four edges.",
-        "- Do not place any translucent white panel behind or below the product cluster.",
-        "- Do not make medical cure claims of any kind.",
-        "- Do not use ring light, studio flash, or overproduced lighting.",
-    ]
+    negative = list(T["negative_constraints"])
     if fmt == "UGC":
-        negative.insert(8, "- Do not render unnatural or anatomically incorrect hands.")
-        negative.insert(9, "- Do not show the creator holding, grabbing, lifting, opening, pinching, or touching any product, bottle, packet, jar, or kit box; products must rest independently on the surface at correct scale.")
+        negative[8:8] = T["ugc_extra_constraints"]
     if fmt == "BA":
-        negative.append("- Do not render literal BEFORE:/AFTER: words anywhere on-image.")
+        negative.extend(T["ba_extra_constraint"])
     lines.extend(negative)
     lines.append("")
     lines.append("QUALITY BAR - verify before accepting output")
-    lines.extend(
-        [
-            "- All 5 products present, correctly proportioned, and completely unmodified.",
-            "- All on-image text sharp and readable at 375px mobile size.",
-            "- Product labels accurate, unmodified, and fully readable.",
-            "- Layout calm, balanced, and premium.",
-            "- No clutter, no hype, and no forbidden elements.",
-            "- Single clear focal hierarchy aligned with the selected visual archetype.",
-            "- If any item above fails, regenerate immediately without compromise.",
-        ]
-    )
+    lines.extend(T["quality_bar_lines"])
     lines.append("")
     lines.append("VISUAL DIRECTION BLOCK")
-    lines.extend(
-        [
-            f"- Background slot: {bg['id']} - {bg.get('title', '').strip() or 'Catalog background'}",
-            f"- Background seed: {bg_seed}",
-            f"- Seeded background direction (single sentence, exact): {seeded_sentence}",
-            f"- Subject: {subject_line}",
-            f"- Action: {action_line}",
-            f"- Camera: {camera_line}",
-            f"- Lighting: {(lock.get('lighting') or 'Warm, soft, directional (top-left) and label-safe.')}",
-            f"- Props: {(lock.get('props') or 'Minimal, non-competing; keep edge zones quiet.')}",
-            f"- Surfaces: {(lock.get('surfaces') or 'Premium, clean texture; avoid busy patterns under text.')}",
-            "- Text panel treatment: if used, keep panel in upper text zone only with vertical fade to transparent before products; never place white panel behind or below product cluster.",
-            "- Edge color control: keep border tones neutral and natural; no orange/amber edge tint and no ornamental frame glow.",
-            "- Edge structure control: enforce full-bleed composition to edges; reject outputs with visible inset border, side matte strip, or inner-frame card look.",
-            f"- Mood: {(lock.get('mood') or 'Calm confidence and practical consistency; no hype.')}",
-            f"- Realism: {realism_line}",
-            f"- Selected visual archetype: {visual_archetype['id']} - {visual_archetype['label']}",
-        ]
-    )
+    bg_title = (bg.get("title") or "Catalog background").strip()
+    lighting_line = (lock.get("lighting") or "").strip() if isinstance(lock.get("lighting"), str) and lock.get("lighting").strip() else T["lighting_default"]
+    props_line = (lock.get("props") or "").strip() if isinstance(lock.get("props"), str) and lock.get("props").strip() else T["props_default"]
+    surfaces_line = (lock.get("surfaces") or "").strip() if isinstance(lock.get("surfaces"), str) and lock.get("surfaces").strip() else T["surfaces_default"]
+    mood_line = (lock.get("mood") or "").strip() if isinstance(lock.get("mood"), str) and lock.get("mood").strip() else T["mood_default"]
+    for line_tpl in T["visual_direction_lines"]:
+        lines.append(line_tpl.format(
+            bg_id=bg["id"],
+            bg_title=bg_title,
+            bg_seed=bg_seed,
+            seeded_sentence=seeded_sentence,
+            subject_line=subject_line,
+            action_line=action_line,
+            camera_line=camera_line,
+            lighting_line=lighting_line,
+            props_line=props_line,
+            surfaces_line=surfaces_line,
+            mood_line=mood_line,
+            realism_line=realism_line,
+            archetype_id=archetype_id,
+            archetype_label=archetype_label,
+        ))
     if fmt == "HERO":
-        lines.append("- HERO anti-convergence rule: obey the selected archetype literally. Do not fall back to generic centered headline + centered product composition unless the chosen archetype is the centered variant.")
+        lines.append(T["hero_anti_convergence_rule"])
     lines.extend(archetype_direction_lines)
     if fmt == "BA":
-        lines.extend(
-            [
-                "- BEFORE panel visual anchors: include at least 2 struggle cues (messy surface, unplanned snack context, low-clarity routine signals).",
-                "- AFTER panel visual anchors: include at least 2 control cues (clean setup, fixed-step context, calmer brighter environment).",
-                "- Identity continuity: if a person is shown, keep same person across both panels; change only mood/context, never fake body transformation.",
-            ]
-        )
+        lines.extend(T["ba_panel_anchors"])
     if lock:
-        lines.append("- VISUAL MATCH LOCK (from base 4:5): keep same subject identity, camera feel, lighting direction, prop family, and product arrangement; only adjust spacing/scale for aspect-ratio fit.")
+        lines.append(T["visual_match_lock"])
         if aspect_ratio == "9:16":
-            lines.append("- For 9:16 conversion: preserve the same product left-right order and relative layering as base 4:5; allow only vertical re-spacing and minor scale adaptation.")
+            lines.append(T["visual_match_lock_916"])
     lines.append("")
     lines.append("TYPOGRAPHY SHARPNESS BLOCK")
-    lines.extend(
-        [
-            "- Headline: Poppins Bold with high contrast against clean background area.",
-            "- Support and CTA: Poppins Medium/Regular, same family.",
-            "- Size: readable on a 375px mobile screen without zooming.",
-            "- Placement: flat uncluttered zones only; avoid noisy textures.",
-            "- Forbidden: thin fonts, script fonts, decorative typefaces, glow effects, outlined text, drop shadows on copy.",
-            "- Mandatory: crisp hard text edges, zero softness, zero anti-alias blur on any character.",
-            "- If any text is soft, blurry, or illegible, discard and regenerate immediately.",
-        ]
-    )
+    lines.extend(T["typography_lines"])
     lines.append("")
-    lines.append("Keep on-image text minimal and mobile-readable. Avoid dense copy blocks.")
-    lines.append("Render CTA as a real filled button chip with rounded corners and strong contrast; never show CTA as standalone plain text.")
-    lines.append("Typography must be pin-sharp. If any text appears soft, blurry, or smeared, regenerate.")
-    lines.append("Keep text count minimal and increase font size rather than packing more copy.")
-    lines.append("Use clean sans typography with strong stroke clarity; no thin/light weights for body text.")
-    lines.append("Use Poppins only for on-image text: Headline in Poppins Bold, support/CTA in Poppins Medium/Regular.")
+    lines.extend(T["typography_extra_lines"])
     lines.append("")
-    lines.append(safezone_enforcement_block(aspect_ratio))
-    lock_block = outpaint_lock_block(aspect_ratio)
-    if lock_block:
+    if aspect_ratio == "9:16":
+        lines.append(T["safezone_916"])
+    else:
+        lines.append(T["safezone_45"])
+    if aspect_ratio == "9:16":
         lines.append("")
-        lines.append(lock_block)
+        lines.append(T["outpaint_lock"])
     lines.append("")
     return "\n".join(lines).strip() + "\n"
 
@@ -1146,9 +647,18 @@ def aspect_ratio_folder(aspect_ratio: str) -> str:
     return "96" if aspect_ratio == "9:16" else "45"
 
 
-def prompt_filename(fmt: str, persona_number: int, lang: str, creative_index: int = 1, creative_total: int = 1) -> str:
-    suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
-    return f"OUTPUT_{fmt}_P{persona_number:02d}_{lang}{suffix}.txt"
+def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str, creative_index: int = 1, creative_total: int = 1) -> str:
+    """Canonical prompt filename: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt.
+
+    The concept_angle is REQUIRED and is the dedup key for the on-image copy.
+    The optional _A<NN> suffix is for multiplier runs (same fmt+persona+lang
+    with N creative variations). The same stem (without extension) is reused
+    for the generated image filename by the web automation scripts.
+    """
+    if not concept_angle:
+        raise ValueError("concept_angle is required for prompt_filename()")
+    variant_suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
+    return f"{fmt}_P{persona_number:02d}_{lang}_{concept_angle}{variant_suffix}.txt"
 
 
 def classify_hook_structure(headline: str) -> str:
@@ -1334,11 +844,10 @@ def main() -> int:
             if fmt in {"HERO", "UGC"} and not cb.support_line:
                 raise RuntimeError(f"{ctx}.copy.{lang}.support_line required for {fmt}")
             if fmt in {"BA", "FEAT"}:
-                if not cb.bullets or len(cb.bullets) < 2:
-                    raise RuntimeError(f"{ctx}.copy.{lang}.bullets must have >=2 items for {fmt}")
+                min_bullets = 4 if fmt == "BA" else 2
+                if not cb.bullets or len(cb.bullets) < min_bullets:
+                    raise RuntimeError(f"{ctx}.copy.{lang}.bullets must have >={min_bullets} items for {fmt}")
             if fmt == "TEST":
-                if not cb.attribution:
-                    raise RuntimeError(f"{ctx}.copy.{lang}.attribution required for TEST")
                 if not cb.trust_line:
                     raise RuntimeError(f"{ctx}.copy.{lang}.trust_line required for TEST")
 
@@ -1393,7 +902,7 @@ def main() -> int:
         for stale_lang in ["EN", "HI", "HINGLISH"]:
             if stale_lang in render_langs:
                 continue
-            for stale_path in ratio_dir.glob(f"OUTPUT_{fmt}_P{persona_number:02d}_{stale_lang}*.txt"):
+            for stale_path in ratio_dir.glob(f"{fmt}_P{persona_number:02d}_{stale_lang}*.txt"):
                 stale_path.unlink()
 
         background_group_key = str(ad.get("background_group_key") or "").strip()
@@ -1456,7 +965,7 @@ def main() -> int:
                 visual_archetype,
                 visual_lock=visual_lock,
             )
-            out_path = ratio_dir / prompt_filename(fmt, persona_number, lang, creative_index, creative_total)
+            out_path = ratio_dir / prompt_filename(fmt, persona_number, lang, concept.get("concept_angle", ""), creative_index, creative_total)
             validate_prompt_text(out_text, out_path)
             out_path.write_text(out_text, encoding="utf-8")
             prompt_meta = {
@@ -1472,9 +981,7 @@ def main() -> int:
                 "multiplier": creative_total,
                 "background_group_key": background_group_key,
                 "headline_angle": angle or None,
-                "awareness_stage": concept.get("awareness_stage", ""),
                 "concept_angle": concept.get("concept_angle", ""),
-                "concept_structure": concept.get("concept_structure", ""),
                 "hypothesis": ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {},
                 "hypothesis_type": (ad.get("hypothesis") or {}).get("type", "") if isinstance(ad.get("hypothesis"), dict) else "",
                 "hypothesis_variant": (ad.get("hypothesis") or {}).get("variant", "") if isinstance(ad.get("hypothesis"), dict) else "",
@@ -1541,9 +1048,7 @@ def main() -> int:
             "persona_number": persona["number"],
             "persona_name": persona["name"],
             "headline_angle": angle or None,
-            "awareness_stage": concept["awareness_stage"],
             "concept_angle": concept["concept_angle"],
-            "concept_structure": concept["concept_structure"],
             "visual_archetype": visual_archetype["id"],
             "headline_en": headline_en,
             "headline_hi": headline_hi,
@@ -1585,8 +1090,6 @@ def main() -> int:
         }
 
         registry.setdefault("entries", []).append(entry)
-        append_background_index(registry, fmt, entry_id, timestamp, bg["id"])
-        append_concept_combo_index(registry, entry_id, timestamp, fmt, int(persona["number"]), concept)
 
         # used_text updates
         if "EN" in render_langs:

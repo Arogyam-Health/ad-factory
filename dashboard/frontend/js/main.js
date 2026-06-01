@@ -111,25 +111,11 @@ function renderProductDocInfo(productDoc) {
       <small>${doc.exists ? `${(size / 1024).toFixed(1)} KB` : "Missing"}</small>
       <div class="product-doc-actions">
         <button id="openProductDoc" class="ghost-btn" type="button">Open</button>
-        <button id="editProductDoc" class="ghost-btn" type="button">Edit</button>
         <a class="ghost-btn product-doc-download" href="/${doc.path || "input/docs/product master doc.txt"}" download>Download</a>
       </div>
     </div>
   `;
   document.getElementById("openProductDoc")?.addEventListener("click", () => {
-    fetchJSON("/api/product-doc").then((doc) => {
-      showPromptFullscreen(
-        doc.name || "Product Master Doc",
-        doc.content || "",
-        {
-          fetchUrl: "/api/product-doc",
-          saveUrl: "/api/product-doc",
-          saveBody: (text) => ({ content: text }),
-        }
-      );
-    }).catch((err) => setStatus(`Failed to load product doc: ${String(err)}`));
-  });
-  document.getElementById("editProductDoc")?.addEventListener("click", () => {
     fetchJSON("/api/product-doc").then((doc) => {
       showPromptFullscreen(
         doc.name || "Product Master Doc",
@@ -223,6 +209,7 @@ async function runPipeline() {
     formats_by_persona: getFormatsByPersona(),
     visual_archetypes_by_format: state.selectedVisualArchetypesByFormat,
     multiplier: Math.max(1, Math.min(20, Number.parseInt(document.getElementById("adMultiplier")?.value || "1", 10) || 1)),
+    batch_size: Math.max(1, Math.min(500, Number.parseInt(document.getElementById("batchSize")?.value || "10", 10) || 10)),
     share_background_across_personas: Boolean(document.getElementById("shareBackgroundAcrossPersonas")?.checked),
     reuse_backgrounds_from_run_id: reuseBackgrounds ? backgroundReuseRunId : "",
     reuse_visual_patterns_from_run_id: reuseVisualPatterns ? visualPatternReuseRunId : "",
@@ -260,31 +247,82 @@ async function runPipeline() {
     runBtn.disabled = true;
     runBtn.classList.add("is-loading");
   }
+  const cancelBtn = document.getElementById("cancelRunBtn");
+  if (cancelBtn) {
+    cancelBtn.style.display = "inline-block";
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "Cancel";
+  }
   try {
-    const data = await fetchJSON("/api/runs/execute", { method: "POST", body: form });
-    const fallbackLine = data.copy_generation_failures
-      ? `\nCopy fallbacks: ${data.copy_generation_failures} failed ad(s); log: ${data.copy_fallback_log || "run logs"}`
-      : "";
-    const warningLine = data.copy_generation_warnings
-      ? `\nCopy warnings: ${data.copy_generation_warnings}; log: ${data.copy_warning_log || "run logs"}`
-      : "";
-    const sessionLine = data.copy_session_fallback
-      ? `\nSession fallback: product doc attached per request; log: ${data.copy_session_log || "run logs"}`
-      : "";
-    const noteLine = Array.isArray(data.copy_generation_notes) && data.copy_generation_notes.length
-      ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
-      : "";
-    const providerLine = data.opencode_provider ? `\nProvider: ${data.opencode_provider}` : "";
-    const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
-    setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${providerLine}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${warningLine}${sessionLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
-    fetchJSON("/api/defaults")
-      .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
-      .catch(() => {});
-    invalidateRuns();
-    await loadAndRenderRuns();
+    // Clear any previous polling interval
+    if (state.runPollInterval) {
+      clearInterval(state.runPollInterval);
+      state.runPollInterval = null;
+    }
+    const { run_id } = await fetchJSON("/api/runs/execute", { method: "POST", body: form });
+
+    // Poll for partial results and final completion
+    setStatus(`Pipeline started (run: ${run_id})`);
+    await new Promise((resolve) => {
+      state.runPollInterval = setInterval(async () => {
+        // Check partial results
+        try {
+          const partial = await fetchJSON(`/api/runs/${run_id}/partial`);
+          if (partial.ads && partial.ads.length > 0 && partial.progress) {
+            setStatus(`Run: ${run_id}\nCopy progress: ${partial.progress}\nAds generated: ${partial.ads.length}`);
+          }
+        } catch {
+          // Partial endpoint may 404, ignore
+        }
+        // Check if pipeline completed (manifest exists → main endpoint succeeds)
+        try {
+          const data = await fetchJSON(`/api/runs/${run_id}`);
+          clearInterval(state.runPollInterval);
+          state.runPollInterval = null;
+          const fallbackLine = data.copy_generation_failures
+            ? `\nCopy failures: ${data.copy_generation_failures} ad(s)`
+            : "";
+          const warningLine = data.copy_generation_warnings
+            ? `\nCopy warnings: ${data.copy_generation_warnings}; log: ${data.copy_warning_log || "run logs"}`
+            : "";
+          const noteLine = Array.isArray(data.copy_generation_notes) && data.copy_generation_notes.length
+            ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
+            : "";
+          const providerLine = data.opencode_provider ? `\nProvider: ${data.opencode_provider}` : "";
+          const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
+          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${providerLine}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${warningLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
+          fetchJSON("/api/defaults")
+            .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
+            .catch(() => {});
+          invalidateRuns();
+          await loadAndRenderRuns();
+          resolve();
+        } catch {
+          // Check if pipeline errored (partial/error.txt exists but no manifest)
+          try {
+            const errResp = await fetch(`/api/runs/${run_id}/partial`);
+            if (errResp.ok) {
+              const partial = await errResp.json();
+              if (partial.error || partial.progress === "error") {
+                clearInterval(state.runPollInterval);
+                state.runPollInterval = null;
+                setStatus(`Pipeline failed: ${partial.error || "Unknown error"}`);
+                resolve();
+              }
+            }
+          } catch {
+            // ignore
+          }
+          // Pipeline still running, keep polling
+        }
+      }, 3000);
+    });
   } catch (err) {
     setStatus(`Failed: ${String(err)}`);
   } finally {
+    if (cancelBtn) {
+      cancelBtn.style.display = "none";
+    }
     stopProgressPolling();
     if (runBtn) {
       runBtn.disabled = false;
@@ -292,6 +330,26 @@ async function runPipeline() {
     }
   }
 }
+
+
+document.getElementById("cancelRunBtn")?.addEventListener("click", async () => {
+  const cancelBtn = document.getElementById("cancelRunBtn");
+  if (!cancelBtn) return;
+  cancelBtn.disabled = true;
+  cancelBtn.textContent = "Cancelling...";
+  try {
+    if (state.runPollInterval) {
+      clearInterval(state.runPollInterval);
+      state.runPollInterval = null;
+    }
+    await fetchJSON("/api/runs/cancel-current", { method: "POST" });
+    setStatus("Cancelling pipeline... will stop after current ad and keep generated results.");
+  } catch (err) {
+    setStatus(`Cancel failed: ${String(err)}`);
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "Cancel";
+  }
+});
 
 document.getElementById("serverType")?.addEventListener("change", () => {
   state.currentServerType = "opencode";
@@ -352,7 +410,7 @@ if (providerSelectEl) {
 }
 
 // Input Prompts
-document.querySelectorAll(".input-prompt-card").forEach((card) => {
+document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((card) => {
   card.addEventListener("click", () => {
     const promptType = card.dataset.promptType;
     const title = card.querySelector("strong").textContent;
@@ -367,6 +425,43 @@ document.querySelectorAll(".input-prompt-card").forEach((card) => {
       })
       .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
   });
+});
+
+document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
+  card.addEventListener("click", () => {
+    const filePath = card.dataset.filePath;
+    const title = card.querySelector("strong").textContent;
+    fetch(`/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        showPromptFullscreen(title, data.content || "", {
+          fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`,
+          saveUrl: "/api/prompt-file-content",
+          saveBody: (text) => ({ prompt_path: filePath, content: text }),
+        });
+      })
+      .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
+  });
+});
+
+// File upload on selection
+document.getElementById("productFile")?.addEventListener("change", async (event) => {
+  const file = (event.target).files?.[0];
+  if (!file) return;
+  setStatus(`Uploading ${file.name}...`);
+  try {
+    const text = await file.text();
+    await fetchJSON("/api/product-doc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: text }),
+    });
+    const doc = await fetchJSON("/api/product-doc");
+    renderProductDocInfo(doc);
+    setStatus(`Uploaded ${file.name}`);
+  } catch (err) {
+    setStatus(`Upload failed: ${String(err)}`);
+  }
 });
 
 // Init

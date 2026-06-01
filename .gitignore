@@ -39,3 +39,9 @@ trash/*/*
 .sixth/
 .opencode/
 graphify-out/
+
+# Python cache in scripts (added from current_working)
+scripts/__pycache__/*
+
+# Local tool cache
+.commandcode

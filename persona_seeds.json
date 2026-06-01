@@ -1,272 +1,451 @@
 [
   {
     "persona_number": 1,
-    "persona_name": "Craving-Control Struggler",
-    "pain": "Food noise and trigger foods make them lose control after one bite, especially when cravings hit later in the day.",
-    "desire": "They want appetite control that feels reliable, easy and consistent without too much effort so they can eat less without constantly fighting themselves.",
-    "friction": "They have had cravings come back after a few days before, so they do not trust willpower-only solutions or short-lived appetite suppression.",
-    "proof": "They need believable proof that hunger and cravings stay lower long enough to create visible progress, backed by real user results and a structured daily routine.",
-    "tone": "direct and reassuring",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Always Hungry",
+    "core_pattern": "Feels hungry often and struggles to control food urges.",
+    "primary_tags": [
+      "hunger_craving_control",
+      "satiety_no_weakness"
+    ],
+    "common_indian_moments": "Hungry soon after lunch, chai with snacks, searching kitchen after meals, craving fried snacks, opening Swiggy/Zomato for \u201csomething small.\u201d",
+    "failed_attempts": "Skipping meals, drinking water to suppress hunger, avoiding snacks, calorie apps, strict diet charts.",
+    "why_it_failed": "Hunger and cravings keep coming back, so the plan starts depending too much on willpower. Once they snack or overeat, guilt takes over and the day feels wasted.",
+    "relevant_ok_kit_role": "OK Liquid helps reduce hunger and cravings, making it easier to eat less and stay in a calorie deficit without relying only on willpower. The course also helps the user stay supported through coaches if there is a deviation.",
+    "guardrail": "Do not claim no hunger ever or cure for binge eating.",
+    "headline_anchor_rule": "Must imply hunger/craving control + weight loss."
   },
   {
     "persona_number": 2,
     "persona_name": "Busy Professional",
-    "pain": "Meetings, travel, late lunches, and social workdays keep knocking them back to square one.",
-    "desire": "They want visible weight loss without planning their whole life around meal prep, gym slots, or a fragile routine.",
-    "friction": "Most plans feel too high-maintenance for an irregular schedule and fall apart the moment work gets hectic.",
-    "proof": "They need proof the system fits real life with a simple routine, normal-food compatibility, and no dependence on heavy workouts.",
-    "tone": "practical and efficient",
-    "awareness_stage": "problem_aware"
+    "core_pattern": "Wants weight loss, but workdays are packed and they do not want another complicated routine.",
+    "primary_tags": [
+      "five_minute_routine",
+      "no_separate_meal_prep",
+      "low_workout_requirement"
+    ],
+    "common_indian_moments": "Back-to-back calls, commute, late lunch, eating what office has, ordering dinner, skipping gym due to work, deadlines breaking routine.",
+    "failed_attempts": "Gym, meal prep, calorie tracking, strict diet charts.",
+    "why_it_failed": "The plan needed too much time, planning, and mental bandwidth. Elaborate workout plans need dedicated time which is not available. Complex meal prep requires too much planning. Strict diet charts (eat this in breakfast, eat that in dinner) is not practical on office days.",
+    "relevant_ok_kit_role": "OK Kit fits into a busy routine by keeping the course simple: homemade food within guidance, no separate diet cooking, about 5 minutes a day for the product routine, and no complex workouts. Coaches help when users feel confused, so weight loss does not become another overwhelming task.",
+    "guardrail": "Do not claim zero effort or no discipline.",
+    "headline_anchor_rule": "Must imply busy schedule + weight loss."
   },
   {
     "persona_number": 3,
-    "persona_name": "Emotional Eater / Stress Snacker",
-    "pain": "Stress, loneliness, and burnout turn eating into relief for a few minutes and guilt for the rest of the time.",
-    "desire": "They want fewer stress-driven urges and a way to feel back in control without being harsh on themselves.",
-    "friction": "Shame-based plans make the rebound worse, and they worry a weight-loss product will ignore the emotional side of overeating.",
-    "proof": "They need proof that the routine feels supportive, there is someone who will guide them, listen to them and that routine reduces random snacking pressure, and helps them recover after bad days instead of spiraling.",
-    "tone": "empathetic and non-judgmental",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Stress Snacker",
+    "core_pattern": "Stress, tiredness, irritation, or mental fatigue turns into food urges.",
+    "primary_tags": [
+      "hunger_craving_control",
+      "daily_tracker_data",
+      "coach_chat_call_support"
+    ],
+    "common_indian_moments": "Ordering snacks after a bad workday, eating after an argument, stress chai-biscuit breaks, food apps while feeling low, scrolling and snacking.",
+    "failed_attempts": "Diet charts, calorie tracking, removing snacks, \u201ccontrol from tomorrow.\u201d",
+    "why_it_failed": "Food becomes quick relief, not just hunger. One small meal breaks the entire weight loss plan. Some deviations are not even apparent (\"I just ate some chips\")",
+    "relevant_ok_kit_role": "Stress will still happen. OK Liquid helps reduce hunger and cravings, so they have fewer food urges to fight during stressful moments. Coaches help during deviations and tracker helps users notice patterns and stay consistent.",
+    "guardrail": "Do not claim cure for stress, anxiety, depression, binge eating, or emotional eating disorder.",
+    "headline_anchor_rule": "Must imply stress eating + weight loss."
   },
   {
     "persona_number": 4,
-    "persona_name": "Plateau Victim",
-    "pain": "They feel like they are doing the right things, but the scale has stopped moving and every week feels frustratingly flat.",
-    "desire": "They want the scale to move again without cutting harder, obsessing more, or living on a stricter plan forever",
-    "friction": "They are tired of vague plateau advice and suspect something hidden is undoing their effort, but they do not know what.",
-    "proof": "They need a clear explanation of how weight plateaus and how inconsistent appetite control can stall progress, plus realistic stories of people who finally broke through.",
-    "tone": "calm and evidence-led",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Stuck Scale Dieter",
+    "core_pattern": "Feels stuck because the scale has stopped moving despite effort.",
+    "primary_tags": [
+      "hero_3_5kg_15days",
+      "result_start_7_days",
+      "multi_action_system"
+    ],
+    "common_indian_moments": "Walking daily but weight stuck, clothes still tight, family saying \u201ckuch farak nahi pada,\u201d losing 1 kg then gaining back, checking weight every morning, not sure why their weight does not move",
+    "failed_attempts": "Eating less, walking, gym starts, cutting sugar, skipping dinner.",
+    "why_it_failed": "Slow progress kills motivation and makes them doubt the method. They are unsure why the scale is not moving, and there is no clear guidance on what to change.",
+    "relevant_ok_kit_role": "Obesity Killer Kit gives users a clearer 15-day weight-loss path when their weight feels stuck. It works through a multi-action system: OK Liquid helps reduce hunger and cravings, while OK Tablet and OK Powder support digestion and metabolism during the course. Early progress helps motivation stay high, coaches guide users through the course, and the money-back policy helps reduce skepticism.",
+    "guardrail": "Do not guarantee exact result for everyone.",
+    "headline_anchor_rule": "Must imply plateau/stuck + weight loss."
   },
   {
     "persona_number": 5,
-    "persona_name": "PCOD Support Seeker",
-    "pain": "They feel their body gains weight easily, craves more than it should, and does not respond like everyone else seems to.",
-    "desire": "They want believable weight-loss support that feels possible even with PCOD, without being sold a fake cure.",
-    "friction": "They are deeply skeptical of generic advice and hormonal miracle claims because they have heard both too many times.",
-    "proof": "They need doctor-led credibility, explicit no-cure positioning, and relatable result proof from women managing PCOD who still got visible weight loss.",
-    "tone": "empathetic and trust-led",
-    "awareness_stage": "solution_aware"
+    "persona_name": "PCOD Weight-Loss Struggler",
+    "core_pattern": "Feels weight loss is harder because PCOD/PCOS brings cravings, irregular routines, slow progress, and frustration.",
+    "primary_tags": [
+      "harder_weight_loss_context",
+      "hunger_craving_control"
+    ],
+    "common_indian_moments": "Doctor says lose weight, sugar cravings despite control, PCOD diet charts, family comments, scale not moving despite gym or walking.",
+    "failed_attempts": "Strict dieting, skipping meals, sudden sugar cuts, gym starts, random drinks, calorie tracking.",
+    "why_it_failed": "Cravings, slow progress, and irregular routines make consistency difficult. Because weight loss can feel harder with PCOD, generic weight-loss methods often feel frustrating and hard to sustain. Slow progress breaks motivation.",
+    "relevant_ok_kit_role": "OK Liquid helps reduce hunger and cravings making calorie deficit routine easier to follow. The simple 15-day structured routine, and coach support give structure without fancy diet plans. Consistency becomes easier.",
+    "guardrail": "Do not claim PCOD treatment, hormone balance, fertility improvement, insulin resistance fix, or PCOS cure.",
+    "headline_anchor_rule": "Must include/imply PCOD/PCOS + weight loss."
   },
   {
     "persona_number": 6,
-    "persona_name": "Thyroid Weight-Gain Struggler",
-    "pain": "They feel tired, puffy, and stuck with weight that barely moves no matter how sincere the effort is.",
-    "desire": "They want visible progress and a lighter body without being fed false hope or thyroid cure language.",
-    "friction": "They believe their thyroid makes weight loss unusually hard and they distrust generic plans that act like effort is the only issue.",
-    "proof": "They need explicit no-cure boundaries, doctor credibility, and proof that a simpler guided routine can still support progress in harder cases.",
-    "tone": "respectful and trust-led",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Thyroid Weight-Loss Struggler",
+    "core_pattern": "Feels weight loss is slower and harder because of thyroid-related weight concerns.",
+    "primary_tags": [
+      "harder_weight_loss_context",
+      "hunger_craving_control"
+    ],
+    "common_indian_moments": "Doctor advising weight control, scale moving slowly, feeling tired on diets, walking but no results, family blaming thyroid.",
+    "failed_attempts": "Strict dieting, skipping meals, walking, random supplements.",
+    "why_it_failed": "Cravings, slow progress, and fatigue make consistency difficult. Because weight loss can feel harder with thyroid-related concerns, generic weight-loss methods often feel frustrating and hard to sustain.",
+    "relevant_ok_kit_role": "OK Liquid helps reduce hunger and cravings making calorie deficit routine easier to follow. The simple 15-day structured routine, and coach support give structure without fancy diet plans. Consistency becomes easier.",
+    "guardrail": "Do not claim thyroid treatment, thyroid balance, or medicine replacement.",
+    "headline_anchor_rule": "Must include/imply thyroid weight-loss support."
   },
   {
     "persona_number": 7,
     "persona_name": "Post-Failure Re-starter",
-    "pain": "They have lost count of how many times they said this is day one and quit again after one rough week",
-    "desire": "They want a restart that finally turns into momentum and rebuilds their confidence instead of ending in another relapse.",
-    "friction": "Repeated failure has damaged their self-belief, so they assume this will become the same old story.",
-    "proof": "They need to see relatable people who had also failed multiple times get early wins with a simple, restart-friendly system and real support. They need to see how this solution be different",
-    "tone": "hopeful and non-judgmental",
-    "awareness_stage": "solution_aware"
+    "core_pattern": "Keeps starting and stopping weight-loss plans.",
+    "primary_tags": [
+      "result_start_7_days",
+      "clear_15_day_structure"
+    ],
+    "common_indian_moments": "Starting every Monday/New year/new month/life event, stopping after 3 days, saving diet reels, \u201cis baar pakka,\u201d half-used products at home, saved diet reels, lose motivation because of no results",
+    "failed_attempts": "Strict diets, intermittent fasting, gym plans, detox drinks, YouTube diets.",
+    "why_it_failed": "Plans were too hard, confusing, or dependent on willpower. When results took too long to show, motivation had to carry the plan for too many days.",
+    "relevant_ok_kit_role": "Obesity Killer Kit starts showing progress in the first 7 days, which helps motivation stay high. It gives users a guided 15-day course with hunger reduction, simple food guidance, and expert coach support, so they are not restarting blindly again. The course is simple to follow, which makes consistency easier.",
+    "guardrail": "Do not insult previous attempts.",
+    "headline_anchor_rule": "Must imply failed diets/restarting + weight loss."
   },
   {
     "persona_number": 8,
-    "persona_name": "No-Weakness Skeptic",
-    "pain": "Every past attempt to eat less made them feel weak, shaky, low-energy, or unable to function normally.",
-    "desire": "They want weight loss that does not leave them drained, foggy, or miserable through the workday.",
-    "friction": "They equate weight loss with weakness now, so any plan that feels crash-like gets rejected immediately.",
-    "proof": "They need proof that the approach supports fullness and daily energy, not starvation-style restriction, with users saying they did not feel weak.",
-    "tone": "direct and reassuring",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Weakness-Fearing Dieter",
+    "core_pattern": "Wants weight loss but fears weakness, hunger, or feeling drained.",
+    "primary_tags": [
+      "satiety_no_weakness",
+      "hunger_craving_control",
+      "no_crash_diet",
+      "no_side_effects_positioning"
+    ],
+    "common_indian_moments": "Feeling dizzy after skipping meals, family saying \u201cbhookhe mat raho,\u201d headaches during fasting, work suffering during dieting, not enough energy to play with kids, unable to do regular tasks",
+    "failed_attempts": "Crash diets, fasting, skipping dinner, low-calorie plans.",
+    "why_it_failed": "They could not continue when the plan made them feel weak, hungry, or drained.",
+    "relevant_ok_kit_role": "OK Liquid helps users feel fuller while supporting nutrition and energy, so eating less does not feel like starving and their energy remains high. The suggested diet helps support nutritional needs, and the course is designed to avoid the usual crash-diet feeling. This approach comes from decades of product refinement by Dr. Arun Tyagi.",
+    "guardrail": "Do not claim no weakness for everyone or no hunger ever.",
+    "headline_anchor_rule": "Must imply no weakness + weight loss."
   },
   {
     "persona_number": 9,
-    "persona_name": "Time-Starved Parent",
-    "pain": "Sleep loss, school runs, work, and childcare leave them eating on autopilot and pushing their own routine to the bottom of the list.",
-    "desire": "They want progress that survives chaotic days and does not require separate meals, long workouts, or perfect planning.",
-    "friction": "Most weight-loss plans assume free time, mental bandwidth, and energy they simply do not have.",
-    "proof": "They need proof the routine is lightweight, family-compatible, and easy to resume after messy days without guilt.",
-    "tone": "practical and compassionate",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Busy Parent",
+    "core_pattern": "Wants weight loss, but parenting leaves little time for planning, gym, or separate cooking.",
+    "primary_tags": [
+      "no_separate_meal_prep",
+      "low_workout_requirement",
+      "five_minute_routine"
+    ],
+    "common_indian_moments": "Kids\u2019 school rush, office plus home load, finishing children\u2019s food, late dinner, no personal time, child routine changing daily, no gym time, no time for complex diets",
+    "failed_attempts": "Home workouts, fancy diet plans, gym, skipping meals.",
+    "why_it_failed": "Their schedule is unpredictable and personal time is rare. Parenting and household demands make separate cooking, gym time, and strict diet planning hard to sustain.",
+    "relevant_ok_kit_role": "Obesity Killer Kit helps users lose weight without sacrificing family time. It works with homemade food within course guidance, does not need separate diet cooking, takes about 5 minutes a day for the product routine, and does not require complex workouts. Expert coaches give timely guidance when users feel overwhelmed, so they do not have to do it alone.",
+    "guardrail": "Do not claim no effort needed.",
+    "headline_anchor_rule": "Must imply parenting/family time + weight loss."
   },
   {
     "persona_number": 10,
-    "persona_name": "Homemaker, self-care deprioritized",
-    "pain": "They spend the day feeding everyone else, grazing in the kitchen, eating leftovers, and putting their own body last. When they go on a diet, they need to adjust as per family's meals",
-    "desire": "They want to feel lighter, cared for, and back in control without creating a separate life or separate food routine for themselves.",
-    "friction": "Guilt around prioritizing themselves and nonstop household demands make consistency feel selfish or unrealistic.",
-    "proof": "They need proof the system works with homemade food, requires no separate cooking, and still gives structure and support.",
-    "tone": "warm and respectful",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Family-First Homemaker",
+    "core_pattern": "Spends the day around food and family needs, so own weight loss keeps getting delayed. Self care takes a back seat.",
+    "primary_tags": [
+      "no_separate_meal_prep",
+      "hunger_craving_control",
+      "five_minute_routine"
+    ],
+    "common_indian_moments": "Tasting while cooking, finishing children\u2019s leftovers, eating after serving everyone, chai snacks, guests bringing sweets, cooking separately feeling impossible.",
+    "failed_attempts": "Skipping meals, eating separately, boiled food, cutting rice or roti completely, home workouts",
+    "why_it_failed": "The home environment keeps them close to food, and self-care often gets pushed behind family needs.",
+    "relevant_ok_kit_role": "Obesity Killer Kit helps reduce hunger and cravings and does not require separate diet cooking, making it easier to follow the routine at home. Coaches guide users through tough moments so they feel supported during the course.",
+    "guardrail": "Do not imply homemakers lack discipline.",
+    "headline_anchor_rule": "Must imply home routine/family food + weight loss."
   },
   {
     "persona_number": 11,
-    "persona_name": "Festive/Travel Weight Regainer",
-    "pain": "Trips, weddings, family functions, and holiday eating leave them puffy, heavier, and struggling to restart afterward.",
-    "desire": "They want a quick reset that helps them feel back in control without punishing themselves for living normal life.",
-    "friction": "Social food pressure is hard to resist, and once travel breaks the routine they find it hard to get back into the swing of it.",
-    "proof": "They need proof that the system helps with post-event reset, appetite stabilization, and getting lighter again without extreme compensation. They want proof of quick results",
-    "tone": "practical and forgiving",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Office Snacker",
+    "core_pattern": "Main weight-loss issue is repeated office snacks, not big meals.",
+    "primary_tags": [
+      "hunger_craving_control",
+      "eat_only_when_hungry_rule"
+    ],
+    "common_indian_moments": "Chai biscuits, samosa with colleagues, birthday cake, namkeen at desk, pantry visits, \u201cbas ek bite,\u201d evening slump snacking.",
+    "failed_attempts": "Carrying healthy snacks, saying no, skipping lunch, avoiding pantry visits.",
+    "why_it_failed": "The office environment keeps creating small eating triggers through tea breaks, pantry visits, shared snacks, and colleague orders.",
+    "relevant_ok_kit_role": "OK Liquid helps reduce hunger and cravings, making it easier to avoid unnecessary snacking. The tracker helps them see how small snacks add up.",
+    "guardrail": "Do not shame snacking or call them lazy.",
+    "headline_anchor_rule": "Must imply office snacking/chai-time + weight loss."
   },
   {
     "persona_number": 12,
-    "persona_name": "Metabolism-Worry Buyer",
-    "pain": "They are convinced their metabolism is slow, damaged, or broken because normal advice no longer feels true in their body.",
-    "desire": "They want a clear, believable explanation for slow progress and a routine that feels body-compatible instead of punishing.",
-    "friction": "Conflicting advice has made them cynical, and fat-burner language instantly sounds fake to them.",
-    "proof": "They need simple mechanism logic that focuses on appetite, intake control, and consistency rather than pseudo-science or magic metabolism claims.",
-    "tone": "curious and educational",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Night Snacker",
+    "core_pattern": "Controls food during the day but loses control at night.",
+    "primary_tags": [
+      "hunger_craving_control",
+      "clear_15_day_structure"
+    ],
+    "common_indian_moments": "Post-dinner sweet cravings, late-night scrolling, TV snacks, leftover mithai, ordering after everyone sleeps, \u201ckal se pakka.\u201d",
+    "failed_attempts": "Skipping dinner, locking snacks away, drinking water, no food after 8 pm.",
+    "why_it_failed": "Night cravings feel stronger when users are tired, bored, underfed, or scrolling after dinner.",
+    "relevant_ok_kit_role": "OK Liquid helps reduce hunger and cravings during the day, while the course routine helps make eating patterns more structured. This makes night-time food urges easier to manage during the course.",
+    "guardrail": "Do not claim cravings stop permanently.",
+    "headline_anchor_rule": "Must imply late-night eating/snacking + weight loss."
   },
   {
     "persona_number": 13,
-    "persona_name": "Digestion-Issue + Weight Combo Seeker",
-    "pain": "Bloating, acidity, constipation, and heaviness make them feel like their gut and their weight problem are tied together. Complicated diet plans cause them diarrhoea or constipation or acidity.",
-    "desire": "They want to feel lighter in the stomach and on the scale at the same time, not solve one while worsening the other. They also want to ensure no digestive discomfort during course.",
-    "friction": "Generic weight-loss products ignore gut comfort, and digestive discomfort makes it harder for them to stay consistent. Things like diarrhoea also interrupts their usual routine (work, chores etc.).",
-    "proof": "They need proof that the system supports digestion as well as appetite control, with believable user stories that mention less bloating and easier progress.",
-    "tone": "practical and symptom-aware",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Festive Weight Regainer",
+    "core_pattern": "Loses some weight but regains during festivals, travel, weddings, or social eating.",
+    "primary_tags": [
+      "clear_15_day_structure",
+      "daily_tracker_data"
+    ],
+    "common_indian_moments": "Shaadi food, Diwali sweets, hotel buffets, travel snacks, family visits, relatives saying \u201cthoda aur lo.\u201d",
+    "failed_attempts": "Extreme dieting before events, guilt after overeating, restarting after travel.",
+    "why_it_failed": "Social food situations break routine, and restarting after festivals, travel, or weddings becomes hard.",
+    "relevant_ok_kit_role": "Obesity Killer Kit gives a clear 15-day restart with tracking and guidance, helping them come back to routine after festive or travel weight gain.",
+    "guardrail": "Do not claim permanent weight loss or no rebound forever.",
+    "headline_anchor_rule": "Must imply post-festival/travel weight restart."
   },
   {
     "persona_number": 14,
-    "persona_name": "Budget-Conscious Result Seeker",
-    "pain": "They want results, but they are tired of paying for overhyped plans, upsells, and products that feel like expensive guesswork.",
-    "desire": "They want visible value fast enough to justify the spend and feel smart, not fooled, after buying.",
-    "friction": "Price matters because past coaching, apps, or supplements did not feel worth the money.",
-    "proof": "They need clear kit value, duration clarity, expected results, time and money investment needed and a money-back guarantee that reduces the fear of wasting money.",
-    "tone": "transparent and value-focused",
-    "awareness_stage": "product_aware"
+    "persona_name": "Slow-Metabolism Worrier",
+    "core_pattern": "Believes their metabolism is slow and normal diet advice does not work. her body does not respond to normal weight loss advice.",
+    "primary_tags": [
+      "multi_action_system",
+      "tablet_powder_digestive_support"
+    ],
+    "common_indian_moments": "\u201cMera metabolism slow hai,\u201d eating less but not losing, comparing with spouse/friends, green tea or fat burner attempts, weight gain after 35.",
+    "failed_attempts": "Fat burners, green tea, metabolism drinks, skipping meals, gym starts.",
+    "why_it_failed": "They keep looking for quick fixes because they feel normal advice does not work for their body. But quick fixes often do not give them a complete system for hunger, structure, and digestion.",
+    "relevant_ok_kit_role": "Obesity Killer Kit is a multi-action system: OK Liquid supports lower food intake creating calorie deficit, while OK Tablet and Powder improves digestion and metabolism and detoxifies during the course.",
+    "guardrail": "Do not claim metabolism cure or medical metabolic treatment.",
+    "headline_anchor_rule": "Must imply slow metabolism concern + weight loss."
   },
   {
     "persona_number": 15,
-    "persona_name": "Wedding/Event Deadline Persona",
-    "pain": "Deadline for the event in approaching and they don't know how to lose weight in a short duration. They need to fit in their outfits, look good, gather complements. How they look and feel is directly tied to their social status during the event.",
-    "desire": "They want to look visibly lighter and feel comfortable in their clothes before the deadline without doing anything reckless. They want surety because big events occur only occasionally.",
-    "friction": "They cannot afford a crash plan that makes them weak, stressed, or unpredictable right before the big day.They cannot leave it up to chance.",
-    "proof": "They need proof of visible early progress within a clear timeline for their goals, plus relatable deadline-driven transformations that still look realistic.",
-    "tone": "calm and motivating",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Digestion + Weight Struggler",
+    "core_pattern": "Connects weight struggle with bloating, heaviness, acidity, gas, or poor digestion.",
+    "primary_tags": [
+      "tablet_powder_digestive_support",
+      "hunger_craving_control"
+    ],
+    "common_indian_moments": "Heavy after meals, bloated stomach, acidity after spicy food, constipation during dieting, late dinner discomfort, \u201cpet saaf nahi hai.\u201d",
+    "failed_attempts": "Digestive tablets, home remedies, skipping meals, detox drinks.",
+    "why_it_failed": "They treated digestion separately but did not follow a structured weight-loss course that also addressed intake and consistency.",
+    "relevant_ok_kit_role": "Obesity Killer Kit supports both lower food intake and improves digestion and metabolism during the course. OK Liquid helps with cravings, while OK Tablet and Powder improves gut health and detoxifies the body.",
+    "guardrail": "Do not claim treatment for IBS, acidity, constipation, gas, or digestive disease.",
+    "headline_anchor_rule": "Must imply heaviness/digestion context + weight loss without disease claims."
   },
   {
     "persona_number": 16,
-    "persona_name": "Confidence-First Persona",
-    "pain": "Photos, mirrors, tight clothes, and a consistently feeling heavy keep chipping away at how they see themselves.Confidence is shattered.",
-    "desire": "They want to feel lighter, look more like themselves again, and stop organizing life around body self-consciousness.",
-    "friction": "Aggressive weight-loss messaging makes them shut down because it worsens shame instead of building belief. Or solutions look too impossible to finish.",
-    "proof": "They need relatable transformations that talk about confidence, comfort, and feeling good in daily life, not just kilos lost. They want to know that they are not alone in the journey",
-    "tone": "uplifting and non-judgmental",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Value-Conscious Buyer",
+    "core_pattern": "Wants visible results but fears wasting money on another failed product.",
+    "primary_tags": [
+      "hero_3_5kg_15days",
+      "money_back_7day_terms",
+      "multi_action_system"
+    ],
+    "common_indian_moments": "Comparing with cheaper powders, asking family, reading reviews, \u201cpaise waste na ho,\u201d checking guarantee, asking how this is different.",
+    "failed_attempts": "Cheap drinks, random pills, low-cost diets, influencer products.",
+    "why_it_failed": "They either did not see results earlier or did not get enough guidance to follow properly. This makes them worry that they may waste money again.",
+    "relevant_ok_kit_role": "Obesity Killer Kit is developed through decades of obesity-focused Ayurvedic practice, uses high-quality ingredients, and is backed by Dr. Arun Tyagi\u2019s 34 years of experience. It offers a structured, multi-action system with expert coach guidance. The 3-5 kg weight-loss promise  and defined money-back policy help reduce purchase risk.",
+    "guardrail": "Do not say unconditional refund or guaranteed result for everyone.",
+    "headline_anchor_rule": "Must imply value/proof + weight loss."
   },
   {
     "persona_number": 17,
-    "persona_name": "Trust-First Buyer",
-    "pain": "They are interested, but the category feels full of big claims, shoddy proof, and products that sound more like marketing than medicine.",
-    "desire": "They want a weight-loss system they can trust before they spend, start, and explain it to family.",
-    "friction": "They do not trust generic supplement language, self-medication solutions, or testimonials without real credibility behind them.",
-    "proof": "They need doctor-formulated credibility, arogyam hospital backing, a clear explanation of how the kit works, proof of work, and honest boundaries around what it can and cannot do.",
-    "tone": "careful and trust-led",
-    "awareness_stage": "product_aware"
+    "persona_name": "Event Deadline Dieter",
+    "core_pattern": "Wants visible and reliable weight-loss progress before an upcoming event. Weight loss with a deadline.",
+    "primary_tags": [
+      "hero_3_5kg_15days",
+      "clear_15_day_structure"
+    ],
+    "common_indian_moments": "Wedding, engagement, reunion, trip, festival, photoshoot, blouse/kurta not fitting, clothes feeling tight.",
+    "failed_attempts": "Crash dieting, skipping meals, intense workouts.",
+    "why_it_failed": "Extreme methods feel hard and tiring, can create side effects, and often fail to deliver the visible progress they want before the event.",
+    "relevant_ok_kit_role": "Obesity Killer Kit offers a clear timeline for weight loss. Users experience 3-5 kg weight loss every 15 days so they can plan according to their timeline. It reduces hunger and cravings and maintains high energy so the program does not feel extreme.",
+    "guardrail": "Do not guarantee exact result for everyone.skin_glow_up is relevant but should not become a medical or cosmetic-treatment claim.",
+    "headline_anchor_rule": "Must imply event deadline + weight loss."
   },
   {
     "persona_number": 18,
-    "persona_name": "Support-Dependent Persona",
-    "pain": "They can start strong, but when motivation dips or life hits, the plan silently collapses and no one catches it. They feel alone on their weight loss journey",
-    "desire": "They want accountability and support that keeps them moving through slow weeks, setbacks, and off days.",
-    "friction": "Solo weight-loss attempts fail because they deviate from the plan. Small deviations turn irreversible before they realise. No one to keep them on track.",
-    "proof": "They need proof of real check-ins, a daily tracker, coach guidance, and success stories from people who needed external accountability to stay consistent.",
-    "tone": "coach-like and non-judgmental",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Confidence Seeker",
+    "core_pattern": "Wants to feel better in clothes, photos, energy, and daily confidence.",
+    "primary_tags": [
+      "hero_3_5kg_15days",
+      "satiety_no_weakness"
+    ],
+    "common_indian_moments": "Avoiding photos, deleting pictures, tight clothes, feeling conscious at functions, avoiding old friends, buying bigger clothes reluctantly.",
+    "failed_attempts": "Crash dieting, gym starts, skipping meals, buying bigger clothes.",
+    "why_it_failed": "Earlier plans focused only on restriction and did not feel sustainable. That made it hard to reach the visible body, energy, and confidence changes they wanted.",
+    "relevant_ok_kit_role": "Obesity Killer Kit helps customers start visible weight loss while reducing hunger and supporting energy, so the process feels more manageable. As users lose weight, they notice visible body changes. The kit can also support better skin and hair texture through detoxification, cleaner food habits, and its nutritional properties.",
+    "guardrail": "Do not body shame or overpromise appearance change. skin_glow_up is relevant but should not become a medical or cosmetic-treatment claim",
+    "headline_anchor_rule": "Must imply clothes/confidence + weight loss."
   },
   {
     "persona_number": 19,
-    "persona_name": "Beginner Who Hates Complex Plans",
-    "pain": "Calories, macros, meal rules, and fitness advice all feel like too much, so they freeze before they even start properly.",
-    "desire": "They want a simple path that tells them what to do each day without turning weight loss into a second job.",
-    "friction": "Complexity kills momentum fast, and detailed tracking makes them feel overwhelmed or mentally drained.",
-    "proof": "They need proof of a low-decision routine, clear instructions, guided simple food rules, and support that keeps things simple instead of adding more noise.",
-    "tone": "simple and direct",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Doctor-Trust Buyer",
+    "core_pattern": "Will not buy unless the product feels credible, doctor-backed, and proven.",
+    "primary_tags": [
+      "doctor_34_years",
+      "developed_over_decades"
+    ],
+    "common_indian_moments": "Checking doctor credentials, asking \u201ckis doctor ne banaya hai,\u201d watching testimonials, asking side effects, wanting hospital-backed credibility.",
+    "failed_attempts": "Influencer products, cheap pills, random Ayurvedic powders.",
+    "why_it_failed": "They did not trust the source, the product logic, or the credibility behind earlier solutions.",
+    "relevant_ok_kit_role": "Obesity Killer Kit is created by Dr. Arun Tyagi, backed by Arogyam\u2019s obesity-care experience, trusted by 70,000+ customers in India, and supported by real customer transformations.",
+    "guardrail": "Do not claim doctor guarantees cure or hospital treatment.",
+    "headline_anchor_rule": "Must imply proof/trust + weight loss."
   },
   {
     "persona_number": 20,
-    "persona_name": "New Mother",
-    "pain": "Their body feels unfamiliar because of increased weight, sleep is broken, they have no time because of a young child in their life, and they feel the pressure to attain their previous weight and bodies. They also fear negative impact of any supplements on their kids",
-    "desire": "They want a safe way to lose weight that is gentle on them and their child. They want to be supported in this journey when everyone else is focusing on the child. They do not want too much complexity in routine. They want to feel more in control while losing weight, without adding stress to early motherhood.",
-    "friction": "They worry any weight-loss attempt will drain energy, feel unsafe, or collide with the demands of caring for a baby.",
-    "proof": "They need proof that the plan feels guided, safe, home-routine friendly, and easy to follow.",
-    "tone": "empathetic and protective",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Accountability Seeker",
+    "core_pattern": "Needs guidance and accountability or they fall off the plan.",
+    "primary_tags": [
+      "coach_chat_call_support",
+      "daily_tracker_data"
+    ],
+    "common_indian_moments": "Forgetting to log progress, asking repeated food questions, losing motivation after 2 to 3 days, confusion about allowed foods, wanting reminders.",
+    "failed_attempts": "Self-guided diets, YouTube plans, downloaded diet charts.",
+    "why_it_failed": "They were left alone to figure things out. When things got tough, they lost motivation because there was no one to guide them. They were also unsure whether the solutions they tried worked for people like them.",
+    "relevant_ok_kit_role": "Obesity Killer Kit comes with guidance and support from expert coaches. Progress is tracked through a daily tracker, helping users notice patterns and stay accountable. Real customer results also show users that people like them have been able to lose weight.",
+    "guardrail": "Do not position support as medical treatment or therapy.",
+    "headline_anchor_rule": "Must imply guided/support-led weight loss."
   },
   {
     "persona_number": 21,
-    "persona_name": "Menopause",
-    "pain": "Belly weight, poor sleep, cravings, and feeling unlike themselves make menopause-related weight gain feel especially stubborn and unfair.",
-    "desire": "They want to feel lighter, less inflamed, and more in control without pretending hormones are not part of the picture.",
-    "friction": "They are tired of generic advice that ignores menopause and skeptical of anything that sounds too easy or too young for their stage of life.",
-    "proof": "They need credible guidance, working mechanism, women-like-me proof, and realistic evidence that a simpler natural routine can still help during this life stage.",
-    "tone": "respectful and evidence-led",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Confused Beginner",
+    "core_pattern": "Wants weight loss but feels overwhelmed by diet rules, calories, macros, and gym plans.",
+    "primary_tags": [
+      "clear_15_day_structure",
+      "daywise_pouches"
+    ],
+    "common_indian_moments": "Confused by diet reels, complex routines, fancy diet plans, unsure what to eat, scared of gym, calorie counting feels too much, \u201csimple batao kya karna hai.\u201d",
+    "failed_attempts": "Random Instagram tips, skipping meals, copying someone else\u2019s diet.",
+    "why_it_failed": "Too much information creates confusion. They do not know where to start and do not have someone authoritative to reach out to when questions come up.",
+    "relevant_ok_kit_role": "Obesity Killer Kit gives a clear 15-day routine with day-wise pouches, food guidance and expert support from coaches when user has any questions. The simple routine and food rules ensure that there is no information overload.",
+    "guardrail": "Do not promise effortless transformation.",
+    "headline_anchor_rule": "Must imply beginner/confused + weight loss."
   },
   {
     "persona_number": 22,
-    "persona_name": "Natural Solution Seeker",
-    "pain": "They want weight loss help but dislike anything that feels chemical, invasive, or harsh on the body.",
-    "desire": "They want a natural path that feels safe, familiar, and serious enough to trust, not a random herbal gamble.",
-    "friction": "They are interested in Ayurveda and natural products, but they distrust flashy labels and weakly explained supplement claims.",
-    "proof": "They need doctor-formulated Ayurvedic credibility, ingredient seriousness, working mechanism, and proof that the system is structured and not just another herbal bottle.",
-    "tone": "calm and trust-led",
-    "awareness_stage": "solution_aware"
+    "persona_name": "35+ Slow Progress Dieter",
+    "core_pattern": "After 30, weight loss feels slower and harder than before.",
+    "primary_tags": [
+      "hunger_craving_control",
+      "multi_action_system",
+      "clear_15_day_structure"
+    ],
+    "common_indian_moments": "Belly fat after 30, work and family load, old diets and routines not working, comparing with younger self, weight gain despite similar eating.",
+    "failed_attempts": "Walking, gym starts, cutting dinner, low-carb attempts.",
+    "why_it_failed": "Progress feels slow, and life responsibilities make consistency harder. Old routines may no longer work the way they once did.",
+    "relevant_ok_kit_role": "Obesity Killer Kit works on fundamentals of weight loss like reducing calorie intake through OK Liquid and increasing calorie burn through improved digestion and metabolism. This ensures that the course works even when user's body and routine has changed as they age. A structured routine, and guidance from coaches make the journey feel easier to follow even when weight loss feels slower.",
+    "guardrail": "Do not claim age-related medical cure.",
+    "headline_anchor_rule": "Must imply 35+ or slow weight loss + support."
   },
   {
     "persona_number": 23,
-    "persona_name": "Sustainable Weight Loss Seeker",
-    "pain": "They are exhausted by losing weight in bursts only to gain it back as soon as they stop the course.",
-    "desire": "They want progress they can maintain after the course instead of another intense phase followed by rebound.",
-    "friction": "They avoid extreme plans because dependency, burnout, and bounce-back feel more likely than real change.",
-    "proof": "They need proof that the system does not reduce only superficial weight and that it does not create dependency. They need proof to reduce rebound risk",
-    "tone": "realistic and steady",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Postpartum Weight Seeker",
+    "core_pattern": "Eligible mothers want post-pregnancy weight loss but routine is unpredictable and they fear side-effects to their baby because of breastfeeding.",
+    "primary_tags": [
+      "five_minute_routine",
+      "doctor_34_years"
+    ],
+    "common_indian_moments": "Irregular sleep, baby care, no personal time, clothes not fitting, family meals, eating quickly between tasks, worry about impact on new born",
+    "failed_attempts": "Skipping meals, home workouts, random diets.",
+    "why_it_failed": "Life feels too unpredictable for a strict plan. They are also cautious about whether what they consume is appropriate after childbirth, especially around baby care and breastfeeding concerns.",
+    "relevant_ok_kit_role": "6 months postpartum, Obesity Killer Kit can be taken by new mothers for weight loss without fearing for side effects on their baby. It is made of all-natural Ayurvedic ingredients which work gently with the body. The course follows a simple routine that takes 5 minutes a day and does not require new mothers to sacrifice baby care for self care. The structure removes guesswork and does not consume mental bandwidth. New mothers get guidance and feel supported by the coaches who not only guide them at every step of the way but make them feel heard when everyone else is focusing on the baby.",
+    "guardrail": "Not for pregnant women or women within 6 months postpartum. Do not discuss breastfeeding safety unless cleared by doctor.",
+    "headline_anchor_rule": "Must imply post-pregnancy weight loss beyond 6 months without medical advice tone."
   },
   {
     "persona_number": 24,
-    "persona_name": "Injection-Averse User",
-    "pain": "They want weight loss, but injections feel intimidating, too medicalized, or simply not like something they are ready to do. Other treatments still do not give the same efficacy",
-    "desire": "They want a natural, non-invasive path that feels safe enough to start and easier to live with. At the same time, it should not feel less effective than the injection-led counterpart.",
-    "friction": "Fear of needles, side effects, dependency, and being locked into a long-term medication route keeps them from acting.",
-    "proof": "They need a believable alternative with doctor credibility, same or better effectiveness, real user results, and clear proof that it feels natural and non-invasive.",
-    "tone": "calm and reassuring",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Menopause Weight-Loss Struggler",
+    "core_pattern": "Weight gain feels harder to control around menopause, especially belly fat and slow progress. Body feels different.",
+    "primary_tags": [
+      "harder_weight_loss_context",
+      "multi_action_system",
+      "clear_15_day_structure"
+    ],
+    "common_indian_moments": "Belly weight gain, old methods not working, low energy, sleep changes, tight clothes, walking but slow progress.",
+    "failed_attempts": "Walking, skipping meals, home remedies, cutting sugar, random supplements.",
+    "why_it_failed": "Progress feels slower, and old routines no longer create visible change. Body changes around menopause can make the weight-loss journey feel more difficult.",
+    "relevant_ok_kit_role": "Obesity Killer Kit works on fundamentals of weight loss like reducing calorie intake through OK Liquid and increasing calorie burn through improved digestion and metabolism. This ensures that the course works even when user's body has changed after menopause. A structured routine, and guidance from coaches make the journey feel easier to follow even when weight loss feels slower.",
+    "guardrail": "Do not claim menopause treatment, hormone fix, hot flash relief, or medical symptom cure.",
+    "headline_anchor_rule": "Must imply menopause/perimenopause weight-loss support."
   },
   {
     "persona_number": 25,
-    "persona_name": "Women Whose Body Changed With Age",
-    "pain": "Her body feels different after her late 30s or 40s: belly fat showed up, clothes fit strangely, energy is lower, and the same eating habits or diets no longer keep her weight in control.",
-    "desire": "She wants to feel lighter, active, and comfortable in her clothes again with visible progress from a manageable routine that does not take over her life.She also want to know why she does not feel the same anymore",
-    "friction": "She is discouraged that old methods stopped working, and between hormonal shifts, stress, sleep issues, and family or work responsibilities, extreme plans feel too punishing to sustain.",
-    "proof": "She needs to see realistic results from women like her, how the course works fundamentally to be sure it will work on her, proof the routine works with her busy life, and reassurance that progress will not leave her feeling weak.",
-    "tone": "mature and empathetic",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Ayurveda-First Buyer",
+    "core_pattern": "Wants weight loss but is uncomfortable with harsh methods, chemicals, or injections. Prefers a natural solution which is gentler on the body. Trusts ayurvedic wisdom.",
+    "primary_tags": [
+      "natural_ayurvedic",
+      "ingredient_system_39"
+    ],
+    "common_indian_moments": "Searching Ayurvedic options, asking about side effects, family preferring Ayurveda, trying home remedies, herbal drinks, random Ayurvedic pills.",
+    "failed_attempts": "Herbal drinks, home remedies, random Ayurvedic pills.",
+    "why_it_failed": "Earlier natural solutions lacked structure and support. They may have helped only one part of the problem, such as digestion or exercise, but did not offer a complete weight-loss system.",
+    "relevant_ok_kit_role": "Obesity Killer Kit combines Ayurveda, 39 potent ingredients, and a structured 15-day course with hunger support, digestion and metabolism improvement, food guidance, and coach support. It works naturally across multiple parts of weight loss: hunger, gut health, guidance, and discipline through the principles of Ayurveda.",
+    "guardrail": "Do not claim safe for everyone in every condition.",
+    "headline_anchor_rule": "Must imply natural/Ayurvedic + weight loss."
   },
   {
     "persona_number": 26,
-    "persona_name": "Men Whose Body Changed With Age",
-    "pain": "His waist keeps growing, shirts feel tighter at the stomach, stairs leave him more winded than before, and he can see his body looks heavier and older than the man he used to be.",
-    "desire": "He wants to drop belly fat, feel lighter and sharper, able to move like he used to and regain control with a simple system that fits work, travel, family meals, and real life.",
-    "friction": "What used to work earlier doesn't anymore. He can't stick to strict diets, long workouts, and complicated food rules, and his desk job, late dinners, social eating, and irregular schedule make consistency hard.",
-    "proof": "He needs proof of visible waist and weight progress from a straightforward routine, plus clear evidence it can fit busy workdays without a gym-heavy or overly restrictive plan. He is also inclined to solution with strong fundamental working principles.",
-    "tone": "practical and no-nonsense",
-    "awareness_stage": "problem_aware"
+    "persona_name": "Rebound-Worried Dieter",
+    "core_pattern": "Wants results but worries about rebound, dependency, or short-term weight loss.",
+    "primary_tags": [
+      "non_dependency_after_course",
+      "multi_action_system"
+    ],
+    "common_indian_moments": "Losing before and gaining again, asking \u201ccourse ke baad kya,\u201d fear of dependency, crash diet rebound, stopping products and regaining.",
+    "failed_attempts": "Crash diets, detoxes, extreme fasting, temporary routines.",
+    "why_it_failed": "Earlier plans did not teach maintenance or fit long-term life. Some methods created temporary or superficial weight loss, so weight came back after the plan ended, creating distrust.",
+    "relevant_ok_kit_role": "Obesity Killer Kit does not cause superficial weight loss which comes back as soon as the course end. The multi-action system improves overall gut health which gives long term results. It also does not create lifelong dependency. An easy to follow maintenance routine is also provided to users so they can easily stop the course without fearing weight bounce back.",
+    "guardrail": "Do not say permanent weight loss or weight can never come back.",
+    "headline_anchor_rule": "Must imply sustainable/long-term + weight loss."
   },
   {
     "persona_number": 27,
-    "persona_name": "Health Scare Weight-Loss Starter",
-    "pain": "A doctor warning or bad blood report made weight loss feel urgent instead of optional, and now BP, cholesterol, prediabetes, fatty liver, breathlessness, or joint pain make the risk feel real. They also feel vary of taking something that might worsen their conditions. They are unsure whether it is safe to take something else when they are already on medications",
-    "desire": "They want a safe, guided first step that helps them start quickly, see progress, and feel back in control of their health without extreme dieting, injections, or feeling drained. They want something that works with their existing medications for health conditions without causing unnecessary negative interactions and side effects",
-    "friction": "Fear creates urgency but also overwhelm, and because health already feels sensitive, they are wary of unverified bold claims, unsure what is safe, and low on confidence after past failed attempts.They are unsure whether they can even take these course with their existing medications.",
-    "proof": "They need doctor-formulated credibility, working mechanism, assurance that the solution works with conditions like BP, cholesterol, prediabetes, fatty liver, breathlessness, or joint pain. They want a structured system which feels credible and not generic, believable results from people who started after health warnings",
-    "tone": "health-aware and reassuring",
-    "awareness_stage": "solution_aware"
+    "persona_name": "Injection-Averse Buyer",
+    "core_pattern": "Wants weight loss but is uncomfortable with injections, medication dependency, or possible side effects of some medications.",
+    "primary_tags": [
+      "hero_3_5kg_15days",
+      "natural_ayurvedic",
+      "no_injection_dependency",
+      "no_side_effects_positioning"
+    ],
+    "common_indian_moments": "Reading about injections online, fear of side effects, family warning against medicines, wanting Ayurveda, avoiding medical-looking methods.",
+    "failed_attempts": "Avoiding medical options, home remedies, random natural products.",
+    "why_it_failed": "They wanted something safer-feeling yet effective. They wanted expert credibility without needing constant doctor supervision or clinic visits.",
+    "relevant_ok_kit_role": "Obesity Killer Kit is an Ayurvedic, oral, guided weight loss course for people wanting natural, safe, and side effect free options. It also does not cause dependency. It does not create dependency and can be taken from home without constant clinic visits.",
+    "guardrail": "",
+    "headline_anchor_rule": "Must imply natural/Ayurvedic + weight loss, not anti-medicine fearmongering."
+  },
+  {
+    "persona_number": 28,
+    "persona_name": "Tried Everything Else",
+    "core_pattern": "Has tried many weight-loss methods and now doubts whether anything will work.",
+    "primary_tags": [
+      "hero_3_5kg_15days",
+      "multi_action_system",
+      "hunger_craving_control"
+    ],
+    "common_indian_moments": "Tried gym, walking, yoga, keto, fasting, powders, meal replacement shakes, green tea, diet charts, apps, home remedies, random Ayurvedic pills.",
+    "failed_attempts": "Gym memberships, dieticians, online diets, fat burners, meal replacements, slimming drinks, YouTube plans.",
+    "why_it_failed": "Each method failed for a different reason: too much effort, too much hunger, too confusing, too slow, or not enough support.",
+    "relevant_ok_kit_role": "Obesity Killer Kit is positioned as a structured guided course, not another random powder or loose supplement. It combines hunger support, a clear routine, food guidance, and coach support. It was developed through decades of obesity-focused Ayurvedic practice by Dr. Arun Tyagi, and the defined money-back policy helps reduce skepticism from previous failed attempts.",
+    "guardrail": "Do not demean gym, yoga, diets, or other brands. Do not promise this works for everyone.",
+    "headline_anchor_rule": "Must imply tried everything + weight loss."
+  },
+  {
+    "persona_number": 29,
+    "persona_name": "Gym-Averse Dieter",
+    "core_pattern": "Wants weight loss but does not want gym, heavy workouts, or a routine that feels physically intense.",
+    "primary_tags": [
+      "low_workout_requirement",
+      "five_minute_routine",
+      "multi_action_system"
+    ],
+    "common_indian_moments": "No time for gym, not liking workouts, knee pain or low stamina, feeling awkward in gym, office fatigue, household work, quitting workouts after a few days.",
+    "failed_attempts": "Gym memberships, YouTube workouts, walking plans, yoga starts, intense challenges.",
+    "why_it_failed": "Exercise routines were too time-consuming, tiring, boring, or hard to sustain. Results also felt slow when the plan depended mainly on workouts.",
+    "relevant_ok_kit_role": "Obesity Killer Kit results in 3-5 kg weight loss with 1 Kit without elaborate workout routines. Just walking is enough. The multi-action system works on lower calorie intake and burns more calories through improved digestion and metabolism. So dependence on heavy workout reduces.",
+    "guardrail": "Do not say no movement, no effort, or gym is useless.",
+    "headline_anchor_rule": "Must imply no gym/heavy workout + weight loss."
   }
 ]

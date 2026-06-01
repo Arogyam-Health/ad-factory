@@ -5,11 +5,13 @@ from fastapi.responses import StreamingResponse
 from dashboard.backend.app import (
     api_runs,
     api_run,
+    api_run_partial,
     api_run_prompt_copies,
     api_run_update_prompt_copies,
     api_edit_prompt,
     api_delete_prompt,
     api_delete_image,
+    api_delete_run,
     api_mark_images_to_regenerate,
     api_restore_images_from_regeneration_queue,
     api_regenerate_queued_images,
@@ -17,6 +19,8 @@ from dashboard.backend.app import (
     api_download_single_image,
     api_download_batch_images,
     api_download_batches,
+    signal_cancel_run,
+    signal_cancel_current_run,
 )
 
 router = APIRouter()
@@ -28,6 +32,15 @@ def _runs() -> dict[str, Any]:
 @router.get("/api/runs/{run_id}")
 def _run(run_id: str) -> dict[str, Any]:
     return api_run(run_id)
+
+
+@router.get("/api/runs/{run_id}/partial")
+def _run_partial(run_id: str) -> dict[str, Any]:
+    return api_run_partial(run_id)
+
+@router.delete("/api/runs/{run_id}")
+def _delete_run(run_id: str) -> dict[str, Any]:
+    return api_delete_run(run_id)
 
 @router.get("/api/runs/{run_id}/prompt-copies")
 def _prompt_copies(run_id: str) -> dict[str, Any]:
@@ -81,3 +94,15 @@ def _download_batch_images(run_id: str) -> StreamingResponse:
 @router.post("/api/runs/download-batches")
 def _download_batches(payload: dict[str, Any] = Body(...)) -> StreamingResponse:
     return api_download_batches(payload.get("batch_ids", []))
+
+
+@router.post("/api/runs/{run_id}/cancel")
+def _cancel_run(run_id: str) -> dict[str, Any]:
+    signal_cancel_run(run_id)
+    return {"status": "ok", "run_id": run_id}
+
+
+@router.post("/api/runs/cancel-current")
+def _cancel_current_run() -> dict[str, Any]:
+    signal_cancel_current_run()
+    return {"status": "ok"}

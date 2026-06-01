@@ -40,6 +40,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from PIL import Image as PILImage
+
 from playwright.sync_api import (
     BrowserContext,
     Locator,
@@ -104,6 +106,7 @@ class PromptJob:
     variant_id: str
     job_key: str
     output_stem: str
+    concept_angle: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -116,8 +119,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-dir", required=True, help="Directory containing prompt files")
     parser.add_argument(
         "--prompt-glob",
-        default="FINAL_*_P*_EN.txt",
-        help="Prompt glob. Example: FINAL_HERO_P*_EN.txt for HERO only.",
+        default="*_P*_EN.txt",
+        help="Prompt glob. Examples: '*_P*_EN.txt' for all English, "
+             "'BA_P*_EN_pain_point.txt' for a single angle, "
+             "'*_P*_*.txt' for every language.",
     )
     parser.add_argument(
         "--starting-prompt-file",
@@ -192,7 +197,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--send-confirm-timeout", type=float, default=35.0)
     parser.add_argument("--continue-on-error", action="store_true")
+<<<<<<< HEAD
     parser.add_argument("--cdp-url", default="", help="CDP URL for connecting to existing Chrome (e.g. http://172.18.160.1:9222)")
+    parser.add_argument(
+        "--aspect-ratio",
+        choices=["4:5", "9:16"],
+        default="4:5",
+        help="Target aspect ratio for output images (determines PIL crop target)",
+    )
     return parser.parse_args()
 
 
@@ -208,13 +220,18 @@ def _format_sort_key(fmt: str) -> tuple[int, str]:
     return (999, fmt_up)
 
 
-def _parse_prompt_name(path: Path) -> tuple[str, str, str, str]:
+def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
+    """Parse a prompt file name. Returns ``(fmt, persona, lang, variant, concept_angle)``.
+
+    Canonical form:  ``<FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt``
+    Legacy forms also accepted (with ``OUTPUT_``/``FINAL_`` prefix and/or missing
+    angle component) for backward compatibility with older files.
+    """
     stem = path.stem
     patterns = [
-        r"^(?:FINAL|OUTPUT)_(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?$",
-        r"^(?:FINAL|OUTPUT)_(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)$",
-        r"^(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?$",
-        r"^(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)$",
     ]
     for pat in patterns:
         m = re.search(pat, stem, flags=re.IGNORECASE)
@@ -223,16 +240,17 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str]:
             persona = f"P{int(m.group('num')):02d}"
             lang = m.group("lang").upper() if "lang" in m.groupdict() and m.group("lang") else "XX"
             variant = m.group("variant").upper() if "variant" in m.groupdict() and m.group("variant") else ""
-            return fmt, persona, lang, variant
+            angle = m.group("angle") if "angle" in m.groupdict() and m.group("angle") else (m.group("angle2") if "angle2" in m.groupdict() and m.group("angle2") else "")
+            return fmt, persona, lang, variant, angle
 
     m_persona = re.search(r"(?:^|_)P(?P<num>\d+)(?:_|$)", stem, flags=re.IGNORECASE)
     persona_id = f"P{int(m_persona.group('num')):02d}" if m_persona else "P00"
     tokens = [t.upper() for t in re.split(r"[^A-Za-z0-9]+", stem) if t]
     for token in tokens:
         if token in FORMAT_ORDER:
-            return token, persona_id, "XX", ""
-    fmt = next((t for t in tokens if t not in {"FINAL", "OUTPUT", persona_id}), "PROMPT")
-    return fmt, persona_id, "XX", ""
+            return token, persona_id, "XX", "", ""
+    fmt = next((t for t in tokens if t not in {persona_id}), "PROMPT")
+    return fmt, persona_id, "XX", "", ""
 
 
 def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool) -> tuple[list[PromptJob], list[PromptJob]]:
@@ -242,10 +260,34 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
 
     raw_jobs: list[PromptJob] = []
     for path in raw_paths:
-        fmt, persona, lang, variant = _parse_prompt_name(path)
+        fmt, persona, lang, variant, concept_angle = _parse_prompt_name(path)
         variant_suffix = f"_{variant}" if variant else ""
         key = f"{fmt}_{persona}_{lang}{variant_suffix}"
-        safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}"
+        if concept_angle and concept_angle not in key:
+            key += f"_{concept_angle}"
+
+        # Reuse the prompt's stem verbatim so the generated image matches the
+        # prompt file 1:1 (only the extension changes). E.g. BA_P01_EN_pain_point.
+        if concept_angle:
+            safe_stem = f"{fmt}_P{int(persona[1:]):02d}_{lang}_{concept_angle}{variant_suffix}"
+        else:
+            safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}"
+
+        # If the angle wasn't in the filename, fall back to reading it from
+        # the prompt body (legacy behavior, kept for safety).
+        if not concept_angle:
+            try:
+                body = path.read_text(encoding="utf-8")
+                m = re.search(r"^- concept_angle\s*:\s*(.+)$", body, re.MULTILINE | re.IGNORECASE)
+                if m:
+                    concept_angle = m.group(1).strip()
+                    if concept_angle:
+                        safe_stem += f"-{concept_angle}"
+                        if concept_angle not in key:
+                            key += f"_{concept_angle}"
+            except Exception:
+                pass
+
         raw_jobs.append(
             PromptJob(
                 prompt_path=path.resolve(),
@@ -255,6 +297,7 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
                 variant_id=variant,
                 job_key=key,
                 output_stem=safe_stem,
+                concept_angle=concept_angle,
             )
         )
 
@@ -376,6 +419,7 @@ def build_test_variables(job: PromptJob, prompt_metadata: dict[str, Any], effect
         "variant": job.variant_id,
         "visual_pattern": visual_pattern,
         "visual_archetype": visual_archetype,
+        "hypothesis": effective_hypothesis,
         "hypothesis_type": hyp_type,
         "hypothesis_variant": hyp_variant,
         "persona": prompt_metadata.get("persona", job.persona_id),
@@ -387,7 +431,6 @@ def build_test_variables(job: PromptJob, prompt_metadata: dict[str, Any], effect
         "headline_angle": prompt_metadata.get("headline_angle", ""),
         "awareness_stage": prompt_metadata.get("awareness_stage", ""),
         "concept_angle": prompt_metadata.get("concept_angle", ""),
-        "concept_structure": prompt_metadata.get("concept_structure", ""),
         "background": prompt_metadata.get("background", {}),
         "background_group_key": prompt_metadata.get("background_group_key", ""),
         "background_decisions": prompt_metadata.get("background_decisions", {}),
@@ -2688,72 +2731,88 @@ def download_generated_image(
     out_path_no_ext.parent.mkdir(parents=True, exist_ok=True)
     _configure_download_dir(context, download_dir)
 
-    marked_src = mark_largest_generated_image(page, src) or src
-    if marked_src and marked_src != src:
-        print("  [dl] Updated generated image src from marked visible image.")
-        src = marked_src
-
-    print("  [dl] Strategy 1: open image viewer and click Download.")
+    src = mark_largest_generated_image(page, src) or src
     download_dirs = _default_download_dirs(download_dir)
     before_by_dir = snapshot_download_dirs(download_dirs)
     started_at = time.time()
-    try:
-        downloaded = _capture_download_from_click(page, download_dir, src=src, min_bytes=min_bytes, click_timeout=min(15, max(8, download_timeout)))
-        if downloaded:
-            ext = downloaded.suffix if downloaded.suffix else ".png"
-            out_path = out_path_no_ext.with_suffix(ext)
-            shutil.copy2(downloaded, out_path)
-            print(f"  [dl] Saved browser download: {out_path} ({out_path.stat().st_size} bytes)")
-            return out_path
+    deadline = started_at + max(15, download_timeout)
+    saved: Path | None = None
 
-        _open_marked_image_viewer(page, src)
-        time.sleep(1.0)
-        downloaded = _capture_download_from_click(page, download_dir, src=src, min_bytes=min_bytes, click_timeout=min(15, max(8, download_timeout)))
-        if downloaded:
-            downloaded = wait_for_completed_download_any(
-                download_dirs=download_dirs,
-                before_by_dir=before_by_dir,
-                started_at=started_at,
-                timeout=5,
-                min_bytes=min_bytes,
-            ) or downloaded
-            ext = downloaded.suffix if downloaded.suffix else ".png"
-            out_path = out_path_no_ext.with_suffix(ext)
-            shutil.copy2(downloaded, out_path)
-            print(f"  [dl] Saved browser download: {out_path} ({out_path.stat().st_size} bytes)")
-            return out_path
-    except Exception as exc:
-        print(f"  [dl] viewer/button strategy failed: {exc}")
+    print(f"  [dl] Racing direct fetch + download watch (timeout={max(15, download_timeout)}s)...")
+    while time.time() < deadline and not saved:
+        # Signal A: direct fetch current img src (fastest path)
+        if not saved:
+            try:
+                current_src = mark_largest_generated_image(page) or src
+                data_url = page.evaluate(
+                    """s => new Promise((done) => {
+                        fetch(s, {credentials: 'include'})
+                            .then(r => r.blob())
+                            .then(blob => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => done(reader.result);
+                                reader.onerror = () => done(null);
+                                reader.readAsDataURL(blob);
+                            })
+                            .catch(() => done(null));
+                    })""",
+                    current_src,
+                )
+                saved = _save_data_url(data_url, out_path_no_ext, min_bytes=min_bytes)
+                if saved:
+                    print(f"  [dl] Saved via direct fetch: {saved}")
+            except Exception:
+                pass
 
-    print("  [dl] Strategy 2: direct fetch current image src.")
-    src = mark_largest_generated_image(page) or src
-    try:
-        data_url = page.evaluate(
-            """src => new Promise((done) => {
-                fetch(src, {credentials: 'include'})
-                    .then(r => r.blob())
-                    .then(blob => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => done(reader.result);
-                        reader.onerror = () => done(null);
-                        reader.readAsDataURL(blob);
-                    })
-                    .catch(() => done(null));
-            })""",
-            src,
-        )
-        saved = _save_data_url(data_url, out_path_no_ext, min_bytes=min_bytes)
-        if saved:
-            return saved
-    except Exception as exc:
-        print(f"  [dl] direct fetch failed: {exc}")
+        # Signal C: watch download directories for new files
+        if not saved:
+            try:
+                found = wait_for_completed_download_any(
+                    download_dirs=download_dirs,
+                    before_by_dir=before_by_dir,
+                    started_at=started_at,
+                    timeout=2,
+                    min_bytes=min_bytes,
+                )
+                if found:
+                    ext = found.suffix if found.suffix else ".png"
+                    out_path = out_path_no_ext.with_suffix(ext)
+                    shutil.copy2(found, out_path)
+                    saved = out_path
+                    print(f"  [dl] Saved from download folder: {saved}")
+            except Exception:
+                pass
 
-    print("  [dl] Strategy 3: save visible generated image resource from DOM.")
-    saved = _save_visible_generated_image_via_dom(page, out_path_no_ext, min_bytes=min_bytes)
+        if not saved:
+            time.sleep(0.5)
+
     if saved:
         return saved
-
     raise RuntimeError("Image was detected, but no valid image file could be saved.")
+
+
+def resize_to_ratio(input_path: Path, output_path: Path, output_size: tuple[int, int]) -> None:
+    img = PILImage.open(input_path).convert("RGB")
+    target_ratio = output_size[0] / output_size[1]
+    w, h = img.size
+    current_ratio = w / h
+    crop_box = None
+
+    if abs(current_ratio - target_ratio) < 0.001:
+        final = img.resize(output_size, PILImage.Resampling.LANCZOS)
+    elif current_ratio > target_ratio:
+        new_w = h * target_ratio
+        left = (w - new_w) / 2
+        crop_box = (left, 0, left + new_w, h)
+        final = img.crop(crop_box).resize(output_size, PILImage.Resampling.LANCZOS)
+    else:
+        new_h = w / target_ratio
+        top = (h - new_h) / 2
+        crop_box = (0, top, w, top + new_h)
+        final = img.crop(crop_box).resize(output_size, PILImage.Resampling.LANCZOS)
+
+    final.save(output_path, "PNG", optimize=True)
+    print(f"  [crop] {img.size} -> {PILImage.open(output_path).size} (crop_box={crop_box})")
 
 
 # ---------------------------------------------------------------------------
@@ -2941,6 +3000,16 @@ def run() -> None:
                             encoding="utf-8",
                         )
                         print(f"  [done] Saved image: {saved_path}")
+
+                        # ------------------------------------------------------------------
+                        # Step: Ensure exact target dimensions via PIL crop
+                        # ------------------------------------------------------------------
+                        try:
+                            target = (1080, 1350) if args.aspect_ratio == "4:5" else (1080, 1920)
+                            resize_to_ratio(saved_path, saved_path, target)
+                        except Exception as exc:
+                            print(f"  [crop] Failed (keeping original): {exc}")
+
                         time.sleep(args.sleep_after_download)
                         break
 

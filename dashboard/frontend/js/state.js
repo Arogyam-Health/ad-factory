@@ -20,6 +20,7 @@ export const state = {
   isLoading: false,
   isPersonasLoading: false,
   isRunsLoading: false,
+  runPollInterval: null,
 };
 
 export function getPersonaSelection() {

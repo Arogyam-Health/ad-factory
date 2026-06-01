@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import random
@@ -15,7 +16,9 @@ import urllib.request
 import hashlib
 import importlib.util
 import mimetypes
+import traceback
 import uuid
+import asyncio
 import psutil
 
 if sys.platform == "win32":
@@ -40,7 +43,6 @@ RUNTIME_ROOT = ROOT / "runtime"
 ENV_PATH = ROOT / ".env.dashboard"
 
 DEFAULT_PRODUCT_MASTER = ROOT / "input" / "docs" / "product master doc.txt"
-DEFAULT_PLAYBOOK = ROOT / "AD_CREATIVE_SYSTEM_PLAYBOOK.md"
 DEFAULT_IMAGE_SOURCES_FILE = ROOT / "input" / "image_sources.txt"
 LEGACY_ACTIVE_IMAGES_FILE = ROOT / "input" / "activeimages.txt"
 INPUT_IMAGES_DIR = ROOT / "input" / "images"
@@ -54,23 +56,77 @@ STARTING_PROMPT_PATH = ROOT / "input" / "startingprompt.txt"
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
 DEFAULT_OPENCODE_API_URL = os.getenv("OPENCODE_API_URL", "http://127.0.0.1:4090")
 OPENCODE_ADS_PER_SESSION_SCHEDULE = [25, 15, 10, 5, 2, 1]
+OPENCODE_AD_TIMEOUT_SECONDS = 600
 OPENCODE_MAX_CONCURRENT = 2
 OPENCODE_QUEUE_DIR = RUNTIME_ROOT / "opencode_queue"
 OPENCODE_QUEUE_LOG = OPENCODE_QUEUE_DIR / "queue.log"
 
+_PERSONA_SEED_MAPPING: dict[str, Any] = {
+    "seed_to_payload": {
+        "core_pattern": {"field": "pain_points", "wrap_list": True, "prefix": None},
+        "common_indian_moments": {"field": "trust_anchors", "wrap_list": True, "prefix": None},
+        "objections_raw": {"field": "objections", "wrap_list": True, "prefix": None},
+        "how_kit_solves": {"field": "how_kit_solves", "wrap_list": False, "prefix": None},
+        "guardrail": {"field": "guardrails", "wrap_list": True, "prefix": "Guardrail: "},
+    },
+    "persona_fallbacks": {
+        "core_pattern": "Daily routine feels heavy and hard to sustain.",
+        "common_indian_moments": "Everyday situations make it harder to stay consistent.",
+        "objections_raw": "Past plans felt too strict and difficult to maintain.",
+        "how_kit_solves": {},
+        "guardrail": "",
+    },
+    "static_fields": {
+        "trigger_scenarios": [],
+        "language_bank": [],
+        "grounded_mechanism_map": [],
+    },
+    "hindi_ready_default": "टोन संकेत: सरल, भरोसेमंड, व्यावहारिक",
+}
+
+_TESTIMONIAL_GUIDANCE: dict[str, Any] = {
+    "EN": {
+        "first_person_pattern": "\\b(i|i'm|i've|i'd|my|me)\\b",
+        "weight_pattern": "\\b(weight|obesity|excess\\s*weight|kg|kilo)\\b",
+        "suffix": "It finally fit my weight-loss routine.",
+        "desire_template": "\"I finally found {desire_phrase} for my weight-loss goal.\"",
+        "fallback": "\"I finally found a routine I can follow for weight loss every day.\"",
+        "desire_field": "desire_en",
+    },
+    "HI": {
+        "first_person_pattern": "(मैं|मेरी|मेरा|मुझे|मैंने)",
+        "weight_pattern": "(वजन|मोटापा|किलो|kg)",
+        "suffix": "यह मेरे वजन घटाने के लिए काम आया।",
+        "desire_template": "\"मुझे आखिर {desire_phrase} वाला रूटीन मिला जो वजन घटाने में मदद करता है।\"",
+        "fallback": "\"मुझे आखिर ऐसा रूटीन मिला जिसे मैं रोज निभा सकूं और वजन घटा सकूं।\"",
+        "desire_field": "desire_hi",
+    },
+}
+
+# Pipeline cancellation signal, keyed by run_id.
+_cancel_events: dict[str, threading.Event] = {}
+_cancel_current_run: threading.Event = threading.Event()
+
+
+def signal_cancel_run(run_id: str) -> None:
+    ev = _cancel_events.get(run_id)
+    if ev:
+        ev.set()
+
+
+def signal_cancel_current_run() -> None:
+    _cancel_current_run.set()
+
+
+def cancel_event_for_run(run_id: str) -> threading.Event:
+    if run_id not in _cancel_events:
+        _cancel_events[run_id] = threading.Event()
+    return _cancel_events[run_id]
+
 
 def load_format_visual_archetypes() -> dict[str, list[dict[str, str]]]:
-    script_path = ROOT / "scripts" / "generate_ads.py"
-    spec = importlib.util.spec_from_file_location("dashboard_generate_ads_patterns", script_path)
-    if spec is None or spec.loader is None:
-        return {}
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    raw = getattr(module, "FORMAT_VISUAL_ARCHETYPES", {})
+    raw = COPY_PROMPTS.get("visual_archetypes") or {}
     out: dict[str, list[dict[str, str]]] = {}
-    if not isinstance(raw, dict):
-        return out
     for fmt in FORMATS:
         items = raw.get(fmt) or []
         out[fmt] = [
@@ -117,7 +173,7 @@ def copy_text_for_candidate(candidate: dict[str, Any], lang: str = "EN") -> str:
     copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
     block = copy.get(lang) if isinstance(copy.get(lang), dict) else {}
     parts: list[str] = []
-    for key in ["headline", "support_line", "trust_line", "attribution", "cta"]:
+    for key in ["headline", "subheadline", "support_line", "trust_line", "attribution", "cta"]:
         value = block.get(key)
         if isinstance(value, str) and value.strip():
             parts.append(value.strip())
@@ -131,60 +187,6 @@ def cta_for_candidate(candidate: dict[str, Any], lang: str = "EN") -> str:
     copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
     block = copy.get(lang) if isinstance(copy.get(lang), dict) else {}
     return str(block.get("cta") or "").strip()
-
-
-def classify_proof_style_text(text: str) -> str:
-    lower = (text or "").lower()
-    if "70,000" in lower or "user" in lower or "people" in lower or "review" in lower or "testimonial" in lower or "trusted" in lower:
-        return "social_proof"
-    if "doctor" in lower or "ayurvedic" in lower or "dr." in lower or "formulated" in lower:
-        return "authority_anchor"
-    if "but" in lower or "skeptical" in lower or "doubt" in lower or "worried" in lower or "tried" in lower:
-        return "objection_flip"
-    if "simple" in lower or "clear" in lower or "5-minute" in lower or "easy" in lower or "low guesswork" in lower:
-        return "routine_clarity"
-    if "step" in lower or "routine" in lower or "morning" in lower or "night" in lower or "ok liquid" in lower or "craving" in lower or "fullness" in lower:
-        return "mechanism_explainer"
-    return "mechanism_explainer"
-
-
-def classify_cta_voice_text(cta: str) -> str:
-    text = (cta or "").strip().lower()
-    if "test" in text or "challenge" in text or "15-day" in text or "15 day" in text:
-        return "challenge_action"
-    if "fit" in text or "risk" in text or "safe" in text or "suit" in text:
-        return "reassurance_start"
-    if "today" in text or "now" in text or "start" in text or "act" in text:
-        return "urgent_start"
-    if "learn" in text or "how" in text or "works" in text or "discover" in text:
-        return "discovery_action"
-    if "see" in text or "view" in text or "check" in text or "steps" in text or "details" in text or "plan" in text or "protocol" in text:
-        return "guided_next_step"
-    return "guided_next_step"
-
-
-def proof_style_matches(expected: str, text: str) -> bool:
-    lower = (text or "").lower()
-    checks = {
-        "authority_anchor": ["doctor", "ayurvedic", "dr.", "formulated"],
-        "social_proof": ["70,000", "user", "people", "review", "testimonial", "trusted"],
-        "mechanism_explainer": ["step", "routine", "morning", "night", "ok liquid", "craving", "fullness", "works"],
-        "routine_clarity": ["simple", "clear", "5-minute", "easy", "low guesswork", "step", "routine"],
-        "objection_flip": ["but", "skeptical", "doubt", "worried", "tried", "without"],
-    }
-    return any(term in lower for term in checks.get(expected, []))
-
-
-def cta_voice_matches(expected: str, cta: str) -> bool:
-    text = (cta or "").strip().lower()
-    checks = {
-        "urgent_start": ["today", "now", "start", "act"],
-        "guided_next_step": ["see", "view", "check", "steps", "details", "plan", "protocol"],
-        "reassurance_start": ["fit", "risk", "safe", "suit"],
-        "challenge_action": ["test", "challenge", "15-day", "15 day"],
-        "discovery_action": ["learn", "how", "works", "discover"],
-    }
-    return any(term in text for term in checks.get(expected, []))
 
 
 def hook_structure_mismatch(candidate: dict[str, Any], planned_ad: dict[str, Any]) -> str | None:
@@ -213,28 +215,6 @@ def hypothesis_mismatch(candidate: dict[str, Any], planned_ad: dict[str, Any]) -
         actual = str(candidate.get("concept_angle") or "").strip()
         if actual != expected:
             return f"Expected concept_angle {expected}, but candidate returned {actual or 'blank'}"
-    if hyp_type == "awareness_stage":
-        actual = str(candidate.get("awareness_stage") or "").strip()
-        if actual != expected:
-            return f"Expected awareness_stage {expected}, but candidate returned {actual or 'blank'}"
-    if hyp_type == "concept_structure":
-        actual = str(candidate.get("concept_structure") or "").strip()
-        if actual != expected:
-            return f"Expected concept_structure {expected}, but candidate returned {actual or 'blank'}"
-    if hyp_type == "proof_style":
-        copy_text = copy_text_for_candidate(candidate, "EN")
-        if proof_style_matches(expected, copy_text):
-            return None
-        actual = classify_proof_style_text(copy_text)
-        if actual != expected:
-            return f"Expected proof_style {expected}, but EN copy classified as {actual}: {copy_text!r}"
-    if hyp_type == "cta_voice":
-        cta = cta_for_candidate(candidate, "EN")
-        if cta_voice_matches(expected, cta):
-            return None
-        actual = classify_cta_voice_text(cta)
-        if actual != expected:
-            return f"Expected cta_voice {expected}, but EN CTA classified as {actual}: {cta!r}"
     return None
 
 
@@ -289,7 +269,7 @@ def load_env_file(path: Path) -> None:
             os.environ[key] = value
 
 
-def parse_persona_library(playbook_path: Path) -> list[dict[str, Any]]:
+def parse_persona_library() -> list[dict[str, Any]]:
     path = PERSONA_SEEDS_PATH
     if not path.exists():
         return []
@@ -310,13 +290,15 @@ def _load_persona_seeds() -> dict[int, dict[str, str]]:
         pn = int(entry.get("persona_number", 0))
         if pn < 1:
             continue
+        raw_attempts = str(entry.get("failed_attempts", "")).strip()
+        raw_why = str(entry.get("why_it_failed", "")).strip()
+        objections_raw = (raw_attempts + " " + raw_why).strip()
         seeds[pn] = {
-            "pain": str(entry.get("pain", "")),
-            "desire": str(entry.get("desire", "")),
-            "friction": str(entry.get("friction", "")),
-            "proof": str(entry.get("proof", "")),
-            "tone": str(entry.get("tone", "")),
-            "awareness_stage": str(entry.get("awareness_stage", "unaware")),
+            "core_pattern": str(entry.get("core_pattern", "")),
+            "common_indian_moments": str(entry.get("common_indian_moments", "")),
+            "objections_raw": objections_raw,
+            "how_kit_solves": str(entry.get("relevant_ok_kit_role", "")),
+            "guardrail": str(entry.get("guardrail", "")),
         }
     return seeds
 
@@ -328,12 +310,12 @@ def _load_copy_architecture() -> dict[str, Any]:
     path = COPY_ARCH_PATH
     if not path.exists():
         print(f"WARNING: {path} not found. Copy architecture templates disabled.", file=sys.stderr)
-        return {"headline_architectures": {}, "support_line_architectures": {"rotation_order": [], "definitions": {}}}
+        return {"headline_architectures": {}}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         print(f"WARNING: Failed to load {path}: {exc}", file=sys.stderr)
-        return {"headline_architectures": {}, "support_line_architectures": {"rotation_order": [], "definitions": {}}}
+        return {"headline_architectures": {}}
 
 
 COPY_ARCH = _load_copy_architecture()
@@ -374,15 +356,7 @@ def _build_hypothesis_variables() -> dict[str, dict[str, Any]]:
         },
         "concept_angle": {
             "label": "Concept Angle (H2)",
-            "description": "Test which messaging angle drives better results: pain vs. outcome vs. proof vs. authority vs. curiosity.",
-        },
-        "awareness_stage": {
-            "label": "Awareness Stage (H3)",
-            "description": "Test whether matching the ad to the audience\u2019s funnel stage improves performance.",
-        },
-        "concept_structure": {
-            "label": "Concept Structure (H6)",
-            "description": "Test copy flow structure: PAS vs BAB vs FAB vs Four Us.",
+            "description": "Test which messaging angle drives better results: pain vs. outcome vs. proof vs. authority vs. curiosity vs. comparison vs. offer vs. story.",
         },
     }
     arch = COPY_ARCH.get("headline_architectures", {})
@@ -390,38 +364,46 @@ def _build_hypothesis_variables() -> dict[str, dict[str, Any]]:
         options = [{"id": vid, "label": _hypothesis_variant_label(vid)} for vid in arch.get(hyp_type, {})]
         hv[hyp_type] = {**meta, "options": options}
 
-    aux_types = {
-        "proof_style": {
-            "label": "Proof Style (H4)",
-            "description": "Test which trust framing works best for this persona: authority vs. social proof vs. mechanism explainer.",
-        },
-        "cta_voice": {
-            "label": "CTA Voice (H5)",
-            "description": "Test which call-to-action tone converts better: urgent vs. guided vs. reassuring vs. discovery.",
-        },
-    }
-    aux = COPY_ARCH.get("non_headline_hypotheses", {})
-    for hyp_type, meta in aux_types.items():
-        options = [{"id": vid, "label": _hypothesis_variant_label(vid)} for vid in aux.get(hyp_type, {})]
-        hv[hyp_type] = {**meta, "options": options}
-
     return hv
 
 
 COPY_PROMPTS = _load_copy_prompts()
+
 HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
-CTA_VARIANTS = COPY_PROMPTS.get("cta_variants", {})
+
+
+def _invalidate_config_cache(full_path: Path) -> None:
+    """Reload the in-memory global for a config file that was just saved."""
+    global PERSONA_SEED_INPUTS, COPY_ARCH, HYPOTHESIS_VARIABLES, COPY_PROMPTS
+    if full_path == PERSONA_SEEDS_PATH:
+        PERSONA_SEED_INPUTS = _load_persona_seeds()
+    elif full_path == COPY_ARCH_PATH:
+        COPY_ARCH = _load_copy_architecture()
+        HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
+    elif full_path == COPY_PROMPTS_PATH:
+        COPY_PROMPTS = _load_copy_prompts()
+    # prompt_assembler_templates.json and background_variant.json are used by
+    # subprocess scripts (generate_ads.py, chatgpt_web_sutomation.py),
+    # not cached in this process — no reload needed.
+
 
 
 def _headline_architecture_group(group: str) -> str:
-    return {
-        "audience_stage": "awareness_stage",
-        "message_structure": "concept_structure",
-    }.get(group, group)
+    return group
 
 
 def _entry_direction(entry: dict[str, Any]) -> str:
-    return str(entry.get("direction") or entry.get("template") or "")
+    return str(entry.get("meaning") or entry.get("intent") or entry.get("direction") or entry.get("template") or "")
+
+
+def _compact_creative_entry(entry_id: str, entry: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = ["meaning", "intent", "headline_role", "support_role", "avoid_skeletons", "avoid"]
+    out: dict[str, Any] = {"id": entry_id}
+    for key in allowed_keys:
+        value = entry.get(key)
+        if value not in (None, "", []):
+            out[key] = value
+    return out
 
 
 def _framework_item(group: str, item_id: str) -> dict[str, str]:
@@ -447,56 +429,8 @@ def _hypothesis_guidance(hyp_type: str, variant: str) -> str:
     return ""
 
 
-def _support_line_strategy_item(group: str, item_id: str) -> dict[str, Any]:
-    source_map = {
-        "by_concept_angle": ("headline_architectures", "concept_angle"),
-        "by_hook_structure": ("headline_architectures", "hook_structure"),
-        "by_concept_structure": ("headline_architectures", "concept_structure"),
-        "by_awareness_stage": ("headline_architectures", "awareness_stage"),
-        "by_proof_style": ("non_headline_hypotheses", "proof_style"),
-    }
-    root_key, arch_group = source_map.get(group, ("", ""))
-    entry = COPY_ARCH.get(root_key, {}).get(arch_group, {}).get(item_id) if root_key else None
-    strategy = entry.get("support_strategy") if isinstance(entry, dict) else None
-    if not isinstance(strategy, dict):
-        return {"source": group, "variant": item_id, "direction": "", "must_include": [], "avoid": ""}
-    return {"source": group, "variant": item_id, **strategy}
-
-
-def _build_support_line_strategy(audience_id: str, concept_angle: str, concept_structure_id: str) -> dict[str, Any]:
-    support_arch = COPY_ARCH.get("support_line_architectures", {})
-    return {
-        "composition_rule": support_arch.get(
-            "composition_rule",
-            "Final support line = active support strategy meaning + assigned support_line_architecture sentence shape.",
-        ),
-        "active": _support_line_strategy_item("by_concept_angle", concept_angle),
-        "concept_structure": _support_line_strategy_item("by_concept_structure", concept_structure_id),
-        "awareness_stage": _support_line_strategy_item("by_awareness_stage", audience_id),
-        "selection_note": "Use active as the main meaning strategy. Also satisfy concept_structure and awareness_stage when they add relevant constraints.",
-    }
-
-
-def _set_active_support_line_strategy(copy_req: dict[str, Any], group: str, variant: str) -> None:
-    strategy = copy_req.get("support_line_strategy")
-    if not isinstance(strategy, dict):
-        return
-    active = _support_line_strategy_item(group, variant)
-    strategy["active"] = active
-    strategy["selection_note"] = (
-        f"Active support strategy selected from {group}.{variant} because the current hypothesis/variant controls the headline. "
-        "Use this as the support line's main job, then apply support_line_architecture for sentence shape."
-    )
-
-
-# Feature-lane-driven headline concept selection removed.
-
-
-def _select_headline_architecture(persona_number: int, fmt: str, concept_structure_id: str) -> dict[str, Any]:
+def _select_headline_architecture(persona_number: int, fmt: str) -> dict[str, Any]:
     arch = COPY_ARCH.get("headline_architectures", {})
-    structure_arch = arch.get("concept_structure", {}).get(concept_structure_id)
-    if structure_arch:
-        return {"source": "concept_structure", "variant": concept_structure_id, **structure_arch}
     hook_arch = arch.get("hook_structure", {})
     hook_keys = list(hook_arch.keys())
     if hook_keys:
@@ -506,156 +440,175 @@ def _select_headline_architecture(persona_number: int, fmt: str, concept_structu
     return {"source": "four_us", "variant": "four_us", "template": "", "examples": []}
 
 
-def _select_support_line_architecture(persona_number: int, fmt: str, format_sequence_index: int) -> dict[str, Any]:
-    sla = COPY_ARCH.get("support_line_architectures", {})
-    rotation = sla.get("rotation_order", [])
-    defs = sla.get("definitions", {})
-    if not rotation:
-        return {"variant": "none", "template": "", "examples": []}
-    idx = (persona_number + format_sequence_index) % len(rotation)
-    arch_id = rotation[idx]
-    entry = defs.get(arch_id, {})
-    return {"variant": arch_id, **entry}
+def _persona_theme(persona_seed: dict[str, Any]) -> str:
+    text = " ".join(str(persona_seed.get(key) or "").lower() for key in ["pain", "desire", "friction", "proof", "tone", "persona_name"])
+    if any(word in text for word in ["craving", "hunger", "snack", "food noise", "willpower"]):
+        return "cravings"
+    if any(word in text for word in ["digestion", "gut", "bloat", "stomach", "acidity"]):
+        return "digestion"
+    if any(word in text for word in ["event", "wedding", "outfit", "photo", "deadline"]):
+        return "event_deadline"
+    if any(word in text for word in ["busy", "professional", "work", "travel", "schedule", "office"]):
+        return "busy_life"
+    return ""
+
+
+def _compact_product_truth() -> dict[str, Any]:
+    return {
+        "source": "attached_product_master_doc",
+        "instruction": "Use the attached product master doc as the only source for product claims. Do not treat the request JSON as a product-claim source.",
+        "hard_bans": [
+            "no fat burner",
+            "no metabolism boost",
+            "no cure claims",
+            "no guaranteed results",
+            "no disease treatment claims",
+            "no price in on-image copy",
+            "no product component names in headline",
+            "no protocol mechanics in headline",
+        ],
+    }
 
 
 def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index: int, variation_seed: str = "") -> dict[str, Any]:
     persona_seed = PERSONA_SEED_INPUTS.get(persona_number, {})
-    audience_id = persona_seed.get("awareness_stage", "unaware")
-
-    fmt_defaults = COPY_PROMPTS.get("format_defaults", {})
-    structure_by_fmt = fmt_defaults.get("structure_by_fmt", {"HERO": "pab"})
-    concept_structure_id = structure_by_fmt.get(fmt, "pab")
-
-    concept_angle = fmt_defaults.get("default_concept_angle", "desired_outcome")
-
-    headline_arch = _select_headline_architecture(persona_number, fmt, concept_structure_id)
-    support_line_arch = _select_support_line_architecture(persona_number, fmt, format_sequence_index)
-
-    prompts = COPY_PROMPTS.get("copy_requirements", {})
-    format_specific = prompts.get("format_specific", {})
 
     return {
-        "must_mention": prompts.get("must_mention", "Headline or paired support must ensure the copy is clearly about weight loss \u2014 directly or indirectly."),
-        "variation_rule": prompts.get("variation_rule", "Do not reuse the same headline skeleton, support-line skeleton, or persuasion angle as other ads in the same format for this batch."),
-        "concept_variation": {
-            "audience_stage": _framework_item("audience_stage", audience_id),
-            "concept_angle": _framework_item("concept_angle", concept_angle),
-            "message_structure": _framework_item("message_structure", concept_structure_id),
-        },
-        "hierarchy_rule": prompts.get("hierarchy_rule", "Use the assigned concept_structure flow to shape headline and support line. Do not output framework labels."),
-        "format_specific_rule": format_specific.get(fmt, prompts.get("default_format_rule", "")),
-        "headline_architecture": {
-            "template": headline_arch.get("template", ""),
-            "examples": headline_arch.get("examples", []),
-            "source": headline_arch.get("source", ""),
-            "variant": headline_arch.get("variant", ""),
-        },
-        "support_line_architecture": {
-            "template": support_line_arch.get("template", ""),
-            "examples": support_line_arch.get("examples", []),
-            "variant": support_line_arch.get("variant", ""),
-        },
-        "support_line_strategy": _build_support_line_strategy(audience_id, concept_angle, concept_structure_id),
+        "selection_mode": "llm_choose",
     }
 
 
 def compact_format_rules_for_copy(fmt: str, format_rules: dict[str, Any]) -> dict[str, Any]:
-    fmt = fmt.strip().upper()
-    prompts = COPY_PROMPTS
-    wanted = (prompts.get("format_copy_keywords") or {}).get(fmt, [])
-    blocked = (prompts.get("format_visual_keywords") or {}).get("blocklist", [])
-    out: list[str] = []
-    for raw_rule in format_rules.get("rules") or []:
-        rule = str(raw_rule).strip()
-        if not rule:
-            continue
-        lower = rule.lower()
-        if any(b in lower for b in blocked):
-            continue
-        if wanted and not any(k in lower for k in wanted):
-            continue
-        out.append(rule)
-        if len(out) >= 8:
-            break
-    return {"format": fmt or format_rules.get("format"), "rules": out}
+    return {"format": fmt, "rules": []}
 
-def build_ad_copy_system_prompt(fmt: str) -> str:
+def build_ad_copy_system_prompt(fmt: str, formats: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
     prompts = COPY_PROMPTS
     base_rules = prompts.get("system_prompt_base_rules", [])
-    format_rules = prompts.get("system_prompt_format_rules", {})
-    fmt_rules = format_rules.get(fmt, [])
-    return " ".join(base_rules + fmt_rules)
+    parts = list(base_rules)
+    if formats:
+        fr_map = prompts.get("system_prompt_format_rules", {})
+        for f in sorted(formats):
+            rules = fr_map.get(f)
+            if rules:
+                parts.append("")
+                parts.append(f"Ad format rules for {f}:")
+                parts.extend(rules)
+    return "\n".join(parts)
 
 
-def build_strict_schema_note(fmt: str) -> str:
+def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
     prompts = COPY_PROMPTS.get("strict_schema_note", {})
     field_map = prompts.get("field_map", {})
-    copy_fields = field_map.get(fmt, prompts.get("default_fields", "headline, cta"))
-    return " ".join([
+    if fmt == "ALL":
+        copy_fields = "the fields required by each ad's format (see Ad format rules above)"
+    else:
+        copy_fields = field_map.get(fmt, prompts.get("default_fields", "headline, cta"))
+    parts = [
         prompts.get("intro", ""),
         prompts.get("persona_fields_en", ""),
-        prompts.get("language_extension", ""),
-        prompts.get("format_closure_template", "").format(fmt=fmt or "this", copy_fields=copy_fields),
-    ])
+    ]
+    if languages and any("HINGLISH" in l.upper() for l in languages):
+        parts.append(prompts.get("language_extension", ""))
+    parts.append(prompts.get("format_closure_template", "").format(fmt=fmt or "this", copy_fields=copy_fields))
+    return " ".join(parts)
 
 
-def build_ad_prompt_tail(fmt: str) -> str:
+def build_ad_prompt_tail(fmt: str, formats: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
     tail = COPY_PROMPTS.get("prompt_tail", {})
     support_map = tail.get("support_target_map", {})
-    support_target = support_map.get(fmt, tail.get("default_support_target", "support line"))
-    lines = [line.format(fmt=fmt or "ad", support_target=support_target) for line in tail.get("lines", [])]
+    support_target = support_map.get(fmt, tail.get("default_support_target", "subheadline"))
+    display_fmt = fmt if fmt != "ALL" else "ad"
+    lines = [line.format(fmt=display_fmt, support_target=support_target) for line in tail.get("lines", [])]
+    skeleton = build_response_skeleton(fmt, formats=formats)
+    if skeleton:
+        lines.append(f"\nReturn your response using exactly this JSON skeleton (replace placeholder values with your actual copy):\n{skeleton}")
     return "\n".join(lines)
 
 
+def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
+    fmt = fmt.strip().upper()
+    skeletons = COPY_PROMPTS.get("response_skeleton", {})
+    base = copy.deepcopy(skeletons.get("default", {}))
+
+    if fmt != "ALL" or not formats:
+        # Single-format skeleton
+        fmt_override = skeletons.get(fmt, {})
+        if fmt_override and "copy" in fmt_override:
+            if "copy" in base.get("ads", [{}])[0]:
+                base["ads"][0]["copy"] = copy.deepcopy(fmt_override["copy"])
+        placeholder_fmt = fmt if fmt != "ALL" else "<FORMAT>"
+        raw = json.dumps(base, ensure_ascii=False, indent=2)
+        return raw.replace("{format}", placeholder_fmt)
+
+    # Multi-format skeleton: one example ad per unique format in the batch
+    seen: set[str] = set()
+    example_ads: list[dict] = []
+    for f in formats:
+        f = f.strip().upper()
+        if f in seen:
+            continue
+        seen.add(f)
+        ad = copy.deepcopy(base["ads"][0])
+        ad["format"] = f
+        fmt_override = skeletons.get(f, {})
+        if fmt_override and "copy" in fmt_override:
+            if "copy" in ad:
+                ad["copy"] = copy.deepcopy(fmt_override["copy"])
+        example_ads.append(ad)
+    base["ads"] = example_ads
+    return json.dumps(base, ensure_ascii=False, indent=2)
+
+
 def build_generation_payload_for_llm(context: dict[str, Any]) -> dict[str, Any]:
-    compact_ads: list[dict[str, Any]] = []
+    seen: dict[tuple[str, int], dict[str, Any]] = {}
+    total = 0
     for item in context.get("ads") or []:
         if not isinstance(item, dict):
             continue
         fmt = str(item.get("format") or "").strip().upper()
         persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
-        format_rules = item.get("format_rules") if isinstance(item.get("format_rules"), dict) else {}
-        copy_requirements = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
-        compact_ads.append(
-            {
+        pn = persona.get("persona_number")
+        if not isinstance(pn, int):
+            continue
+        key = (fmt, pn)
+        total += 1
+        if key not in seen:
+            format_rules = item.get("format_rules") if isinstance(item.get("format_rules"), dict) else {}
+            copy_requirements = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
+            seen[key] = {
                 "format": fmt,
                 "persona": persona,
                 "format_rules": compact_format_rules_for_copy(fmt, format_rules),
                 "copy_requirements": copy_requirements,
+                "count": 1,
             }
-        )
+        else:
+            seen[key]["count"] += 1
 
-    requested_plan = []
-    for item in compact_ads:
-        persona = item.get("persona") if isinstance(item.get("persona"), dict) else {}
-        requested_plan.append(
-            {
-                "format": item.get("format"),
-                "persona_number": persona.get("persona_number"),
-                "persona_name": persona.get("persona_name"),
-            }
-        )
+    compact_ads = list(seen.values())
 
     return {
         "generated_at": context.get("generated_at"),
         "run_id": context.get("run_id"),
         "language_mode": context.get("language_mode"),
         "context_source": context.get("context_source"),
-        "requested_ad_count": len(compact_ads),
-        "requested_plan": requested_plan,
         "product_doc": {
             "attached_in_session": True,
             "source_file": context.get("product_file_path"),
             "instruction": "Read and use the attached product master doc as source of truth for all product claims.",
         },
+        "product_truth": _compact_product_truth(),
         "ads": compact_ads,
     }
 
 
-def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list[dict[str, Any]]) -> str | None:
+TARGET_LANGS_MAP = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
+
+def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list[dict[str, Any]], language_mode: str = "ALL") -> str | None:
+    target_langs = TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"])
     ads = copy_json.get("ads") if isinstance(copy_json, dict) else None
     if not isinstance(ads, list):
         return "Generated payload did not include an ads array"
@@ -680,22 +633,138 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
             return f"Generated ad for format {fmt or '?'} is missing persona number"
         seen_keys.add((fmt, persona_number))
         copy = ad.get("copy") if isinstance(ad.get("copy"), dict) else {}
-        for lang in ["EN", "HI"]:
+        for lang in target_langs:
             block = copy.get(lang) if isinstance(copy.get(lang), dict) else {}
             if not str(block.get("headline") or "").strip():
                 return f"Generated ad {fmt}/P{persona_number} is missing {lang} headline"
-            if fmt in {"HERO", "UGC"} and not str(block.get("support_line") or "").strip():
-                return f"Generated ad {fmt}/P{persona_number} is missing {lang} support line"
+            if fmt in {"HERO", "UGC"} and not str(block.get("subheadline") or block.get("support_line") or "").strip():
+                return f"Generated ad {fmt}/P{persona_number} is missing {lang} subheadline"
             if fmt in {"BA", "FEAT"}:
                 bullets = block.get("bullets") if isinstance(block.get("bullets"), list) else []
-                if len([item for item in bullets if isinstance(item, str) and item.strip()]) < 2:
+                min_bullets = 4 if fmt == "BA" else 2
+                if len([item for item in bullets if isinstance(item, str) and item.strip()]) < min_bullets:
                     return f"Generated ad {fmt}/P{persona_number} has insufficient {lang} bullets"
-            if fmt == "TEST" and not str(block.get("attribution") or "").strip():
-                return f"Generated ad {fmt}/P{persona_number} is missing {lang} attribution"
 
     missing = sorted(planned_keys - seen_keys)
     if missing:
         return "Generated payload is missing planned ads: " + ", ".join(f"{fmt}/P{persona}" for fmt, persona in missing)
+    return None
+
+
+GENERIC_HEADLINE_SKELETONS = [
+    "keeps blocking weight loss",
+    "keeps weight loss stuck",
+    "weight loss stalls when",
+    "diets fail because",
+    "finally a weight loss system",
+    "weight loss should not feel like",
+]
+
+GENERIC_SUPPORT_OPENERS = [
+    "this doctor-formulated ayurvedic kit supports",
+    "this guided ayurvedic system supports",
+    "a simple routine supports",
+]
+
+
+def _normalized_words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (text or "").lower().replace("'", ""))
+
+
+def _normalized_text(text: str) -> str:
+    return " ".join(_normalized_words(text))
+
+
+def _opening_pattern_4tok(text: str) -> str:
+    return "_".join(_normalized_words(text)[:4])
+
+
+def _phrase_matches_skeleton(text: str, skeleton: str) -> bool:
+    normalized = _normalized_text(text)
+    normalized_skeleton = re.sub(r"\{[^}]+\}", " ", skeleton.lower())
+    skeleton_words = _normalized_words(normalized_skeleton)
+    if not skeleton_words:
+        return False
+    return " ".join(skeleton_words) in normalized
+
+
+def _recent_registry_opening_counts(fmt: str, limit: int = 150) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    registry_path = ROOT / "AD_GENERATION_REGISTRY.JSON"
+    if not registry_path.exists():
+        return counts
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except Exception:
+        return counts
+    entries = registry.get("entries") if isinstance(registry, dict) else []
+    if not isinstance(entries, list):
+        return counts
+    for entry in entries[-limit:]:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("format") or "").strip().upper() != fmt:
+            continue
+        pattern = str(entry.get("opening_pattern_4tok_en") or "").strip()
+        if not pattern:
+            pattern = _opening_pattern_4tok(str(entry.get("headline_en") or ""))
+        if pattern:
+            counts[pattern] = counts.get(pattern, 0) + 1
+    return counts
+
+
+def semantic_copy_rejection(candidate: dict[str, Any], planned_ad: dict[str, Any], previous_same_format: list[dict[str, Any]]) -> str | None:
+    fmt = str(candidate.get("format") or planned_ad.get("format") or "").strip().upper()
+    copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
+    en = copy.get("EN") if isinstance(copy.get("EN"), dict) else {}
+    headline = str(en.get("headline") or "").strip()
+    support_line = str(en.get("subheadline") or en.get("support_line") or "").strip()
+    cta = str(en.get("cta") or "").strip()
+    if not headline:
+        return None
+
+    normalized_headline = _normalized_text(headline)
+    for skeleton in GENERIC_HEADLINE_SKELETONS:
+        if skeleton in normalized_headline:
+            return f"headline uses banned generic skeleton: {skeleton}"
+
+    copy_req = planned_ad.get("copy_requirements") if isinstance(planned_ad.get("copy_requirements"), dict) else {}
+    direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
+    for entry in direction.values():
+        if not isinstance(entry, dict):
+            continue
+        for skeleton in entry.get("avoid_skeletons", []):
+            if isinstance(skeleton, str) and _phrase_matches_skeleton(headline, skeleton):
+                return f"headline matches avoid_skeleton: {skeleton}"
+
+    opening = _opening_pattern_4tok(headline)
+    if opening:
+        current_count = sum(1 for prev in previous_same_format if _opening_pattern_4tok(str(prev.get("headline") or "")) == opening)
+        registry_count = _recent_registry_opening_counts(fmt).get(opening, 0)
+        if current_count + registry_count >= 2:
+            return f"headline opening pattern repeated too often: {opening}"
+
+    normalized_support = _normalized_text(support_line)
+    for opener in GENERIC_SUPPORT_OPENERS:
+        if normalized_support.startswith(opener):
+            return f"support line starts with generic opener: {opener}"
+
+    persona = planned_ad.get("persona") if isinstance(planned_ad.get("persona"), dict) else {}
+    persona_text = " ".join(
+        " ".join(v) if isinstance(v, list) else str(v)
+        for key, v in persona.items()
+        if key in {"pain_points", "core_message", "objections", "trust_anchors", "english_ready"}
+    ).lower()
+    persona_terms = [word for word in _normalized_words(persona_text) if len(word) >= 6]
+    if support_line and persona_terms and not any(term in normalized_support for term in persona_terms[:24]):
+        if not any(term in normalized_support for term in ["craving", "hunger", "digestion", "routine", "homemade", "guided", "pcod", "outfit", "work", "travel"]):
+            return "support line is too generic for the persona"
+
+    if cta:
+        cta_repeats = sum(1 for prev in previous_same_format if str(prev.get("cta") or "").strip().lower() == cta.lower())
+        if cta_repeats >= 2:
+            return f"CTA repeats too frequently in {fmt}: {cta}"
+
     return None
 
 
@@ -727,6 +796,39 @@ def extract_generated_ad_candidate(payload: dict[str, Any]) -> dict[str, Any] | 
                 return normalize_candidate(item)
     if payload.get("format") and payload.get("copy"):
         return normalize_candidate(payload)
+    return None
+
+
+def detect_template_leakage(candidate: dict[str, Any] | None) -> str | None:
+    if not isinstance(candidate, dict):
+        return None
+    copy_raw = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
+    texts: list[str] = []
+    for lang in ("EN", "HI"):
+        block = copy_raw.get(lang) if isinstance(copy_raw.get(lang), dict) else copy_raw if lang == "EN" else {}
+        for key in ("headline", "subheadline", "support_line", "trust_line"):
+            val = block.get(key) if isinstance(block, dict) else None
+            if isinstance(val, str) and val.strip():
+                texts.append(val.strip())
+        bullets = block.get("bullets") if isinstance(block, dict) and isinstance(block.get("bullets"), list) else []
+        for b in bullets:
+            if isinstance(b, str) and b.strip():
+                texts.append(b.strip())
+
+    for text in texts:
+        low = text.lower()
+        if any(label in low for label in ("structured_system", "cravings_down", "desired_outcome")):
+            return f"Template label leaked into copy: {text!r}"
+        if re.search(r"\ba\s+clear\s+.{1,30}\s+system\s+for\b", low):
+            return f"Template sentence pattern detected: {text!r}"
+        if "simple steps rooted in" in low:
+            return f"Template sentence pattern detected: {text!r}"
+        if re.match(r"^a\s+doctor-formulated\s+ayurvedic\s+kit:", low):
+            return f"Colon-led feature list support line: {text!r}"
+    if len(texts) >= 2:
+        sup = texts[1] if len(texts) > 1 else ""
+        if sup.count(",") >= 3 and sum(1 for kw in ("appetite", "digestion", "coach", "tracker", "15-day", "morning", "night") if kw in sup.lower()) >= 3:
+            return f"Support line has stacked feature list: {sup!r}"
     return None
 
 
@@ -764,17 +866,41 @@ def hydrate_generated_ad_candidate(candidate: dict[str, Any], planned_ad: dict[s
         clean_name = persona_name.strip()
         merged_persona["name"] = clean_name
         merged_persona["persona_name"] = clean_name
+    for k in ["pain_en", "desire_en", "friction_en", "proof_needed_en", "tone_cue_en",
+              "pain_hi", "desire_hi", "friction_hi", "proof_needed_hi", "tone_cue_hi"]:
+        if k not in merged_persona and k in planned_persona:
+            merged_persona[k] = planned_persona[k]
     if merged_persona:
         hydrated["persona"] = merged_persona
 
     copy_payload = hydrated.get("copy") if isinstance(hydrated.get("copy"), dict) else {}
     normalized_copy: dict[str, Any] = {}
-    for lang in ["EN", "HI"]:
-        lang_block = copy_payload.get(lang)
-        normalized_copy[lang] = lang_block if isinstance(lang_block, dict) else {}
+    if copy_payload:
+        has_lang_keys = any(k in copy_payload for k in ["EN", "HI"])
+        if has_lang_keys:
+            for lang in ["EN", "HI"]:
+                lang_block = copy_payload.get(lang)
+                normalized_copy[lang] = lang_block if isinstance(lang_block, dict) else {}
+        else:
+            normalized_copy["EN"] = copy_payload
+            normalized_copy["HI"] = {}
+    else:
+        normalized_copy = {"EN": {}, "HI": {}}
     hydrated["copy"] = normalized_copy
 
     return hydrated
+
+
+def _normalize_how_kit_solves(value: Any) -> dict[str, str]:
+    if isinstance(value, str):
+        trimmed = value.strip()
+        return {"kit_lever": trimmed} if trimmed else {}
+    if isinstance(value, dict):
+        if isinstance(value.get("how_kit_solves"), dict):
+            value = value["how_kit_solves"]
+        allowed = ["failure_point", "kit_lever", "causal_bridge", "support_line_instruction"]
+        return {k: str(value.get(k, "")).strip() for k in allowed if str(value.get(k, "")).strip()}
+    return {}
 
 
 def _build_persona_payload_field(seed_field_value: Any, config: dict[str, Any]) -> Any:
@@ -794,7 +920,7 @@ def build_persona_payload(persona_number: int, personas: list[dict[str, Any]]) -
                 persona_name = name
             break
     seed = PERSONA_SEED_INPUTS.get(persona_number, {})
-    mapping = COPY_PROMPTS.get("persona_mapping", {})
+    mapping = _PERSONA_SEED_MAPPING
     seed_to_payload = mapping.get("seed_to_payload", {})
     fallbacks = mapping.get("persona_fallbacks", {})
 
@@ -805,6 +931,8 @@ def build_persona_payload(persona_number: int, personas: list[dict[str, Any]]) -
 
     for seed_key, field_cfg in seed_to_payload.items():
         raw = seed.get(seed_key, fallbacks.get(seed_key, ""))
+        if seed_key == "how_kit_solves":
+            raw = _normalize_how_kit_solves(raw)
         payload[field_cfg["field"]] = _build_persona_payload_field(raw, field_cfg)
 
     static = mapping.get("static_fields", {})
@@ -926,6 +1054,7 @@ def api_save_prompt_file_content(payload: dict[str, Any] = Body(...)) -> dict[st
     if not full_path.exists():
         raise HTTPException(status_code=404, detail=f"Prompt file not found: {prompt_path}")
     full_path.write_text(content, encoding="utf-8")
+    _invalidate_config_cache(full_path)
     return {"status": "saved", "path": prompt_path}
 
 
@@ -1059,8 +1188,8 @@ def build_916_conversion_prompt_job(fmt: str, persona_num: int, lang: str, index
     lang_clean = (lang or "EN").strip().upper() or "EN"
     persona_safe = max(0, int(persona_num or 0))
     if persona_safe > 0:
-        return f"OUTPUT_{fmt_clean}_P{persona_safe:02d}_{lang_clean}_A{max(1, int(index)):02d}.txt"
-    return f"OUTPUT_{fmt_clean}_P{index:02d}_{lang_clean}.txt"
+        return f"{fmt_clean}_P{persona_safe:02d}_{lang_clean}_A{max(1, int(index)):02d}.txt"
+    return f"{fmt_clean}_P{index:02d}_{lang_clean}.txt"
 
 
 def collect_45_reference_jobs_for_batch(batch: str) -> list[dict[str, Any]]:
@@ -1188,6 +1317,7 @@ def run_gemini_generation(
     headless: bool = False,
     run_dir: Path | None = None,
     prepend_starting_prompt: bool = True,
+    first_tab_mode: str = "reuse-blank",
 ) -> subprocess.CompletedProcess[str]:
     aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     prompt_work_dir = RUNTIME_ROOT / "gemini_selected_prompts" / f"{batch}_{aspect_folder}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -1248,6 +1378,8 @@ def run_gemini_generation(
     ]
     if headless:
         cmd.append("--headless")
+    if first_tab_mode and first_tab_mode != "reuse-blank":
+        cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_source_arg:
         cmd.extend(["--image-source-file", image_source_arg])
     if run_dir is not None:
@@ -1279,6 +1411,7 @@ def run_chatgpt_generation(
     headless: bool = False,
     run_dir: Path | None = None,
     prepend_starting_prompt: bool = True,
+    first_tab_mode: str = "reuse-blank",
 ) -> subprocess.CompletedProcess[str]:
     aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     prompt_work_dir = RUNTIME_ROOT / "chatgpt_selected_prompts" / f"{batch}_{aspect_folder}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -1325,8 +1458,11 @@ def run_chatgpt_generation(
     ]
     if headless:
         cmd.append("--headless")
+    if first_tab_mode and first_tab_mode != "reuse-blank":
+        cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_sources_file:
         cmd.extend(["--image-source-file", image_sources_file])
+    cmd.extend(["--aspect-ratio", aspect_ratio])
 
     # Pass CDP URL if running in WSL
     cdp_url_for_log = ""
@@ -1752,7 +1888,7 @@ def strip_internal_markers_from_payload(payload: dict[str, Any]) -> dict[str, An
             block = copy.get(lang)
             if not isinstance(block, dict):
                 continue
-            for key in ["headline", "support_line", "cta", "trust_line", "attribution"]:
+            for key in ["headline", "subheadline", "support_line", "cta", "trust_line", "attribution"]:
                 if key in block and isinstance(block.get(key), str):
                     value = strip_internal_marker(block[key])
                     block[key] = strip_price_tokens(value)
@@ -1774,64 +1910,7 @@ def strip_internal_markers_from_payload(payload: dict[str, Any]) -> dict[str, An
     return payload
 
 
-CTA_VARIANTS: dict[str, dict[str, list[str]]] = {}
-
-
-def registry_banlist_values(context: dict[str, Any]) -> set[str]:
-    banlist = context.get("banlist") if isinstance(context.get("banlist"), dict) else {}
-    buckets = banlist.get("buckets") if isinstance(banlist.get("buckets"), dict) else {}
-    values: set[str] = set()
-    for arr in buckets.values():
-        if not isinstance(arr, list):
-            continue
-        for item in arr:
-            if isinstance(item, str) and item.strip():
-                values.add(item.strip())
-    registry_path = ROOT / "AD_GENERATION_REGISTRY.JSON"
-    if registry_path.exists():
-        try:
-            registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        except Exception:
-            registry = {}
-        used_text = ((registry.get("indexes") or {}).get("used_text") or {}) if isinstance(registry, dict) else {}
-        if isinstance(used_text, dict):
-            for arr in used_text.values():
-                if not isinstance(arr, list):
-                    continue
-                for item in arr:
-                    if isinstance(item, str) and item.strip():
-                        values.add(item.strip())
-    return values
-
-
 def enforce_unique_ctas(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    ads = payload.get("ads") if isinstance(payload.get("ads"), list) else []
-    blocked = registry_banlist_values(context)
-    seen: set[str] = set()
-    for ad in ads:
-        if not isinstance(ad, dict):
-            continue
-        fmt = _clean_str(ad.get("format")).upper()
-        copy = ad.get("copy") if isinstance(ad.get("copy"), dict) else {}
-        for lang in ["EN", "HI"]:
-            block = copy.get(lang) if isinstance(copy.get(lang), dict) else None
-            if not block:
-                continue
-            current = _clean_str(block.get("cta"))
-            if current and current not in seen and current not in blocked:
-                seen.add(current)
-                continue
-            variants = CTA_VARIANTS.get(lang, {}).get(fmt, [])
-            chosen = ""
-            for candidate in variants:
-                if candidate not in seen and candidate not in blocked:
-                    chosen = candidate
-                    break
-            if not chosen:
-                # Keep CTA natural if uniqueness pool is exhausted.
-                chosen = current or (variants[0] if variants else "See Details")
-            block["cta"] = chosen
-            seen.add(chosen)
     return payload
 
 
@@ -2086,15 +2165,13 @@ def concept_ids_from_requirements(copy_req: dict[str, Any]) -> dict[str, str]:
         return _clean_str(value) or fallback
 
     return {
-        "awareness_stage": nested_id("audience_stage", "problem_aware"),
         "concept_angle": nested_id("concept_angle", "desired_outcome"),
-        "concept_structure": nested_id("message_structure", "pab"),
     }
 
 
 def ensure_testimonial_headline(headline: str, lang: str, persona: dict[str, Any]) -> str:
     clean = shorten_copy_line(headline)
-    guidance = COPY_PROMPTS.get("testimonial_headline_guidance", {})
+    guidance = _TESTIMONIAL_GUIDANCE
     cfg = guidance.get(lang, guidance.get("EN", {}))
     first_pat = cfg.get("first_person_pattern", "")
     weight_pat = cfg.get("weight_pattern", "")
@@ -2124,35 +2201,6 @@ def ensure_testimonial_headline(headline: str, lang: str, persona: dict[str, Any
     return fallback_text
 
 
-def ensure_testimonial_attribution(attribution: str, lang: str, persona: dict[str, Any], headline: str, trust_line: str) -> str:
-    variant_lists = COPY_PROMPTS.get("testimonial_attribution_variants", {})
-    variants = variant_lists.get(lang, variant_lists.get("EN", []))
-    if not variants:
-        return attribution
-
-    current = _clean_str(attribution)
-    seed_input = (
-        f"{persona.get('number', '')}|{persona.get('name', '')}|{headline}|{trust_line}|{persona.get('pain_en', '')}|{persona.get('pain_hi', '')}"
-    )
-    digest = hashlib.sha1(seed_input.encode("utf-8", errors="ignore")).hexdigest()
-    idx = int(digest[:8], 16) % len(variants)
-    chosen = variants[idx]
-
-    if not current:
-        return chosen
-
-    # For TEST attribution we avoid personal names and generic repeated labels.
-    if re.search(r"\brepresentative\s+user\s+review\b", current, flags=re.IGNORECASE):
-        return chosen
-    if re.search(r"\b(user|customer)\s+review\b", current, flags=re.IGNORECASE):
-        return chosen
-    if re.search(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", current):
-        return chosen
-    if re.search(r"[\u0900-\u097F]{2,}\s+[\u0900-\u097F]{2,}", current):
-        return chosen
-    return shorten_copy_line(current)
-
-
 def _persona_number_from_candidate(candidate: dict[str, Any]) -> int | None:
     persona = candidate.get("persona") if isinstance(candidate, dict) else None
     if not isinstance(persona, dict):
@@ -2175,14 +2223,93 @@ def _persona_name_from_candidate(candidate: dict[str, Any]) -> str:
     return _clean_str(persona.get("name") or persona.get("persona_name") or "")
 
 
+def _build_copy_skeleton(context: dict[str, Any], run_id: str) -> dict[str, Any]:
+    ads: list[dict[str, Any]] = []
+    token = run_id[-4:]
+    for idx, item in enumerate(context["ads"], start=1):
+        persona = item["persona"]
+        fmt = item["format"]
+        persona_num = int(persona["persona_number"])
+        persona_name = persona["persona_name"]
+        copy_req = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
+        concept_ids = concept_ids_from_requirements(copy_req)
+
+        pain_en = choose_text(persona.get("pain_points", []), f"Daily routine feels heavy and hard to sustain for persona {persona_num}.")
+        desire_en = choose_text(persona.get("core_message", []), "A practical routine that feels easy to follow.")
+        friction_en = choose_text(persona.get("objections", []), "Past plans felt too strict and difficult to maintain.")
+        proof_en = choose_text(persona.get("trust_anchors", []), "Needs proof through clear structure and believable support.")
+        tone_en = "Practical, empathetic, and confidence-building"
+        pain_hi = "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।"
+        desire_hi = "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।"
+        friction_hi = "पहले के प्लान बहुत सख्त और मुश्किल थे।"
+        proof_hi = "साफ कदम, भरोसेमंद सपोर्ट और व्यावहारिक प्रमाण चाहिए।"
+        tone_hi = "सरल, भरोसेमंद, और व्यावहारिक"
+
+        if fmt in {"HERO", "UGC"}:
+            copy_en: dict[str, Any] = {"headline": "", "support_line": "", "cta": ""}
+            copy_hi: dict[str, Any] = {"headline": "", "support_line": "", "cta": ""}
+            copy_hing: dict[str, Any] = {"headline": "", "support_line": "", "cta": ""}
+        elif fmt in {"BA", "FEAT"}:
+            copy_en = {"headline": "", "bullets": [], "cta": ""}
+            copy_hi = {"headline": "", "bullets": [], "cta": ""}
+            copy_hing = {"headline": "", "bullets": [], "cta": ""}
+        else:
+            copy_en = {"headline": "", "trust_line": "", "cta": ""}
+            copy_hi = {"headline": "", "trust_line": "", "cta": ""}
+            copy_hing = {"headline": "", "trust_line": "", "cta": ""}
+
+        ad_payload = {
+            "format": fmt,
+            "headline_angle": "",
+            "concept_angle": concept_ids["concept_angle"],
+            "persona": {
+                "number": persona_num,
+                "name": persona_name,
+                "pain_en": pain_en,
+                "desire_en": desire_en,
+                "friction_en": friction_en,
+                "proof_needed_en": proof_en,
+                "tone_cue_en": tone_en,
+                "pain_hi": pain_hi,
+                "desire_hi": desire_hi,
+                "friction_hi": friction_hi,
+                "proof_needed_hi": proof_hi,
+                "tone_cue_hi": tone_hi,
+            },
+            "copy": {"EN": copy_en, "HI": copy_hi, "HINGLISH": copy_hing},
+        }
+        hypothesis = item.get("hypothesis") if isinstance(item.get("hypothesis"), dict) else None
+        if hypothesis:
+            ad_payload["hypothesis"] = hypothesis
+        for key in [
+            "visual_archetype",
+            "visual_pattern_reused_from_run_id",
+            "visual_pattern_reuse_key",
+            "creative_index",
+            "creative_total",
+            "background_group_key",
+        ]:
+            if key in item:
+                ad_payload[key] = item[key]
+        ads.append(ad_payload)
+
+    return {"default_aspect_ratio": "4:5", "ads": ads}
+
+
 def normalize_generated_copy(
     generated: dict[str, Any] | None,
     context: dict[str, Any],
     run_id: str,
 ) -> dict[str, Any]:
-    base = build_template_copy(context, run_id)
+    base = _build_copy_skeleton(context, run_id)
     ads_generated = generated.get("ads") if isinstance(generated, dict) else None
     candidates = ads_generated if isinstance(ads_generated, list) else []
+    for cand in candidates:
+        if isinstance(cand, dict):
+            for lang_copy in (cand.get("copy") or {}).values():
+                if isinstance(lang_copy, dict) and "subheadline" in lang_copy:
+                    lang_copy["support_line"] = lang_copy.pop("subheadline")
+
     used_indices: set[int] = set()
 
     def pick_candidate(fmt: str, persona_num: int, persona_name: str) -> dict[str, Any] | None:
@@ -2224,13 +2351,15 @@ def normalize_generated_copy(
         if angle:
             ad["headline_angle"] = angle
 
-        for key in ["awareness_stage", "concept_angle", "concept_structure"]:
+        for key in ["concept_angle"]:
             value = _clean_str(candidate.get(key))
             if value:
                 ad[key] = value
 
         cand_copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
-        for lang in ["EN", "HI"]:
+        for lang in ["EN", "HI", "HINGLISH"]:
+            if lang not in ad["copy"]:
+                continue
             base_lang = ad["copy"][lang]
             src_lang = cand_copy.get(lang) if isinstance(cand_copy.get(lang), dict) else {}
 
@@ -2242,14 +2371,8 @@ def normalize_generated_copy(
                 base_lang["cta"] = cta
 
             if fmt == "TEST":
-                base_lang["headline"] = ensure_testimonial_headline(base_lang.get("headline", ""), lang, persona)
-                base_lang["attribution"] = ensure_testimonial_attribution(
-                    _clean_str(src_lang.get("attribution")),
-                    lang,
-                    persona,
-                    base_lang.get("headline", ""),
-                    _clean_str(src_lang.get("trust_line")) or base_lang.get("trust_line", ""),
-                )
+                if not _clean_str(src_lang.get("headline")):
+                    base_lang["headline"] = ensure_testimonial_headline(base_lang.get("headline", ""), lang, persona)
 
             if fmt in {"HERO", "UGC"}:
                 support = _clean_str(src_lang.get("support_line"))
@@ -2257,7 +2380,8 @@ def normalize_generated_copy(
                     base_lang["support_line"] = shorten_copy_line(support)
             elif fmt in {"BA", "FEAT"}:
                 bullets = _clean_bullets(src_lang.get("bullets"))
-                if len(bullets) >= 2:
+                min_bullets = 4 if fmt == "BA" else 2
+                if len(bullets) >= min_bullets:
                     if fmt == "BA":
                         bullets = [strip_ba_panel_label(b) for b in bullets]
                     base_lang["bullets"] = [shorten_copy_line(b) for b in bullets]
@@ -2269,174 +2393,8 @@ def normalize_generated_copy(
     return base
 
 
-def _template_copy(primary_key: str, secondary_key: str, concept_angle: str, pain: str, lang: str) -> str:
-    templates = COPY_PROMPTS.get("template_copy_headline_sentence", {})
-    template = templates.get(lang, templates.get("EN", ""))
-    return template.format(primary_key=primary_key, secondary_key=secondary_key, pain=pain)
-
-
-def template_headline(primary_key: str, concept_angle: str, pain: str, lang: str) -> str:
-    return _template_copy(primary_key, concept_angle, concept_angle, pain, lang)
-
-
-def template_support(primary_key: str, secondary_key: str, lang: str) -> str:
-    templates = COPY_PROMPTS.get("template_copy_support_sentence", {})
-    template = templates.get(lang, templates.get("EN", ""))
-    return template.format(primary_key=primary_key, secondary_key=secondary_key)
-
-
-def feature_template(key: str) -> dict[str, str]:
-    templates = COPY_PROMPTS.get("feature_templates", {})
-    entry = templates.get(key)
-    if entry:
-        return {"support_en": entry.get("EN", ""), "support_hi": entry.get("HI", "")}
-    default = templates.get("_default", {})
-    return {"support_en": default.get("EN", "Structured system for consistent progress."), "support_hi": default.get("HI", "लगातार प्रगति के लिए व्यवस्थित सिस्टम।")}
-
-
-def build_template_copy(context: dict[str, Any], run_id: str) -> dict[str, Any]:
-    ads: list[dict[str, Any]] = []
-    token = run_id[-4:]
-    for idx, item in enumerate(context["ads"], start=1):
-        persona = item["persona"]
-        fmt = item["format"]
-        persona_num = int(persona["persona_number"])
-        persona_name = persona["persona_name"]
-        unique = f"{token}-{idx:02d}-{fmt.lower()}"
-        copy_req = item.get("copy_requirements") if isinstance(item.get("copy_requirements"), dict) else {}
-        concept_ids = concept_ids_from_requirements(copy_req)
-        primary_key = _clean_str(copy_req.get("primary_feature_key")) or "structured_system"
-        secondary_key = _clean_str(copy_req.get("secondary_feature_key")) or "cravings_down"
-
-        pain_en = choose_text(persona.get("pain_points", []), f"Daily routine feels heavy and hard to sustain for persona {persona_num}.")
-        desire_en = choose_text(persona.get("core_message", []), "A practical routine that feels easy to follow.")
-        friction_en = choose_text(persona.get("objections", []), "Past plans felt too strict and difficult to maintain.")
-        proof_en = choose_text(persona.get("trust_anchors", []), "Needs proof through clear structure and believable support.")
-        en_fallbacks = COPY_PROMPTS.get("template_copy_en_fallbacks", {})
-        tone_en = en_fallbacks.get("tone", "Practical, empathetic, and confidence-building")
-
-        hi_fallbacks = COPY_PROMPTS.get("template_copy_hi_fallbacks", {})
-        pain_hi = hi_fallbacks.get("pain", "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।")
-        desire_hi = hi_fallbacks.get("desire", "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।")
-        friction_hi = hi_fallbacks.get("friction", "पहले के प्लान बहुत सख्त और मुश्किल थे।")
-        proof_hi = hi_fallbacks.get("proof", "साफ कदम, भरोसेमंद सपोर्ट और व्यावहारिक प्रमाण चाहिए।")
-        tone_hi = hi_fallbacks.get("tone", "सरल, भरोसेमंद, और व्यावहारिक")
-
-        concept_angle = concept_ids["concept_angle"]
-        headline_en = template_headline(primary_key, concept_angle, pain_en, "EN")
-        headline_hi = template_headline(primary_key, concept_angle, pain_en, "HI")
-        fmt_overrides = COPY_PROMPTS.get("template_copy_format_overrides", {})
-        fo = fmt_overrides.get(fmt, {})
-        if fo.get("headline"):
-            headline_en = fo["headline"].get("EN", headline_en)
-            headline_hi = fo["headline"].get("HI", headline_hi)
-
-        cta_map = COPY_PROMPTS.get("template_copy_cta_map", {})
-        default_cta = cta_map.get("_default", {"EN": "Start Today", "HI": "आज शुरू करें"})
-        fmt_cta = cta_map.get(fmt, default_cta)
-        cta_en = fmt_cta.get("EN", "Start Today")
-        cta_hi = fmt_cta.get("HI", "आज शुरू करें")
-
-        copy_en: dict[str, Any]
-        copy_hi: dict[str, Any]
-        if fmt in {"HERO", "UGC"}:
-            support_en = template_support(primary_key, secondary_key, "EN")
-            support_hi = template_support(primary_key, secondary_key, "HI")
-            if fo.get("support_override"):
-                support_en = fo["support_override"].get("EN", support_en)
-                support_hi = fo["support_override"].get("HI", support_hi)
-            copy_en = {"headline": headline_en, "support_line": support_en, "cta": cta_en}
-            copy_hi = {"headline": headline_hi, "support_line": support_hi, "cta": cta_hi}
-        elif fmt == "BA":
-            bullets_en = [
-                pain_en.rstrip("."),
-                friction_en.rstrip("."),
-                feature_template(primary_key)["support_en"].rstrip("."),
-                feature_template(secondary_key)["support_en"].rstrip("."),
-            ]
-            bullets_hi = [
-                pain_hi.rstrip("।"),
-                friction_hi.rstrip("।"),
-                feature_template(primary_key)["support_hi"].rstrip("।"),
-                feature_template(secondary_key)["support_hi"].rstrip("।"),
-            ]
-            copy_en = {"headline": headline_en, "bullets": bullets_en, "cta": cta_en}
-            copy_hi = {"headline": headline_hi, "bullets": bullets_hi, "cta": cta_hi}
-        elif fmt == "FEAT":
-            feat_bullets_en = fo.get("bullets", {}).get("EN", [])
-            feat_bullets_hi = fo.get("bullets", {}).get("HI", [])
-            bullets_en = feat_bullets_en or [
-                "Morning OK Liquid helps reduce hunger and random snacking for weight loss.",
-                "Night Tablet + Powder support digestion and lighter mornings in obesity routine.",
-                "Built for visible 15-day weight-loss support without crash-diet pressure.",
-            ]
-            bullets_hi = feat_bullets_hi or [
-                "सुबह का OK Liquid वजन घटाने के लिए भूख और अचानक खाने की आदत कम करने में सहायक है।",
-                "रात का Tablet + Powder मोटापा-नियंत्रण दिनचर्या में पाचन-सपोर्ट देता है।",
-                "कठोर डाइट दबाव के बिना 15 दिन के वजन-सपोर्ट के लिए बनाया गया।",
-            ]
-            copy_en = {"headline": headline_en, "bullets": bullets_en, "cta": cta_en}
-            copy_hi = {"headline": headline_hi, "bullets": bullets_hi, "cta": cta_hi}
-        else:
-            attribution_en = fo.get("attribution", {}).get("EN", "Doctor-formulated Ayurvedic obesity and weight-loss protocol")
-            attribution_hi = fo.get("attribution", {}).get("HI", "डॉक्टर-फॉर्मुलेटेड आयुर्वेदिक मोटापा और वजन-घटाने का प्रोटोकॉल")
-            trust_en = fo.get("trust_line", {}).get("EN", "Structured morning-night steps for visible weight-loss progress and obesity control.")
-            trust_hi = fo.get("trust_line", {}).get("HI", "सुबह-रात के स्पष्ट कदमों से वजन घटाने और मोटापा नियंत्रण का भरोसेमंद सपोर्ट।")
-            copy_en = {
-                "headline": headline_en,
-                "attribution": attribution_en,
-                "trust_line": trust_en,
-                "cta": cta_en,
-            }
-            copy_hi = {
-                "headline": headline_hi,
-                "attribution": attribution_hi,
-                "trust_line": trust_hi,
-                "cta": cta_hi,
-            }
-
-        ad_payload = {
-            "format": fmt,
-            "headline_angle": "mechanism",
-            "awareness_stage": concept_ids["awareness_stage"],
-            "concept_angle": concept_ids["concept_angle"],
-            "concept_structure": concept_ids["concept_structure"],
-            "persona": {
-                "number": persona_num,
-                "name": persona_name,
-                "pain_en": pain_en,
-                "desire_en": desire_en,
-                "friction_en": friction_en,
-                "proof_needed_en": proof_en,
-                "tone_cue_en": tone_en,
-                "pain_hi": pain_hi,
-                "desire_hi": desire_hi,
-                "friction_hi": friction_hi,
-                "proof_needed_hi": proof_hi,
-                "tone_cue_hi": tone_hi,
-            },
-            "copy": {"EN": copy_en, "HI": copy_hi},
-        }
-        hypothesis = item.get("hypothesis") if isinstance(item.get("hypothesis"), dict) else None
-        if hypothesis:
-            ad_payload["hypothesis"] = hypothesis
-        for key in [
-            "visual_archetype",
-            "visual_pattern_reused_from_run_id",
-            "visual_pattern_reuse_key",
-            "creative_index",
-            "creative_total",
-            "background_group_key",
-        ]:
-            if key in item:
-                ad_payload[key] = item[key]
-        ads.append(ad_payload)
-
-    return {"default_aspect_ratio": "4:5", "ads": ads}
-
-
-def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], run_dir: Path) -> dict[str, Any] | None:
-    api_url = (config.get("opencode_api_url") or "").strip()
+def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], run_dir: Path, reserved_batch: str | None = None, language_mode: str | None = None) -> dict[str, Any] | None:
+    api_url = (config.get("opencode_api_url") or "").strip() or DEFAULT_OPENCODE_API_URL
     api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
     model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
     config["opencode_model"] = model
@@ -2444,8 +2402,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     if not provider and "/" in model:
         provider = model.split("/", 1)[0]
     config["opencode_provider"] = provider
-    if not api_url:
-        return None
 
     print(f"[call_opencode_compatible] api_url={api_url}, model={model}", file=sys.stderr)
 
@@ -2458,7 +2414,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     session_id: str | None = None
     session_request_count = 0
     session_rollovers = 0
-    session_fallback_used = False
 
     if not product_file.exists() or not product_file.is_file():
         errors.append(f"Product master doc missing: {product_file}")
@@ -2488,30 +2443,67 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         cmd.extend(["--", prompt])
         return cmd
 
-    def run_opencode(prompt: str, *, force_file: bool = False) -> tuple[dict[str, Any] | None, str, str, int]:
-        use_session = bool(session_id) and not force_file
-        cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=force_file or not use_session)
-        result = run_opencode_cmd(cmd, cwd=ROOT, env=env)
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
-        if result.returncode != 0:
-            return None, stdout, stderr, result.returncode
+<<<<<<< HEAD
+    def run_opencode(prompt: str) -> tuple[dict[str, Any] | None, str, str, int]:
+        use_session = bool(session_id)
+        cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=not use_session)
+        proc = subprocess.Popen(cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        poll_interval = 0.1
+        elapsed = 0
+        while elapsed < OPENCODE_AD_TIMEOUT_SECONDS:
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                proc.kill()
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad; killed subprocess after {elapsed}s")
+                return None, "", f"CANCELLED after {elapsed}s", -1
+            try:
+                proc.wait(timeout=poll_interval)
+                break
+            except subprocess.TimeoutExpired:
+                elapsed += poll_interval
+        else:
+            proc.kill()
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s on ad prompt")
+            return None, "", f"TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s", -1
+        stdout = proc.stdout.read() if proc.stdout else ""
+        stderr = proc.stderr.read() if proc.stderr else ""
+        if proc.returncode != 0:
+            return None, stdout, stderr, proc.returncode
         parsed = parse_opencode_json_output(stdout)
-        return (extract_generated_ad_candidate(parsed) if parsed else None), stdout, stderr, result.returncode
+        return parsed, stdout, stderr, proc.returncode
 
     def current_session_limit() -> int:
         idx = min(session_rollovers, len(OPENCODE_ADS_PER_SESSION_SCHEDULE) - 1)
         return OPENCODE_ADS_PER_SESSION_SCHEDULE[idx]
 
-    def bootstrap_product_doc_session(reason: str) -> None:
-        nonlocal session_id, session_request_count, session_fallback_used, session_rollovers
+    def bootstrap_product_doc_session(reason: str) -> bool:
+        """Returns True if cancelled by user, False otherwise."""
+        nonlocal session_id, session_request_count, session_rollovers
         append_run_log(
             run_dir,
             "opencode_session.log",
             f"{now_iso()} Starting OpenCode product-doc session ({reason}) with file: {product_file}",
         )
         bootstrap_cmd = build_cmd(build_product_doc_bootstrap_prompt(), use_session=False, attach_product_doc=True)
-        bootstrap = run_opencode_cmd(bootstrap_cmd, cwd=ROOT, env=env)
+<<<<<<< HEAD
+        proc = subprocess.Popen(bootstrap_cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        bootstrap_timeout = 120
+        poll_start = time.time()
+        cancelled = False
+        while proc.poll() is None:
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                proc.kill()
+                proc.wait(timeout=5)
+                cancelled = True
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Bootstrap CANCELLED by user during {reason}")
+                break
+            if time.time() - poll_start > bootstrap_timeout:
+                proc.kill()
+                proc.wait(timeout=5)
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Bootstrap TIMEOUT after {bootstrap_timeout}s during {reason}")
+                break
+            time.sleep(0.1)
+        stdout, stderr = proc.communicate()
+        bootstrap = subprocess.CompletedProcess(bootstrap_cmd, proc.returncode, stdout, stderr)
         append_run_log(
             run_dir,
             "opencode_session.log",
@@ -2520,6 +2512,10 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
                 f"STDOUT:\n{bootstrap.stdout or ''}\nSTDERR:\n{bootstrap.stderr or ''}"
             ),
         )
+        if cancelled:
+            session_id = None
+            session_request_count = 0
+            return True
         if bootstrap.returncode == 0:
             next_session_id = parse_opencode_session_id(bootstrap.stdout or "")
             if next_session_id:
@@ -2541,108 +2537,226 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             else:
                 session_id = None
                 session_request_count = 0
-                session_fallback_used = True
-                warning = "OpenCode did not expose a session id; falling back to attaching product master doc on every ad request."
+                warning = "OpenCode did not expose a session id; proceeding without session reuse."
                 warnings.append(warning)
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
         else:
             session_id = None
             session_request_count = 0
-            session_fallback_used = True
-            warning = "OpenCode product-doc session bootstrap failed; falling back to attaching product master doc on every ad request."
+            warning = "OpenCode product-doc session bootstrap failed; proceeding without session reuse."
             warnings.append(warning)
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
+        return False
 
     with _opencode_queue_slot(f"copy_session {run_dir.name}"):
-        bootstrap_product_doc_session("initial")
+        _cancel_current_run.clear()
+        cancel_event_for_run(run_dir.name).clear()
+        if bootstrap_product_doc_session("initial"):
+            warnings.append("Run cancelled by user during initial bootstrap")
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during initial bootstrap")
+            return None, [], warnings
 
-        for index, ad_item in enumerate(context.get("ads") or [], start=1):
-            if session_id and session_request_count >= current_session_limit():
-                bootstrap_product_doc_session(f"rollover_before_ad_{index}")
-
-            previous_same_format: list[dict[str, Any]] = []
-            target_format = str(ad_item.get("format") or "").strip().upper()
+        all_items = context.get("ads") or []
+        total_items = len(all_items)
+        batch_size = int(config.get("batch_size") or 10)
+        def _build_previous_same_format(fmt: str, persona_num: int | None) -> list[dict[str, Any]]:
+            result: list[dict[str, Any]] = []
             for prev in generated_ads:
                 if not isinstance(prev, dict):
                     continue
-                if str(prev.get("format") or "").strip().upper() != target_format:
+                if fmt != "ALL" and str(prev.get("format") or "").strip().upper() != fmt:
+                    continue
+                prev_persona = prev.get("persona") if isinstance(prev.get("persona"), dict) else {}
+                if persona_num is not None and prev_persona.get("persona_number") != persona_num:
                     continue
                 prev_copy = prev.get("copy") if isinstance(prev.get("copy"), dict) else {}
                 prev_en = prev_copy.get("EN") if isinstance(prev_copy.get("EN"), dict) else {}
-                previous_same_format.append(
-                    {
-                        "persona": (prev.get("persona") or {}).get("name") if isinstance(prev.get("persona"), dict) else "",
-                        "headline_angle": prev.get("headline_angle"),
-                        "headline": prev_en.get("headline"),
-                        "support_line": prev_en.get("support_line"),
-                        "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
-                    }
-                )
-            single_context = {
-                **context,
-                "ads": [ad_item],
-            }
-            target_langs = {"EN": ["EN"], "HI": ["HI"], "HINGLISH": ["HINGLISH"], "ALL": ["EN", "HI", "HINGLISH"]}
+                result.append({
+                    "persona": prev_persona.get("name") if isinstance(prev.get("persona"), dict) else "",
+                    "headline_angle": prev.get("headline_angle"),
+                    "headline": prev_en.get("headline"),
+                    "support_line": prev_en.get("subheadline") or prev_en.get("support_line"),
+                    "cta": prev_en.get("cta"),
+                    "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
+                })
+            return result
+
+        all_items_tuples: list[tuple[int, dict]] = [(i + 1, item) for i, item in enumerate(all_items)]
+        all_items_flat = sorted(all_items_tuples, key=lambda x: str((x[1].get("format") or "") if isinstance(x, tuple) else (x.get("format") or "")))
+        for chunk_start in range(0, len(all_items_flat), batch_size):
+            chunk = all_items_flat[chunk_start:chunk_start + batch_size]
+            chunk_ads = [ad for _, ad in chunk]
+            chunk_indices = [idx for idx, _ in chunk]
+            batch_label = f"ads {chunk_indices[0]}-{chunk_indices[-1]}"
+
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                if not cancel_event_for_run(run_dir.name).is_set():
+                    cancel_event_for_run(run_dir.name).set()
+                warnings.append(f"Run cancelled by user after {chunk_indices[0] - 1} ads")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED by user after {chunk_indices[0] - 1} ads")
+                break
+
+            if session_id and session_request_count >= current_session_limit():
+                if bootstrap_product_doc_session(f"rollover_before_{batch_label}"):
+                    warnings.append(f"Run cancelled during session rollover before {batch_label}")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during session rollover")
+                    break
+
+            # Build previous_same_format across all previously generated ads (all formats mixed now)
+            previous_same_format = _build_previous_same_format("ALL", None)
+            first_ad = chunk_ads[0] if chunk_ads else {}
+
+            # Build a batch context with all ads in this chunk
+            batch_context = {**context, "ads": chunk_ads}
             user_payload = {
                 "task": "Generate fresh ad copy JSON for provided context.",
-                "context": build_generation_payload_for_llm(single_context),
+                "context": build_generation_payload_for_llm(batch_context),
                 "already_used_ads_DO_NOT_REUSE": previous_same_format,
                 "constraints": {
-                    "language": target_langs.get(language_mode, ["EN", "HI"]),
+                    "language": TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"]),
                     "language_mode": language_mode,
-                    "format": target_format,
                     "return_json_only": True,
                 },
             }
+            target_langs_list = TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"])
+            hyp_meta = first_ad.get("hypothesis") if isinstance(first_ad.get("hypothesis"), dict) else {}
+            hyp_type = str(hyp_meta.get("type") or "none").strip().lower()
+            concept_angle_rules = ""
+            if hyp_type == "none":
+                all_rules = COPY_PROMPTS.get("concept_angle_definitions", {}).get("all_rules", [])
+                if all_rules:
+                    concept_angle_rules = "\n\n" + "\n".join(all_rules)
+            chunk_formats = sorted({str(ad.get("format") or "").strip().upper() for ad in chunk_ads if isinstance(ad, dict)})
             cli_prompt = (
                 "SYSTEM:\n"
-                f"{build_ad_copy_system_prompt(target_format)}\n\n"
+                f"{build_ad_copy_system_prompt('ALL', formats=chunk_formats)}{concept_angle_rules}\n\n"
                 "USER_PAYLOAD_JSON:\n"
                 f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
-                f"{build_ad_prompt_tail(target_format)}"
+                f"{build_ad_prompt_tail('ALL', formats=chunk_formats)}\n\n"
+                f"{build_strict_schema_note('ALL', target_langs_list)}"
             )
 
             try:
                 candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
             except OSError as exc:
-                errors.append(f"Ad {index}: launch failed: {exc}")
+                errors.append(f"Batch {batch_label}: launch failed: {exc}")
+                for idx in chunk_indices:
+                    errors.append(f"Ad {idx}: launch failed in batch {batch_label}")
                 continue
 
-            if last_code != 0 and session_id:
-                session_id = None
-                session_fallback_used = True
-                warning = f"OpenCode reusable session failed on ad {index}; falling back to product-doc file attachment for remaining requests."
-                warnings.append(f"{warning}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} FALLBACK: {warning}")
-                candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt, force_file=True)
+            if last_code == -1 and "CANCELLED" in last_stderr:
+                warnings.append(f"Batch {batch_label}: cancelled mid-generation; saving already generated results")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label}")
+                break
 
-            if not candidate:
-                retry_prompt = f"{cli_prompt}\n\n{build_strict_schema_note(target_format)}\n"
-                candidate, last_stdout, last_stderr, last_code = run_opencode(retry_prompt, force_file=session_fallback_used and not session_id)
+            if last_code == -1:  # timeout
+                warning = f"Batch {batch_label}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
+                warnings.append(warning)
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
+                if bootstrap_product_doc_session("timeout_retry"):
+                    warnings.append(f"Run cancelled during timeout retry bootstrap for {batch_label}")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during timeout retry bootstrap")
+                    break
+                try:
+                    candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
+                except OSError as exc:
+                    errors.append(f"Batch {batch_label}: retry launch failed after timeout: {exc}")
+                    for idx in chunk_indices:
+                        errors.append(f"Ad {idx}: timeout retry failed in batch {batch_label}")
+                    continue
+                if last_code == -1 and "CANCELLED" in last_stderr:
+                    warnings.append(f"Batch {batch_label}: cancelled during timeout retry; saving already generated results")
+                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label} timeout retry")
+                    break
 
-            mismatch = hypothesis_mismatch(candidate, ad_item) if candidate else None
-            should_retry_hypothesis = bool(config.get("retry_hypothesis_mismatch"))
-            if mismatch and should_retry_hypothesis:
-                retry_prompt = (
-                    f"{cli_prompt}\n\n"
-                    f"REVISION_REQUIRED: {mismatch}\n"
-                    "Rewrite only this ad so it satisfies the requested hypothesis while keeping schema valid.\n"
-                )
-                candidate, last_stdout, last_stderr, last_code = run_opencode(retry_prompt, force_file=session_fallback_used and not session_id)
-                mismatch_after = hypothesis_mismatch(candidate, ad_item) if candidate else None
-                if mismatch_after:
-                    warnings.append(f"Ad {index}: hypothesis retry mismatch persisted; accepting generated copy: {mismatch_after}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
-            elif mismatch:
-                warnings.append(f"Ad {index}: hypothesis mismatch accepted without retry to avoid extra LLM token spend: {mismatch}")
+            if last_code != 0:
+                warnings.append(f"Batch {batch_label}: LLM call failed (exit code {last_code})\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
+                for idx in chunk_indices:
+                    errors.append(f"Ad {idx}: LLM call failed in batch {batch_label}")
+                continue
 
-            if not candidate:
-                errors.append(f"Ad {index}: returned no usable ad JSON; return code {last_code}\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
+            # Parse the multi-ad response
+            response_ads: list[dict] = []
+            if candidate and isinstance(candidate, dict):
+                raw_ads = candidate.get("ads")
+                if isinstance(raw_ads, list):
+                    response_ads = raw_ads
+
+            for local_idx, (global_idx, ad_item) in enumerate(chunk):
+                response_ad = response_ads[local_idx] if local_idx < len(response_ads) else None
+                if not response_ad or not isinstance(response_ad, dict):
+                    msg = f"Ad {global_idx}: LLM returned no usable ad at position {local_idx} in batch"
+                    warnings.append(msg)
+                    errors.append(f"Ad {global_idx}: no usable ad JSON at batch position {local_idx}")
+                    if session_id:
+                        session_request_count += 1
+                    continue
+
+                mismatch = hypothesis_mismatch(response_ad, ad_item)
+                if mismatch:
+                    msg = f"Ad {global_idx}: hypothesis mismatch (accepted, no retry): {mismatch}"
+                    warnings.append(msg)
+                    print(f"[WARNING] {msg}", file=sys.stderr)
+
+                ad_format = str(ad_item.get("format") or "").strip().upper()
+                semantic_prev = _build_previous_same_format(ad_format,
+                        (ad_item.get("persona") if isinstance(ad_item.get("persona"), dict) else {}).get("persona_number"))
+                semantic_rejection = semantic_copy_rejection(response_ad, ad_item, semantic_prev)
+                if semantic_rejection:
+                    msg = f"Ad {global_idx}: semantic copy quality flag (accepted, no retry): {semantic_rejection}"
+                    warnings.append(msg)
+                    print(f"[WARNING] {msg}", file=sys.stderr)
+
+                template_leak = detect_template_leakage(response_ad)
+                if template_leak:
+                    warnings.append(f"Ad {global_idx}: {template_leak}")
+
+                if last_stdout:
+                    raw_dir = run_dir / "logs" / "opencode_raw"
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                    (raw_dir / f"ad_{global_idx:02d}_stdout.ndjson").write_text(last_stdout, encoding="utf-8")
+                    (raw_dir / f"ad_{global_idx:02d}_candidate.json").write_text(
+                        json.dumps({"candidate": response_ad, "ad_item": ad_item}, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+
+                if response_ad:
+                    generated_ads.append(hydrate_generated_ad_candidate(response_ad, ad_item))
                 if session_id:
                     session_request_count += 1
-                continue
-            generated_ads.append(hydrate_generated_ad_candidate(candidate, ad_item))
-            if session_id:
-                session_request_count += 1
+
+            # Log batch progress and write partial results
+            print(f"[COPY BATCH DONE] {batch_label}: {len(generated_ads)}/{total_items} ads generated", file=sys.stderr)
+            partial_dir = run_dir / "partial"
+            partial_dir.mkdir(parents=True, exist_ok=True)
+            (partial_dir / "ads.json").write_text(
+                json.dumps({"default_aspect_ratio": "4:5", "ads": generated_ads}, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            (partial_dir / "progress.txt").write_text(f"{len(generated_ads)}/{total_items}\n", encoding="utf-8")
+
+            # Run assembler incrementally so prompts appear in output/ during the pipeline
+            if reserved_batch and language_mode:
+                partial_copy_file = partial_dir / "copy_batch.json"
+                partial_copy_file.write_text(
+                    json.dumps({"default_aspect_ratio": "4:5", "ads": generated_ads}, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                asm_result = run_cmd([
+                    "python3", "scripts/generate_ads.py",
+                    "--copy-file", str(partial_copy_file),
+                    "--batch", reserved_batch,
+                    "--language-mode", language_mode,
+                    "--skip-uniqueness-check",
+                    "--no-registry-write",
+                    "--seed", "0",
+                ], cwd=ROOT)
+                if asm_result.returncode != 0:
+                    asm_err = asm_result.stderr or asm_result.stdout
+                    print(f"[INCREMENTAL ASSEMBLER] batch {batch_label} failed: {asm_err}", file=sys.stderr)
+
+            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+                    break
 
     if errors or warnings:
         (run_dir / "logs" / "opencode_error.txt").write_text("\n\n---\n\n".join(errors + warnings), encoding="utf-8")
@@ -2655,8 +2769,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         result_payload["_opencode_failures"] = errors
     if warnings:
         result_payload["_opencode_warnings"] = warnings
-    if session_fallback_used:
-        result_payload["_opencode_session_fallback"] = True
     if session_rollovers:
         result_payload["_opencode_session_rollovers"] = session_rollovers
     return result_payload
@@ -2666,7 +2778,7 @@ def collect_run_result(run_dir: Path, batch_name: str, image_generated: bool) ->
     output_dir = ROOT / "output" / batch_name
     prompt_files = []
     if output_dir.exists():
-        for file in sorted(output_dir.glob("**/OUTPUT_*.txt")):
+        for file in sorted(output_dir.glob("**/[A-Z]*_P*.txt")):
             prompt_files.append(str(file.relative_to(ROOT)))
 
     image_files: list[str] = []
@@ -2729,7 +2841,7 @@ def scan_prompt_files_for_batch(batch_name: str) -> list[str]:
     prompt_files: list[str] = []
     if not output_dir.exists():
         return prompt_files
-    for file in sorted(output_dir.glob("**/OUTPUT_*.txt")):
+    for file in sorted(output_dir.glob("**/[A-Z]*_P*.txt")):
         prompt_files.append(str(file.relative_to(ROOT)))
     return prompt_files
 
@@ -3150,13 +3262,55 @@ def parse_background_lock_from_prompt(prompt_text: str) -> tuple[str, int] | Non
 
 
 def parse_prompt_filename(prompt_path: str) -> tuple[str, str, int | None] | None:
+    """Parse a prompt file name. Returns (format, lang, persona_number) or None.
+
+    Accepted canonical form:  <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt
+                              e.g. BA_P01_EN_pain_point.txt,
+                                   HERO_P03_HI_desired_outcome_A01.txt
+    Also accepts legacy forms for backward compatibility with existing files:
+      - <FMT>_P<NN>_<LANG>[_A<NN>].txt   (no angle, with or without variant)
+      - <FMT>_P<NN>_<LANG>_<angle>.txt  (no variant)
+      - <FMT>_P<NN>_<LANG>.txt          (no angle, no variant)
+    Also strips legacy ``OUTPUT_`` / ``FINAL_`` prefixes.
+    """
     name = Path(prompt_path).name
-    match = re.match(r"^OUTPUT_([A-Z]+)(?:_P(\d+))?_(EN|HI|HINGLISH)(?:_(?:V|A)\d+)?\.txt$", name)
-    if not match:
-        return None
-    persona_raw = match.group(2)
-    persona_number = int(persona_raw) if persona_raw else None
-    return (match.group(1), match.group(3), persona_number)
+    patterns = [
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)_([a-z][a-z_]*?)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)\.txt$",
+    ]
+    for pat in patterns:
+        m = re.match(pat, name, re.IGNORECASE)
+        if m:
+            return (m.group(1).upper(), m.group(3).upper(), int(m.group(2)))
+    return None
+
+
+def parse_prompt_filename_full(prompt_path: str) -> tuple[str, str, int, str, str] | None:
+    """Like ``parse_prompt_filename`` but also extracts the concept_angle and variant.
+
+    Returns ``(format, lang, persona_number, concept_angle, variant)`` or ``None``.
+    ``concept_angle`` defaults to ``""`` if the filename has no angle component
+    (legacy form). ``variant`` is the ``A01``/``V01`` string, or ``""`` if absent.
+    """
+    name = Path(prompt_path).name
+    patterns = [
+        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_P(?P<num>\d+)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+        # angle + variant (angle present, but regex below catches both)
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_P(?P<num>\d+)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+    ]
+    for pat in patterns:
+        m = re.match(pat, name, re.IGNORECASE)
+        if m:
+            return (
+                m.group("fmt").upper(),
+                m.group("lang").upper(),
+                int(m.group("num")),
+                m.groupdict().get("angle", "") or "",
+                m.groupdict().get("variant", "") or "",
+            )
+    return None
 
 
 def parse_prompt_creative_index(prompt_path: str) -> int:
@@ -3165,20 +3319,35 @@ def parse_prompt_creative_index(prompt_path: str) -> int:
 
 
 def _parse_generated_image_name(image_rel_path: str) -> dict[str, Any]:
-    stem = Path(image_rel_path).stem.lower()
-    match = re.search(
-        r"^(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<persona>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<image_index>\d+))?$",
-        stem,
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return {}
-    return {
-        "format": match.group("fmt").upper(),
-        "persona_number": int(match.group("persona")),
-        "language": match.group("lang").upper(),
-        "image_index": int(match.group("image_index")) if match.group("image_index") else None,
-    }
+    """Parse a generated image filename. Returns dict with format, persona_number,
+    language, concept_angle, image_index; missing keys mean the stem is unparseable.
+
+    Canonical form: ``<FMT>_P<NN>_<LANG>_<angle>[_A<NN>].<ext>``
+                    e.g. BA_P01_EN_pain_point.png,
+                         HERO_P03_HI_desired_outcome_A01.jpg
+    Also accepts legacy ``gemini-``/``chatgpt-`` prefixed stems for older runs.
+    """
+    stem = Path(image_rel_path).stem
+    patterns = [
+        # legacy tool-prefixed: gemini-hero-p01-en[-a01][-<angle>]
+        r"^(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<persona>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<image_index>\d+))?(?:-(?P<angle>[a-z_]+))?$",
+        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>]
+        r"^(?P<fmt>[A-Z]+)_P(?P<persona>\d+)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_A(?P<image_index>\d+))?$",
+        # angle-less legacy: <FMT>_P<NN>_<LANG>[_A<NN>]
+        r"^(?P<fmt>[A-Z]+)_P(?P<persona>\d+)_(?P<lang>EN|HI|HINGLISH)(?:_A(?P<image_index>\d+))?$",
+    ]
+    for pat in patterns:
+        m = re.search(pat, stem, flags=re.IGNORECASE)
+        if not m:
+            continue
+        return {
+            "format": m.group("fmt").upper(),
+            "persona_number": int(m.group("persona")),
+            "language": m.group("lang").upper(),
+            "concept_angle": m.groupdict().get("angle", "") or "",
+            "image_index": int(m.group("image_index")) if m.groupdict().get("image_index") else None,
+        }
+    return {}
 
 
 def _sorted_prompt_candidates(
@@ -3416,7 +3585,7 @@ def collect_45_visual_locks(batch: str) -> dict[str, dict[str, Any]]:
     ratio_dir = ROOT / "output" / batch / "45"
     if not ratio_dir.exists():
         return out
-    for prompt_file in sorted(ratio_dir.glob("OUTPUT_*_EN.txt")) + sorted(ratio_dir.glob("OUTPUT_*_HI.txt")):
+    for prompt_file in sorted(ratio_dir.glob("*_EN.txt")) + sorted(ratio_dir.glob("*_HI.txt")):
         parsed = parse_prompt_filename(prompt_file.name)
         if not parsed:
             continue
@@ -3785,7 +3954,7 @@ def startup() -> None:
 
 
 def api_defaults() -> dict[str, Any]:
-    personas = parse_persona_library(DEFAULT_PLAYBOOK)
+    personas = parse_persona_library()
     opencode = _get_opencode_catalog()
     if not opencode.get("providers") and not opencode.get("models_by_provider"):
         try:
@@ -3810,13 +3979,14 @@ def api_defaults() -> dict[str, Any]:
         "product_doc": default_product_doc_info(),
         "default_files": {
             "product_info": str(DEFAULT_PRODUCT_MASTER.relative_to(ROOT)),
-            "playbook": str(DEFAULT_PLAYBOOK.relative_to(ROOT)),
+
         },
         "opencode": opencode,
         "hypothesis": {
             "variables": HYPOTHESIS_VARIABLES,
             "default": {"type": "none", "variant": ""},
         },
+        "batch_size": 10,
     }
 
 
@@ -3980,6 +4150,21 @@ def api_run(run_id: str) -> dict[str, Any]:
     return enrich_manifest_for_dashboard(manifest)
 
 
+def api_run_partial(run_id: str) -> dict[str, Any]:
+    run_dir = RUNS_ROOT / run_id
+    error_file = run_dir / "partial" / "error.txt"
+    if error_file.exists():
+        return {"ads": [], "progress": "0/0", "error": error_file.read_text(encoding="utf-8").strip()}
+    partial_json = run_dir / "partial" / "ads.json"
+    if not partial_json.exists():
+        return {"ads": [], "progress": "0/0"}
+    ads = json.loads(partial_json.read_text(encoding="utf-8"))
+    progress_file = run_dir / "partial" / "progress.txt"
+    progress = progress_file.read_text(encoding="utf-8").strip() if progress_file.exists() else "0/0"
+    ads["progress"] = progress
+    return ads
+
+
 def api_run_prompt_copies(run_id: str) -> dict[str, Any]:
     _run_dir, manifest, _has_storage_manifest = load_manifest_for_run(run_id)
     prompt_files_all = manifest.get("prompt_files") or []
@@ -4086,6 +4271,8 @@ def api_run_update_prompt_copies(run_id: str, payload: dict[str, Any] = Body(...
 
             if key == "headline":
                 lang_copy["headline"] = value
+            elif key == "subheadline":
+                lang_copy["subheadline"] = value
             elif key == "support line":
                 lang_copy["support_line"] = value
             elif key == "context line":
@@ -4172,13 +4359,8 @@ EXACT_COPY_SHEET_COLUMNS = [
     "persona_friction",
     "persona_proof",
     "persona_tone",
-    "persona_awareness_stage",
-    "concept_structure",
-    "concept_structure_definition",
     "concept_angle",
     "concept_angle_definition",
-    "awareness_stage",
-    "awareness_stage_definition",
     "hypothesis_type",
     "hypothesis_variant",
     "headline_copy",
@@ -4254,13 +4436,13 @@ def _load_run_prompt_files(run_id: str, aspect_ratios: list[str] | None = None) 
 
 
 def _get_architecture_definition(arch: dict[str, Any], group: str, variant: str) -> str:
-    """Get the template/definition for a concept_variation field from copy_architecture.json."""
+    """Get the intent summary for a concept_variation field from copy_architecture.json."""
     if not arch or not group or not variant:
         return ""
     headline_archs = arch.get("headline_architectures") or {}
     group_data = headline_archs.get(group) or {}
     variant_data = group_data.get(variant) or {}
-    return str(variant_data.get("template") or "").strip()
+    return str(variant_data.get("meaning") or variant_data.get("intent") or variant_data.get("direction") or variant_data.get("template") or "").strip()
 
 
 def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt_rel_path: str, batch_vn: str = "") -> dict[str, Any]:
@@ -4294,10 +4476,7 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
     persona_friction = ""
     persona_proof = ""
     persona_tone = ""
-    persona_awareness_stage = ""
-    concept_structure = ""
     concept_angle = ""
-    awareness_stage = ""
     hypothesis_type = ""
     hypothesis_variant = ""
 
@@ -4305,12 +4484,11 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
         # Pull full persona data from persona_seeds.json
         seed = PERSONA_SEED_INPUTS.get(persona_number) or {}
         persona_name = str(seed.get("persona_name") or f"Persona {persona_number}")
-        persona_pain = str(seed.get("pain", ""))
-        persona_desire = str(seed.get("desire", ""))
-        persona_friction = str(seed.get("friction", ""))
-        persona_proof = str(seed.get("proof", ""))
-        persona_tone = str(seed.get("tone", ""))
-        persona_awareness_stage = str(seed.get("awareness_stage", ""))
+        persona_pain = str(seed.get("core_pattern", ""))
+        persona_desire = str(seed.get("common_indian_moments", ""))
+        persona_friction = str(seed.get("objections_raw", ""))
+        persona_proof = str(seed.get("common_indian_moments", ""))
+        persona_tone = str(seed.get("guardrail", ""))
 
         for ad in copy_batch.get("ads") or []:
             if not isinstance(ad, dict):
@@ -4327,8 +4505,6 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
                     if pn:
                         persona_name = pn
                     concept_angle = str(ad.get("concept_angle") or ad.get("headline_angle") or "")
-                    concept_structure = str(ad.get("concept_structure") or "")
-                    awareness_stage = str(ad.get("awareness_stage") or "")
                     hyp = ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {}
                     if hyp:
                         hypothesis_type = str(hyp.get("type") or hyp.get("variable_label") or "")
@@ -4336,9 +4512,7 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
                     break
 
     arch = COPY_ARCH
-    concept_structure_def = _get_architecture_definition(arch, "concept_structure", concept_structure)
     concept_angle_def = _get_architecture_definition(arch, "concept_angle", concept_angle)
-    awareness_stage_def = _get_architecture_definition(arch, "awareness_stage", awareness_stage)
 
     return {
         "prompt_id": prompt_rel_path,
@@ -4350,13 +4524,8 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
         "persona_friction": persona_friction,
         "persona_proof": persona_proof,
         "persona_tone": persona_tone,
-        "persona_awareness_stage": persona_awareness_stage,
-        "concept_structure": concept_structure,
-        "concept_structure_definition": concept_structure_def,
         "concept_angle": concept_angle,
         "concept_angle_definition": concept_angle_def,
-        "awareness_stage": awareness_stage,
-        "awareness_stage_definition": awareness_stage_def,
         "hypothesis_type": hypothesis_type,
         "hypothesis_variant": hypothesis_variant,
         "headline_copy": headline_copy,
@@ -4475,10 +4644,8 @@ async def api_import_on_image_copy(
     # Optional context columns (from export, used for validation/reference)
     OPTIONAL_CONTEXT_COLUMNS = [
         "format", "persona_name", "persona_pain", "persona_desire", "persona_friction",
-        "persona_proof", "persona_tone", "persona_awareness_stage",
-        "concept_structure", "concept_structure_definition",
+        "persona_proof", "persona_tone",
         "concept_angle", "concept_angle_definition",
-        "awareness_stage", "awareness_stage_definition",
         "hypothesis_type", "hypothesis_variant",
         "vn", "created_at",
     ]
@@ -4946,6 +5113,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
             str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
             "--upload-dir",
             str(INPUT_IMAGES_DIR),
+            "--aspect-ratio", "4:5",
         ]
         # Pass CDP URL if running in WSL
         if Path("/mnt/c").exists():
@@ -4981,6 +5149,152 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
         "batch_key": batch_name,
         "total_prompts": len(prompt_files_created),
         "run_count": len(run_ids),
+    }
+
+
+def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """First generate 4:5 images, then generate 9:16 from them."""
+    run_ids = payload.get("run_ids")
+    if not isinstance(run_ids, list) or not run_ids:
+        raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
+
+    headless = bool(payload.get("headless", False))
+    engine = str(payload.get("engine") or "gemini").strip().lower()
+    if engine not in {"gemini", "chatgpt"}:
+        raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
+    engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
+
+    # ---- Step 1: Generate 4:5 images ----
+    all_prompt_files: list[str] = []
+    run_info: list[dict[str, Any]] = []
+    primary_run_dir: Path | None = None
+    for run_id in run_ids:
+        try:
+            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
+        except HTTPException:
+            continue
+        batch = str(manifest.get("batch") or "").strip()
+        if not batch:
+            continue
+        prompt_files_all = manifest.get("prompt_files") or []
+        prompt_files_45 = [path for path in prompt_files_all if "/45/" in str(path)]
+        if not prompt_files_45:
+            continue
+        all_prompt_files.extend(prompt_files_45)
+        if has_storage_manifest and run_dir is not None and primary_run_dir is None:
+            primary_run_dir = run_dir
+        run_info.append({"run_id": run_id, "batch": batch, "prompt_count": len(prompt_files_45)})
+
+    if not all_prompt_files:
+        raise HTTPException(status_code=400, detail="No 4:5 prompt files found for any run")
+
+    batch_names = sorted({r["batch"] for r in run_info})
+    batch_name = batch_names[0] if len(batch_names) == 1 else "_".join(batch_names)
+    work_id = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    prompt_work_dir = RUNTIME_ROOT / f"{engine.lower()}_selected_prompts" / f"{batch_name}_{work_id}"
+    prompt_work_dir.mkdir(parents=True, exist_ok=True)
+    starting_prompt = ""
+    starting_prompt_path = ROOT / "input" / "startingprompt.txt"
+    if starting_prompt_path.exists():
+        starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
+    for src_pf in all_prompt_files:
+        src = Path(src_pf)
+        if not src.is_absolute():
+            src = ROOT / src
+        src = src.resolve()
+        if not src.exists():
+            continue
+        prompt_text = src.read_text(encoding="utf-8")
+        combined = f"{starting_prompt}\n\n{prompt_text.strip()}\n" if starting_prompt else prompt_text
+        dest = prompt_work_dir / src.name
+        dest.write_text(combined, encoding="utf-8")
+        sidecar = src.with_suffix(".json")
+        if sidecar.exists():
+            (prompt_work_dir / sidecar.name).write_text(sidecar.read_text(encoding="utf-8"), encoding="utf-8")
+
+    out_dir_45 = GENERATED_IMAGES_ROOT / batch_name / "4_5"
+    out_dir_45.mkdir(parents=True, exist_ok=True)
+
+    if engine == "chatgpt":
+        cmd = [
+            sys.executable, "scripts/chatgpt_web_sutomation.py",
+            "--prompt-dir", str(prompt_work_dir), "--prompt-glob", "*.txt",
+            "--out-dir", str(out_dir_45),
+            "--timeout", str(int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420")),
+            "--download-timeout", str(int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90")),
+            "--manual-login-timeout", str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
+            "--upload-dir", str(INPUT_IMAGES_DIR),
+            "--aspect-ratio", "4:5",
+        ]
+    else:
+        cmd = [
+            sys.executable, "scripts/gemini_web_automation.py",
+            "--prompt-dir", str(prompt_work_dir), "--prompt-glob", "*.txt",
+            "--out-dir", str(out_dir_45),
+            "--timeout", str(int(os.getenv("GEMINI_GENERATION_TIMEOUT_SECONDS") or "420")),
+            "--manual-login-timeout", str(int(os.getenv("GEMINI_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
+            "--upload-dir", str(INPUT_IMAGES_DIR),
+        ]
+    if headless:
+        cmd.append("--headless")
+
+    result = run_cmd(cmd, cwd=ROOT)
+    if result.returncode != 0:
+        error_text = result.stderr or result.stdout
+        short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-30:])
+        raise HTTPException(status_code=500, detail=f"4:5 generation failed ({engine_label}):\n{short_error}")
+
+    # ---- Step 2: Generate 9:16 from 4:5 images ----
+    batch_errors: list[str] = []
+    total_completed = 0
+    total_attempted = 0
+    processed_batches: list[str] = []
+    batch_to_run_dir: dict[str, Path | None] = {}
+    for run_id in run_ids:
+        try:
+            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
+        except HTTPException:
+            continue
+        batch = str(manifest.get("batch") or "").strip()
+        if not batch:
+            continue
+        if has_storage_manifest and run_dir is not None:
+            batch_to_run_dir[batch] = run_dir
+        elif batch not in batch_to_run_dir:
+            batch_to_run_dir[batch] = None
+
+    for batch, run_dir in sorted(batch_to_run_dir.items()):
+        try:
+            result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine)
+        except HTTPException as exc:
+            batch_errors.append(f"{batch}: {exc.detail}")
+            continue
+        processed_batches.append(batch)
+        total_attempted += int(result.get("attempted") or 0)
+        total_completed += int(result.get("completed") or 0)
+        if run_dir is not None:
+            manifest_path = run_dir / "manifest.json"
+            if manifest_path.exists():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                refreshed = collect_run_result(run_dir, batch, True)
+                refreshed["generated_variant"] = "9:16"
+                refreshed["generated_images_for_prompts_916"] = result.get("prompt_files_used", [])
+                merge_manifest(run_dir, manifest, refreshed)
+
+    if total_completed == 0:
+        detail = "4:5 images generated but 9:16 conversion failed"
+        if batch_errors:
+            detail += ": " + " | ".join(batch_errors[:3])
+        raise HTTPException(status_code=400, detail=detail)
+
+    return {
+        "status": "completed",
+        "batch_key": ",".join(processed_batches),
+        "message": f"4:5 + 9:16 images generated for {len(processed_batches)} batch(es)",
+        "total_45_prompts": len(all_prompt_files),
+        "total_916_completed": total_completed,
+        "run_count": len(run_ids),
+        "errors": batch_errors,
     }
 
 
@@ -5021,7 +5335,7 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
             base_name = f"p{persona_num:02d}"
             image_sources: list[str] = []
             for pf45, imgs in prompt_to_images.items():
-                if f"OUTPUT_{fmt}_P{persona_num:02d}" in str(pf45).upper():
+                if f"{fmt}_P{persona_num:02d}" in str(pf45).upper():
                     image_sources = list(imgs)
                     break
 
@@ -5070,11 +5384,11 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
         fmt, lang, persona_num = parsed
 
         # 9:16 prompt expected at output/{batch}/96/
-        pf_filename = f"OUTPUT_{fmt}_P{persona_num:02d}_{lang}.txt"
-        prompt_96 = f"output/{batch}/96/{pf_filename}"
-        prompt_96_path = ROOT / prompt_96
-        if not prompt_96_path.exists():
+        prompt_96_pattern = f"output/{batch}/96/{fmt}_P{persona_num:02d}_{lang}*.txt"
+        prompt_96_matches = sorted(ROOT.glob(prompt_96_pattern))
+        if not prompt_96_matches:
             continue
+        pf_filename = prompt_96_matches[0].name
 
         image_sources = list(prompt_to_images.get(rel_45, []))
 
@@ -5145,6 +5459,7 @@ def run_916_conversion_from_45_for_batch(
                 headless=headless,
                 run_dir=run_dir,
                 prepend_starting_prompt=False,
+                first_tab_mode="new",
             )
         else:
             result = run_gemini_generation(
@@ -5155,6 +5470,7 @@ def run_916_conversion_from_45_for_batch(
                 headless=headless,
                 run_dir=run_dir,
                 prepend_starting_prompt=False,
+                first_tab_mode="new",
             )
 
         if result.returncode != 0:
@@ -5281,7 +5597,6 @@ async def api_run_execute(
     clear_input_images: bool = Form(False),
 ) -> dict[str, Any]:
     ensure_dirs()
-    batch = "v0"
     try:
         cfg = json.loads(config)
     except json.JSONDecodeError as exc:
@@ -5296,15 +5611,10 @@ async def api_run_execute(
     (run_dir / "context").mkdir(parents=True, exist_ok=True)
 
     product_path = save_upload(run_dir / "inputs" / "product master doc.txt", product_info_file)
-    mechanism_path = None
-    faq_path = None
     image_sources_path = save_upload(run_dir / "inputs" / "image_sources.txt", image_source_file)
     saved_input_images = store_uploaded_input_images(input_image_files or [], clear_input_images)
 
     product_file = coalesce_path(product_path, DEFAULT_PRODUCT_MASTER)
-    mechanism_file_path = ROOT / "__empty__.txt"
-    faq_file_path = ROOT / "__empty__.txt"
-
     image_sources_file_path = coalesce_path(image_sources_path, default_image_sources_file())
 
     try:
@@ -5324,24 +5634,12 @@ async def api_run_execute(
             share_across_personas=bool(cfg.get("share_background_across_personas")),
         )
         (run_dir / "context" / "visual_pattern_reuse.json").write_text(
-            json.dumps(
-                {
-                    "source_run_id": reuse_visual_patterns_from_run_id,
-                    "available_locks": len(pattern_locks),
-                    "applied_ads": applied_patterns,
-                    "share_across_personas": bool(cfg.get("share_background_across_personas")),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+            json.dumps({"source_run_id": reuse_visual_patterns_from_run_id, "available_locks": len(pattern_locks), "applied_ads": applied_patterns, "share_background_across_personas": bool(cfg.get("share_background_across_personas"))}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
         )
 
-    # Save hypothesis config to run dir for reference
     if hypothesis_cfg:
         (run_dir / "context" / "hypothesis_config.json").write_text(
-            json.dumps(hypothesis_cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            json.dumps(hypothesis_cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
         )
 
     product_ctx_source = "attached_product_master_doc"
@@ -5352,21 +5650,8 @@ async def api_run_execute(
         execution_provider = execution_model.split("/", 1)[0]
     cfg["opencode_model"] = execution_model
     cfg["opencode_provider"] = execution_provider
-    (run_dir / "context" / "product_doc_source.json").write_text(
-        json.dumps(
-            {
-                "source": product_ctx_source,
-                "product_file": str(product_file),
-                "note": "Canonical extraction is disabled; the full product master doc is attached to the OpenCode copy session unchanged.",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
-    persona_library = parse_persona_library(DEFAULT_PLAYBOOK)
+    persona_library = parse_persona_library()
     ads_context: list[dict[str, Any]] = []
     format_seen_counts: dict[str, int] = {}
     for item in plan:
@@ -5374,264 +5659,151 @@ async def api_run_execute(
         fmt = item["format"]
         format_seen_counts[fmt] = format_seen_counts.get(fmt, 0) + 1
         persona_payload = build_persona_payload(persona_no, persona_library)
-
-        format_result = run_cmd(
-            [
-                "python3",
-                "scripts/extract_format_rules.py",
-                "--playbook",
-                str(DEFAULT_PLAYBOOK),
-                "--format",
-                fmt,
-                "--json",
-            ],
-            cwd=ROOT,
-        )
-        format_payload = parse_json_stdout(format_result, f"extract_format_rules({fmt})")
+        format_payload = {"format": fmt, "rules": []}
         copy_req = build_copy_requirements(persona_no, fmt, format_seen_counts[fmt], run_id)
-
-        # Inject hypothesis directive if active
         hyp_meta = item.get("hypothesis")
         concept = {}
-        if isinstance(hyp_meta, dict) and hyp_meta.get("type") != "none":
-            copy_req["hypothesis"] = hyp_meta
+        hyp_type = str(hyp_meta.get("type") or "").strip().lower() if isinstance(hyp_meta, dict) else ""
+        variant = str(hyp_meta.get("variant") or "").strip() if isinstance(hyp_meta, dict) else ""
+        if isinstance(hyp_meta, dict) and hyp_type and hyp_type != "none":
+            guidance = _hypothesis_guidance(hyp_type, variant) if variant else ""
+            copy_req["hypothesis"] = {"type": hyp_type, "variant": variant, "hypothesis_id": hyp_meta.get("hypothesis_id") or f"{hyp_type}-{variant}", "intent": guidance, "do_not_force_template": True}
             concept = copy_req.get("concept_variation") or {}
-            hyp_type = hyp_meta.get("type")
-            variant = hyp_meta.get("variant")
-            if hyp_type == "awareness_stage" and variant:
-                concept["audience_stage"] = _framework_item("audience_stage", variant)
-                _set_active_support_line_strategy(copy_req, "by_awareness_stage", variant)
-                strategy = copy_req.get("support_line_strategy")
-                if isinstance(strategy, dict):
-                    strategy["awareness_stage"] = _support_line_strategy_item("by_awareness_stage", variant)
-                guidance = _hypothesis_guidance("awareness_stage", variant)
-                if guidance:
-                    concept["awareness_stage_guidance"] = guidance
-            elif hyp_type == "concept_angle" and variant:
+            if hyp_type == "concept_angle" and variant:
                 concept["concept_angle"] = _framework_item("concept_angle", variant)
-                _set_active_support_line_strategy(copy_req, "by_concept_angle", variant)
-                guidance = _hypothesis_guidance("concept_angle", variant)
-                if guidance:
-                    concept["concept_angle_guidance"] = guidance
-            elif hyp_type == "concept_structure" and variant:
-                concept["message_structure"] = _framework_item("message_structure", variant)
-                _set_active_support_line_strategy(copy_req, "by_concept_structure", variant)
-                strategy = copy_req.get("support_line_strategy")
-                if isinstance(strategy, dict):
-                    strategy["concept_structure"] = _support_line_strategy_item("by_concept_structure", variant)
-                guidance = _hypothesis_guidance("concept_structure", variant)
-                if guidance:
-                    concept["concept_structure_guidance"] = guidance
             elif hyp_type == "hook_structure" and variant:
                 concept["hook_structure_override"] = variant
-                _set_active_support_line_strategy(copy_req, "by_hook_structure", variant)
-                guidance = _hypothesis_guidance("hook_structure", variant)
-                if guidance:
-                    concept["hook_structure_guidance"] = guidance
-            elif hyp_type == "proof_style" and variant:
-                concept["proof_style_override"] = variant
-                _set_active_support_line_strategy(copy_req, "by_proof_style", variant)
-                guidance = _hypothesis_guidance("proof_style", variant)
-                if guidance:
-                    concept["proof_style_guidance"] = guidance
-            elif hyp_type == "cta_voice" and variant:
-                concept["cta_voice_override"] = variant
-                guidance = _hypothesis_guidance("cta_voice", variant)
-                if guidance:
-                    concept["cta_voice_guidance"] = guidance
             copy_req["concept_variation"] = concept
-
-            # Update headline_architecture if hypothesis changed the structural driver
-            arch_src = None
-            arch_variant = None
-            if hyp_type == "concept_structure" and variant:
-                arch_src = "concept_structure"
-                arch_variant = variant
-            elif hyp_type == "hook_structure" and variant:
-                arch_src = "hook_structure"
-                arch_variant = variant
-            if arch_src and arch_variant:
-                ha_group = COPY_ARCH.get("headline_architectures", {}).get(arch_src, {})
-                ha_entry = ha_group.get(arch_variant)
-                if ha_entry:
-                    copy_req["headline_architecture"] = {
-                        "template": ha_entry.get("template", ""),
-                        "examples": ha_entry.get("examples", []),
-                        "source": arch_src,
-                        "variant": arch_variant,
-                    }
-
-        ads_context.append(
-            {
-                "persona": persona_payload,
-                "format_rules": format_payload,
-                "format": fmt,
-                "copy_requirements": copy_req,
-                "hypothesis": hyp_meta,
-                "visual_archetype": item.get("visual_archetype"),
-                "visual_pattern_reused_from_run_id": item.get("visual_pattern_reused_from_run_id"),
-                "visual_pattern_reuse_key": item.get("visual_pattern_reuse_key"),
-                "creative_index": item.get("creative_index", 1),
-                "creative_total": item.get("creative_total", 1),
-                "background_group_key": item.get("background_group_key"),
-                "share_background_across_personas": item.get("share_background_across_personas", False),
-            }
-        )
+            copy_req["selection_mode"] = "locked"
+        if not concept.get("concept_angle"):
+            concept["concept_angle"] = {"id": "auto"}
+        copy_req["concept_variation"] = concept
+        ads_context.append({"persona": persona_payload, "format_rules": format_payload, "format": fmt, "copy_requirements": copy_req, "hypothesis": hyp_meta, "visual_archetype": item.get("visual_archetype"), "visual_pattern_reused_from_run_id": item.get("visual_pattern_reused_from_run_id"), "visual_pattern_reuse_key": item.get("visual_pattern_reuse_key"), "creative_index": item.get("creative_index", 1), "creative_total": item.get("creative_total", 1), "background_group_key": item.get("background_group_key"), "share_background_across_personas": item.get("share_background_across_personas", False)})
 
     banlist_result = run_cmd(["python3", "scripts/registry_banlist.py", "--last", "150"], cwd=ROOT)
     banlist_payload = parse_json_stdout(banlist_result, "registry_banlist")
 
-    full_context = {
-        "generated_at": now_iso(),
-        "run_id": run_id,
-        "language_mode": resolve_language_mode(cfg),
-        "context_source": product_ctx_source,
-        "context_extractor_model": extractor_model,
-        "opencode_provider": execution_provider,
-        "opencode_model": execution_model,
-        "product_file_path": str(product_file),
-        "ads": ads_context,
-        "banlist": banlist_payload,
-    }
-    (run_dir / "context" / "run_context.json").write_text(
-        json.dumps(
-            {
-                "generated_at": full_context["generated_at"],
-                "run_id": full_context["run_id"],
-                "language_mode": full_context["language_mode"],
-                "context_source": full_context["context_source"],
-                "context_extractor_model": full_context["context_extractor_model"],
-                "opencode_provider": full_context["opencode_provider"],
-                "opencode_model": full_context["opencode_model"],
-                "product_file_path": full_context["product_file_path"],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    full_context = {"generated_at": now_iso(), "run_id": run_id, "language_mode": resolve_language_mode(cfg), "context_source": product_ctx_source, "context_extractor_model": extractor_model, "opencode_provider": execution_provider, "opencode_model": execution_model, "product_file_path": str(product_file), "ads": ads_context, "banlist": banlist_payload}
+    (run_dir / "context" / "run_context.json").write_text(json.dumps({k: full_context[k] for k in ["generated_at", "run_id", "language_mode", "context_source", "context_extractor_model", "opencode_provider", "opencode_model", "product_file_path"]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    llm_mode = "opencode"
-    copy_json = call_opencode_compatible(cfg, full_context, run_dir)
-    used_template_fallback = False
-    if not copy_json:
-        llm_mode = "fallback_template"
-        used_template_fallback = True
-        (run_dir / "logs" / "opencode_fallback.txt").write_text(
-            "OpenCode copy generation unavailable; using deterministic schema-compatible fallback copy.\n",
-            encoding="utf-8",
-        )
-        copy_json = build_template_copy(full_context, run_id)
-    opencode_failures = copy_json.pop("_opencode_failures", []) if isinstance(copy_json, dict) else []
-    opencode_warnings = copy_json.pop("_opencode_warnings", []) if isinstance(copy_json, dict) else []
-    opencode_session_fallback = bool(copy_json.pop("_opencode_session_fallback", False)) if isinstance(copy_json, dict) else False
-    opencode_session_rollovers = int(copy_json.pop("_opencode_session_rollovers", 0) or 0) if isinstance(copy_json, dict) else 0
-    if opencode_failures and llm_mode == "opencode":
-        llm_mode = "opencode_partial_fallback"
-        (run_dir / "logs" / "opencode_fallback.txt").write_text(
-            "Some OpenCode ad generations failed; normalize_generated_copy filled those outputs with deterministic template copy.\n\n"
-            + "\n\n---\n\n".join(opencode_failures),
-            encoding="utf-8",
-        )
-    copy_json = normalize_generated_copy(copy_json, full_context, run_id)
-    copy_json = strip_internal_markers_from_payload(copy_json)
-    copy_json = enforce_unique_ctas(copy_json, full_context)
-    copy_json = scrub_on_image_copy(copy_json)
-    reuse_backgrounds_from_run_id = str(cfg.get("reuse_backgrounds_from_run_id") or "").strip()
-    if reuse_backgrounds_from_run_id:
-        locks = collect_background_reuse_locks(reuse_backgrounds_from_run_id)
-        copy_json, applied_locks = apply_background_reuse_locks(
-            copy_json,
-            locks,
-            share_across_personas=bool(cfg.get("share_background_across_personas")),
-        )
-        (run_dir / "context" / "background_reuse.json").write_text(
-            json.dumps(
-                {
-                    "source_run_id": reuse_backgrounds_from_run_id,
-                    "available_locks": len(locks),
-                    "applied_ads": applied_locks,
-                    "share_background_across_personas": bool(cfg.get("share_background_across_personas")),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-    generated_copy_error = validate_generated_copy_payload(copy_json, ads_context)
-    if generated_copy_error:
-        (run_dir / "logs" / "opencode_error.txt").write_text(
-            generated_copy_error + "\n\nGenerated payload:\n" + json.dumps(copy_json, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        raise HTTPException(status_code=502, detail="OpenCode copy generation returned incomplete copy. Prompt production stopped; check run logs.")
+    # Run pipeline in background thread so frontend can poll partial results
+    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_provider=execution_provider, execution_model=execution_model, ads_context=ads_context)
+    threading.Thread(target=_run_pipeline_background, kwargs=bg_kwargs, daemon=True).start()
 
-    copy_file = run_dir / "context" / "copy_batch.json"
-    copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"run_id": run_id, "status": "started"}
 
-    assembler_result = run_cmd(
-        [
-            "python3",
-            "scripts/generate_ads.py",
-            "--copy-file",
-            str(copy_file),
-            "--language-mode",
-            assembler_language_mode(cfg),
-            "--skip-uniqueness-check",
-        ],
-        cwd=ROOT,
-    )
-    if assembler_result.returncode != 0:
-        assembler_error = assembler_result.stderr or assembler_result.stdout
-        (run_dir / "logs" / "assembler_error.txt").write_text(assembler_error, encoding="utf-8")
-        raise HTTPException(status_code=500, detail="Prompt assembly failed. Check run logs.")
 
-    batch_match = re.search(r"Batch:\s*(v\d+)", assembler_result.stdout)
-    if not batch_match:
-        raise HTTPException(status_code=500, detail="Could not parse batch from assembler output")
-    batch = batch_match.group(1)
+def _list_output_batches() -> list[int]:
+    output_dir = ROOT / "output"
+    if not output_dir.exists():
+        return []
+    out: list[int] = []
+    for child in output_dir.iterdir():
+        if child.is_dir():
+            m = re.match(r"^v(\d+)$", child.name)
+            if m:
+                out.append(int(m.group(1)))
+    return sorted(out)
 
-    manifest = collect_run_result(run_dir, batch, image_generated=False)
-    manifest["llm_mode"] = llm_mode
-    if llm_mode == "fallback_template":
-        manifest["copy_source"] = "deterministic fallback template"
-    elif llm_mode == "opencode_partial_fallback":
-        manifest["copy_source"] = f"opencode generated copy with template fallback for {len(opencode_failures)} failed ad(s)"
-    else:
+
+def _reserve_batch_name() -> str:
+    batches = _list_output_batches()
+    return "v1" if not batches else f"v{batches[-1] + 1}"
+
+
+def _run_pipeline_background(
+    run_dir: Path, cfg: dict, full_context: dict,
+    image_sources_file_path: Path, saved_input_images: list,
+    reuse_visual_patterns_from_run_id: str,
+    product_ctx_source: str, extractor_model: str,
+    execution_provider: str, execution_model: str,
+    ads_context: list,
+) -> None:
+    """Run the full pipeline in a background thread, writing results incrementally."""
+    try:
+        print(f"[PIPELINE] Starting background pipeline for run {run_dir.name}", file=sys.stderr)
+        # Reserve batch number early so incremental assembler runs write to the same batch dir
+        reserved_batch = _reserve_batch_name()
+        language_mode = assembler_language_mode(cfg)
+        llm_mode = "opencode"
+        copy_json = call_opencode_compatible(cfg, full_context, run_dir, reserved_batch=reserved_batch, language_mode=language_mode)
+        if not copy_json:
+            error_msg = "OpenCode copy generation unavailable (no LLM response) and fallback template has been removed."
+            (run_dir / "partial").mkdir(parents=True, exist_ok=True)
+            (run_dir / "partial" / "error.txt").write_text(error_msg, encoding="utf-8")
+            print(f"[PIPELINE ERROR] {error_msg}", file=sys.stderr)
+            return
+        opencode_failures = copy_json.pop("_opencode_failures", []) if isinstance(copy_json, dict) else []
+        opencode_warnings = copy_json.pop("_opencode_warnings", []) if isinstance(copy_json, dict) else []
+        opencode_session_rollovers = int(copy_json.pop("_opencode_session_rollovers", 0) or 0) if isinstance(copy_json, dict) else 0
+        if opencode_failures:
+            llm_mode = "opencode_partial_fallback"
+        copy_json = normalize_generated_copy(copy_json, full_context, run_dir.name)
+        copy_json = strip_internal_markers_from_payload(copy_json)
+        copy_json = enforce_unique_ctas(copy_json, full_context)
+        copy_json = scrub_on_image_copy(copy_json)
+        reuse_backgrounds_from_run_id = str(cfg.get("reuse_backgrounds_from_run_id") or "").strip()
+        if reuse_backgrounds_from_run_id:
+            locks = collect_background_reuse_locks(reuse_backgrounds_from_run_id)
+            copy_json, applied_locks = apply_background_reuse_locks(copy_json, locks, share_across_personas=bool(cfg.get("share_background_across_personas")))
+            (run_dir / "context" / "background_reuse.json").write_text(json.dumps({"source_run_id": reuse_backgrounds_from_run_id, "available_locks": len(locks), "applied_ads": applied_locks, "share_background_across_personas": bool(cfg.get("share_background_across_personas"))}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        generated_copy_error = validate_generated_copy_payload(copy_json, ads_context, language_mode)
+        if generated_copy_error:
+            (run_dir / "logs" / "opencode_error.txt").write_text(generated_copy_error + "\n\nGenerated payload:\n" + json.dumps(copy_json, ensure_ascii=False, indent=2), encoding="utf-8")
+            (run_dir / "partial").mkdir(parents=True, exist_ok=True)
+            (run_dir / "partial" / "error.txt").write_text(f"OpenCode copy generation returned incomplete copy: {generated_copy_error}", encoding="utf-8")
+            print(f"[PIPELINE ERROR] {generated_copy_error}", file=sys.stderr)
+            return
+
+        copy_file = run_dir / "context" / "copy_batch.json"
+        copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode, "--skip-uniqueness-check"], cwd=ROOT)
+        if assembler_result.returncode != 0:
+            assembler_error = assembler_result.stderr or assembler_result.stdout
+            (run_dir / "logs" / "assembler_error.txt").write_text(assembler_error, encoding="utf-8")
+            (run_dir / "partial").mkdir(parents=True, exist_ok=True)
+            (run_dir / "partial" / "error.txt").write_text(f"Prompt assembly failed: {assembler_error}", encoding="utf-8")
+            print(f"[PIPELINE ERROR] Prompt assembly failed: {assembler_error}", file=sys.stderr)
+            return
+
+        batch = reserved_batch
+
+        manifest = collect_run_result(run_dir, batch, image_generated=False)
+        manifest["llm_mode"] = llm_mode
         manifest["copy_source"] = "opencode generated copy"
-    if opencode_failures:
-        manifest["copy_generation_failures"] = len(opencode_failures)
-        manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
-    if used_template_fallback:
-        manifest["copy_generation_failures"] = max(int(manifest.get("copy_generation_failures") or 0), 1)
-        manifest["copy_fallback_log"] = str((run_dir / "logs" / "opencode_fallback.txt").relative_to(ROOT))
-        manifest["copy_generation_notes"] = ["OpenCode copy generation unavailable; deterministic fallback copy was used."]
-    if opencode_warnings:
-        manifest["copy_generation_warnings"] = len(opencode_warnings)
-        manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
-        manifest["copy_generation_notes"] = [str(item).splitlines()[0] for item in opencode_warnings[:3]]
-    if opencode_session_fallback:
-        manifest["copy_session_fallback"] = True
-        manifest["copy_session_log"] = str((run_dir / "logs" / "opencode_session.log").relative_to(ROOT))
-    if opencode_session_rollovers:
-        manifest["copy_session_rollovers"] = opencode_session_rollovers
-        manifest["copy_session_schedule"] = OPENCODE_ADS_PER_SESSION_SCHEDULE
-        manifest["copy_session_log"] = str((run_dir / "logs" / "opencode_session.log").relative_to(ROOT))
-    manifest["context_source"] = product_ctx_source
-    manifest["context_extractor_model"] = extractor_model
-    manifest["opencode_provider"] = execution_provider
-    manifest["opencode_model"] = execution_model
-    manifest["image_sources_file"] = str(image_sources_file_path)
-    manifest["input_images_dir"] = str(INPUT_IMAGES_DIR.relative_to(ROOT)).replace("\\", "/")
-    manifest["input_images_uploaded"] = saved_input_images
-    if reuse_backgrounds_from_run_id:
-        manifest["background_reuse_from_run_id"] = reuse_backgrounds_from_run_id
-    if reuse_visual_patterns_from_run_id:
-        manifest["visual_pattern_reuse_from_run_id"] = reuse_visual_patterns_from_run_id
-    (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return manifest
+        if opencode_failures:
+            manifest["copy_generation_failures"] = len(opencode_failures)
+            manifest["copy_generation_notes"] = [f"{len(opencode_failures)} ad(s) had generation failures"]
+        if opencode_warnings:
+            manifest["copy_generation_warnings"] = len(opencode_warnings)
+            manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
+            manifest["copy_generation_notes"] = [str(item).splitlines()[0] for item in opencode_warnings[:3]]
+        if opencode_session_rollovers:
+            manifest["copy_session_rollovers"] = opencode_session_rollovers
+            manifest["copy_session_schedule"] = OPENCODE_ADS_PER_SESSION_SCHEDULE
+            manifest["copy_session_log"] = str((run_dir / "logs" / "opencode_session.log").relative_to(ROOT))
+        manifest["context_source"] = product_ctx_source
+        manifest["context_extractor_model"] = extractor_model
+        manifest["opencode_provider"] = execution_provider
+        manifest["opencode_model"] = execution_model
+        manifest["image_sources_file"] = str(image_sources_file_path)
+        manifest["input_images_dir"] = str(INPUT_IMAGES_DIR.relative_to(ROOT)).replace("\\", "/")
+        manifest["input_images_uploaded"] = saved_input_images
+        if reuse_visual_patterns_from_run_id:
+            manifest["visual_pattern_reuse_from_run_id"] = reuse_visual_patterns_from_run_id
+        (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        # Clean up partial results now that final manifest is written
+        partial_dir = run_dir / "partial"
+        if partial_dir.exists():
+            import shutil
+            shutil.rmtree(partial_dir)
+        print(f"[PIPELINE DONE] Run {run_dir.name} completed, batch={batch}", file=sys.stderr)
+    except Exception as exc:
+        (run_dir / "logs" / "pipeline_error.txt").write_text(f"Pipeline background task failed: {exc}\n{traceback.format_exc()}", encoding="utf-8")
+        (run_dir / "partial").mkdir(parents=True, exist_ok=True)
+        (run_dir / "partial" / "error.txt").write_text(f"Pipeline failed: {exc}", encoding="utf-8")
+        print(f"[PIPELINE ERROR] {exc}", file=sys.stderr)
 
 
 # Chrome process tracking
@@ -5863,6 +6035,23 @@ def api_kill_chrome() -> dict[str, Any]:
     return {"status": "killed", "chrome": killed, "gemini_processes": gemini_killed, "chatgpt_processes": chatgpt_killed, "windows_chrome": win_chrome_killed}
 
 
+def api_stop_generation() -> dict[str, Any]:
+    """Kill any running generation/assembly scripts (chatgpt, gemini, generate_ads, opencode)."""
+    targets = ["chatgpt_web_sutomation", "gemini_web_automation", "generate_ads.py", "opencode"]
+    counts: dict[str, int] = {t: 0 for t in targets}
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            joined = " ".join(cmdline)
+            for target in targets:
+                if target in joined:
+                    proc.kill()
+                    counts[target] += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return {"status": "killed", **counts}
+
+
 def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block."""
     run_dir = RUNS_ROOT / run_id
@@ -5881,6 +6070,51 @@ def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[st
         raise HTTPException(status_code=400, detail="No EXACT ON-IMAGE COPY block found in prompt file")
     full_path.write_text(updated_text, encoding="utf-8")
     return {"status": "saved", "prompt_file": prompt_path}
+
+
+def api_delete_run(run_id: str) -> dict[str, Any]:
+    run_dir = RUNS_ROOT / run_id
+    if not run_dir.exists():
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    manifest_path = run_dir / "manifest.json"
+    batch = None
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        batch = manifest.get("batch")
+
+    import shutil
+    shutil.rmtree(run_dir)
+
+    deleted_images = False
+    deleted_prompts = False
+    if batch:
+        other_runs_with_same_batch = False
+        for d in RUNS_ROOT.glob("run_*"):
+            if d.name == run_id:
+                continue
+            mf = d / "manifest.json"
+            if mf.exists():
+                try:
+                    m = json.loads(mf.read_text(encoding="utf-8"))
+                    if m.get("batch") == batch:
+                        other_runs_with_same_batch = True
+                        break
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+        if not other_runs_with_same_batch:
+            batch_images_dir = GENERATED_IMAGES_ROOT / batch
+            if batch_images_dir.exists():
+                shutil.rmtree(batch_images_dir)
+                deleted_images = True
+
+            batch_prompts_dir = ROOT / "output" / batch
+            if batch_prompts_dir.exists():
+                shutil.rmtree(batch_prompts_dir)
+                deleted_prompts = True
+
+    return {"status": "deleted", "run_id": run_id, "batch": batch, "deleted_images": deleted_images, "deleted_prompts": deleted_prompts}
 
 
 def api_delete_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
@@ -6102,13 +6336,8 @@ def _find_prompt_by_name(prompt_name: str, prompt_files: list[str]) -> str:
 
 
 def _build_output_stem_from_prompt(prompt_path: str, engine: str) -> str:
-    """Build the deterministic output stem for a generated image.
-
-    Example:  prompt=OUTPUT_HERO_P25_EN_A34.txt, engine=chatgpt
-              -> "chatgpt-hero-p25-en-a34"
-    """
     name = Path(prompt_path).stem
-    match = re.match(r"^(?:FINAL|OUTPUT_)?([A-Za-z0-9]+)_P(\d+)_([A-Za-z0-9]+)(?:_([AV]\d+))?$", name, flags=re.IGNORECASE)
+    match = re.match(r"^([A-Za-z0-9]+)_P(\d+)_([A-Za-z0-9]+)(?:_([AV]\d+))?(?:_[a-z_]+)?$", name, flags=re.IGNORECASE)
     if not match:
         return ""
     fmt = match.group(1).lower()
@@ -6294,9 +6523,9 @@ def api_regenerate_queued_images(run_id: str, payload: dict[str, Any] = Body(...
             raise HTTPException(status_code=500, detail=f"9:16 regeneration failed: {exc}")
 
         for job in jobs_916:
-            prompt_path = str(ROOT / "output" / batch / "45" / f"OUTPUT_{job['format']}_P{job['persona_number']:02d}_{job['language']}.txt")
+            prompt_path = str(ROOT / "output" / batch / "45" / f"{job['format']}_P{job['persona_number']:02d}_{job['language']}.txt")
             # Try to find exact prompt path
-            pname = f"OUTPUT_{job['format']}_P{job['persona_number']:02d}_{job['language']}"
+            pname = f"{job['format']}_P{job['persona_number']:02d}_{job['language']}"
             candidates = [pf for pf in prompt_files_list if pname in Path(pf).name]
             if candidates:
                 prompt_path = candidates[0]
@@ -6384,12 +6613,16 @@ async def api_replace_image(run_id: str, image_file: str = Form(...), replacemen
 
 
 def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, str]:
-    """Extract format, persona, language from an image's companion JSON metadata
-    and build a human-readable stem for download naming."""
+    """Extract format, persona, language, concept_angle from an image's companion
+    JSON metadata and build a human-readable stem for download naming.
+
+    Stem format mirrors the canonical prompt filename:
+        <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].<ext>
+    """
     full_path = ROOT / image_path_str
     meta_path = full_path.with_suffix(".json")
     legacy_meta_path = full_path.with_suffix(full_path.suffix + ".json")
-    base = {"format": "UNKNOWN", "persona": "00", "lang": "EN", "stem": "image"}
+    base = {"format": "UNKNOWN", "persona": "00", "lang": "EN", "concept_angle": "", "stem": "image"}
     hyp_label = ""
 
     if meta_path.exists() or legacy_meta_path.exists():
@@ -6402,6 +6635,7 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
         fmt_value = str(meta.get("format") or meta.get("format_id") or "").strip().upper()
         persona_value = str(meta.get("persona") or meta.get("persona_id") or "").strip().upper()
         lang_value = str(meta.get("language") or meta.get("lang") or meta.get("lang_id") or "").strip().upper()
+        angle_value = str(meta.get("concept_angle") or "").strip()
         if fmt_value:
             base["format"] = fmt_value
         persona_match = re.search(r"P?(\d+)", persona_value)
@@ -6409,15 +6643,17 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
             base["persona"] = f"P{int(persona_match.group(1)):02d}"
         if lang_value:
             base["lang"] = lang_value
+        if angle_value:
+            base["concept_angle"] = angle_value
         prompt_file = str(meta.get("prompt_file_relative") or meta.get("prompt_file") or "").strip().replace("\\", "/")
-        if not prompt_file:
-            prompt_file = str(meta.get("prompt_file_relative") or meta.get("prompt_file") or "").strip().replace("\\", "/")
-        parsed = parse_prompt_filename(prompt_file)
+        parsed = parse_prompt_filename_full(prompt_file)
         if parsed:
-            fmt, lang, persona_num = parsed
+            fmt, lang, persona_num, angle, _variant = parsed
             base["format"] = fmt
             base["persona"] = f"P{persona_num:02d}" if persona_num else "P00"
             base["lang"] = lang
+            if angle:
+                base["concept_angle"] = angle
         creative_total = int(meta.get("creative_total") or 1) if str(meta.get("creative_total") or "1").isdigit() else 1
         creative_index = int(meta.get("creative_index") or 1) if str(meta.get("creative_index") or "1").isdigit() else 1
         if creative_total > 1:
@@ -6434,13 +6670,15 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
 
     if base["format"] == "UNKNOWN" or base["persona"] in {"00", "P00"}:
         name = Path(image_path_str).stem.lower()
-        match = re.search(r"(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<num>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<creative>\d+))?", name)
+        match = re.search(r"(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<num>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<creative>\d+))?(?:-(?P<angle>[a-z_]+))?", name)
         if match:
             base["format"] = match.group("fmt").upper()
             base["persona"] = f"P{int(match.group('num')):02d}"
             base["lang"] = match.group("lang").upper()
             if match.group("creative"):
                 base["creative_suffix"] = f"_A{int(match.group('creative')):02d}"
+            if match.group("angle"):
+                base["concept_angle"] = match.group("angle")
 
     # Try hypothesis
     if run_dir is not None:
@@ -6459,7 +6697,8 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
                 pass
 
     ext = Path(image_path_str).suffix
-    stem = f"{base['format']}_{base['persona']}_{base['lang']}{base.get('creative_suffix', '')}{hyp_label}"
+    angle_part = f"_{base['concept_angle']}" if base.get("concept_angle") else ""
+    stem = f"{base['format']}_{base['persona']}_{base['lang']}{angle_part}{base.get('creative_suffix', '')}{hyp_label}"
     base["stem"] = stem
     base["ext"] = ext
     return base

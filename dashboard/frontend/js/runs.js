@@ -14,7 +14,18 @@ let batchDropdownInitialized = false;
 
 function parsePromptPath(path) {
   const name = path.split("/").pop() || path;
-  const match = name.match(/^OUTPUT_([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)(?:_A(\d+))?\.txt$/i);
+  // Canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt  (angle required)
+  // Legacy:    <FMT>_P<NN>_<LANG>[_A<NN>][_<angle>].txt  (angle optional)
+  // Both also accept optional OUTPUT_ / FINAL_ prefixes.
+  const canonical = name.match(
+    /^(?:(?:OUTPUT|FINAL)_)?([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)_([a-z][a-z_]*?)(?:_A(\d+))?\.txt$/i
+  );
+  const legacy = !canonical && name.match(
+    /^(?:(?:OUTPUT|FINAL)_)?([A-Z0-9]+)_P(\d+)_([A-Z0-9]+)(?:_A(\d+))?(?:_([a-z_]+))?\.txt$/i
+  );
+  const match = canonical || legacy;
+  const angle = canonical ? canonical[4] : (legacy && legacy[5] ? legacy[5] : null);
+  const creative = canonical ? canonical[5] : (legacy ? legacy[4] : null);
   const aspect = path.includes("/916/") || path.includes("/96/") ? "9:16" : path.includes("/45/") ? "4:5" : "Other";
   return {
     name,
@@ -22,7 +33,8 @@ function parsePromptPath(path) {
     format: match ? match[1].toUpperCase() : "PROMPT",
     persona: match ? `P${String(Number(match[2])).padStart(2, "0")}` : "P--",
     lang: match ? match[3].toUpperCase() : "--",
-    creative: match && match[4] ? `A${String(Number(match[4])).padStart(2, "0")}` : "A01",
+    creative: creative ? `A${String(Number(creative)).padStart(2, "0")}` : "A01",
+    conceptAngle: angle,
   };
 }
 
@@ -52,7 +64,7 @@ function buildPromptFileSummary(promptFiles) {
     const card = document.createElement("div");
     card.className = "prompt-file-card";
     card.title = path;
-    card.innerHTML = `<span class="prompt-file-aspect">${parsed.aspect}</span><strong>${parsed.format} ${parsed.persona}</strong><span>${parsed.creative} · ${parsed.lang}</span>`;
+    card.innerHTML = `<span class="prompt-file-aspect">${parsed.aspect}</span><strong>${parsed.format} ${parsed.persona}</strong><span>${parsed.creative} · ${parsed.lang}${parsed.conceptAngle ? ` · <em>${parsed.conceptAngle}</em>` : ''}</span>`;
     card.addEventListener("click", () => {
       showPromptFullscreen(Path(path).name || path, "", {
         fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(path)}`,
@@ -83,8 +95,22 @@ export function renderRun(run) {
 
   const header = document.createElement("div");
   header.className = "run-header";
-  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${run.batch} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span>`;
+  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${run.batch} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
   div.appendChild(header);
+
+  header.querySelector(".run-delete-btn")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete entire run ${run.run_id} and all its images?`)) return;
+    try {
+      await fetchJSON(`/api/runs/${run.run_id}`, { method: "DELETE" });
+      appendLog(`Deleted run ${run.run_id}`);
+      invalidateRuns();
+      const { loadRuns } = await import("./runs.js");
+      loadRuns();
+    } catch (err) {
+      appendLog(`Delete failed: ${String(err)}`);
+    }
+  });
 
   const llm = document.createElement("div");
   llm.className = "run-updated";
@@ -319,6 +345,7 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Batch generating 4:5 in ${engineLabel} for ${runIds.length} run(s)...`);
+  showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-45", {
       method: "POST",
@@ -333,6 +360,36 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
     loadRuns();
   } catch (err) {
     appendLog(String(err));
+  } finally {
+    hideStopGenButton();
+  }
+});
+
+document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
+  const selectedBatches = getSelectedBatchValues();
+  if (!selectedBatches.length) { appendLog("Select at least one batch."); return; }
+
+  const engine = await showEngineSelector("4:5 & 9:16");
+  if (!engine) return;
+
+  const runsForBatches = state.runsData.filter((r) => selectedBatches.includes(r.batch));
+  if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
+  const runIds = runsForBatches.map((r) => r.run_id);
+  const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
+  appendLog(`Batch generating 4:5 + 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  showStopGenButton();
+  try {
+    const data = await fetchJSON("/api/batch/generate-images-both", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine }),
+    });
+    appendLog(`Done. 4:5 prompts: ${data.total_45_prompts}, 9:16 images: ${data.total_916_completed}, Batches: ${data.batch_key}`);
+    loadRuns();
+  } catch (err) {
+    appendLog(String(err));
+  } finally {
+    hideStopGenButton();
   }
 });
 
@@ -347,6 +404,7 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Batch generating 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-916", {
       method: "POST",
@@ -361,6 +419,8 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
     loadRuns();
   } catch (err) {
     appendLog(String(err));
+  } finally {
+    hideStopGenButton();
   }
 });
 
@@ -449,3 +509,25 @@ function showEngineSelector(aspectLabel = "4:5") {
     });
   });
 }
+
+function showStopGenButton() {
+  const btn = document.getElementById("stopGeneration");
+  if (btn) { btn.style.display = "inline-block"; btn.disabled = false; }
+}
+
+function hideStopGenButton() {
+  const btn = document.getElementById("stopGeneration");
+  if (btn) { btn.style.display = "none"; }
+}
+
+document.getElementById("stopGeneration")?.addEventListener("click", async () => {
+  const btn = document.getElementById("stopGeneration");
+  if (btn) { btn.disabled = true; btn.textContent = "Stopping..."; }
+  try {
+    const data = await fetchJSON("/api/stop-generation", { method: "POST" });
+    appendLog(`Generation stopped. ${JSON.stringify(data)}`);
+  } catch (err) {
+    appendLog(`Stop generation error: ${String(err)}`);
+  }
+  if (btn) { btn.style.display = "none"; btn.textContent = "⏹ Stop Gen"; }
+});
