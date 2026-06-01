@@ -1378,10 +1378,756 @@ def run_gemini_generation(
     ]
     if headless:
         cmd.append("--headless")
+    if first_tab_mode and first_tab_mode != "reuse-blank":
+        cmd.extend(["--first-tab-mode", first_tab_mode])
+    if image_source_arg:
+        cmd.extend(["--image-source-file", image_source_arg])
+    if run_dir is not None:
+        hyp_path = run_dir / "context" / "hypothesis_config.json"
+        if hyp_path.exists():
+            cmd.extend(["--hypothesis-config", str(hyp_path)])
+
+    log_dir = RUNTIME_ROOT / "generation_logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"gen_{batch}_{aspect_folder}.log"
+
+    env = dashboard_subprocess_env()
+
+    with open(log_path, "w") as log_file:
+        result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=log_file, stderr=subprocess.STDOUT, check=False, env=env)
+
+    full_output = log_path.read_text() if log_path.exists() else ""
+    result.stdout = full_output
+    result.stderr = ""
+    return result
+
+
+def run_chatgpt_generation(
+    *,
+    batch: str,
+    prompt_files: list[str],
+    aspect_ratio: str,
+    image_sources_file: str | None,
+    headless: bool = False,
+    run_dir: Path | None = None,
+    prepend_starting_prompt: bool = True,
+    first_tab_mode: str = "reuse-blank",
+) -> subprocess.CompletedProcess[str]:
+    aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
+    prompt_work_dir = RUNTIME_ROOT / "chatgpt_selected_prompts" / f"{batch}_{aspect_folder}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    prompt_work_dir.mkdir(parents=True, exist_ok=True)
+
+    starting_prompt = ""
+    if prepend_starting_prompt:
+        starting_prompt_path = ROOT / "input" / "startingprompt.txt"
+        starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip() if starting_prompt_path.exists() else ""
+    for prompt_file in prompt_files:
+        source = Path(prompt_file)
+        if not source.is_absolute():
+            source = ROOT / prompt_file
+        source = source.resolve()
+        if not source.exists():
+            raise RuntimeError(f"Prompt file not found: {source}")
+        prompt_text = source.read_text(encoding="utf-8")
+        combined = f"{starting_prompt}\n\n{prompt_text.strip()}\n" if starting_prompt else prompt_text
+        (prompt_work_dir / source.name).write_text(combined, encoding="utf-8")
+        sidecar = source.with_suffix(".json")
+        if sidecar.exists():
+            (prompt_work_dir / sidecar.name).write_text(sidecar.read_text(encoding="utf-8"), encoding="utf-8")
+
+    out_dir = GENERATED_IMAGES_ROOT / batch / aspect_folder
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        "scripts/chatgpt_web_sutomation.py",
+        "--prompt-dir",
+        str(prompt_work_dir),
+        "--prompt-glob",
+        "*.txt",
+        "--out-dir",
+        str(out_dir),
+        "--timeout",
+        str(int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420")),
+        "--download-timeout",
+        str(int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90")),
+        "--manual-login-timeout",
+        str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
+        "--upload-dir",
+        str(INPUT_IMAGES_DIR),
+    ]
+    if headless:
+        cmd.append("--headless")
+    if first_tab_mode and first_tab_mode != "reuse-blank":
+        cmd.extend(["--first-tab-mode", first_tab_mode])
+    if image_sources_file:
+        cmd.extend(["--image-source-file", image_sources_file])
+    cmd.extend(["--aspect-ratio", aspect_ratio])
+
+    # Pass CDP URL if running in WSL
+    cdp_url_for_log = ""
     if Path("/mnt/c").exists():
         cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
+        cdp_url_for_log = "http://172.18.160.1:9223"
+    else:
+        cdp_url_for_log = "NOT WSL - /mnt/c not found"
 
-    result = run_cmd(cmd, cwd=ROOT)
+    log_dir = RUNTIME_ROOT / "generation_logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"gen_{batch}_{aspect_folder}_chatgpt.log"
+
+    env = dashboard_subprocess_env()
+
+    with open(log_path, "w") as log_file:
+        log_file.write(f"[DEBUG] CDP URL: {cdp_url_for_log}\n")
+        log_file.write(f"[DEBUG] Command: {' '.join(cmd)}\n")
+        log_file.write(f"[DEBUG] /mnt/c exists: {Path('/mnt/c').exists()}\n")
+        log_file.flush()
+        result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=log_file, stderr=subprocess.STDOUT, check=False, env=env)
+
+    full_output = log_path.read_text() if log_path.exists() else ""
+    result.stdout = full_output
+    result.stderr = ""
+    return result
+
+
+def build_multipart_form(fields: dict[str, str], file_field: str, file_path: Path) -> tuple[bytes, str]:
+    boundary = f"----dashboard{uuid.uuid4().hex}"
+    lines: list[bytes] = []
+
+    for key, value in fields.items():
+        lines.append(f"--{boundary}\r\n".encode("utf-8"))
+        lines.append(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
+        lines.append(f"{value}\r\n".encode("utf-8"))
+
+    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    lines.append(f"--{boundary}\r\n".encode("utf-8"))
+    lines.append(
+        (
+            f'Content-Disposition: form-data; name="{file_field}"; filename="{file_path.name}"\r\n'
+            f"Content-Type: {mime_type}\r\n\r\n"
+        ).encode("utf-8")
+    )
+    lines.append(file_path.read_bytes())
+    lines.append(b"\r\n")
+    lines.append(f"--{boundary}--\r\n".encode("utf-8"))
+
+    body = b"".join(lines)
+    content_type = f"multipart/form-data; boundary={boundary}"
+    return body, content_type
+
+
+def upload_image_to_cloudinary(image_path: Path, cloud_name: str, api_key: str, api_secret: str) -> str:
+    if not image_path.exists() or not image_path.is_file():
+        raise RuntimeError(f"Image not found for upload: {image_path}")
+
+    timestamp = str(int(time.time()))
+    signature_base = f"timestamp={timestamp}{api_secret}"
+    signature = hashlib.sha1(signature_base.encode("utf-8")).hexdigest()
+
+    fields = {
+        "api_key": api_key,
+        "timestamp": timestamp,
+        "signature": signature,
+    }
+    body, content_type = build_multipart_form(fields, "file", image_path)
+    upload_url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
+    req = urllib.request.Request(
+        url=upload_url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": content_type},
+    )
+    with urllib.request.urlopen(req, timeout=180) as response:
+        raw = response.read().decode("utf-8")
+    payload = json.loads(raw)
+    secure_url = str(payload.get("secure_url") or "").strip()
+    if not secure_url:
+        raise RuntimeError(f"Cloudinary upload did not return secure_url: {payload}")
+    return secure_url
+
+
+def load_batch_image_summary(batch: str) -> list[dict[str, Any]]:
+    summary_path = GENERATED_IMAGES_ROOT / batch / "batch_run_summary.json"
+    if not summary_path.exists():
+        jobs_by_prompt: dict[str, dict[str, Any]] = {}
+        for generated_root in generated_image_roots():
+            generated_batch_dir = generated_root / batch
+            if not generated_batch_dir.exists():
+                continue
+            for meta_file in sorted(generated_batch_dir.glob("**/*.json")):
+                try:
+                    payload = json.loads(meta_file.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                rec_type = str(payload.get("type") or payload.get("record_type") or "").strip()
+                if rec_type not in ("ad_image", "generated_image", "gemini_ad_image", "chatgpt_ad_image"):
+                    continue
+
+                prompt_file = str(payload.get("prompt_file_relative") or payload.get("prompt_file") or "").strip().replace("\\", "/")
+                saved_file = str(payload.get("saved_file") or "").strip().replace("\\", "/")
+                if not prompt_file or not saved_file:
+                    continue
+
+                existing = jobs_by_prompt.get(prompt_file)
+                if not existing:
+                    fmt = payload.get("format") or payload.get("format_id") or ""
+                    lang = payload.get("language") or payload.get("lang_id") or ""
+                    existing = {
+                        "prompt_file": prompt_file,
+                        "saved_files": [],
+                        "format": fmt,
+                        "language": lang,
+                        "variation": payload.get("variation"),
+                        "task_id": payload.get("task_id"),
+                        "prompt_metadata": payload.get("prompt_metadata") or {},
+                    }
+                    jobs_by_prompt[prompt_file] = existing
+                saved_files = existing.get("saved_files")
+                if not isinstance(saved_files, list):
+                    saved_files = []
+                    existing["saved_files"] = saved_files
+                if saved_file not in saved_files:
+                    saved_files.append(saved_file)
+
+        return list(jobs_by_prompt.values())
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    jobs = summary.get("jobs")
+    if isinstance(jobs, list):
+        return [job for job in jobs if isinstance(job, dict)]
+    return []
+
+
+def strip_ansi(text: str | None) -> str:
+    if not text:
+        return ""
+    return re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", text)
+
+
+def opencode_discovery_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if sys.platform == "win32":
+        local_appdata = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+        default_auth_dir = Path(local_appdata) / "opencode"
+    else:
+        default_auth_dir = Path.home() / ".local" / "share" / "opencode"
+    default_auth = default_auth_dir / "auth.json"
+
+    if sys.platform == "win32":
+        raw_xdg = ""
+    else:
+        raw_xdg = env.get("XDG_DATA_HOME", "").strip()
+    if raw_xdg:
+        current_xdg = Path(raw_xdg).expanduser()
+    elif sys.platform == "win32":
+        current_xdg = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+    else:
+        current_xdg = Path.home() / ".local" / "share"
+    current_auth = current_xdg / "opencode" / "auth.json"
+
+    if default_auth.exists() and not current_auth.exists():
+        if sys.platform == "win32":
+            env["LOCALAPPDATA"] = str(Path(local_appdata))
+        else:
+            env["XDG_DATA_HOME"] = str(Path.home() / ".local" / "share")
+    return env
+
+
+def _resolve_opencode_cmd(cmd: list[str]) -> list[str]:
+    if sys.platform == "win32" and cmd and cmd[0] == "opencode":
+        candidates = [
+            shutil.which("opencode.cmd"),
+            shutil.which("opencode.ps1"),
+            shutil.which("opencode"),
+        ]
+        appdata = os.getenv("APPDATA", "")
+        if appdata:
+            candidates.extend([
+                str(Path(appdata) / "npm" / "opencode.cmd"),
+                str(Path(appdata) / "npm" / "opencode.ps1"),
+            ])
+        chosen = ""
+        for candidate in candidates:
+            if candidate and Path(candidate).exists():
+                chosen = candidate
+                break
+        if chosen.lower().endswith(".ps1"):
+            return ["powershell", "-ExecutionPolicy", "Bypass", "-File", chosen] + cmd[1:]
+        if chosen:
+            return [chosen] + cmd[1:]
+    return cmd
+
+
+def run_opencode_cmd(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    resolved = _resolve_opencode_cmd(cmd)
+    return subprocess.run(
+        resolved,
+        cwd=str(cwd) if cwd else str(ROOT),
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env or opencode_discovery_env(),
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def run_opencode_discovery_cmd(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    return run_opencode_cmd(cmd, env=opencode_discovery_env())
+
+
+def list_opencode_models() -> list[str]:
+    result = run_opencode_discovery_cmd(["opencode", "models"])
+    if result.returncode != 0:
+        return []
+    lines = [line.strip() for line in strip_ansi(result.stdout).splitlines()]
+    return [line for line in lines if line and "/" in line]
+
+
+def list_opencode_provider_labels() -> list[str]:
+    result = run_opencode_discovery_cmd(["opencode", "providers", "list"])
+    if result.returncode != 0:
+        return []
+    lines = [line.strip() for line in strip_ansi(result.stdout).splitlines()]
+    labels: list[str] = []
+    for line in lines:
+        match = re.search(r"[●•]\s+(.+?)\s+(oauth|api|token|key)\b", line, flags=re.IGNORECASE)
+        if match:
+            value = match.group(1).strip()
+        else:
+            fallback = re.search(r"^[│\s]*[●•]\s+(.+)$", line)
+            if not fallback:
+                continue
+            value = re.sub(r"\s+(oauth|api|token|key)\b.*$", "", fallback.group(1), flags=re.IGNORECASE).strip()
+        if value:
+            labels.append(value)
+    return labels
+
+
+def provider_id_from_label(label: str) -> str:
+    known = {
+        "github copilot": "github-copilot",
+        "github-copilot": "github-copilot",
+        "opencode": "opencode",
+    }
+    key = label.strip().lower()
+    if key in known:
+        return known[key]
+    return re.sub(r"[^a-z0-9]+", "-", key).strip("-")
+
+
+def list_models_for_provider(provider: str) -> list[str]:
+    result = run_opencode_discovery_cmd(["opencode", "models", provider])
+    if result.returncode != 0:
+        return []
+    lines = [line.strip() for line in strip_ansi(result.stdout).splitlines()]
+    return [line for line in lines if line and line.startswith(provider + "/")]
+
+
+def choose_openai_gpt52(models: list[str]) -> str:
+    if not models:
+        return ""
+    preferred = "openai/gpt-5.2"
+    if preferred in models:
+        return preferred
+    for model in models:
+        lower = model.lower()
+        if lower.startswith("openai/") and "gpt-5.2" in lower:
+            return model
+    for model in models:
+        if model.lower().startswith("openai/"):
+            return model
+    non_copilot = [m for m in models if not m.lower().startswith("github-copilot/")]
+    if non_copilot:
+        return non_copilot[0]
+    return models[0]
+
+
+def sanitize_dashboard_model(selected: str, models: list[str]) -> str:
+    chosen = (selected or "").strip()
+    if chosen and (not models or chosen in models):
+        return chosen
+    return choose_openai_gpt52(models)
+
+
+def build_opencode_catalog() -> dict[str, Any]:
+    models = list_opencode_models()
+    provider_labels = list_opencode_provider_labels()
+    provider_ids = {line.split("/", 1)[0] for line in models}
+
+    known_providers = ["opencode", "openai"]
+    for provider in known_providers:
+        provider_ids.add(provider)
+    for label in provider_labels:
+        pid = provider_id_from_label(label)
+        if pid:
+            provider_ids.add(pid)
+
+    for provider in sorted(provider_ids):
+        if any(model.startswith(provider + "/") for model in models):
+            continue
+        models.extend(list_models_for_provider(provider))
+
+    providers = sorted(provider for provider in provider_ids if provider.lower() != "github-copilot")
+    grouped: dict[str, list[str]] = {provider: [] for provider in providers}
+    for model in models:
+        provider = model.split("/", 1)[0]
+        if provider.lower() == "github-copilot":
+            continue
+        grouped.setdefault(provider, []).append(model)
+    for provider in grouped:
+        grouped[provider] = sorted(grouped[provider])
+    providers_with_models = [provider for provider, values in grouped.items() if values]
+    copilot_models = [model for model in models if model.lower().startswith("github-copilot/")]
+    if providers_with_models:
+        providers = sorted(providers_with_models)
+    elif copilot_models:
+        providers = ["github-copilot"]
+        grouped = {"github-copilot": sorted(copilot_models)}
+    default_model = ""
+    if models:
+        default_model = choose_openai_gpt52(models)
+    return {
+        "api_url": DEFAULT_OPENCODE_API_URL,
+        "providers": providers,
+        "provider_labels": provider_labels,
+        "models_by_provider": grouped,
+        "default_model": default_model,
+    }
+
+
+def parse_json_stdout(result: subprocess.CompletedProcess[str], context: str) -> Any:
+    if result.returncode != 0:
+        raise RuntimeError(f"{context} failed: {result.stderr.strip() or result.stdout.strip()}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{context} returned invalid JSON") from exc
+
+
+def save_upload(target: Path, upload: UploadFile | None) -> Path | None:
+    if upload is None or not upload.filename:
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = upload.file.read()
+    target.write_bytes(data)
+    return target
+
+
+def coalesce_path(uploaded: Path | None, default_path: Path) -> Path:
+    return uploaded if uploaded and uploaded.exists() else default_path
+
+
+def resolve_safe_path(relative_path: str) -> Path:
+    candidate = (ROOT / relative_path).resolve()
+    if str(candidate).startswith(str(ROOT.resolve())):
+        return candidate
+    raise HTTPException(status_code=400, detail="Invalid path")
+
+
+def choose_text(items: list[str], fallback: str) -> str:
+    for item in items:
+        clean = item.strip()
+        if clean:
+            return clean
+    return fallback
+
+
+def shorten_copy_line(text: str) -> str:
+    return " ".join((text or "").split()).strip()
+
+
+def strip_internal_marker(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    cleaned = re.sub(r"\s*\b\d{4}-\d{2}-(hero|ba|test|feat|ugc)\.?\b", "", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*\(\s*\d+[_-]\d+\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
+def strip_price_tokens(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    cleaned = text
+    cleaned = re.sub(r"\bINR\b\s*\d+[\d,]*(?:\.\d+)?", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[₹$]\s*\d+[\d,]*(?:\.\d+)?", "", cleaned)
+    cleaned = re.sub(r"\b\d+[\d,]*(?:\.\d+)?\s*(?:INR|Rs\.?|rupees?)\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(?:price|only|discount|off|mrp)\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" ,;:-")
+    return cleaned
+
+
+def strip_ba_panel_label(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    cleaned = text.strip()
+    cleaned = re.sub(r"^\s*(?:before|after)\s*[:\-]\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^\s*(?:पहले|बाद|पहले\s*में|बाद\s*में)\s*[:\-]\s*", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
+def strip_internal_markers_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    ads = payload.get("ads")
+    if not isinstance(ads, list):
+        return payload
+
+    for ad in ads:
+        if not isinstance(ad, dict):
+            continue
+        copy = ad.get("copy")
+        if not isinstance(copy, dict):
+            continue
+        for lang in ["EN", "HI"]:
+            block = copy.get(lang)
+            if not isinstance(block, dict):
+                continue
+            for key in ["headline", "subheadline", "support_line", "cta", "trust_line", "attribution"]:
+                if key in block and isinstance(block.get(key), str):
+                    value = strip_internal_marker(block[key])
+                    block[key] = strip_price_tokens(value)
+            if isinstance(block.get("context_line"), str):
+                context_line = strip_price_tokens(strip_internal_marker(block["context_line"]))
+                if re.search(r"\bneeds\b|proof needed|tone cue|persona", context_line, flags=re.IGNORECASE):
+                    block["context_line"] = ""
+                else:
+                    block["context_line"] = context_line
+            if isinstance(block.get("bullets"), list):
+                cleaned_bullets = []
+                for item in block["bullets"]:
+                    if not isinstance(item, str):
+                        continue
+                    value = strip_price_tokens(strip_internal_marker(item))
+                    if value:
+                        cleaned_bullets.append(value)
+                block["bullets"] = cleaned_bullets
+    return payload
+
+
+def enforce_unique_ctas(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    return payload
+
+
+PROOF_NOTE_MARKERS = [
+    "needs",
+    "proof needed",
+    "tone cue",
+    "persona",
+    "non-cure",
+    "compliant",
+    "weight-support framing",
+]
+
+
+def scrub_on_image_copy(payload: dict[str, Any]) -> dict[str, Any]:
+    ads = payload.get("ads") if isinstance(payload.get("ads"), list) else []
+    for ad in ads:
+        if not isinstance(ad, dict):
+            continue
+        copy = ad.get("copy") if isinstance(ad.get("copy"), dict) else {}
+        for lang in ["EN", "HI"]:
+            block = copy.get(lang)
+            if not isinstance(block, dict):
+                continue
+            ctx = block.get("context_line")
+            if isinstance(ctx, str) and ctx.strip():
+                lowered = ctx.lower()
+                if any(marker in lowered for marker in PROOF_NOTE_MARKERS):
+                    block.pop("context_line", None)
+    return payload
+
+
+def parse_uniqueness_collisions(error_text: str) -> list[dict[str, Any]]:
+    collisions: list[dict[str, Any]] = []
+    for raw_line in error_text.splitlines():
+        line = raw_line.strip()
+        match = re.search(r"ads\[(\d+)\]\.copy\.(EN|HI)\.([a-z_]+)", line)
+        if not match:
+            continue
+        collisions.append(
+            {
+                "ad_index": int(match.group(1)),
+                "language": match.group(2),
+                "field": match.group(3),
+                "line": line,
+            }
+        )
+    return collisions
+
+
+def parse_json_object_from_text(content: str) -> dict[str, Any] | None:
+    text = (content or "").strip()
+    if not text:
+        return None
+
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    if fence:
+        try:
+            parsed = json.loads(fence.group(1))
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    decoder = json.JSONDecoder()
+    best: dict[str, Any] | None = None
+    best_span = -1
+    for match in re.finditer(r"\{", text):
+        start = match.start()
+        try:
+            parsed, end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        span = end
+        if span > best_span:
+            best = parsed
+            best_span = span
+    return best
+
+
+def parse_opencode_json_output(stdout: str) -> dict[str, Any] | None:
+    text_chunks: list[str] = []
+    for raw_line in (stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "text":
+            continue
+        part = event.get("part") or {}
+        text = part.get("text")
+        if isinstance(text, str) and text.strip():
+            text_chunks.append(text.strip())
+
+    if text_chunks:
+        parsed = parse_json_object_from_text("\n".join(text_chunks).strip())
+        if parsed is not None:
+            return parsed
+
+    return parse_json_object_from_text((stdout or "").strip())
+
+
+def _find_session_id(value: Any, session_scoped: bool = False) -> str | None:
+    if isinstance(value, dict):
+        event_type = str(value.get("type") or "").lower()
+        scoped = session_scoped or "session" in event_type
+        for key in ("sessionID", "sessionId", "session_id"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        if scoped:
+            candidate = value.get("id")
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        for key, nested in value.items():
+            nested_scoped = scoped or "session" in str(key).lower()
+            found = _find_session_id(nested, nested_scoped)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_session_id(item, session_scoped)
+            if found:
+                return found
+    return None
+
+
+def parse_opencode_session_id(stdout: str) -> str | None:
+    for raw_line in (stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        found = _find_session_id(event)
+        if found:
+            return found
+
+    match = re.search(r'"session(?:ID|Id|_id)"\s*:\s*"([^"]+)"', stdout or "")
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def build_product_doc_bootstrap_prompt() -> str:
+    return COPY_PROMPTS.get("product_doc_bootstrap_prompt", "Read the attached product master doc completely. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.")
+
+
+def append_run_log(run_dir: Path, filename: str, message: str) -> None:
+    log_path = run_dir / "logs" / filename
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(message.rstrip() + "\n")
+
+
+def call_opencode_repair_copy(
+    config: dict[str, Any],
+    context: dict[str, Any],
+    current_copy: dict[str, Any],
+    collisions: list[dict[str, Any]],
+    run_dir: Path,
+) -> dict[str, Any] | None:
+    api_url = (config.get("opencode_api_url") or "").strip()
+    model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
+    if not api_url:
+        return None
+
+    payload = {
+        "task": "Repair uniqueness collisions only",
+        "rules": [
+            "Return valid JSON only",
+            "Keep existing structure and fields",
+            "Only change collided fields",
+            "Do not use generic repeated support lines",
+            "Do not add internal tags or IDs",
+        ],
+        "collisions": collisions,
+        "current_copy": current_copy,
+        "context": build_generation_payload_for_llm(context),
+    }
+    prompt = (
+        "You are fixing ad copy JSON after uniqueness collisions. "
+        "Return only corrected JSON object with keys default_aspect_ratio and ads.\n\n"
+        + json.dumps(payload, ensure_ascii=False)
+    )
+
+    password = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
+    cmd = [
+        "opencode",
+        "run",
+        "--pure",
+        "--attach",
+        api_url,
+        "--model",
+        model,
+        "--format",
+        "json",
+        prompt,
+    ]
+    if password:
+        cmd.extend(["--password", password])
+    try:
+        result = run_cmd(cmd, cwd=ROOT)
     except OSError as exc:
         (run_dir / "logs" / "opencode_repair_error.txt").write_text(
             f"Repair command launch failed: {exc}", encoding="utf-8"
