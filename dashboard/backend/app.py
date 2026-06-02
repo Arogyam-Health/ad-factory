@@ -106,54 +106,16 @@ _TESTIMONIAL_GUIDANCE: dict[str, Any] = {
 # Pipeline cancellation signal, keyed by run_id.
 _cancel_events: dict[str, threading.Event] = {}
 _cancel_current_run: threading.Event = threading.Event()
-# Registry of subprocesses spawned by run_cmd() so they can be killed on cancel.
-# Each entry: (run_id_or_None, subprocess.Popen)
-_tracked_subprocesses: list[tuple[str | None, "subprocess.Popen[str]"]] = []
-_tracked_subprocesses_lock = threading.Lock()
-
-
-def _register_subprocess(run_id: str | None, proc: "subprocess.Popen[str]") -> None:
-    with _tracked_subprocesses_lock:
-        _tracked_subprocesses.append((run_id, proc))
-
-
-def _unregister_subprocess(proc: "subprocess.Popen[str]") -> None:
-    with _tracked_subprocesses_lock:
-        _tracked_subprocesses[:] = [(rid, p) for (rid, p) in _tracked_subprocesses if p is not proc]
-
-
-def _kill_tracked_subprocesses(run_id: str | None) -> list[str]:
-    """Kill all tracked subprocesses (optionally filtered by run_id). Returns list of killed commands."""
-    killed: list[str] = []
-    with _tracked_subprocesses_lock:
-        snapshot = list(_tracked_subprocesses)
-    for rid, proc in snapshot:
-        if run_id is not None and rid is not None and rid != run_id:
-            continue
-        if proc.poll() is not None:
-            continue
-        try:
-            cmd_str = " ".join(proc.args) if isinstance(proc.args, list) else str(proc.args)
-        except Exception:
-            cmd_str = "<unknown>"
-        try:
-            proc.kill()
-            killed.append(cmd_str)
-        except Exception:
-            pass
-    return killed
 
 
 def signal_cancel_run(run_id: str) -> None:
     ev = _cancel_events.get(run_id)
     if ev:
         ev.set()
-    _kill_tracked_subprocesses(run_id)
 
 
 def signal_cancel_current_run() -> None:
     _cancel_current_run.set()
-    _kill_tracked_subprocesses(None)
 
 
 def cancel_event_for_run(run_id: str) -> threading.Event:
@@ -1100,20 +1062,6 @@ def api_delete_input_image(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     return {"status": "deleted", "path": rel_path}
 
 
-def api_upload_input_images(
-    files: list[UploadFile] = File(...),
-    clear_existing: bool = Form(False),
-) -> dict[str, Any]:
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided")
-    saved = store_uploaded_input_images(files, clear_existing)
-    return {
-        "status": "ok",
-        "saved": saved,
-        "input_images": list_input_images(),
-    }
-
-
 def api_product_doc() -> dict[str, Any]:
     info = default_product_doc_info()
     content = DEFAULT_PRODUCT_MASTER.read_text(encoding="utf-8", errors="ignore") if DEFAULT_PRODUCT_MASTER.exists() else ""
@@ -1261,47 +1209,11 @@ def _run_opencode_queued(cmd: list[str], cwd: Path, env: dict[str, str]) -> subp
         return subprocess.run(resolved, cwd=str(cwd), text=True, capture_output=True, check=False, env=env, encoding="utf-8", errors="replace")
 
 
-def run_cmd(
-    cmd: list[str],
-    cwd: Path,
-    *,
-    run_id: str | None = None,
-    poll_cancel: bool = True,
-) -> subprocess.CompletedProcess[str]:
+def run_cmd(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     env = dashboard_subprocess_env()
     if _is_opencode_run_cmd(cmd):
         return _run_opencode_queued(cmd, cwd, env)
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(cwd),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-        encoding="utf-8",
-        errors="replace",
-    )
-    _register_subprocess(run_id, proc)
-    cancel_event = cancel_event_for_run(run_id) if run_id else _cancel_current_run
-    poll_interval = 0.1
-    try:
-        while True:
-            if poll_cancel and cancel_event.is_set():
-                proc.kill()
-                stdout, stderr = proc.communicate()
-                return subprocess.CompletedProcess(
-                    proc.args,
-                    proc.returncode if proc.returncode is not None else -1,
-                    stdout or "",
-                    (stderr or "") + "\n[killed: cancel signaled]",
-                )
-            try:
-                stdout, stderr = proc.communicate(timeout=poll_interval)
-                return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
-            except subprocess.TimeoutExpired:
-                continue
-    finally:
-        _unregister_subprocess(proc)
+    return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, check=False, env=env)
 
 
 def generated_image_roots() -> list[Path]:
@@ -3653,11 +3565,8 @@ def rerender_prompts_for_run(run_dir: Path, batch: str, copy_file: Path, languag
             "--skip-uniqueness-check",
         ],
         cwd=ROOT,
-        run_id=run_dir.name,
     )
     if result.returncode != 0:
-        if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-            raise HTTPException(status_code=499, detail="Cancelled by user")
         error_text = result.stderr or result.stdout
         (run_dir / "logs" / "assembler_edit_error.txt").write_text(error_text, encoding="utf-8")
         short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-12:])
@@ -3702,12 +3611,9 @@ def generate_916_for_run(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
             "--skip-uniqueness-check",
         ],
         cwd=ROOT,
-        run_id=run_dir.name,
     )
 
     if result.returncode != 0:
-        if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-            raise HTTPException(status_code=499, detail="Cancelled by user")
         error_text = result.stderr or result.stdout
         (run_dir / "logs" / "assembler_916_error.txt").write_text(error_text, encoding="utf-8")
         short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-12:])
@@ -4996,11 +4902,8 @@ def api_run_generate_916_selected(run_id: str, payload: dict[str, Any] = Body(..
             "--skip-uniqueness-check",
         ],
         cwd=ROOT,
-        run_id=run_id,
     )
     if result.returncode != 0:
-        if cancel_event_for_run(run_id).is_set() or _cancel_current_run.is_set():
-            raise HTTPException(status_code=499, detail="Cancelled by user")
         error_text = result.stderr or result.stdout
         (run_dir / "logs" / "assembler_916_selected_error.txt").write_text(error_text, encoding="utf-8")
         short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-12:])
@@ -5904,11 +5807,8 @@ def _run_pipeline_background(
         copy_file = run_dir / "context" / "copy_batch.json"
         copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode, "--skip-uniqueness-check"], cwd=ROOT, run_id=run_dir.name)
+        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode, "--skip-uniqueness-check"], cwd=ROOT)
         if assembler_result.returncode != 0:
-            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                print(f"[PIPELINE] Assembler cancelled by user for run {run_dir.name}", file=sys.stderr)
-                return
             assembler_error = assembler_result.stderr or assembler_result.stdout
             (run_dir / "logs" / "assembler_error.txt").write_text(assembler_error, encoding="utf-8")
             (run_dir / "partial").mkdir(parents=True, exist_ok=True)

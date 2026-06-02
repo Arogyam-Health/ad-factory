@@ -1,10 +1,9 @@
 from typing import Any
-from fastapi import APIRouter, Body, File, Form, UploadFile
+from fastapi import APIRouter, Body
 
 from dashboard.backend.app import (
     api_defaults,
     api_delete_input_image,
-    api_upload_input_images,
     api_opencode_catalog,
     api_product_doc,
     api_save_product_doc,
@@ -27,13 +26,6 @@ def _opencode_catalog() -> dict[str, Any]:
 @router.delete("/api/input-images")
 def _delete_input_image(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_delete_input_image(payload)
-
-@router.post("/api/upload-input-images")
-def _upload_input_images(
-    files: list[UploadFile] = File(...),
-    clear_existing: bool = Form(False),
-) -> dict[str, Any]:
-    return api_upload_input_images(files, clear_existing)
 
 @router.get("/api/product-doc")
 def _product_doc() -> dict[str, Any]:
