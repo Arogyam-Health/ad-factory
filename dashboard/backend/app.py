@@ -1445,6 +1445,20 @@ def detect_wsl_windows_host_ip() -> str:
     return "127.0.0.1"
 
 
+def detect_wsl_user() -> str:
+    """Return the current WSL user (matches /mnt/c/Users/<name> for that user's home).
+    Empty string if detection fails."""
+    user = os.getenv("USER") or os.getenv("USERNAME")
+    if user:
+        return user
+    home = str(Path.home())
+    if home.startswith("/home/"):
+        parts = home.split("/")
+        if len(parts) >= 3:
+            return parts[2]
+    return ""
+
+
 def wsl_chrome_cdp_url() -> str:
     """Return the CDP URL for Windows Chrome from WSL.
     Uses the portproxy on 9223 → Windows 9222. Set up via scripts/setup_cdp_proxy.ps1."""
@@ -6076,8 +6090,13 @@ def api_launch_visible_browser() -> dict[str, Any]:
             break
 
     if not chrome_bin:
-        wsl_candidates = [
-            f"/mnt/c/Users/{os.getenv('USER', 'naman')}/AppData/Local/Google/Chrome/Application/chrome.exe",
+        wsl_user = detect_wsl_user()
+        user_specific = (
+            [f"/mnt/c/Users/{wsl_user}/AppData/Local/Google/Chrome/Application/chrome.exe"]
+            if wsl_user
+            else []
+        )
+        wsl_candidates = user_specific + [
             "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
             "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
         ]

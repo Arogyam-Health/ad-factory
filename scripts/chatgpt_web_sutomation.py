@@ -111,16 +111,31 @@ def persona_number_from_slug(slug: str) -> int | None:
     return None
 
 
+def _detect_windows_user() -> str:
+    """Detect the current user's Windows-side home folder name (the user that owns
+    /mnt/c/Users/<name>). Falls back to deriving from WSL $HOME path."""
+    user = os.getenv("USER") or os.getenv("USERNAME")
+    if user:
+        return user
+    home = str(Path.home())
+    if home.startswith("/home/"):
+        return home.split("/")[2] or ""
+    return ""
+
+
 def copy_to_windows_temp(image_paths: list[Path]) -> list[str]:
     """Copy images from WSL filesystem to Windows-accessible temp dir."""
     import shutil
-    wsl_user = os.getenv("USER") or os.getenv("USERNAME") or "jadam"
-    win_temp = Path(f"/mnt/c/Users/{wsl_user}/.ad-factory-upload-temp")
+    win_user = _detect_windows_user()
+    if win_user:
+        win_temp = Path(f"/mnt/c/Users/{win_user}/.ad-factory-upload-temp")
+    else:
+        win_temp = Path.home() / ".ad-factory-upload-temp"
     try:
         win_temp.mkdir(parents=True, exist_ok=True)
     except (PermissionError, OSError):
-        # Fall back to system temp (still accessible to Windows Chrome via WSL)
-        win_temp = Path(os.path.expanduser("~/.ad-factory-upload-temp"))
+        # Fall back to WSL home (still accessible to Windows Chrome via WSL interop)
+        win_temp = Path.home() / ".ad-factory-upload-temp"
         win_temp.mkdir(parents=True, exist_ok=True)
     windows_paths = []
     for p in image_paths:
