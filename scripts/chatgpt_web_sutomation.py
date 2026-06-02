@@ -297,9 +297,9 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
     """
     stem = path.stem
     patterns = [
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>[A-Za-z0-9]+)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>[A-Za-z0-9]+)$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)$",
     ]
     for pat in patterns:
         m = re.search(pat, stem, flags=re.IGNORECASE)

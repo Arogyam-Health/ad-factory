@@ -3463,9 +3463,9 @@ def parse_prompt_filename(prompt_path: str) -> tuple[str, str, int | None] | Non
     """
     name = Path(prompt_path).name
     patterns = [
-        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_(EN|HI|HINGLISH)_([a-z][a-z_]*?)(?:_(?:A|V)\d+)?\.txt$",
-        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_(EN|HI|HINGLISH)(?:_(?:A|V)\d+)?\.txt$",
-        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_(EN|HI|HINGLISH)\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(EN|HI|HINGLISH)_([a-z][a-z_]*?)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(EN|HI|HINGLISH)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(EN|HI|HINGLISH)\.txt$",
     ]
     for pat in patterns:
         m = re.match(pat, name, re.IGNORECASE)
@@ -3487,8 +3487,8 @@ def parse_prompt_filename_full(prompt_path: str) -> tuple[str, str, int, str, st
     name = Path(prompt_path).name
     patterns = [
         # canonical: <FMT>_<slug>_<LANG>_<angle>[_A<NN>].txt
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
     ]
     for pat in patterns:
         m = re.match(pat, name, re.IGNORECASE)
@@ -3523,9 +3523,9 @@ def _parse_generated_image_name(image_rel_path: str) -> dict[str, Any]:
     stem = Path(image_rel_path).stem
     patterns = [
         # canonical: <FMT>_<slug>_<LANG>_<angle>[_A<NN>]
-        r"^(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_A(?P<image_index>\d+))?$",
+        r"^(?P<fmt>[A-Z]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_A(?P<image_index>\d+))?$",
         # angle-less: <FMT>_<slug>_<LANG>[_A<NN>]
-        r"^(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)(?:_A(?P<image_index>\d+))?$",
+        r"^(?P<fmt>[A-Z]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)(?:_A(?P<image_index>\d+))?$",
     ]
     for pat in patterns:
         m = re.search(pat, stem, flags=re.IGNORECASE)

@@ -221,8 +221,12 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
     """
     stem = path.stem
     patterns = [
-        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>]
+        # canonical (new slug): <FMT>_<slug>_<LANG>_<angle>[_A<NN>]
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
+        # legacy: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>]
         r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
+        # angle-less (new slug): <FMT>_<slug>_<LANG>[_A<NN>]
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>[AV]\d+))?$",
         # legacy: <FMT>_P<NN>_<LANG>[_A<NN>] with optional trailing angle
         r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
         # legacy: <FMT>_P<NN>_<LANG>
