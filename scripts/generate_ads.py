@@ -791,87 +791,120 @@ def main() -> int:
     render_langs = ["EN", "HI", "HINGLISH"] if args.language_mode == "BOTH" else [args.language_mode]
 
     # Validate copy payload + uniqueness against registry BEFORE consuming background slots.
+    # Per-ad error handling: collect bad ads in `bad_ads` with reasons, continue with the rest.
     collisions: list[str] = []
     run_used_text: dict[str, set[str]] = {}
     run_all_text: set[str] = set()
+    bad_ads: list[dict[str, Any]] = []
+    valid_ad_indices: list[int] = []
     for i, ad in enumerate(ads):
         ctx = f"ads[{i}]"
-        if not isinstance(ad, dict):
-            raise RuntimeError(f"{ctx} must be an object")
+        ad_errors: list[str] = []
+        try:
+            if not isinstance(ad, dict):
+                raise RuntimeError(f"{ctx} must be an object")
 
-        fmt = require_str(ad, "format", ctx).upper()
-        if fmt not in SUPPORTED_FORMATS:
-            raise RuntimeError(f"{ctx}.format must be one of {sorted(SUPPORTED_FORMATS)}")
+            fmt = require_str(ad, "format", ctx).upper()
+            if fmt not in SUPPORTED_FORMATS:
+                raise RuntimeError(f"{ctx}.format must be one of {sorted(SUPPORTED_FORMATS)}")
 
-        aspect_ratio = (ad.get("aspect_ratio") or payload.get("default_aspect_ratio") or "4:5").strip()
-        if aspect_ratio not in {"4:5", "9:16"}:
-            raise RuntimeError(f"{ctx}.aspect_ratio must be '4:5' or '9:16'")
+            aspect_ratio = (ad.get("aspect_ratio") or payload.get("default_aspect_ratio") or "4:5").strip()
+            if aspect_ratio not in {"4:5", "9:16"}:
+                raise RuntimeError(f"{ctx}.aspect_ratio must be '4:5' or '9:16'")
 
-        persona = ad.get("persona")
-        if not isinstance(persona, dict):
-            raise RuntimeError(f"{ctx}.persona must be an object")
-        require_int(persona, "number", f"{ctx}.persona")
-        require_str(persona, "name", f"{ctx}.persona")
-        for k in ["pain_en", "desire_en", "friction_en", "proof_needed_en", "tone_cue_en", "pain_hi", "desire_hi", "friction_hi", "proof_needed_hi", "tone_cue_hi"]:
-            require_str(persona, k, f"{ctx}.persona")
+            persona = ad.get("persona")
+            if not isinstance(persona, dict):
+                raise RuntimeError(f"{ctx}.persona must be an object")
+            require_int(persona, "number", f"{ctx}.persona")
+            require_str(persona, "name", f"{ctx}.persona")
+            for k in ["pain_en", "desire_en", "friction_en", "proof_needed_en", "tone_cue_en", "pain_hi", "desire_hi", "friction_hi", "proof_needed_hi", "tone_cue_hi"]:
+                require_str(persona, k, f"{ctx}.persona")
 
-        resolve_concept_fields(ad, fmt, persona)
+            resolve_concept_fields(ad, fmt, persona)
 
-        copy = ad.get("copy")
-        if not isinstance(copy, dict):
-            raise RuntimeError(f"{ctx}.copy must be an object with language blocks")
-        for lang in render_langs:
-            if lang not in copy or not isinstance(copy[lang], dict):
-                raise RuntimeError(f"{ctx}.copy must include {lang} object")
-            cb = parse_copy_block(fmt, lang, copy[lang])
+            copy = ad.get("copy")
+            if not isinstance(copy, dict):
+                raise RuntimeError(f"{ctx}.copy must be an object with language blocks")
+            for lang in render_langs:
+                if lang not in copy or not isinstance(copy[lang], dict):
+                    raise RuntimeError(f"{ctx}.copy must include {lang} object")
+                cb = parse_copy_block(fmt, lang, copy[lang])
 
-            def check_run_text(bucket: str, value: str, text_ctx: str) -> None:
-                clean = (value or "").strip()
-                if not clean:
-                    return
-                if clean in run_all_text:
-                    collisions.append(f"{text_ctx} duplicates another text string in this copy batch: {clean!r}")
-                run_all_text.add(clean)
-                seen = run_used_text.setdefault(bucket, set())
-                if clean in seen:
-                    collisions.append(f"{text_ctx} duplicates another item in this copy batch: {clean!r}")
-                seen.add(clean)
+                def check_run_text(bucket: str, value: str, text_ctx: str) -> None:
+                    clean = (value or "").strip()
+                    if not clean:
+                        return
+                    if clean in run_all_text:
+                        collisions.append(f"{text_ctx} duplicates another text string in this copy batch: {clean!r}")
+                    run_all_text.add(clean)
+                    seen = run_used_text.setdefault(bucket, set())
+                    if clean in seen:
+                        collisions.append(f"{text_ctx} duplicates another item in this copy batch: {clean!r}")
+                    seen.add(clean)
 
-            check_run_text("headline_en" if lang == "EN" else "headline_hi", cb.headline, f"{ctx}.copy.{lang}.headline")
-            check_run_text("cta_en" if lang == "EN" else "cta_hi", cb.cta, f"{ctx}.copy.{lang}.cta")
+                check_run_text("headline_en" if lang == "EN" else "headline_hi", cb.headline, f"{ctx}.copy.{lang}.headline")
+                check_run_text("cta_en" if lang == "EN" else "cta_hi", cb.cta, f"{ctx}.copy.{lang}.cta")
 
-            # format-specific required fields (do not invent)
-            if fmt in {"HERO", "UGC"} and not cb.support_line:
-                raise RuntimeError(f"{ctx}.copy.{lang}.support_line required for {fmt}")
-            if fmt in {"BA", "FEAT"}:
-                min_bullets = 4 if fmt == "BA" else 2
-                if not cb.bullets or len(cb.bullets) < min_bullets:
-                    raise RuntimeError(f"{ctx}.copy.{lang}.bullets must have >={min_bullets} items for {fmt}")
-            if fmt == "TEST":
-                if not cb.trust_line:
-                    raise RuntimeError(f"{ctx}.copy.{lang}.trust_line required for TEST")
+                # format-specific required fields (do not invent)
+                if fmt in {"HERO", "UGC"} and not cb.support_line:
+                    raise RuntimeError(f"{ctx}.copy.{lang}.support_line required for {fmt}")
+                if fmt in {"BA", "FEAT"}:
+                    min_bullets = 4 if fmt == "BA" else 2
+                    if not cb.bullets or len(cb.bullets) < min_bullets:
+                        raise RuntimeError(f"{ctx}.copy.{lang}.bullets must have >={min_bullets} items for {fmt}")
+                if fmt == "TEST":
+                    if not cb.trust_line:
+                        raise RuntimeError(f"{ctx}.copy.{lang}.trust_line required for TEST")
 
-            # Registry uniqueness checks (exact string match).
-            uniqueness_check(used, all_used, "headline_en" if lang == "EN" else "headline_hi", cb.headline, collisions, f"{ctx}.copy.{lang}.headline")
-            uniqueness_check(used, all_used, "cta_en" if lang == "EN" else "cta_hi", cb.cta, collisions, f"{ctx}.copy.{lang}.cta")
+                # Registry uniqueness checks (exact string match).
+                uniqueness_check(used, all_used, "headline_en" if lang == "EN" else "headline_hi", cb.headline, collisions, f"{ctx}.copy.{lang}.headline")
+                uniqueness_check(used, all_used, "cta_en" if lang == "EN" else "cta_hi", cb.cta, collisions, f"{ctx}.copy.{lang}.cta")
 
-            if fmt in {"HERO", "UGC"}:
-                check_run_text("support_line_en" if lang == "EN" else "support_line_hi", cb.support_line, f"{ctx}.copy.{lang}.support_line")
-                uniqueness_check(used, all_used, "support_line_en" if lang == "EN" else "support_line_hi", cb.support_line, collisions, f"{ctx}.copy.{lang}.support_line")
-            if fmt in {"BA", "FEAT"}:
-                bucket = "bullets_en" if lang == "EN" else "bullets_hi"
-                for b in cb.bullets or []:
-                    check_run_text(bucket, b, f"{ctx}.copy.{lang}.bullets")
-                    uniqueness_check(used, all_used, bucket, b, collisions, f"{ctx}.copy.{lang}.bullets")
-            if fmt == "TEST":
-                check_run_text("support_line_en" if lang == "EN" else "support_line_hi", cb.trust_line, f"{ctx}.copy.{lang}.trust_line")
-                uniqueness_check(used, all_used, "support_line_en" if lang == "EN" else "support_line_hi", cb.trust_line, collisions, f"{ctx}.copy.{lang}.trust_line")
+                if fmt in {"HERO", "UGC"}:
+                    check_run_text("support_line_en" if lang == "EN" else "support_line_hi", cb.support_line, f"{ctx}.copy.{lang}.support_line")
+                    uniqueness_check(used, all_used, "support_line_en" if lang == "EN" else "support_line_hi", cb.support_line, collisions, f"{ctx}.copy.{lang}.support_line")
+                if fmt in {"BA", "FEAT"}:
+                    bucket = "bullets_en" if lang == "EN" else "bullets_hi"
+                    for b in cb.bullets or []:
+                        check_run_text(bucket, b, f"{ctx}.copy.{lang}.bullets")
+                        uniqueness_check(used, all_used, bucket, b, collisions, f"{ctx}.copy.{lang}.bullets")
+                if fmt == "TEST":
+                    check_run_text("support_line_en" if lang == "EN" else "support_line_hi", cb.trust_line, f"{ctx}.copy.{lang}.trust_line")
+                    uniqueness_check(used, all_used, "support_line_en" if lang == "EN" else "support_line_hi", cb.trust_line, collisions, f"{ctx}.copy.{lang}.trust_line")
+        except RuntimeError as e:
+            ad_errors.append(str(e))
+
+        if ad_errors:
+            persona_name = ""
+            try:
+                p = ad.get("persona") if isinstance(ad, dict) else None
+                if isinstance(p, dict):
+                    persona_name = str(p.get("name") or "")
+            except Exception:
+                pass
+            bad_ads.append({
+                "index": i,
+                "format": str(ad.get("format", "")).upper() if isinstance(ad, dict) else "",
+                "persona_name": persona_name,
+                "errors": ad_errors,
+                "ad": ad if isinstance(ad, dict) else {},
+            })
+            print(f"WARN: skipping ads[{i}] ({persona_name or '?'}): {ad_errors[0]}", file=sys.stderr)
+        else:
+            valid_ad_indices.append(i)
 
     if collisions and not args.skip_uniqueness_check:
         msg = "Copy batch failed uniqueness checks against registry (regenerate via your LLM step):\n- " + "\n- ".join(collisions[:50])
         if len(collisions) > 50:
             msg += f"\n... and {len(collisions)-50} more collisions"
-        raise RuntimeError(msg)
+        print(f"WARN: {msg}", file=sys.stderr)
+        bad_ads.append({
+            "index": -1,
+            "format": "",
+            "persona_name": "",
+            "errors": [msg],
+            "ad": {},
+        })
 
     batch_name = args.batch or next_batch_name(OUTPUT_DIR)
     batch_dir = OUTPUT_DIR / batch_name
@@ -888,242 +921,275 @@ def main() -> int:
     background_group_cache: dict[str, dict[str, Any]] = {}
 
     for i, ad in enumerate(ads):
-        fmt = str(ad["format"]).upper()
-        aspect_ratio = (ad.get("aspect_ratio") or payload.get("default_aspect_ratio") or "4:5").strip()
-        ratio_dir = batch_dir / aspect_ratio_folder(aspect_ratio)
-        ratio_dir.mkdir(parents=True, exist_ok=True)
-        persona = ad["persona"]
-        persona_number = int(persona["number"])
-        creative_index = int(ad.get("creative_index") or 1)
-        creative_total = int(ad.get("creative_total") or 1)
-        angle = (ad.get("headline_angle") or "").strip()
-        concept = resolve_concept_fields(ad, fmt, persona)
-
-        for stale_lang in ["EN", "HI", "HINGLISH"]:
-            if stale_lang in render_langs:
-                continue
-            for stale_path in ratio_dir.glob(f"{fmt}_P{persona_number:02d}_{stale_lang}*.txt"):
-                stale_path.unlink()
-
-        background_group_key = str(ad.get("background_group_key") or "").strip()
-        cached_background = background_group_cache.get(background_group_key) if background_group_key else None
-        if cached_background:
-            bg = cached_background["background"]
-            bg_seed = cached_background["background_seed"]
-        else:
-            forced_bg = ad.get("background_slot") or ad.get("background_slot_id")
-            if isinstance(forced_bg, str) and forced_bg.strip():
-                bg = get_background_by_id(backgrounds, fmt, forced_bg)
-            else:
-                bg = pick_background_slot(registry, backgrounds, fmt, seed)
-
-            forced_seed = ad.get("background_seed")
-            if isinstance(forced_seed, int) and forced_seed > 0:
-                bg_seed = forced_seed
-            else:
-                bg_seed = random.Random(seed + i * 101).randint(1, 2_147_483_647)
-            if background_group_key:
-                background_group_cache[background_group_key] = {"background": bg, "background_seed": bg_seed}
-        visual_lock = ad.get("visual_lock") if isinstance(ad.get("visual_lock"), dict) else {}
-        seeded_sentence = build_seeded_background_sentence(bg, bg_seed, aspect_ratio)
-        if isinstance(visual_lock.get("seeded_background_direction"), str) and visual_lock.get("seeded_background_direction").strip():
-            seeded_sentence = visual_lock.get("seeded_background_direction").strip()
-            if aspect_ratio == "9:16":
-                seeded_sentence += "; maintain base scene identity and arrangement, only adapt spacing for 9:16 safe bands"
-
-        selector_lang = "EN" if isinstance(ad.get("copy"), dict) and isinstance(ad["copy"].get("EN"), dict) else render_langs[0]
-        selector_copy = parse_copy_block(fmt, selector_lang, ad["copy"][selector_lang])
-        forced_archetype = ""
-        if isinstance(ad.get("visual_archetype"), str) and ad.get("visual_archetype", "").strip():
-            forced_archetype = ad["visual_archetype"].strip()
-        elif isinstance(visual_lock.get("visual_archetype"), str) and visual_lock.get("visual_archetype", "").strip():
-            forced_archetype = visual_lock["visual_archetype"].strip()
-        used_archetypes_for_format = run_archetype_usage.setdefault(fmt, set())
-        visual_archetype = pick_visual_archetype(
-            fmt,
-            persona_number,
-            selector_copy,
-            bg_seed,
-            forced_archetype=forced_archetype,
-            used_archetype_ids=used_archetypes_for_format,
-        )
-        used_archetypes_for_format.add(visual_archetype["id"])
-
-        rendered: dict[str, str] = {}
-        for lang in render_langs:
-            cb = parse_copy_block(fmt, lang, ad["copy"][lang])
-            out_text = render_prompt(
-                fmt,
-                lang,
-                aspect_ratio,
-                persona,
-                cb,
-                concept,
-                bg,
-                bg_seed,
-                seeded_sentence,
-                visual_archetype,
-                visual_lock=visual_lock,
-            )
-            out_path = ratio_dir / prompt_filename(fmt, persona_number, lang, concept.get("concept_angle", ""), creative_index, creative_total)
-            validate_prompt_text(out_text, out_path)
-            out_path.write_text(out_text, encoding="utf-8")
-            prompt_meta = {
-                "type": "ad_prompt",
-                "format": fmt,
-                "persona": f"P{persona_number:02d}",
-                "persona_number": persona_number,
-                "persona_name": persona.get("name", ""),
-                "language": lang,
-                "aspect_ratio": aspect_ratio,
-                "creative_index": creative_index,
-                "creative_total": creative_total,
-                "multiplier": creative_total,
-                "background_group_key": background_group_key,
-                "headline_angle": angle or None,
-                "concept_angle": concept.get("concept_angle", ""),
-                "hypothesis": ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {},
-                "hypothesis_type": (ad.get("hypothesis") or {}).get("type", "") if isinstance(ad.get("hypothesis"), dict) else "",
-                "hypothesis_variant": (ad.get("hypothesis") or {}).get("variant", "") if isinstance(ad.get("hypothesis"), dict) else "",
-                "background": {
-                    "slot": bg["id"],
-                    "name": bg.get("title", ""),
-                    "source": "catalog",
-                    "seed": bg_seed,
-                    "seeded_direction": seeded_sentence,
-                    "scene_category": get_background_scene_category(bg),
-                    "base": bg.get("base", ""),
-                    "formats": bg.get("formats", []),
-                },
-                "visual_archetype": {
-                    "id": visual_archetype["id"],
-                    "label": visual_archetype["label"],
-                    "forced": bool(forced_archetype),
-                    "reused_from_run_id": ad.get("visual_pattern_reused_from_run_id") or "",
-                    "reuse_key": ad.get("visual_pattern_reuse_key") or "",
-                },
-                "visual_pattern": {
-                    "id": visual_archetype["id"],
-                    "label": visual_archetype["label"],
-                    "selected_by_user": bool(forced_archetype),
-                    "selection_mode": "reused" if ad.get("visual_pattern_reused_from_run_id") else ("manual" if forced_archetype else "auto_rotate"),
-                    "reused_from_run_id": ad.get("visual_pattern_reused_from_run_id") or "",
-                    "reuse_key": ad.get("visual_pattern_reuse_key") or "",
-                },
-                "background_decisions": {
-                    "forced_background": bool(ad.get("background_slot") or ad.get("background_slot_id")),
-                    "forced_seed": isinstance(ad.get("background_seed"), int) and ad.get("background_seed") > 0,
-                    "reused_from_run_id": ad.get("background_reused_from_run_id") or "",
-                    "reuse_key": ad.get("background_reuse_key") or "",
-                    "shared_by_multiplier": creative_total > 1 and bool(background_group_key),
-                    "shared_across_personas": bool(ad.get("share_background_across_personas")),
-                    "visual_lock_applied": bool(visual_lock),
-                    "aspect_ratio": aspect_ratio,
-                    "assembler_seed": seed,
-                },
-            }
-            out_path.with_suffix(".json").write_text(json.dumps(prompt_meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            rendered[lang] = out_text
-
-        if args.no_registry_write:
+        if i not in valid_ad_indices:
             continue
+            fmt = str(ad["format"]).upper()
+        try:
+            aspect_ratio = (ad.get("aspect_ratio") or payload.get("default_aspect_ratio") or "4:5").strip()
+            ratio_dir = batch_dir / aspect_ratio_folder(aspect_ratio)
+            ratio_dir.mkdir(parents=True, exist_ok=True)
+            persona = ad["persona"]
+            persona_number = int(persona["number"])
+            creative_index = int(ad.get("creative_index") or 1)
+            creative_total = int(ad.get("creative_total") or 1)
+            angle = (ad.get("headline_angle") or "").strip()
+            concept = resolve_concept_fields(ad, fmt, persona)
 
-        entry_id = next_entry_id(registry)
-        headline_en = ad["copy"]["EN"]["headline"]
-        headline_hi = ad["copy"]["HI"]["headline"]
-        support_en = ad["copy"]["EN"].get("support_line") or ad["copy"]["EN"].get("trust_line") or ""
-        support_hi = ad["copy"]["HI"].get("support_line") or ad["copy"]["HI"].get("trust_line") or ""
-        cta_en = ad["copy"]["EN"]["cta"]
-        cta_hi = ad["copy"]["HI"]["cta"]
-        bullets_en = ad["copy"]["EN"].get("bullets") or []
-        bullets_hi = ad["copy"]["HI"].get("bullets") or []
+            for stale_lang in ["EN", "HI", "HINGLISH"]:
+                if stale_lang in render_langs:
+                    continue
+                for stale_path in ratio_dir.glob(f"{fmt}_P{persona_number:02d}_{stale_lang}*.txt"):
+                    stale_path.unlink()
 
-        # Hypothesis metadata from ad payload (injected by backend when testing)
-        hyp_meta = ad.get("hypothesis") or {}
+            background_group_key = str(ad.get("background_group_key") or "").strip()
+            cached_background = background_group_cache.get(background_group_key) if background_group_key else None
+            if cached_background:
+                bg = cached_background["background"]
+                bg_seed = cached_background["background_seed"]
+            else:
+                forced_bg = ad.get("background_slot") or ad.get("background_slot_id")
+                if isinstance(forced_bg, str) and forced_bg.strip():
+                    bg = get_background_by_id(backgrounds, fmt, forced_bg)
+                else:
+                    bg = pick_background_slot(registry, backgrounds, fmt, seed)
 
-        entry = {
-            "id": entry_id,
-            "timestamp": timestamp,
-            "format": fmt,
-            "persona_number": persona["number"],
-            "persona_name": persona["name"],
-            "headline_angle": angle or None,
-            "concept_angle": concept["concept_angle"],
-            "visual_archetype": visual_archetype["id"],
-            "headline_en": headline_en,
-            "headline_hi": headline_hi,
-            "support_line_en": support_en,
-            "support_line_hi": support_hi,
-            "cta_en": cta_en,
-            "cta_hi": cta_hi,
-            "disclaimer_en": "",
-            "disclaimer_hi": "",
-            "caption_en": "",
-            "caption_hi": "",
-            "bullets_en": bullets_en,
-            "bullets_hi": bullets_hi,
-            "background_slot": bg["id"],
-            "background_name": bg.get("title", ""),
-            "background_source": "catalog",
-            "fresh_background_signature": None,
-            "language": "BOTH",
-            "output_quality": "pending",
-            "notes": f"assembled_from={copy_path.name}; batch={batch_name}; aspect_ratio={aspect_ratio}; seed={seed}; visual_archetype={visual_archetype['id']}",
-            # Copy diversity fields (now populated automatically)
-            "opening_pattern_4tok_en": get_opening_pattern_4tok(headline_en),
-            "opening_pattern_4tok_hi": get_opening_pattern_4tok(headline_hi),
-            "copy_skeleton": get_copy_skeleton(fmt, headline_en, support_en, bullets_en, cta_en),
-            "hook_structure_class": classify_hook_structure(headline_en),
-            "proof_style_class": classify_proof_style(headline_en, support_en),
-            "cta_voice_class": classify_cta_voice(cta_en),
-            # New analytics fields
-            "headline_word_count": len((headline_en or "").split()),
-            "support_line_word_count": len((support_en or "").split()),
-            "has_protocol_mechanics": has_protocol_mechanics(support_en) or has_protocol_mechanics(" ".join(bullets_en)),
-            "has_social_proof_number": has_social_proof_number(headline_en) or has_social_proof_number(support_en),
-            "background_scene_category": get_background_scene_category(bg),
-            # Hypothesis testing fields
-            "hypothesis_id": hyp_meta.get("hypothesis_id") or "",
-            "test_group": hyp_meta.get("test_group") or "",
-            "variant_variable": hyp_meta.get("type") or "",
-            "variant_value": hyp_meta.get("variant") or "",
-        }
+                forced_seed = ad.get("background_seed")
+                if isinstance(forced_seed, int) and forced_seed > 0:
+                    bg_seed = forced_seed
+                else:
+                    bg_seed = random.Random(seed + i * 101).randint(1, 2_147_483_647)
+                if background_group_key:
+                    background_group_cache[background_group_key] = {"background": bg, "background_seed": bg_seed}
+            visual_lock = ad.get("visual_lock") if isinstance(ad.get("visual_lock"), dict) else {}
+            seeded_sentence = build_seeded_background_sentence(bg, bg_seed, aspect_ratio)
+            if isinstance(visual_lock.get("seeded_background_direction"), str) and visual_lock.get("seeded_background_direction").strip():
+                seeded_sentence = visual_lock.get("seeded_background_direction").strip()
+                if aspect_ratio == "9:16":
+                    seeded_sentence += "; maintain base scene identity and arrangement, only adapt spacing for 9:16 safe bands"
 
-        registry.setdefault("entries", []).append(entry)
+            selector_lang = "EN" if isinstance(ad.get("copy"), dict) and isinstance(ad["copy"].get("EN"), dict) else render_langs[0]
+            selector_copy = parse_copy_block(fmt, selector_lang, ad["copy"][selector_lang])
+            forced_archetype = ""
+            if isinstance(ad.get("visual_archetype"), str) and ad.get("visual_archetype", "").strip():
+                forced_archetype = ad["visual_archetype"].strip()
+            elif isinstance(visual_lock.get("visual_archetype"), str) and visual_lock.get("visual_archetype", "").strip():
+                forced_archetype = visual_lock["visual_archetype"].strip()
+            used_archetypes_for_format = run_archetype_usage.setdefault(fmt, set())
+            visual_archetype = pick_visual_archetype(
+                fmt,
+                persona_number,
+                selector_copy,
+                bg_seed,
+                forced_archetype=forced_archetype,
+                used_archetype_ids=used_archetypes_for_format,
+            )
+            used_archetypes_for_format.add(visual_archetype["id"])
 
-        # used_text updates
-        if "EN" in render_langs:
-            add_used_text(registry, "headline_en", [ad["copy"]["EN"]["headline"]])
-            add_used_text(registry, "cta_en", [ad["copy"]["EN"]["cta"]])
-        if "HI" in render_langs:
-            add_used_text(registry, "headline_hi", [ad["copy"]["HI"]["headline"]])
-            add_used_text(registry, "cta_hi", [ad["copy"]["HI"]["cta"]])
+            rendered: dict[str, str] = {}
+            for lang in render_langs:
+                cb = parse_copy_block(fmt, lang, ad["copy"][lang])
+                out_text = render_prompt(
+                    fmt,
+                    lang,
+                    aspect_ratio,
+                    persona,
+                    cb,
+                    concept,
+                    bg,
+                    bg_seed,
+                    seeded_sentence,
+                    visual_archetype,
+                    visual_lock=visual_lock,
+                )
+                out_path = ratio_dir / prompt_filename(fmt, persona_number, lang, concept.get("concept_angle", ""), creative_index, creative_total)
+                validate_prompt_text(out_text, out_path)
+                out_path.write_text(out_text, encoding="utf-8")
+                prompt_meta = {
+                    "type": "ad_prompt",
+                    "format": fmt,
+                    "persona": f"P{persona_number:02d}",
+                    "persona_number": persona_number,
+                    "persona_name": persona.get("name", ""),
+                    "language": lang,
+                    "aspect_ratio": aspect_ratio,
+                    "creative_index": creative_index,
+                    "creative_total": creative_total,
+                    "multiplier": creative_total,
+                    "background_group_key": background_group_key,
+                    "headline_angle": angle or None,
+                    "concept_angle": concept.get("concept_angle", ""),
+                    "hypothesis": ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {},
+                    "hypothesis_type": (ad.get("hypothesis") or {}).get("type", "") if isinstance(ad.get("hypothesis"), dict) else "",
+                    "hypothesis_variant": (ad.get("hypothesis") or {}).get("variant", "") if isinstance(ad.get("hypothesis"), dict) else "",
+                    "background": {
+                        "slot": bg["id"],
+                        "name": bg.get("title", ""),
+                        "source": "catalog",
+                        "seed": bg_seed,
+                        "seeded_direction": seeded_sentence,
+                        "scene_category": get_background_scene_category(bg),
+                        "base": bg.get("base", ""),
+                        "formats": bg.get("formats", []),
+                    },
+                    "visual_archetype": {
+                        "id": visual_archetype["id"],
+                        "label": visual_archetype["label"],
+                        "forced": bool(forced_archetype),
+                        "reused_from_run_id": ad.get("visual_pattern_reused_from_run_id") or "",
+                        "reuse_key": ad.get("visual_pattern_reuse_key") or "",
+                    },
+                    "visual_pattern": {
+                        "id": visual_archetype["id"],
+                        "label": visual_archetype["label"],
+                        "selected_by_user": bool(forced_archetype),
+                        "selection_mode": "reused" if ad.get("visual_pattern_reused_from_run_id") else ("manual" if forced_archetype else "auto_rotate"),
+                        "reused_from_run_id": ad.get("visual_pattern_reused_from_run_id") or "",
+                        "reuse_key": ad.get("visual_pattern_reuse_key") or "",
+                    },
+                    "background_decisions": {
+                        "forced_background": bool(ad.get("background_slot") or ad.get("background_slot_id")),
+                        "forced_seed": isinstance(ad.get("background_seed"), int) and ad.get("background_seed") > 0,
+                        "reused_from_run_id": ad.get("background_reused_from_run_id") or "",
+                        "reuse_key": ad.get("background_reuse_key") or "",
+                        "shared_by_multiplier": creative_total > 1 and bool(background_group_key),
+                        "shared_across_personas": bool(ad.get("share_background_across_personas")),
+                        "visual_lock_applied": bool(visual_lock),
+                        "aspect_ratio": aspect_ratio,
+                        "assembler_seed": seed,
+                    },
+                }
+                out_path.with_suffix(".json").write_text(json.dumps(prompt_meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                rendered[lang] = out_text
 
-        if fmt in {"HERO", "UGC"}:
+            if args.no_registry_write:
+                continue
+
+            entry_id = next_entry_id(registry)
+            headline_en = ad["copy"]["EN"]["headline"]
+            headline_hi = ad["copy"]["HI"]["headline"]
+            support_en = ad["copy"]["EN"].get("support_line") or ad["copy"]["EN"].get("trust_line") or ""
+            support_hi = ad["copy"]["HI"].get("support_line") or ad["copy"]["HI"].get("trust_line") or ""
+            cta_en = ad["copy"]["EN"]["cta"]
+            cta_hi = ad["copy"]["HI"]["cta"]
+            bullets_en = ad["copy"]["EN"].get("bullets") or []
+            bullets_hi = ad["copy"]["HI"].get("bullets") or []
+
+            # Hypothesis metadata from ad payload (injected by backend when testing)
+            hyp_meta = ad.get("hypothesis") or {}
+
+            entry = {
+                "id": entry_id,
+                "timestamp": timestamp,
+                "format": fmt,
+                "persona_number": persona["number"],
+                "persona_name": persona["name"],
+                "headline_angle": angle or None,
+                "concept_angle": concept["concept_angle"],
+                "visual_archetype": visual_archetype["id"],
+                "headline_en": headline_en,
+                "headline_hi": headline_hi,
+                "support_line_en": support_en,
+                "support_line_hi": support_hi,
+                "cta_en": cta_en,
+                "cta_hi": cta_hi,
+                "disclaimer_en": "",
+                "disclaimer_hi": "",
+                "caption_en": "",
+                "caption_hi": "",
+                "bullets_en": bullets_en,
+                "bullets_hi": bullets_hi,
+                "background_slot": bg["id"],
+                "background_name": bg.get("title", ""),
+                "background_source": "catalog",
+                "fresh_background_signature": None,
+                "language": "BOTH",
+                "output_quality": "pending",
+                "notes": f"assembled_from={copy_path.name}; batch={batch_name}; aspect_ratio={aspect_ratio}; seed={seed}; visual_archetype={visual_archetype['id']}",
+                # Copy diversity fields (now populated automatically)
+                "opening_pattern_4tok_en": get_opening_pattern_4tok(headline_en),
+                "opening_pattern_4tok_hi": get_opening_pattern_4tok(headline_hi),
+                "copy_skeleton": get_copy_skeleton(fmt, headline_en, support_en, bullets_en, cta_en),
+                "hook_structure_class": classify_hook_structure(headline_en),
+                "proof_style_class": classify_proof_style(headline_en, support_en),
+                "cta_voice_class": classify_cta_voice(cta_en),
+                # New analytics fields
+                "headline_word_count": len((headline_en or "").split()),
+                "support_line_word_count": len((support_en or "").split()),
+                "has_protocol_mechanics": has_protocol_mechanics(support_en) or has_protocol_mechanics(" ".join(bullets_en)),
+                "has_social_proof_number": has_social_proof_number(headline_en) or has_social_proof_number(support_en),
+                "background_scene_category": get_background_scene_category(bg),
+                # Hypothesis testing fields
+                "hypothesis_id": hyp_meta.get("hypothesis_id") or "",
+                "test_group": hyp_meta.get("test_group") or "",
+                "variant_variable": hyp_meta.get("type") or "",
+                "variant_value": hyp_meta.get("variant") or "",
+            }
+
+            registry.setdefault("entries", []).append(entry)
+
+            # used_text updates
             if "EN" in render_langs:
-                add_used_text(registry, "support_line_en", [ad["copy"]["EN"]["support_line"]])
+                add_used_text(registry, "headline_en", [ad["copy"]["EN"]["headline"]])
+                add_used_text(registry, "cta_en", [ad["copy"]["EN"]["cta"]])
             if "HI" in render_langs:
-                add_used_text(registry, "support_line_hi", [ad["copy"]["HI"]["support_line"]])
-        elif fmt in {"BA", "FEAT"}:
-            if "EN" in render_langs:
-                add_used_text(registry, "bullets_en", ad["copy"]["EN"]["bullets"])
-            if "HI" in render_langs:
-                add_used_text(registry, "bullets_hi", ad["copy"]["HI"]["bullets"])
-        else:  # TEST trust_line stored in support_line_* buckets for dedupe parity
-            if "EN" in render_langs:
-                add_used_text(registry, "support_line_en", [ad["copy"]["EN"]["trust_line"]])
-            if "HI" in render_langs:
-                add_used_text(registry, "support_line_hi", [ad["copy"]["HI"]["trust_line"]])
+                add_used_text(registry, "headline_hi", [ad["copy"]["HI"]["headline"]])
+                add_used_text(registry, "cta_hi", [ad["copy"]["HI"]["cta"]])
 
-        if isinstance(registry.get("mode"), dict):
-            registry["mode"]["last_updated"] = timestamp
+            if fmt in {"HERO", "UGC"}:
+                if "EN" in render_langs:
+                    add_used_text(registry, "support_line_en", [ad["copy"]["EN"]["support_line"]])
+                if "HI" in render_langs:
+                    add_used_text(registry, "support_line_hi", [ad["copy"]["HI"]["support_line"]])
+            elif fmt in {"BA", "FEAT"}:
+                if "EN" in render_langs:
+                    add_used_text(registry, "bullets_en", ad["copy"]["EN"]["bullets"])
+                if "HI" in render_langs:
+                    add_used_text(registry, "bullets_hi", ad["copy"]["HI"]["bullets"])
+            else:  # TEST trust_line stored in support_line_* buckets for dedupe parity
+                if "EN" in render_langs:
+                    add_used_text(registry, "support_line_en", [ad["copy"]["EN"]["trust_line"]])
+                if "HI" in render_langs:
+                    add_used_text(registry, "support_line_hi", [ad["copy"]["HI"]["trust_line"]])
+
+            if isinstance(registry.get("mode"), dict):
+                registry["mode"]["last_updated"] = timestamp
+
+        except Exception as e:
+            persona_name = ""
+            try:
+                p = ad.get("persona") if isinstance(ad, dict) else None
+                if isinstance(p, dict):
+                    persona_name = str(p.get("name") or "")
+            except Exception:
+                pass
+            bad_ads.append({
+                "index": i,
+                "format": str(ad.get("format", "")).upper() if isinstance(ad, dict) else "",
+                "persona_name": persona_name,
+                "errors": [f"Render failed: {type(e).__name__}: {e}"],
+                "ad": ad if isinstance(ad, dict) else {},
+            })
+            print(f"WARN: render failed for ads[{i}] ({persona_name or '?'}): {e}", file=sys.stderr)
+
 
     if not args.no_registry_write:
         write_json(REGISTRY_PATH, registry)
 
+    if bad_ads:
+        warnings_path = batch_dir / "warnings.json"
+        write_json(warnings_path, {
+            "batch": batch_name,
+            "total_ads": len(ads),
+            "rendered_ads": len(valid_ad_indices),
+            "skipped_ads": len(bad_ads),
+            "issues": bad_ads,
+        })
+        print(f"WARN: {len(bad_ads)} ad(s) skipped/flagged. Details: {warnings_path.relative_to(ROOT)}", file=sys.stderr)
+
     print(f"Batch: {batch_name}")
     print(f"Seed: {seed}")
     print(f"Wrote: {batch_dir.relative_to(ROOT)}")
+    print(f"Rendered: {len(valid_ad_indices)}/{len(ads)} ads")
     return 0
 
 

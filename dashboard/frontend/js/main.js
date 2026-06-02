@@ -459,8 +459,32 @@ document.getElementById("productFile")?.addEventListener("change", async (event)
     const doc = await fetchJSON("/api/product-doc");
     renderProductDocInfo(doc);
     setStatus(`Uploaded ${file.name}`);
+    event.target.value = "";
   } catch (err) {
     setStatus(`Upload failed: ${String(err)}`);
+  }
+});
+
+// Standalone image upload (saves to input/images immediately, refreshes gallery)
+document.getElementById("inputImageFiles")?.addEventListener("change", async (event) => {
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
+  const clearExisting = !!document.getElementById("clearInputImages")?.checked;
+  const form = new FormData();
+  files.forEach((f) => form.append("files", f));
+  form.append("clear_existing", clearExisting ? "true" : "false");
+  setStatus(`Uploading ${files.length} image${files.length === 1 ? "" : "s"}...`);
+  try {
+    const res = await fetch("/api/upload-input-images", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.detail || res.statusText);
+    renderInputImages(data.input_images || []);
+    setStatus(`Uploaded ${data.saved?.length || 0} image${data.saved?.length === 1 ? "" : "s"}`);
+    event.target.value = "";
+    const clearEl = document.getElementById("clearInputImages");
+    if (clearEl) clearEl.checked = false;
+  } catch (err) {
+    setStatus(`Image upload failed: ${String(err)}`);
   }
 });
 
