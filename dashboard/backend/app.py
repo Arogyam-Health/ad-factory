@@ -5877,6 +5877,7 @@ def api_launch_visible_browser() -> dict[str, Any]:
 
     if not chrome_bin:
         wsl_candidates = [
+            f"/mnt/c/Users/{os.getenv('USER', 'naman')}/AppData/Local/Google/Chrome/Application/chrome.exe",
             "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
             "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
         ]

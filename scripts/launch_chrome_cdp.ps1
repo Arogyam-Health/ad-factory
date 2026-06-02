@@ -1,14 +1,32 @@
 # Chrome CDP Launcher for Windows
 # Called from WSL via powershell.exe
 param(
-    [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe",
+    [string[]]$ChromePaths = @(
+        "$env:USERPROFILE\AppData\Local\Google\Chrome\Application\chrome.exe",
+        "$env:USERPROFILE\AppData\Local\Google\Chrome SxS\Application\chrome.exe",
+        "C:\Program Files\Google\Chrome\Application\chrome.exe",
+        "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+    ),
     [string]$UserDataDir = "$env:USERPROFILE\.config\google-chrome-cdp",
     [int]$Port = 9222
 )
 
-# Kill existing Chrome
+# Find existing Chrome
 Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 5
+
+# Resolve Chrome path from candidates
+$ChromePath = ""
+foreach ($candidate in $ChromePaths) {
+    if (Test-Path $candidate) {
+        $ChromePath = $candidate
+        break
+    }
+}
+if ([string]::IsNullOrEmpty($ChromePath)) {
+    Write-Output "FAILED: Chrome not found in any candidate path"
+    exit 1
+}
 
 # Ensure data dir exists
 if (!(Test-Path $UserDataDir)) {
