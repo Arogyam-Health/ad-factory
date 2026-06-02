@@ -325,7 +325,8 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
     return fmt, persona_id, "XX", "", ""
 
 
-def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool) -> tuple[list[PromptJob], list[PromptJob]]:
+def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool, aspect_ratio: str = "4:5") -> tuple[list[PromptJob], list[PromptJob]]:
+    aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     raw_paths = [p for p in prompt_dir.glob(pattern) if p.is_file()]
     if not raw_paths:
         raise FileNotFoundError(f"No prompt files found in {prompt_dir} with pattern {pattern!r}")
@@ -340,10 +341,12 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
 
         # Reuse the prompt's stem verbatim so the generated image matches the
         # prompt file 1:1 (only the extension changes). E.g. BA_always_hungry_EN_pain_point.
+        # Append the aspect ratio folder name so 4:5 and 9:16 images have distinct
+        # filenames (e.g. ..._pain_point_4_5.png vs ..._pain_point_9_16.png).
         if concept_angle:
-            safe_stem = f"{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}"
+            safe_stem = f"{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
         else:
-            safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}"
+            safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}_{aspect_folder}"
 
         # If the angle wasn't in the filename, fall back to reading it from
         # the prompt body (legacy behavior, kept for safety).
@@ -2967,7 +2970,7 @@ def run() -> None:
     download_dir = Path(args.browser_download_dir).expanduser().resolve() if args.browser_download_dir else out_dir / ".browser_downloads"
     download_dir.mkdir(parents=True, exist_ok=True)
 
-    jobs, duplicates = discover_prompt_jobs(prompt_dir, args.prompt_glob, args.allow_duplicate_prompt_keys)
+    jobs, duplicates = discover_prompt_jobs(prompt_dir, args.prompt_glob, args.allow_duplicate_prompt_keys, aspect_ratio=args.aspect_ratio)
     validate_expected_formats(jobs, args.expected_formats, args.strict_expected_formats)
     print_job_manifest(jobs, duplicates)
 

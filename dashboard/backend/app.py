@@ -1556,6 +1556,8 @@ def run_gemini_generation(
         "*.txt",
         "--out-dir",
         str(out_dir),
+        "--aspect-ratio",
+        aspect_ratio,
         "--timeout",
         str(int(os.getenv("GEMINI_GENERATION_TIMEOUT_SECONDS") or "420")),
         "--manual-login-timeout",
@@ -3093,6 +3095,8 @@ def _prompt_stem_for_image(image_rel_path: str) -> str:
         stem = stem.removeprefix("gemini-")
     elif stem.startswith("chatgpt-"):
         stem = stem.removeprefix("chatgpt-")
+    # Strip trailing _4_5 / _9_16 aspect suffix added by the image generation scripts.
+    stem = re.sub(r"_(?:4_5|9_16)$", "", stem)
     return stem.replace("-", "_").upper()
 
 
@@ -3513,14 +3517,24 @@ def parse_prompt_creative_index(prompt_path: str) -> int:
 
 def _parse_generated_image_name(image_rel_path: str) -> dict[str, Any]:
     """Parse a generated image filename. Returns dict with format, persona_number,
-    language, concept_angle, image_index; missing keys mean the stem is unparseable.
+    language, concept_angle, image_index, aspect; missing keys mean the stem is unparseable.
 
-    Canonical form: ``<FMT>_<persona_slug>_<LANG>_<angle>[_A<NN>].<ext>``
-                    e.g. BA_always_hungry_EN_pain_point.png,
-                         HERO_stress_snacker_HI_desired_outcome_A01.jpg
-    The persona_number is recovered from the persona slug via persona_seeds.json.
+    Canonical form: ``<FMT>_<persona_slug>_<LANG>_<angle>[_A<NN>][_<aspect>].<ext>``
+                    e.g. BA_always_hungry_EN_pain_point_4_5.png,
+                         HERO_stress_snacker_HI_desired_outcome_A01_9_16.jpg
+    The optional trailing ``_4_5`` / ``_9_16`` marks the aspect ratio (added by
+    the chatgpt/gemini scripts).  The persona_number is recovered from the persona
+    slug via persona_seeds.json.
     """
     stem = Path(image_rel_path).stem
+    # Strip a trailing _4_5 / _9_16 aspect suffix so the rest of the regex can
+    # match the canonical prompt-derived stem.  This also lets us report the
+    # detected aspect back to callers.
+    detected_aspect = ""
+    aspect_match = re.search(r"_(?P<aspect>4_5|9_16)$", stem)
+    if aspect_match:
+        detected_aspect = aspect_match.group("aspect")
+        stem = stem[: aspect_match.start()]
     patterns = [
         # canonical: <FMT>_<slug>_<LANG>_<angle>[_A<NN>]
         r"^(?P<fmt>[A-Z]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_A(?P<image_index>\d+))?$",
@@ -3540,6 +3554,7 @@ def _parse_generated_image_name(image_rel_path: str) -> dict[str, Any]:
             "language": m.group("lang").upper(),
             "concept_angle": m.groupdict().get("angle", "") or "",
             "image_index": int(m.group("image_index")) if m.groupdict().get("image_index") else None,
+            "aspect": detected_aspect or "",
         }
     return {}
 
@@ -5669,7 +5684,10 @@ def run_916_conversion_from_45_for_batch(
         source_stem = ""
         image_path = job.get("image_abs") or job.get("image_rel") or ""
         if image_path:
-            source_stem = Path(str(image_path)).stem
+            raw_stem = Path(str(image_path)).stem
+            # The 4:5 image stem carries the aspect suffix (e.g. ..._pain_point_4_5).
+            # Strip it so the 9:16 prompt name matches the original 4:5 prompt stem.
+            source_stem = re.sub(r"_(?:4_5|9_16)$", "", raw_stem)
         prompt_name = build_916_conversion_prompt_job(
             job["format"],
             int(job["persona_number"]),
@@ -6603,40 +6621,59 @@ def _find_prompt_by_name(prompt_name: str, prompt_files: list[str]) -> str:
     return ""
 
 
-def _build_output_stem_from_prompt(prompt_path: str, engine: str) -> str:
+def _build_output_stem_from_prompt(prompt_path: str, engine: str, aspect_dir: str = "") -> str:
     name = Path(prompt_path).stem
-    # New format: <FMT>_<slug>_<LANG>[_<angle>][_A01]
+    aspect_suffix = f"_{aspect_dir}" if aspect_dir in ("4_5", "9_16") else ""
+    # New format: <FMT>_<slug>_<LANG>_<angle>[_A<NN>]
     new_match = re.match(
-        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_([A-Z]+)(?:_([a-z_]+))?(?:_([AV]\d+))?$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_([AV]\d+))?$",
         name,
         flags=re.IGNORECASE,
     )
     if new_match:
-        fmt = new_match.group(1).lower()
+        fmt = new_match.group(1).upper()
         slug = new_match.group(2).lower()
-        lang = new_match.group(3).lower()
-        variant = new_match.group(5).lower() if new_match.group(5) else ""
-        variant_suffix = f"-{variant}" if variant else ""
-        return f"{engine}-{fmt}-{slug}-{lang}{variant_suffix}"
-    # Legacy format: <FMT>_P<NN>_<LANG>[_<angle>][_A01]
+        lang = new_match.group(3).upper()
+        angle = new_match.group("angle")
+        variant = new_match.group(5).upper() if new_match.group(5) else ""
+        variant_suffix = f"_{variant}" if variant else ""
+        return f"{fmt}_{slug}_{lang}_{angle}{variant_suffix}{aspect_suffix}"
+    # Angle-less new format: <FMT>_<slug>_<LANG>[_A<NN>]
+    new_no_angle = re.match(
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(EN|HI|HINGLISH)(?:_([AV]\d+))?$",
+        name,
+        flags=re.IGNORECASE,
+    )
+    if new_no_angle:
+        fmt = new_no_angle.group(1).upper()
+        slug = new_no_angle.group(2).lower()
+        lang = new_no_angle.group(3).upper()
+        variant = new_no_angle.group(4).upper() if new_no_angle.group(4) else ""
+        variant_suffix = f"_{variant}" if variant else ""
+        return f"{fmt}_{slug}_{lang}{variant_suffix}{aspect_suffix}"
+    # Legacy format: <FMT>_P<NN>_<LANG>[_<angle>][_A<NN>]
     legacy_match = re.match(
         r"^(?:OUTPUT_|FINAL_)?([A-Za-z0-9]+)_P(\d+)_([A-Za-z0-9]+)(?:_([AV]\d+))?(?:_[a-z_]+)?$",
         name,
         flags=re.IGNORECASE,
     )
     if legacy_match:
-        fmt = legacy_match.group(1).lower()
-        persona = f"p{int(legacy_match.group(2)):02d}"
-        lang = legacy_match.group(3).lower()
-        variant = legacy_match.group(4).lower() if legacy_match.group(4) else ""
-        variant_suffix = f"-{variant}" if variant else ""
-        return f"{engine}-{fmt}-{persona}-{lang}{variant_suffix}"
+        fmt = legacy_match.group(1).upper()
+        persona = f"P{int(legacy_match.group(2)):02d}"
+        lang = legacy_match.group(3).upper()
+        angle_match = re.search(r"_[a-z_]+$", name)
+        angle = angle_match.group(0)[1:] if angle_match else ""
+        variant = legacy_match.group(4).upper() if legacy_match.group(4) else ""
+        variant_suffix = f"_{variant}" if variant else ""
+        if angle:
+            return f"{fmt}_{persona}_{lang}_{angle}{variant_suffix}{aspect_suffix}"
+        return f"{fmt}_{persona}_{lang}{variant_suffix}{aspect_suffix}"
     return ""
 
 
 def _build_expected_output_path(batch: str, prompt_path: str, aspect_dir: str, engine: str) -> Path | None:
     """Compute the expected full output path for a generated image."""
-    stem = _build_output_stem_from_prompt(prompt_path, engine)
+    stem = _build_output_stem_from_prompt(prompt_path, engine, aspect_dir=aspect_dir)
     if not stem:
         return None
     return GENERATED_IMAGES_ROOT / batch / aspect_dir / "generated images" / f"{stem}.png"
@@ -6985,9 +7022,15 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
 
     ext = Path(image_path_str).suffix
     angle_part = f"_{base['concept_angle']}" if base.get("concept_angle") else ""
-    stem = f"{base['format']}_{base['persona']}_{base['lang']}{angle_part}{base.get('creative_suffix', '')}{hyp_label}"
+    aspect_part = ""
+    if "/9_16/" in image_path_str.replace("\\", "/"):
+        aspect_part = "_9_16"
+    elif "/4_5/" in image_path_str.replace("\\", "/"):
+        aspect_part = "_4_5"
+    stem = f"{base['format']}_{base['persona']}_{base['lang']}{angle_part}{base.get('creative_suffix', '')}{hyp_label}{aspect_part}"
     base["stem"] = stem
     base["ext"] = ext
+    base["aspect"] = aspect_part.lstrip("_") if aspect_part else ""
     return base
 
 

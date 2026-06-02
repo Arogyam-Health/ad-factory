@@ -103,6 +103,8 @@ def parse_args() -> argparse.Namespace:
                         help="Directory containing reference images to upload")
     parser.add_argument("--logo-key", default="LIGHT_LOGO_URL")
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--aspect-ratio", default="4:5", choices=["4:5", "9:16"],
+                        help="Aspect ratio for output images; 4:5 (default) or 9:16")
     parser.add_argument("--timeout", type=int, default=420, help="Generation timeout per prompt")
     parser.add_argument("--download-timeout", type=int, default=180)
     parser.add_argument("--sleep-after-download", type=float, default=3.0)
@@ -255,7 +257,8 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
     return fmt, persona_id, "XX", "", ""
 
 
-def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool) -> tuple[list[PromptJob], list[PromptJob]]:
+def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool, aspect_ratio: str = "4:5") -> tuple[list[PromptJob], list[PromptJob]]:
+    aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     raw_paths = [p for p in prompt_dir.glob(pattern) if p.is_file()]
     if not raw_paths:
         raise FileNotFoundError(f"No prompt files found in {prompt_dir} with pattern {pattern!r}")
@@ -269,10 +272,12 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
             key += f"_{concept_angle}"
         # Reuse the prompt's stem verbatim so the generated image matches the
         # prompt file 1:1 (only the extension changes). E.g. BA_P01_EN_pain_point.
+        # Append the aspect ratio folder name so 4:5 and 9:16 images have distinct
+        # filenames (e.g. ..._pain_point_4_5.png vs ..._pain_point_9_16.png).
         if concept_angle:
-            safe_stem = f"{fmt}_P{int(persona[1:]):02d}_{lang}_{concept_angle}{variant_suffix}"
+            safe_stem = f"{fmt}_P{int(persona[1:]):02d}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
         else:
-            safe_stem = f"gemini-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}"
+            safe_stem = f"gemini-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}_{aspect_folder}"
         raw_jobs.append(
             PromptJob(
                 prompt_path=path.resolve(),
@@ -3512,6 +3517,7 @@ def run() -> None:
         prompt_dir=prompt_dir,
         pattern=args.prompt_glob,
         allow_duplicates=args.allow_duplicate_prompt_keys,
+        aspect_ratio=args.aspect_ratio,
     )
     print_job_manifest(jobs, duplicates)
     validate_expected_formats(jobs, args.expected_formats, args.strict_expected_formats)
