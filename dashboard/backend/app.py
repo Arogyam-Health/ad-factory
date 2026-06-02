@@ -1426,6 +1426,31 @@ def debugger_endpoint_reachable(address: str) -> bool:
         return False
 
 
+def detect_wsl_windows_host_ip() -> str:
+    """Return the Windows host IP from WSL's perspective (e.g., 172.18.160.1).
+    Returns '127.0.0.1' if not in WSL or detection fails."""
+    if not Path("/mnt/c").exists():
+        return "127.0.0.1"
+    try:
+        ip_route = subprocess.run(
+            ["ip", "route"], capture_output=True, text=True, timeout=5
+        )
+        for line in (ip_route.stdout or "").splitlines():
+            if "default" in line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    return parts[2]
+    except Exception:
+        pass
+    return "127.0.0.1"
+
+
+def wsl_chrome_cdp_url() -> str:
+    """Return the CDP URL for Windows Chrome from WSL.
+    Uses the portproxy on 9223 → Windows 9222. Set up via scripts/setup_cdp_proxy.ps1."""
+    return f"http://{detect_wsl_windows_host_ip()}:9223"
+
+
 def resolve_gemini_debugger_address() -> str:
     configured = str(os.getenv("GEMINI_DEBUGGER_ADDRESS") or "").strip()
     candidates = [configured] if configured else []
@@ -1598,8 +1623,9 @@ def run_chatgpt_generation(
     # Pass CDP URL if running in WSL
     cdp_url_for_log = ""
     if Path("/mnt/c").exists():
-        cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
-        cdp_url_for_log = "http://172.18.160.1:9223"
+        cdp_url = wsl_chrome_cdp_url()
+        cmd.extend(["--cdp-url", cdp_url])
+        cdp_url_for_log = cdp_url
     else:
         cdp_url_for_log = "NOT WSL - /mnt/c not found"
 
@@ -5258,7 +5284,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
         ]
         # Pass CDP URL if running in WSL
         if Path("/mnt/c").exists():
-            cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
+            cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
     else:
         cmd = [
             sys.executable,
@@ -5368,7 +5394,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[
             "--aspect-ratio", "4:5",
         ]
         if Path("/mnt/c").exists():
-            cmd.extend(["--cdp-url", "http://172.18.160.1:9223"])
+            cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
     else:
         cmd = [
             sys.executable, "scripts/gemini_web_automation.py",
@@ -5991,18 +6017,43 @@ def api_launch_visible_browser() -> dict[str, Any]:
     except Exception:
         pass
 
-    # Kill any existing Chrome instances to prevent single-instance delegation
+    # Kill only the Chrome process holding port 9222 (if any) — do NOT nuke all Chrome instances.
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    port_held = False
     try:
-        subprocess.run(
-            ["taskkill.exe", "/F", "/IM", "chrome.exe"],
-            capture_output=True, timeout=10,
-        )
-        time.sleep(3)
-    except Exception:
-        pass
+        sock.bind(("127.0.0.1", 9222))
+        sock.close()
+    except OSError:
+        port_held = True
+        sock.close()
+
+    if port_held:
+        try:
+            netstat = subprocess.run(
+                ["netstat.exe", "-ano", "-p", "TCP"],
+                capture_output=True, text=True, timeout=10,
+            )
+            pids_to_kill: set[str] = set()
+            for line in (netstat.stdout or "").splitlines():
+                if ":9222" in line and "LISTENING" in line:
+                    parts = line.split()
+                    if parts:
+                        pids_to_kill.add(parts[-1])
+            for pid in pids_to_kill:
+                try:
+                    subprocess.run(
+                        ["taskkill.exe", "/F", "/PID", pid],
+                        capture_output=True, timeout=10,
+                    )
+                except Exception:
+                    pass
+            if pids_to_kill:
+                time.sleep(2)
+        except Exception:
+            pass
 
     # Verify port 9222 is actually free
-    import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(("127.0.0.1", 9222))

@@ -11,9 +11,31 @@ param(
     [int]$Port = 9222
 )
 
-# Find existing Chrome
-Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Seconds 5
+# Only kill the Chrome process holding the CDP port (if any) — do not nuke all Chrome instances.
+$portInUse = $false
+try {
+    $tcpTest = New-Object System.Net.Sockets.TcpClient
+    $tcpTest.Connect("127.0.0.1", $Port)
+    $tcpTest.Close()
+    $portInUse = $true
+} catch {
+    $portInUse = $false
+}
+
+if ($portInUse) {
+    try {
+        $netstatOutput = netstat.exe -ano -p TCP
+        foreach ($line in $netstatOutput) {
+            if ($line -match ":$Port\s.*LISTENING\s+(\d+)$") {
+                $holdingPid = $matches[1]
+                try {
+                    Stop-Process -Id $holdingPid -Force -ErrorAction SilentlyContinue
+                } catch {}
+            }
+        }
+        Start-Sleep -Seconds 2
+    } catch {}
+}
 
 # Resolve Chrome path from candidates
 $ChromePath = ""
