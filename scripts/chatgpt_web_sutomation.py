@@ -306,10 +306,12 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
         if m:
             fmt = m.group("fmt").upper()
             slug = m.group("slug").lower()
+            # Prefer the canonical slug from persona_seeds.json (so a typo in
+            # the prompt filename is corrected to the canonical persona name).
+            # Fall back to the raw slug from the filename if the lookup fails,
+            # so the generated image filename still matches the prompt stem.
             pn = persona_number_from_slug(slug)
-            if pn is None:
-                continue
-            persona = persona_slug(pn)
+            persona = persona_slug(pn) if pn is not None else slug
             lang = m.group("lang").upper() if "lang" in m.groupdict() and m.group("lang") else "XX"
             variant = m.group("variant").upper() if "variant" in m.groupdict() and m.group("variant") else ""
             angle = m.group("angle") if "angle" in m.groupdict() and m.group("angle") else (m.group("angle2") if "angle2" in m.groupdict() and m.group("angle2") else "")
