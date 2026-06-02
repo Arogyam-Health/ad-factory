@@ -238,7 +238,13 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
         m = re.search(pat, stem, flags=re.IGNORECASE)
         if m:
             fmt = m.group("fmt").upper()
-            persona = f"P{int(m.group('num')):02d}"
+            # New slug-based patterns carry the persona NAME (e.g. ``always_hungry``);
+            # legacy P<NN> patterns carry the persona NUMBER. Preserve both forms
+            # so downstream code can use the slug in image filenames.
+            if "slug" in m.groupdict() and m.group("slug"):
+                persona = m.group("slug").lower()
+            else:
+                persona = f"P{int(m.group('num')):02d}"
             lang = m.group("lang").upper() if "lang" in m.groupdict() and m.group("lang") else "XX"
             variant = m.group("variant").upper() if "variant" in m.groupdict() and m.group("variant") else ""
             angle = m.group("angle") if "angle" in m.groupdict() and m.group("angle") else (m.group("angle2") if "angle2" in m.groupdict() and m.group("angle2") else "")
@@ -271,11 +277,12 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool,
         if concept_angle and concept_angle not in key:
             key += f"_{concept_angle}"
         # Reuse the prompt's stem verbatim so the generated image matches the
-        # prompt file 1:1 (only the extension changes). E.g. BA_P01_EN_pain_point.
+        # prompt file 1:1 (only the extension changes). E.g. BA_always_hungry_EN_pain_point
+        # for the new slug format, or BA_P01_EN_pain_point for the legacy format.
         # Append the aspect ratio folder name so 4:5 and 9:16 images have distinct
         # filenames (e.g. ..._pain_point_4_5.png vs ..._pain_point_9_16.png).
         if concept_angle:
-            safe_stem = f"{fmt}_P{int(persona[1:]):02d}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
+            safe_stem = f"{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
         else:
             safe_stem = f"gemini-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}_{aspect_folder}"
         raw_jobs.append(
