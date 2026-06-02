@@ -114,8 +114,14 @@ def persona_number_from_slug(slug: str) -> int | None:
 def copy_to_windows_temp(image_paths: list[Path]) -> list[str]:
     """Copy images from WSL filesystem to Windows-accessible temp dir."""
     import shutil
-    win_temp = Path("/mnt/c/Users/jadam/.ad-factory-upload-temp")
-    win_temp.mkdir(parents=True, exist_ok=True)
+    wsl_user = os.getenv("USER") or os.getenv("USERNAME") or "jadam"
+    win_temp = Path(f"/mnt/c/Users/{wsl_user}/.ad-factory-upload-temp")
+    try:
+        win_temp.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        # Fall back to system temp (still accessible to Windows Chrome via WSL)
+        win_temp = Path(os.path.expanduser("~/.ad-factory-upload-temp"))
+        win_temp.mkdir(parents=True, exist_ok=True)
     windows_paths = []
     for p in image_paths:
         dest = win_temp / p.name
