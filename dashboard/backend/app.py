@@ -3515,6 +3515,25 @@ def parse_prompt_creative_index(prompt_path: str) -> int:
     return int(match.group(1)) if match else 1
 
 
+def _extract_persona_slug_from_prompt_filename(prompt_path: str) -> str:
+    """Extract the persona slug from a prompt filename (e.g. 'always_hungry' from
+    'BA_always_hungry_EN_pain_point.txt'). Returns '' if no slug is found.
+    For legacy 'BA_P03_EN_pain_point.txt' prompts, returns '' (caller should
+    fall back to P<NN>)."""
+    if not prompt_path:
+        return ""
+    name = Path(prompt_path).name
+    patterns = [
+        r"^(?:OUTPUT_|FINAL_)?[A-Z]+_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?:EN|HI|HINGLISH)_",
+        r"^(?:OUTPUT_|FINAL_)?[A-Z]+_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?:EN|HI|HINGLISH)(?:\.txt|$)",
+    ]
+    for pat in patterns:
+        m = re.match(pat, name, re.IGNORECASE)
+        if m:
+            return m.group("slug").lower()
+    return ""
+
+
 def _parse_generated_image_name(image_rel_path: str) -> dict[str, Any]:
     """Parse a generated image filename. Returns dict with format, persona_number,
     language, concept_angle, image_index, aspect; missing keys mean the stem is unparseable.
@@ -6940,8 +6959,10 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
     """Extract format, persona, language, concept_angle from an image's companion
     JSON metadata and build a human-readable stem for download naming.
 
-    Stem format mirrors the canonical prompt filename:
-        <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].<ext>
+    Stem format mirrors the canonical prompt filename (using the persona slug,
+    e.g. ``HERO_stress_snacker_EN_pain_point`` for the new naming format, or
+    ``HERO_P03_EN_pain_point`` for the legacy format when no slug is available):
+        <FMT>_<persona>_<LANG>_<angle>[_A<NN>]_<aspect>.<ext>
     """
     full_path = ROOT / image_path_str
     meta_path = full_path.with_suffix(".json")
@@ -6957,24 +6978,36 @@ def _parse_image_naming(image_path_str: str, run_dir: Path | None) -> dict[str, 
         except Exception:
             meta = {}
         fmt_value = str(meta.get("format") or meta.get("format_id") or "").strip().upper()
-        persona_value = str(meta.get("persona") or meta.get("persona_id") or "").strip().upper()
+        persona_value = str(meta.get("persona") or meta.get("persona_id") or "").strip()
         lang_value = str(meta.get("language") or meta.get("lang") or meta.get("lang_id") or "").strip().upper()
         angle_value = str(meta.get("concept_angle") or "").strip()
         if fmt_value:
             base["format"] = fmt_value
-        persona_match = re.search(r"P?(\d+)", persona_value)
-        if persona_match:
-            base["persona"] = f"P{int(persona_match.group(1)):02d}"
+        if persona_value:
+            # Prefer the persona slug (new format, e.g. "stress_snacker" or
+            # "Always Hungry"). Fall back to P<NN> only if the metadata only
+            # carries the legacy numeric form.
+            if re.fullmatch(r"P\d+", persona_value, flags=re.IGNORECASE):
+                base["persona"] = persona_value.upper()
+            else:
+                base["persona"] = persona_value.lower()
         if lang_value:
             base["lang"] = lang_value
         if angle_value:
             base["concept_angle"] = angle_value
         prompt_file = str(meta.get("prompt_file_relative") or meta.get("prompt_file") or "").strip().replace("\\", "/")
+        prompt_slug = _extract_persona_slug_from_prompt_filename(prompt_file)
+        if prompt_slug:
+            base["persona"] = prompt_slug
         parsed = parse_prompt_filename_full(prompt_file)
         if parsed:
             fmt, lang, persona_num, angle, _variant = parsed
             base["format"] = fmt
-            base["persona"] = f"P{persona_num:02d}" if persona_num else "P00"
+            # Only override persona with P<NN> if we don't already have a slug
+            # from the prompt filename (slug is the canonical, human-readable
+            # form; P<NN> is a legacy fallback).
+            if not prompt_slug:
+                base["persona"] = f"P{persona_num:02d}" if persona_num else "P00"
             base["lang"] = lang
             if angle:
                 base["concept_angle"] = angle
