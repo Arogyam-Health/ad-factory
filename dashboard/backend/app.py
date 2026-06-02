@@ -1376,14 +1376,23 @@ def collect_45_reference_jobs_for_batch(batch: str) -> list[dict[str, Any]]:
         fmt, lang, persona_num = parsed
         if persona_num is None:
             continue
-        base_name = f"p{persona_num:02d}"
+        # New filename format uses the persona slug (e.g. "always_hungry"), not "p01".
+        # Match on the slug OR the legacy p{NN} pattern for older batches.
+        slug = persona_slug(persona_num)
+        patterns = [f"*{slug}*", f"*p{persona_num:02d}*"]
         for img_root in generated_image_roots():
             ref_dir = img_root / batch / "4_5"
             if not ref_dir.exists():
                 continue
             for ext in ("png", "jpg", "jpeg", "webp"):
-                for f in sorted(ref_dir.glob(f"**/*{base_name}*.{ext}")):
-                    found_rel = str(f.relative_to(ROOT)).replace("\\", "/")
+                seen_in_pattern: set[str] = set()
+                for pattern in patterns:
+                    for f in sorted(ref_dir.glob(f"**/{pattern}.{ext}")):
+                        rel = str(f.relative_to(ROOT)).replace("\\", "/")
+                        if rel in seen_in_pattern or rel in seen_refs:
+                            continue
+                        seen_in_pattern.add(rel)
+                    found_rel = rel
                     if found_rel in seen_refs:
                         continue
                     image_abs = (ROOT / found_rel).resolve()
@@ -5515,7 +5524,6 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
             fmt, lang, persona_num = parsed
 
             # Look for 4:5 image by matching format+persona
-            base_name = f"p{persona_num:02d}"
             image_sources: list[str] = []
             persona_slug_str = persona_slug(persona_num) if isinstance(persona_num, int) else ""
             for pf45, imgs in prompt_to_images.items():
@@ -5526,15 +5534,22 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
 
             # Fallback: search image roots directly for the 4:5 image
             if not image_sources:
+                slug = persona_slug(persona_num) if isinstance(persona_num, int) else ""
+                patterns = [f"*{slug}*", f"*p{persona_num:02d}*"] if slug else [f"*p{persona_num:02d}*"]
                 for img_root in generated_image_roots():
                     ref_dir = img_root / batch / "4_5"
                     if not ref_dir.exists():
                         continue
                     for ext in ("png", "jpg", "jpeg", "webp"):
-                        for f in sorted(ref_dir.glob(f"**/*{base_name}*.{ext}")):
-                            rel = str(f.relative_to(ROOT))
-                            if rel not in image_sources:
-                                image_sources.append(rel)
+                        seen_in_pattern: set[str] = set()
+                        for pattern in patterns:
+                            for f in sorted(ref_dir.glob(f"**/{pattern}.{ext}")):
+                                rel = str(f.relative_to(ROOT))
+                                if rel in seen_in_pattern:
+                                    continue
+                                seen_in_pattern.add(rel)
+                                if rel not in image_sources:
+                                    image_sources.append(rel)
                         if image_sources:
                             break
                     if image_sources:
@@ -5580,17 +5595,26 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
 
         # Fallback: search image roots directly
         if not image_sources:
-            base_name = f"p{persona_num:02d}"
+            slug = persona_slug(persona_num) if isinstance(persona_num, int) else ""
+            patterns = [f"*{slug}*", f"*p{persona_num:02d}*"] if slug else [f"*p{persona_num:02d}*"]
             for img_root in generated_image_roots():
                 ref_dir = img_root / batch / "4_5"
                 if not ref_dir.exists():
                     continue
                 for ext in ("png", "jpg", "jpeg", "webp"):
-                    for f in sorted(ref_dir.glob(f"**/*{base_name}*.{ext}")):
-                        rel = str(f.relative_to(ROOT))
-                        if rel not in image_sources:
-                            image_sources.append(rel)
-                        break
+                    seen_in_pattern: set[str] = set()
+                    found_one = False
+                    for pattern in patterns:
+                        for f in sorted(ref_dir.glob(f"**/{pattern}.{ext}")):
+                            rel = str(f.relative_to(ROOT))
+                            if rel in seen_in_pattern:
+                                continue
+                            seen_in_pattern.add(rel)
+                            if rel not in image_sources:
+                                image_sources.append(rel)
+                            found_one = True
+                        if found_one:
+                            break
                     if image_sources:
                         break
                 if image_sources:
