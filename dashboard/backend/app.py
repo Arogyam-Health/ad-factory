@@ -278,6 +278,48 @@ def parse_persona_library() -> list[dict[str, Any]]:
     return [{"number": int(e["persona_number"]), "name": str(e["persona_name"])} for e in data]
 
 
+def _persona_name_to_slug(name: str) -> str:
+    """Convert a persona name to a filename-safe slug.
+
+    Examples:
+        "Always Hungry" -> "always_hungry"
+        "35+ Slow Progress Dieter" -> "35_slow_progress_dieter"
+        "Ayurveda-First Buyer" -> "ayurveda_first_buyer"
+    """
+    s = name.strip().lower()
+    s = re.sub(r"[+\-]+", " ", s)
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
+
+
+_PERSONA_SLUG_TO_NUMBER: dict[str, int] = {}
+
+
+def _build_persona_slug_index() -> dict[str, int]:
+    global _PERSONA_SLUG_TO_NUMBER
+    if _PERSONA_SLUG_TO_NUMBER:
+        return _PERSONA_SLUG_TO_NUMBER
+    for entry in parse_persona_library():
+        slug = _persona_name_to_slug(entry["name"])
+        _PERSONA_SLUG_TO_NUMBER[slug] = int(entry["number"])
+    return _PERSONA_SLUG_TO_NUMBER
+
+
+def persona_slug(persona_number: int) -> str:
+    """Return the slug for a persona number. Falls back to P{NN:02d} if unknown."""
+    for entry in parse_persona_library():
+        if int(entry["number"]) == int(persona_number):
+            return _persona_name_to_slug(entry["name"])
+    return f"P{int(persona_number):02d}"
+
+
+def persona_number_from_slug(slug: str) -> int | None:
+    """Return the persona number for a slug. Returns None if unknown."""
+    index = _build_persona_slug_index()
+    return index.get(slug)
+
+
 def _load_persona_seeds() -> dict[int, dict[str, str]]:
     path = PERSONA_SEEDS_PATH
     if not path.exists():
@@ -1187,9 +1229,10 @@ def build_916_conversion_prompt_job(fmt: str, persona_num: int, lang: str, index
     fmt_clean = (fmt or "HERO").strip().upper() or "HERO"
     lang_clean = (lang or "EN").strip().upper() or "EN"
     persona_safe = max(0, int(persona_num or 0))
+    persona_part = persona_slug(persona_safe) if persona_safe > 0 else f"persona_{int(index):02d}"
     if persona_safe > 0:
-        return f"{fmt_clean}_P{persona_safe:02d}_{lang_clean}_A{max(1, int(index)):02d}.txt"
-    return f"{fmt_clean}_P{index:02d}_{lang_clean}.txt"
+        return f"{fmt_clean}_{persona_part}_{lang_clean}_A{max(1, int(index)):02d}.txt"
+    return f"{fmt_clean}_{persona_part}_{lang_clean}.txt"
 
 
 def collect_45_reference_jobs_for_batch(batch: str) -> list[dict[str, Any]]:
@@ -3262,25 +3305,24 @@ def parse_background_lock_from_prompt(prompt_text: str) -> tuple[str, int] | Non
 def parse_prompt_filename(prompt_path: str) -> tuple[str, str, int | None] | None:
     """Parse a prompt file name. Returns (format, lang, persona_number) or None.
 
-    Accepted canonical form:  <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt
-                              e.g. BA_P01_EN_pain_point.txt,
-                                   HERO_P03_HI_desired_outcome_A01.txt
-    Also accepts legacy forms for backward compatibility with existing files:
-      - <FMT>_P<NN>_<LANG>[_A<NN>].txt   (no angle, with or without variant)
-      - <FMT>_P<NN>_<LANG>_<angle>.txt  (no variant)
-      - <FMT>_P<NN>_<LANG>.txt          (no angle, no variant)
-    Also strips legacy ``OUTPUT_`` / ``FINAL_`` prefixes.
+    Accepted canonical form:  <FMT>_<persona_slug>_<LANG>_<angle>[_A<NN>].txt
+                              e.g. BA_always_hungry_EN_pain_point.txt,
+                                   HERO_stress_snacker_HI_desired_outcome_A01.txt
+    The persona_slug is looked up in persona_seeds.json to recover the persona_number.
+    Also accepts forms without the concept_angle and/or variant.
     """
     name = Path(prompt_path).name
     patterns = [
-        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)_([a-z][a-z_]*?)(?:_(?:A|V)\d+)?\.txt$",
-        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)(?:_(?:A|V)\d+)?\.txt$",
-        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_P(\d+)_(EN|HI|HINGLISH)\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_(EN|HI|HINGLISH)_([a-z][a-z_]*?)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_(EN|HI|HINGLISH)(?:_(?:A|V)\d+)?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_(EN|HI|HINGLISH)\.txt$",
     ]
     for pat in patterns:
         m = re.match(pat, name, re.IGNORECASE)
         if m:
-            return (m.group(1).upper(), m.group(3).upper(), int(m.group(2)))
+            slug = m.group(2).lower()
+            pn = persona_number_from_slug(slug)
+            return (m.group(1).upper(), m.group(3).upper(), pn)
     return None
 
 
@@ -3288,23 +3330,26 @@ def parse_prompt_filename_full(prompt_path: str) -> tuple[str, str, int, str, st
     """Like ``parse_prompt_filename`` but also extracts the concept_angle and variant.
 
     Returns ``(format, lang, persona_number, concept_angle, variant)`` or ``None``.
-    ``concept_angle`` defaults to ``""`` if the filename has no angle component
-    (legacy form). ``variant`` is the ``A01``/``V01`` string, or ``""`` if absent.
+    ``concept_angle`` defaults to ``""`` if the filename has no angle component.
+    ``variant`` is the ``A01``/``V01`` string, or ``""`` if absent.
+    The persona_number is recovered from the persona slug via persona_seeds.json.
     """
     name = Path(prompt_path).name
     patterns = [
-        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_P(?P<num>\d+)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
-        # angle + variant (angle present, but regex below catches both)
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_P(?P<num>\d+)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+        # canonical: <FMT>_<slug>_<LANG>_<angle>[_A<NN>].txt
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>A\d+|V\d+))?\.txt$",
     ]
     for pat in patterns:
         m = re.match(pat, name, re.IGNORECASE)
         if m:
+            pn = persona_number_from_slug(m.group("slug").lower())
+            if pn is None:
+                return None
             return (
                 m.group("fmt").upper(),
                 m.group("lang").upper(),
-                int(m.group("num")),
+                pn,
                 m.groupdict().get("angle", "") or "",
                 m.groupdict().get("variant", "") or "",
             )
@@ -3320,27 +3365,28 @@ def _parse_generated_image_name(image_rel_path: str) -> dict[str, Any]:
     """Parse a generated image filename. Returns dict with format, persona_number,
     language, concept_angle, image_index; missing keys mean the stem is unparseable.
 
-    Canonical form: ``<FMT>_P<NN>_<LANG>_<angle>[_A<NN>].<ext>``
-                    e.g. BA_P01_EN_pain_point.png,
-                         HERO_P03_HI_desired_outcome_A01.jpg
-    Also accepts legacy ``gemini-``/``chatgpt-`` prefixed stems for older runs.
+    Canonical form: ``<FMT>_<persona_slug>_<LANG>_<angle>[_A<NN>].<ext>``
+                    e.g. BA_always_hungry_EN_pain_point.png,
+                         HERO_stress_snacker_HI_desired_outcome_A01.jpg
+    The persona_number is recovered from the persona slug via persona_seeds.json.
     """
     stem = Path(image_rel_path).stem
     patterns = [
-        # legacy tool-prefixed: gemini-hero-p01-en[-a01][-<angle>]
-        r"^(?:gemini|chatgpt)-(?P<fmt>[a-z0-9]+)-p(?P<persona>\d+)-(?P<lang>[a-z0-9]+)(?:-a(?P<image_index>\d+))?(?:-(?P<angle>[a-z_]+))?$",
-        # canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>]
-        r"^(?P<fmt>[A-Z]+)_P(?P<persona>\d+)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_A(?P<image_index>\d+))?$",
-        # angle-less legacy: <FMT>_P<NN>_<LANG>[_A<NN>]
-        r"^(?P<fmt>[A-Z]+)_P(?P<persona>\d+)_(?P<lang>EN|HI|HINGLISH)(?:_A(?P<image_index>\d+))?$",
+        # canonical: <FMT>_<slug>_<LANG>_<angle>[_A<NN>]
+        r"^(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_A(?P<image_index>\d+))?$",
+        # angle-less: <FMT>_<slug>_<LANG>[_A<NN>]
+        r"^(?P<fmt>[A-Z]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>EN|HI|HINGLISH)(?:_A(?P<image_index>\d+))?$",
     ]
     for pat in patterns:
         m = re.search(pat, stem, flags=re.IGNORECASE)
         if not m:
             continue
+        pn = persona_number_from_slug(m.group("slug").lower())
+        if pn is None:
+            continue
         return {
             "format": m.group("fmt").upper(),
-            "persona_number": int(m.group("persona")),
+            "persona_number": int(pn),
             "language": m.group("lang").upper(),
             "concept_angle": m.groupdict().get("angle", "") or "",
             "image_index": int(m.group("image_index")) if m.groupdict().get("image_index") else None,
@@ -5334,8 +5380,10 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
             # Look for 4:5 image by matching format+persona
             base_name = f"p{persona_num:02d}"
             image_sources: list[str] = []
+            persona_slug_str = persona_slug(persona_num) if isinstance(persona_num, int) else ""
             for pf45, imgs in prompt_to_images.items():
-                if f"{fmt}_P{persona_num:02d}" in str(pf45).upper():
+                pf_upper = str(pf45).upper()
+                if (f"{fmt}_P{persona_num:02d}" in pf_upper) or (persona_slug_str and persona_slug_str.upper() in pf_upper):
                     image_sources = list(imgs)
                     break
 
@@ -5384,7 +5432,8 @@ def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> 
         fmt, lang, persona_num = parsed
 
         # 9:16 prompt expected at output/{batch}/96/
-        prompt_96_pattern = f"output/{batch}/96/{fmt}_P{persona_num:02d}_{lang}*.txt"
+        persona_slug_str = persona_slug(persona_num) if isinstance(persona_num, int) else ""
+        prompt_96_pattern = f"output/{batch}/96/{fmt}_{persona_slug_str}_{lang}*.txt"
         prompt_96_matches = sorted(ROOT.glob(prompt_96_pattern))
         if not prompt_96_matches:
             continue
@@ -6525,9 +6574,10 @@ def api_regenerate_queued_images(run_id: str, payload: dict[str, Any] = Body(...
             raise HTTPException(status_code=500, detail=f"9:16 regeneration failed: {exc}")
 
         for job in jobs_916:
-            prompt_path = str(ROOT / "output" / batch / "45" / f"{job['format']}_P{job['persona_number']:02d}_{job['language']}.txt")
+            job_persona_slug = persona_slug(int(job["persona_number"])) if job.get("persona_number") is not None else ""
+            prompt_path = str(ROOT / "output" / batch / "45" / f"{job['format']}_{job_persona_slug}_{job['language']}.txt")
             # Try to find exact prompt path
-            pname = f"{job['format']}_P{job['persona_number']:02d}_{job['language']}"
+            pname = f"{job['format']}_{job_persona_slug}_{job['language']}"
             candidates = [pf for pf in prompt_files_list if pname in Path(pf).name]
             if candidates:
                 prompt_path = candidates[0]

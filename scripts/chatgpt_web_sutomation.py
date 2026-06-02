@@ -64,6 +64,53 @@ def wsl_to_windows_path(path: str) -> str:
     return path
 
 
+_PERSONA_SEEDS_CACHE: dict[int, str] | None = None
+
+
+def _load_persona_slug_map() -> dict[int, str]:
+    global _PERSONA_SEEDS_CACHE
+    if _PERSONA_SEEDS_CACHE is not None:
+        return _PERSONA_SEEDS_CACHE
+    seeds_path = Path(__file__).resolve().parent.parent / "persona_seeds.json"
+    result: dict[int, str] = {}
+    if seeds_path.exists():
+        try:
+            data = json.loads(seeds_path.read_text(encoding="utf-8"))
+            for entry in data:
+                pn = int(entry.get("persona_number", 0))
+                name = str(entry.get("persona_name", "")).strip()
+                if pn < 1 or not name:
+                    continue
+                result[pn] = persona_name_to_slug(name)
+        except Exception:
+            pass
+    _PERSONA_SEEDS_CACHE = result
+    return result
+
+
+def persona_name_to_slug(name: str) -> str:
+    s = name.strip().lower()
+    s = re.sub(r"[+\-]+", " ", s)
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
+
+
+def persona_slug(persona_number: int) -> str:
+    mapping = _load_persona_slug_map()
+    if persona_number in mapping:
+        return mapping[persona_number]
+    return f"P{int(persona_number):02d}"
+
+
+def persona_number_from_slug(slug: str) -> int | None:
+    mapping = _load_persona_slug_map()
+    for pn, s in mapping.items():
+        if s == slug:
+            return pn
+    return None
+
+
 def copy_to_windows_temp(image_paths: list[Path]) -> list[str]:
     """Copy images from WSL filesystem to Windows-accessible temp dir."""
     import shutil
@@ -222,21 +269,26 @@ def _format_sort_key(fmt: str) -> tuple[int, str]:
 def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
     """Parse a prompt file name. Returns ``(fmt, persona, lang, variant, concept_angle)``.
 
-    Canonical form:  ``<FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt``
-    Legacy forms also accepted (with ``OUTPUT_``/``FINAL_`` prefix and/or missing
-    angle component) for backward compatibility with older files.
+    Canonical form:  ``<FMT>_<persona_slug>_<LANG>_<angle>[_A<NN>].txt``
+    e.g. ``BA_always_hungry_EN_pain_point.txt``,
+         ``HERO_stress_snacker_HI_desired_outcome_A01.txt``
+    The persona slug is looked up in persona_seeds.json to recover the persona number.
     """
     stem = path.stem
     patterns = [
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
-        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_P(?P<num>\d+)_(?P<lang>[A-Za-z0-9]+)$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>[A-Za-z0-9]+)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>[A-Za-z0-9]+)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
+        r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z][a-z0-9_]*)_(?P<lang>[A-Za-z0-9]+)$",
     ]
     for pat in patterns:
         m = re.search(pat, stem, flags=re.IGNORECASE)
         if m:
             fmt = m.group("fmt").upper()
-            persona = f"P{int(m.group('num')):02d}"
+            slug = m.group("slug").lower()
+            pn = persona_number_from_slug(slug)
+            if pn is None:
+                continue
+            persona = persona_slug(pn)
             lang = m.group("lang").upper() if "lang" in m.groupdict() and m.group("lang") else "XX"
             variant = m.group("variant").upper() if "variant" in m.groupdict() and m.group("variant") else ""
             angle = m.group("angle") if "angle" in m.groupdict() and m.group("angle") else (m.group("angle2") if "angle2" in m.groupdict() and m.group("angle2") else "")
@@ -266,9 +318,9 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool)
             key += f"_{concept_angle}"
 
         # Reuse the prompt's stem verbatim so the generated image matches the
-        # prompt file 1:1 (only the extension changes). E.g. BA_P01_EN_pain_point.
+        # prompt file 1:1 (only the extension changes). E.g. BA_always_hungry_EN_pain_point.
         if concept_angle:
-            safe_stem = f"{fmt}_P{int(persona[1:]):02d}_{lang}_{concept_angle}{variant_suffix}"
+            safe_stem = f"{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}"
         else:
             safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}"
 
