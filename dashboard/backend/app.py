@@ -1313,7 +1313,18 @@ def ensure_916_conversion_template() -> Path:
     return CONVERT_916_TEMPLATE_PATH
 
 
-def build_916_conversion_prompt_job(fmt: str, persona_num: int, lang: str, index: int) -> str:
+def build_916_conversion_prompt_job(fmt: str, persona_num: int, lang: str, index: int, source_stem: str = "") -> str:
+    """Build the prompt filename for a 9:16 conversion job.
+
+    If ``source_stem`` is given (the stem of the source 4:5 image, e.g.
+    ``BA_always_hungry_EN_pain_point``), the 9:16 prompt reuses it so the
+    generated 9:16 image lands in ``9_16/`` with the same stem as its 4:5
+    source. Otherwise falls back to a synthesized name with an index suffix.
+    """
+    if source_stem:
+        clean = source_stem.strip()
+        if clean:
+            return f"{clean}.txt"
     fmt_clean = (fmt or "HERO").strip().upper() or "HERO"
     lang_clean = (lang or "EN").strip().upper() or "EN"
     persona_safe = max(0, int(persona_num or 0))
@@ -5655,7 +5666,17 @@ def run_916_conversion_from_45_for_batch(
     prompt_files_used: list[str] = []
 
     for index, job in enumerate(resolved_jobs, start=1):
-        prompt_name = build_916_conversion_prompt_job(job["format"], int(job["persona_number"]), job["language"], index)
+        source_stem = ""
+        image_path = job.get("image_abs") or job.get("image_rel") or ""
+        if image_path:
+            source_stem = Path(str(image_path)).stem
+        prompt_name = build_916_conversion_prompt_job(
+            job["format"],
+            int(job["persona_number"]),
+            job["language"],
+            index,
+            source_stem=source_stem,
+        )
         prompt_path = prompt_root / prompt_name
         prompt_path.write_text(template_text + "\n", encoding="utf-8")
 
