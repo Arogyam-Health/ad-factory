@@ -647,8 +647,24 @@ def aspect_ratio_folder(aspect_ratio: str) -> str:
     return "96" if aspect_ratio == "9:16" else "45"
 
 
-def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str, creative_index: int = 1, creative_total: int = 1) -> str:
-    """Canonical prompt filename: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt.
+def persona_name_to_slug(name: str, persona_number_fallback: int = 0) -> str:
+    """Convert a persona name to a filename-safe slug.
+
+    Examples:
+        "Always Hungry" -> "always_hungry"
+        "35+ Slow Progress Dieter" -> "35_slow_progress_dieter"
+        "Ayurveda-First Buyer" -> "ayurveda_first_buyer"
+    """
+    import re
+    s = (name or "").strip().lower()
+    s = re.sub(r"[+\-]+", " ", s)
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or f"P{persona_number_fallback:02d}"
+
+
+def prompt_filename(fmt: str, persona_number: int, persona_name: str, lang: str, concept_angle: str, creative_index: int = 1, creative_total: int = 1) -> str:
+    """Canonical prompt filename: <FMT>_<persona_slug>_<LANG>_<angle>[_A<NN>].txt.
 
     The concept_angle is REQUIRED and is the dedup key for the on-image copy.
     The optional _A<NN> suffix is for multiplier runs (same fmt+persona+lang
@@ -657,8 +673,9 @@ def prompt_filename(fmt: str, persona_number: int, lang: str, concept_angle: str
     """
     if not concept_angle:
         raise ValueError("concept_angle is required for prompt_filename()")
+    slug = persona_name_to_slug(persona_name, persona_number)
     variant_suffix = f"_A{creative_index:02d}" if creative_total > 1 else ""
-    return f"{fmt}_P{persona_number:02d}_{lang}_{concept_angle}{variant_suffix}.txt"
+    return f"{fmt}_{slug}_{lang}_{concept_angle}{variant_suffix}.txt"
 
 
 def classify_hook_structure(headline: str) -> str:
@@ -902,7 +919,8 @@ def main() -> int:
         for stale_lang in ["EN", "HI", "HINGLISH"]:
             if stale_lang in render_langs:
                 continue
-            for stale_path in ratio_dir.glob(f"{fmt}_P{persona_number:02d}_{stale_lang}*.txt"):
+            slug = persona_name_to_slug(persona.get("name", ""), persona_number)
+            for stale_path in ratio_dir.glob(f"{fmt}_{slug}_{stale_lang}*.txt"):
                 stale_path.unlink()
 
         background_group_key = str(ad.get("background_group_key") or "").strip()
@@ -965,7 +983,7 @@ def main() -> int:
                 visual_archetype,
                 visual_lock=visual_lock,
             )
-            out_path = ratio_dir / prompt_filename(fmt, persona_number, lang, concept.get("concept_angle", ""), creative_index, creative_total)
+            out_path = ratio_dir / prompt_filename(fmt, persona_number, persona.get("name", ""), lang, concept.get("concept_angle", ""), creative_index, creative_total)
             validate_prompt_text(out_text, out_path)
             out_path.write_text(out_text, encoding="utf-8")
             prompt_meta = {

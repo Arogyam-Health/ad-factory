@@ -1392,22 +1392,19 @@ def collect_45_reference_jobs_for_batch(batch: str) -> list[dict[str, Any]]:
                         if rel in seen_in_pattern or rel in seen_refs:
                             continue
                         seen_in_pattern.add(rel)
-                    found_rel = rel
-                    if found_rel in seen_refs:
-                        continue
-                    image_abs = (ROOT / found_rel).resolve()
-                    if not image_abs.exists() or not image_abs.is_file():
-                        continue
-                    seen_refs.add(found_rel)
-                    jobs.append(
-                        {
-                            "format": fmt.upper(),
-                            "persona_number": int(persona_num),
-                            "language": lang.upper(),
-                            "image_rel": found_rel,
-                            "image_abs": str(image_abs),
-                        }
-                    )
+                        image_abs = (ROOT / rel).resolve()
+                        if not image_abs.exists() or not image_abs.is_file():
+                            continue
+                        seen_refs.add(rel)
+                        jobs.append(
+                            {
+                                "format": fmt.upper(),
+                                "persona_number": int(persona_num),
+                                "language": lang.upper(),
+                                "image_rel": rel,
+                                "image_abs": str(image_abs),
+                            }
+                        )
 
     return jobs
 
@@ -3019,7 +3016,12 @@ def scan_prompt_files_for_batch(batch_name: str) -> list[str]:
     prompt_files: list[str] = []
     if not output_dir.exists():
         return prompt_files
-    for file in sorted(output_dir.glob("**/[A-Z]*_P*.txt")):
+    # Match both the new slug format (<FMT>_<slug>_<LANG>_<angle>.txt)
+    # and the legacy P{NN} format (<FMT>_P<NN>_<LANG>[_<angle>].txt).
+    for file in sorted(output_dir.glob("**/*.txt")):
+        name = file.name
+        if not re.match(r"^(?:OUTPUT_|FINAL_)?[A-Z]+_", name):
+            continue
         prompt_files.append(str(file.relative_to(ROOT)))
     return prompt_files
 
@@ -6582,15 +6584,33 @@ def _find_prompt_by_name(prompt_name: str, prompt_files: list[str]) -> str:
 
 def _build_output_stem_from_prompt(prompt_path: str, engine: str) -> str:
     name = Path(prompt_path).stem
-    match = re.match(r"^([A-Za-z0-9]+)_P(\d+)_([A-Za-z0-9]+)(?:_([AV]\d+))?(?:_[a-z_]+)?$", name, flags=re.IGNORECASE)
-    if not match:
-        return ""
-    fmt = match.group(1).lower()
-    persona = f"p{int(match.group(2)):02d}"
-    lang = match.group(3).lower()
-    variant = match.group(4).lower() if match.group(4) else ""
-    variant_suffix = f"-{variant}" if variant else ""
-    return f"{engine}-{fmt}-{persona}-{lang}{variant_suffix}"
+    # New format: <FMT>_<slug>_<LANG>[_<angle>][_A01]
+    new_match = re.match(
+        r"^(?:OUTPUT_|FINAL_)?([A-Z]+)_([a-z][a-z0-9_]*)_([A-Z]+)(?:_([a-z_]+))?(?:_([AV]\d+))?$",
+        name,
+        flags=re.IGNORECASE,
+    )
+    if new_match:
+        fmt = new_match.group(1).lower()
+        slug = new_match.group(2).lower()
+        lang = new_match.group(3).lower()
+        variant = new_match.group(5).lower() if new_match.group(5) else ""
+        variant_suffix = f"-{variant}" if variant else ""
+        return f"{engine}-{fmt}-{slug}-{lang}{variant_suffix}"
+    # Legacy format: <FMT>_P<NN>_<LANG>[_<angle>][_A01]
+    legacy_match = re.match(
+        r"^(?:OUTPUT_|FINAL_)?([A-Za-z0-9]+)_P(\d+)_([A-Za-z0-9]+)(?:_([AV]\d+))?(?:_[a-z_]+)?$",
+        name,
+        flags=re.IGNORECASE,
+    )
+    if legacy_match:
+        fmt = legacy_match.group(1).lower()
+        persona = f"p{int(legacy_match.group(2)):02d}"
+        lang = legacy_match.group(3).lower()
+        variant = legacy_match.group(4).lower() if legacy_match.group(4) else ""
+        variant_suffix = f"-{variant}" if variant else ""
+        return f"{engine}-{fmt}-{persona}-{lang}{variant_suffix}"
+    return ""
 
 
 def _build_expected_output_path(batch: str, prompt_path: str, aspect_dir: str, engine: str) -> Path | None:
