@@ -1,182 +1,74 @@
-OBESITY KILLER KIT — COMPLETE AD GENERATION PROMPT      
+OBESITY KILLER KIT - GLOBAL PRODUCT RULES
+
+A0. OUTPUT COUNT - ABSOLUTE RULE
+- Generate exactly one final image for each prompt. Do not create two options, variations, comparisons, grids, or ask which one is better.
+- Do not show alternatives. Do not present a choice. Output one finished ad image only.
+
+A1. PRODUCT LOCK - ABSOLUTE RULE
+- Use the provided Obesity Killer product packshot images pixel-for-pixel as visual truth.
+- Do not redraw, recreate, regenerate, relabel, recolor, blur, "fix", or reinterpret any product or packaging.
+- Do not change Hindi or English label text, logos printed on packaging, illustrations, colors, proportions, or label layouts.
+- If any label text is unclear, preserve the uploaded image exactly as-is. Do not guess or rewrite it.
+- Only permitted product-image operations: placement, scaling, subtle drop shadows, and mild warm lighting correction.
+
+A2. EXACT LABEL TEXT
+- Every character on every product must be razor-sharp and faithful to the uploaded references.
+- Kit Box top strip: "Panacea for weight loss and obesity related conditions"
+- Kit Box logo block: "Dr. ARUN TYAGI'S" in red + "OBESITY KILLER KIT" in black
+- Kit Box badge: "ISO 9001:2008 Certified"
+- Dried Amla bottle: "Dried Amla"; keep the amla fruit illustration sharp and unmodified.
+- OK Tablets bottle: "OK TABLETS"
+- OKP bottle: "OKP"; keep the light pattern on label exactly as provided.
+- OK Liquid sachet: "OK LIQUID"; keep the lotus mark above text sharp and unmodified.
+- Never blur, approximate, paraphrase, rewrite, change casing, change spacing, or grammatically alter packaging text.
+
+A3. PRODUCT DIMENSIONS AND COUNT
+- OK Kit Box: cuboid, 20.3 x 10.1 x 14.8 cm.
+- OK Powder Bottle: cylinder, diameter 5 cm, height 10 cm.
+- OK Tablet Bottle: cylinder, diameter 3 cm, height 5 cm.
+- Dried Amla Bottle: cylinder, diameter 3 cm, height 5 cm.
+- OK Liquid Sachet: vertical rectangle, width 10 cm, height 15.3 cm.
+- Every output must contain exactly these five distinct products: Kit Box, Dried Amla bottle, OK Tablets bottle, OKP bottle, and OK Liquid sachet.
+- Size products in correct relative proportion. Kit Box is the largest anchor/backdrop; bottles are notably smaller; sachet is more taller than wider.
+- Never duplicate OKP. Never omit Dried Amla. If two OKP bottles appear, Dried Amla is missing, or only four distinct products appear, reject and regenerate.
+
+A4. COLOR AND LIGHTING
+- Primary palette: #FFFBED, #FEEFD6, #FCDBAC, #F79040, #E66410, #973015, #421808.
+- Avoid neon, random accent colors, harsh gradients, orange edge glows, or decorative vignette frames.
+- Use warm, soft, directional light from top-left.
+- Keep clean highlights on product labels and caps.
+- Use subtle realistic shadows only; avoid harsh shadows, flat lighting, studio flash, or ring-light glow.
+
+A5. TYPOGRAPHY AND COPY
+- Use Poppins only for on-image ad copy.
+- Use maximum two weights: Medium/Regular and Bold. Avoid thin/light weights.
+- Keep copy short, clean, benefit-led, premium, and mobile-readable.
+- Avoid hype, salesy language, unrealistic claims, exclamation spam, and dense copy blocks.
+- Do not use decorative fonts, serif fonts, outlines, glows, or drop shadows on ad copy text.
+
+A6. MASTER FORBIDDEN LIST
+- Do not create AI-stylized versions of the products.
+- Do not use sale badges, burst graphics, stickers, emoji, or visual clutter.
+- Do not show body transformations or weight-loss visuals.
+- Do not use laptop, keyboard, mouse, monitor, or workstation-heavy props unless explicitly requested.
+- Do not add disclaimer copy on-image unless explicitly requested.
+- Do not add any standalone brand logo to the ad. Only logos already printed on the product packaging should appear.
+
+A7. QUALITY CHECK
+- All 5 products are present, correctly proportioned, fully visible, and completely unmodified.
+- Product labels are sharp, accurate, and faithful to the uploaded images.
+- Layout is calm, balanced, premium, and not overcrowded.
+- No forbidden elements are present.
+- If product count, product identity, label accuracy, or requested background fails, silently regenerate until the output passes. Only the final image output is acceptable.
+
+Important !! Dont fuck  PRODUCT DIMENSIONS AND COUNT , the box should not neither too big in height nor too small , in the box , dont put any extra space below the apple.
+Important take a note of these : 
+        For the box:
+            The main product box must be landscape-oriented rectangle, significantly wider than it is tall (roughly 3:1 width-to-height ratio). It should appear as a long flat box standing upright on its back edge, not a cube or square box.
+
+        For the sachet:
+            The OK Liquid sachet on the left must be a tall, narrow foil pouch — portrait orientation with height clearly greater than width (approx 2:1 height-to-width ratio). It should stand upright like a flat rectangular packet, not spread wide.
+
+        For overall proportions:
+            Maintain consistent scale between all products as if photographed together on a flat surface. The OKP bottle on the right is the tallest item. The box behind is wide but lower than the bottle height. The sachet is about 80% the height of the OKP bottle.
 
-      PART A — PRODUCT & BRAND SYSTEM      
-
-      A1. PRODUCT LOCK — ABSOLUTE RULE      
-
-      Use the PROVIDED product packshot images pixel-for-pixel. You are forbidden from:      
-
-
-      Redrawing, recreating, or regenerating any product or its packaging      
-
-      Changing, blurring, approximating, or "fixing" any text (Hindi or English)      
-
-      Altering logos, illustrations, colors, proportions, or label layouts      
-
-      Replacing unclear text with guesses      
-
-      Only permitted operations on product images:      
-
-
-      Placement and scaling      
-
-      Subtle drop shadows      
-
-      Mild lighting correction (warm, soft, directional)      
-
-      If any label text appears unclear — preserve the original image exactly as-is. Do NOT reinterpret it.      
-
-      A2. EXACT LABEL TEXT — RENDER THESE PERFECTLY      
-
-      Every character on every product must be razor-sharp and 100% faithful.      
-
-
-      Kit Box — Top strip: "Panacea for weight loss and obesity related      
-
-     conditions" / Logo block: "Dr. ARUN TYAGI'S" in red + "OBESITY KILLER      
-
-     KIT" in black / Badge: "ISO 9001:2008 Certified"      
-
-      Amla Bottle (red cap, far left) — "Dried Amla" / Retain amla fruit illustration sharp and unmodified      
-
-      OK Tablets Bottle — "OK TABLETS"      
-
-      OKP Bottle — "OKP" / Retain light pattern on label exactly as provided      
-
-      OK Liquid Sachet (green, far right) — "OK LIQUID" / Retain sharp lotus logo above text      
-
-
-      NEVER: blur, approximate, paraphrase, rewrite, change casing, change      
-
-     spacing, or grammatically alter any packaging text under any      
-
-     circumstance.      
-
-      A3. PRODUCT DIMENSIONS — FOR ACCURATE RELATIVE SIZING      
-
-      OK Kit Box — Cuboid — 20.3 x 10.1 x 14.8 cm      
-
-      OK Powder Bottle — Cylinder — Diameter 5 cm, Height 10 cm      
-
-      OK Tablet Bottle — Cylinder — Diameter 3 cm, Height 5 cm      
-
-      Amla Bottle — Cylinder — Diameter 3 cm, Height 5 cm      
-
-      OK Liquid Sachet — Vertical Rectangle — Width 10 cm, Height 15.3 cm      
-
-
-      All 5 products must appear together in every output. Size them in      
-
-     correct proportion to each other based on the dimensions above. The Kit      
-
-     Box is the largest element and acts as the anchor and backdrop. The      
-
-     bottles are notably smaller. The sachet is tall and narrow.      
-
-      A4. COLOR PALETTE — STRICT, NO EXCEPTIONS      
-
-      Background: #FFFBED to #FEEFD6 to #FCDBAC — smooth top-to-bottom gradient only      
-
-      Accents and CTA: #F79040 to #E66410      
-
-      Headlines: #973015      
-
-      Body text and bullets: #421808      
-
-      No colors outside this palette. No neon. No harsh gradients. No random accent colors anywhere.      
-
-      A5. BRAND LOGO PLACEMENT — MANDATORY ON EVERY AD      
-
-      Use the provided standalone brand logo reference image as the logo asset.      
-
-      Place this logo in the top-right corner in every ad output.      
-
-      Logo size: approximately 10% of canvas width (keep aspect ratio intact).      
-
-      Safe margins: 4% from top edge and 4% from right edge.      
-
-      Keep the logo crisp, fully visible, and never cropped.      
-
-      Do not overlap key product labels, headline text, or CTA.      
-
-      Add only a subtle shadow if needed for contrast; no glow, no badge, no frame.      
-
-      Keep spacing around the logo clean so it reads premium and intentional.      
-
-      A7. LIGHTING      
-
-      Warm, soft, directional light — source from top-left      
-
-      Clean highlights on product labels and caps      
-
-      Subtle low-opacity drop shadows beneath products — realistic depth, not dramatic      
-
-      Forbidden: Harsh shadows, flat lighting, studio flash look, ring light glow      
-
-      A8. TYPOGRAPHY — AD COPY      
-
-      Font: Poppins only (clean sans, consistent across the entire creative).      
-
-      Maximum 2 weights: Regular and Bold only (avoid thin/light weights).      
-
-      Headline size: Large and mobile-legible      
-
-      Forbidden: Decorative fonts, serif fonts, outlined text, drop shadows on any ad copy text      
-
-      A9. AD COPY STYLE      
-
-      Keep all copy short, clean, benefit-led, and premium in tone.      
-
-      Example headline: "Your daily ritual for a lighter life."      
-
-      Bullets: Functional benefits only, 3 to 4 maximum      
-
-      CTA: Subtle and clear — example: "Explore the Kit"      
-
-      Avoid: Hype, exclamation spam, body-transformation before/after imagery, unrealistic claims, salesy or cheap language      
-
-      A10. MASTER FORBIDDEN LIST      
-
-      Do not recreate or redraw any product      
-
-      Do not blur, approximate, or rewrite any label text      
-
-      Do not use sale badges, burst graphics, or stickers      
-
-      Do not show body transformations or weight-loss visuals      
-
-      Do not use any color outside the defined palette      
-
-      Do not use more than 2 font weights      
-
-      Do not overcrowd the layout      
-
-      Do not generate AI-stylized versions of the products      
-
-      Do not use harsh gradients or random background colors      
-
-      Do not add emoji, overlays, or visual clutter of any kind      
-
-      Do not place keyboard, laptop, mouse, monitor, or workstation-heavy props in background unless explicitly requested by user      
-
-      No disclaimer copy line on-image unless user explicitly asks for disclaimer mode      
-
-      A11. PART A QUALITY CHECKLIST      
-
-      Verify every point before accepting output:      
-
-      All 5 products present, correctly proportioned, and completely unmodified      
-
-      All label text — Hindi and English — perfectly sharp and faithful to originals      
-
-      Color palette 100% adhered to with zero deviation      
-
-      Layout is calm, balanced, and premium      
-
-      No clutter, no hype, no forbidden elements present      
-
-      Output feels like a high-end D2C health brand — scroll-stopping but not loud      
-
-      If any single item above fails — regenerate immediately without compromise.      
-
-     Use the uploaded Obesity Killer product packshot images as absolute visual truth.      

@@ -1,0 +1,30 @@
+Convert the attached 4:5 ad creative into a 9:16 version for the same campaign.
+
+Critical fidelity rules:
+- Treat the attached 4:5 creative as the single source of truth.
+- Product images are locked: preserve the exact same product packshots, label text, logos, illustrations, caps, and colors as the 4:5 reference.
+- Allowed product changes are limited to orientation, placement, and scale needed for 9:16 composition.
+- Do NOT redraw, reconstruct, relabel, retouch, or restyle any product.
+- If any product differs from the source (text distortion, shape change, label change, color shift, missing/extra product), reject and regenerate automatically.
+- Do NOT rewrite copy, do NOT invent new claims, do NOT add new offers, and do NOT add new objects.
+- Do NOT perform a simple resize/crop/stretch of the original image.
+
+Composition rules for 9:16:
+- Extend canvas vertically to 9:16 by outpainting above/below the original composition.
+- Keep the original 4:5 core composition stable in the center region.
+- Add natural background continuation only where needed to fit 9:16.
+
+Meta 9:16 safe-zone rules (for mobile feed/reels overlays):
+- Canvas is 1080(length) x 1920(height) (9:16 aspect ratio).
+- STRICT META/REELS SAFE FIELD: x=86 to x=994, y=270 to y=1248. All headline text, support text, CTA buttons, offer text, logos, badges, and readable product-label text must sit fully inside this field.
+- PRODUCT SAFE FIELD: all product packshots and human faces/hands must remain fully visible inside x=86 to x=994 and y=270 to y=1500. Do not cut off caps, labels, boxes, hands, or faces.
+- RESTRICTED TOP UI BAND: y=0 to y=269 must contain background only. No text, CTA, logos, faces, or product details.
+- RESTRICTED LOWER UI BAND: y=1249 to y=1919 must stay visually quiet for Meta/Reels overlays. No CTA, no headline/support copy, no logos, no badges, no readable product-label text, and no key product details in this area.
+- The CTA must NEVER be placed near the bottom. Place it inside the strict safe field, preferably around y=1050 to y=1200, or omit it if it cannot fit safely.
+- Keep all important content away from left/right edges with at least 8% horizontal padding on both sides.
+- Before finalizing, perform a coordinate check. If any critical element crosses these safe fields, reject and regenerate automatically until it passes.
+
+Quality bar:
+- Final output must look like the same ad creative adapted to 9:16, not a new redesign.
+- Maintain photoreal quality, product fidelity, and clean typography edges.
+- If fidelity or safe-zone compliance fails, regenerate until all rules pass.

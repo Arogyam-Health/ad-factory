@@ -1,0 +1,69 @@
+{
+  "format": "v2",
+  "_description": "Creative direction metadata for LLM ad copy generation.",
+  "headline_architectures": {
+    "hook_structure": {
+      "question_led": {
+        "intent": "Open with one weight-loss question the persona would actually ask themselves.",
+        "headline_role": "Ask a compact, specific question without answering it in the headline.",
+        "support_role": "Answer naturally with mechanism and proof.",
+        "route_bias": ["specific_lived_moment", "objection_flip"],
+        "avoid_skeletons": ["tired of plans that", "what if weight loss"]
+      },
+      "proof_led": {
+        "intent": "Use one credibility marker or trust anchor tied to weight-loss relevance.",
+        "headline_role": "Lead with one proof idea, not a stack of numbers or claims.",
+        "support_role": "Explain why the proof matters to this buyer.",
+        "route_bias": ["proof_or_authority"],
+        "avoid_skeletons": ["doctor-formulated weight loss", "70,000+ people tried"]
+      },
+      "contrast_loop": {
+        "intent": "Contrast the old hard path with a more realistic product-led path.",
+        "headline_role": "Use contrast only if it sounds natural and specific.",
+        "support_role": "Make the easier path believable without implying effortless results.",
+        "route_bias": ["failed_attempt_contrast", "daily_life_scene", "objection_flip"],
+        "avoid_skeletons": ["weight loss should not feel like", "lose weight without losing"]
+      },
+      "confession_led": {
+        "intent": "Open with a believable shared struggle, not a dramatic personal story.",
+        "headline_role": "Use a human admission or lived moment tied to weight loss.",
+        "support_role": "Resolve it through routine, proof, or guidance.",
+        "route_bias": ["specific_lived_moment", "pain_moment"],
+        "avoid_skeletons": ["every weight-loss diet felt", "i finally found"]
+      },
+      "command_led": {
+        "intent": "Offer helpful direction without sounding pushy or generic.",
+        "headline_role": "Make the action specific to weight-loss behavior or routine fit.",
+        "support_role": "Justify the action with mechanism, ease, and proof.",
+        "route_bias": ["simple_routine_ease", "desired_outcome"],
+        "avoid_skeletons": ["start your weight loss journey", "try a 15-day"]
+      }
+    },
+    "concept_angle": {
+      "pain_point": {
+        "meaning": "Lead with the customer problem."
+      },
+      "desired_outcome": {
+        "meaning": "Lead with the result the customer wants."
+      },
+      "social_proof": {
+        "meaning": "Lead with other customers words, experiences, or proof."
+      },
+      "authority": {
+        "meaning": "Lead with doctor credibility, expertise, hospital backing, or Ayurvedic authority."
+      },
+      "story": {
+        "meaning": "Lead with a relatable customer moment, mini-narrative, or lived situation."
+      },
+      "curiosity": {
+        "meaning": "Lead with intrigue or a question that creates genuine interest."
+      },
+      "comparison": {
+        "meaning": "Lead with a contrast against common failed methods or alternatives."
+      },
+      "offer": {
+        "meaning": "Lead with the deal, course box, guarantee, kit value, or buying proposition."
+      }
+    }
+  }
+}

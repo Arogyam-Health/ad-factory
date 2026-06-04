@@ -9,7 +9,7 @@ How to use this playbook in chat:
 - If user gives no specific inputs (persona/headline/format), generate a default starter batch immediately.
 - If user gives specific inputs (persona and/or headline and/or format), use those inputs first.
 - If user gives partial inputs, use what they gave and fill missing fields with defaults from this playbook.
-- Always keep claims restricted to `productinfomain.txt` and preserve product fidelity rules.
+- Always keep claims restricted to `input/docs/product master doc.txt` and preserve product fidelity rules.
 
 Execution mode lock (important):
 - This repo uses the custom in-repo playbook + scripts workflow as primary execution path.
@@ -25,7 +25,7 @@ Accepted user input styles (examples):
 - "Create 9:16 ads" / "Stories ads" / "Reels ads" -> switch output sizing and text placement to 9:16 safe-zone rules before prompt finalization
 
 Default starter batch profile (use when no specific input is given):
-- Persona selection: random from 1-22 per format (do not use a fixed mapping)
+- Persona selection: random from 1-26 per format (do not use a fixed mapping)
 - Prefer unique personas across selected formats in the same batch when possible
 - If user provides persona for only some formats, keep those fixed and randomize remaining formats
 - Headline mode: AI-generated fresh headlines
@@ -51,8 +51,8 @@ Current production mode:
 
 ## 2) Source of Truth (Do not invent)
 
-Use only approved claims and context from `productinfomain.txt`.
-Use `PRODUCT_MECHANISM_V1.txt` as the mechanism-model file derived from `productinfomain.txt`.
+Use only approved claims and context from `input/docs/product master doc.txt`.
+Use mechanism details only when they are present in `input/docs/product master doc.txt`.
 
 Persona language source:
 - Use the persona library in this playbook as the source of persona identity and intent.
@@ -71,12 +71,10 @@ Foundation doc handling rules:
 - Use routine/timing/support language as supporting explanation, not as the main promise, unless format purpose specifically requires mechanism breakdown.
 
 Mechanism grounding rules:
-- Use `productinfomain.txt`, `faq.txt`, and `PRODUCT_MECHANISM_V1.txt` together.
-- `productinfomain.txt` is the source for approved claims, mechanism boundaries, support details, and offer details.
-- `faq.txt` is the source for protocol details, Q&A handling, and usage caveats.
-- `PRODUCT_MECHANISM_V1.txt` is the source for simplified mechanism framing and behavior-change mapping.
-- Only use mechanism logic defined in `PRODUCT_MECHANISM_V1.txt`.
-- Do not invent new benefit logic outside that file.
+- Use `input/docs/product master doc.txt` as the single product source.
+- `input/docs/product master doc.txt` is the source for approved claims, mechanism boundaries, support details, and offer details.
+- Protocol details, Q&A handling, usage caveats, and mechanism framing must come from `input/docs/product master doc.txt`.
+- Do not invent new benefit logic outside `input/docs/product master doc.txt`.
 - Do not frame the product as a fat burner.
 - Do not use claims like `boosts metabolism`, `burns fat fast`, `accelerates fat loss`, or similar shortcuts.
 - Product logic must stay grounded in: reduced hunger, reduced cravings, reduced random eating, reduced intake, and digestion support.
@@ -100,9 +98,9 @@ Never add unsupported medical claims, disease cures, or made-up mechanisms.
 ## 3) Product Fidelity Lock (Mandatory — applies to every single output)
 
 Image source:
-- Primary production path: pass product reference image URLs from `input/activeimages.txt` into Kie Nano Banana API (`image_input`).
+- Product reference images are stored in `input/images/` (PNG/JPG/WebP). Uploaded via Dashboard or placed manually.
+- Images are uploaded to Gemini as visual truth references before every generation run.
 - Prompt requirement (always include): "Use the uploaded Obesity Killer product packshot images as absolute visual truth."
-- Optional manual path (prompt-only workflow): if user runs prompts directly in Gemini/Web tools, use the same 6 reference packshots as visual truth.
 - Never ask the user to re-describe products — the images are the reference.
 
 Product dimensions (use for correct relative sizing in every image):
@@ -135,7 +133,7 @@ Product fidelity rules:
 
 ## 4) Brand and Writing Rules
 
-From `productinfomain.txt`:
+From `input/docs/product master doc.txt`:
 - Tone: empathetic coach, trustworthy, uplifting
 - Style: simple language, active voice, short sentences, no filler
 - Credibility: specifics over vague adjectives
@@ -165,65 +163,35 @@ No colors outside this palette. No neon. No harsh gradients. No random accent co
 
 ---
 
-## 6) Persona System
+## 6A) Awareness-Stage Layer
 
-Use one primary persona per creative.
+Every production ad must declare one reader awareness stage before copy is written. This is separate from persona.
 
-Persona library (select by number):
-1. Craving-Control Struggler
-2. Busy Professional
-3. Emotional Eater / Stress Snacker
-4. Plateau Victim
-5. PCOD Support Seeker (no cure claims)
-6. Thyroid Weight-Gain Struggler (no cure claims)
-7. Post-Failure Re-starter (many failed diets)
-8. No-Weakness Skeptic
-9. Time-Starved Parent
-10. Homemaker, self-care deprioritized
-11. Office Snacker (tea-time/junk cycle)
-12. Late-Night Eater
-13. Festive/Travel Weight Regainer
-14. Metabolism-Worry Buyer
-15. Digestion-Issue + Weight Combo Seeker
-16. Budget-Conscious Result Seeker
-17. Wedding/Event Deadline Persona
-18. Confidence-First Persona (appearance + energy)
-19. Trust-First Buyer (doctor-backed only)
-20. Support-Dependent Persona (needs accountability)
-21. Beginner Who Hates Complex Plans
-22. 35+ Slow-Progress Persona
+Persona answers who is being addressed. Awareness stage answers how much persuasion context they already have.
 
-For each persona, define these 5 fields before writing copy:
-- Pain: what hurts now
-- Desire: dream outcome
-- Friction: why they failed before
-- Proof needed: what makes them believe
-- Tone cue: how the voice should feel
+Allowed awareness stages:
+- `unaware`: reader does not yet realize the hidden weight-management friction. Open by naming an ignored cause such as random eating, hunger spikes, or routine breakdown.
+- `problem_aware`: reader knows the problem but not the fix. Validate the pain, then introduce the approved product mechanism.
+- `solution_aware`: reader knows fixes exist but not why this kit is different. Compare against stricter, messier, or less guided alternatives.
+- `product_aware`: reader already knows the kit or brand. Use proof, urgency, trust, guarantee terms, or simplicity to create the final push.
 
-Persona construction rule:
-- Build persona context directly from the selected persona number/name plus the 5 required fields.
-- Mechanism lines must explain the product in simple relatable terms, not abstract health language.
-- Trust angles must map to the selected persona's proof-needed field.
+Awareness-stage selection rules:
+- If user provides an awareness stage, use it exactly unless it conflicts with format or compliance rules.
+- If missing, infer from persona pain, friction, and proof-needed fields.
+- Trust-first, doctor-backed, natural-solution, guarantee, or budget/value personas usually map to `product_aware` or `solution_aware`.
+- Craving, snacking, schedule, routine, stress, or beginner personas usually map to `problem_aware`.
+- Broad educational concepts that expose an overlooked behavior loop may use `unaware`.
 
-Rendering workflow (mandatory):
-- Step 1: Read selected persona from the playbook persona library.
-- Step 2: Define pain/desire/friction/proof needed/tone cue for that persona.
-- Step 3: Read `productinfomain.txt` for approved claims and product boundaries.
-- Step 3b: Read `faq.txt` for protocol details, restrictions, and edge-case usage rules.
-- Step 4: Read `PRODUCT_MECHANISM_V1.txt` to lock the allowed product behavior.
-- Step 5: Compose all final ad copy freshly in the requested language.
-- Keep pain, mechanism, and trust angle consistent across language outputs.
-- When protocol-specific details are needed (timing, fasting window, restrictions, caveats), pull them from `faq.txt` rather than inventing them.
+Awareness-stage writing map:
+- `unaware`: headline names the hidden issue; support line connects it to weight-management purpose.
+- `problem_aware`: headline validates the known pain; support line introduces the kit mechanism.
+- `solution_aware`: headline contrasts old fixes with this system; support line explains why the routine is easier, safer-feeling, or more guided.
+- `product_aware`: headline opens with proof, deadline, offer, or trust; support line reduces the final buying hesitation.
 
-Fresh composition rule (mandatory):
-- Every headline/support/CTA/bullet must be freshly composed from persona fields + mechanism strategy.
-- Keep mechanism truth constant, but vary sentence rhythm, opening pattern, and proof framing.
-- In one batch, avoid repeating the same opening pattern across formats (for example, repeated "When...", "If...", "No..." starts).
-- Scale rule for high-volume production: rotate at least one major copy axis per ad (hook structure, proof style, sacrifice framing, or CTA voice), while keeping claims compliant.
-
-Selection rule:
-- Use one primary persona plus one optional secondary micro-context.
-- Example: Primary = Busy Professional, Secondary = Late-Night Eater.
+Concept path lock:
+- Each ad must choose exactly one concept path: `awareness_stage + concept_angle + concept_structure`.
+- Do not mix multiple awareness stages or multiple concept angles inside one headline.
+- The chosen concept path is direction only. Do not render framework labels on-image.
 
 ---
 
@@ -233,13 +201,101 @@ Each headline must do 2 jobs:
 1. Scroll stop with persona pain
 2. Show how Obesity Killer solves that pain using an approved mechanism
 
-Formula: Hook (pain) + Mechanism (how) + Outcome/time
+Formula: Persona pain + Awareness stage + Concept angle + Copy structure + Approved mechanism/outcome
+
+Headline construction sequence:
+1. Select persona and define pain/desire/friction/proof needed/tone cue.
+2. Select or infer `awareness_stage`.
+3. Select `concept_angle` from the 8-angle menu.
+4. Select `concept_structure` from PAS / BAB / FAB / 4U's.
+5. Compose headline and support line as one hierarchy: headline earns attention, support line explains the product reason to believe.
+
+Concept angle menu:
+- `pain_point`: open with the specific problem.
+- `desired_outcome`: open with the result or felt outcome.
+- `customer_scale_70k`: open with others' trust, user scale, or review logic.
+- `authority`: open with doctor formulation, Ayurveda credibility, or expertise.
+- `story`: open with a real-life routine moment or first-person situation.
+- `curiosity`: open with an information gap or mechanism question.
+- `comparison`: open by contrasting the kit with harder alternatives.
+- `offer`: open with result window, guarantee terms, kit completeness, or practical reason to act.
+
+Concept structure menu:
+- `pas`: Problem -> Agitate -> Solve. Name the pain, sharpen why it keeps happening, then introduce approved kit mechanism.
+- `bab`: Before -> After -> Bridge. Show current friction, desired progress state, then the kit/routine bridge.
+- `fab`: Feature -> Advantage -> Benefit. State concrete product feature, why it helps, and weight-management benefit.
+- `four_us`: Useful, Urgent, Unique, Ultra-specific. Make the headline immediately relevant, honestly time-sensitive, differentiated, and concrete.
 
 Freshness rule:
 - Do not use a fixed headline bank as final output.
 - Generate new headlines every request from persona pain + mechanism + outcome.
 - Avoid repeating opening patterns across consecutive ads.
 - Rotate angle each time: pain, objection, mechanism, time, proof, sacrifice reduction.
+
+4U writing lens:
+- Useful: reader understands why the line matters right now.
+- Urgent: the line gives a real reason to act now or start soon. No fake scarcity.
+- Unique: a generic competitor could not say the exact same line unchanged.
+- Ultra-specific: line uses concrete detail such as 15 days, cravings, routine step, kit system, doctor-formulated proof, or user scale.
+- Use these as instructions while writing. Do not run a hard vocabulary scorer or block prompt assembly only because wording is new.
+
+### Headline Execution Layer (mandatory)
+
+The concept framework chooses the strategic route. The execution layer decides whether the final headline sounds like a real paid ad.
+
+Headline role:
+- The headline should carry one strong idea only: tension, proof, identity, deadline, outcome, or sacrifice reduction.
+- The headline should sound edited by a human, not like a planning label or SEO phrase.
+- Do not force the full mechanism into the headline. Move mechanism, proof, and timing details into the support line.
+- Prefer plain sentence rhythm over cleverness, slogans, or stacked keyword phrases.
+- Use sentence case by default. Title case is allowed only when it intentionally reads like a poster headline.
+- Do not start with instructional verbs (Start, Begin, Kickstart, Follow). Headlines should read like statements or questions, not how-to steps.
+- Do not place AM/PM timing, 4-hour windows, or protocol mechanics in the headline. Those belong in support lines or bullets.
+- Do not put product component names (OK Liquid / OK Tablet / OK Powder / OKP) in headlines. Keep those in support lines or bullets.
+- Never surface internal persona notes, proof-needed notes, or any planning text as on-image copy.
+
+Support-line role:
+- The support line explains why the headline is believable.
+- It must add one second-lane reason to believe: simple routine, doctor credibility, 70,000+ users, 15-day progress, reduced cravings, digestion support, low-guesswork protocol, or less sacrifice.
+- Do not paraphrase the headline.
+- Do not use support lines as generic wellness copy. Keep weight loss, obesity reduction, excess-weight reduction, or 15-day progress obvious.
+
+Human headline pattern families (direction only, do not copy exactly):
+- Authority stamp: `Doctor-formulated. Ayurvedic. Proven at scale.` Pattern: credibility + category + proof.
+- Protocol identity: `Doctor-formulated, protocol-led system.` Pattern: expert source + structured method.
+- Pain question: `Too tired to track everything for weight loss?` Pattern: too tired/too busy/too overwhelmed + hard behavior.
+- Stubborn-weight proof: `When weight feels stubborn, you need something proven.` Pattern: when problem feels hard + trusted solution.
+- Deadline direct: `Need visible weight loss in 15 days?` Pattern: need + concrete outcome + timeframe.
+- Sacrifice reduction: `3 to 5 kg with 1 Kit, without turning life upside down.` Pattern: specific result + simple vehicle + avoided sacrifice.
+- Emotional outcome: `Feel lighter. Look more like yourself again.` Pattern: felt result + identity restoration.
+- Messy-life mechanism: `Why this works even when life stays messy.` Pattern: curiosity + real-life friction.
+
+Support-line pattern families (direction only, do not copy exactly):
+- Product identity + ease: `A guided Ayurvedic weight-loss system with clear morning and evening steps.`
+- Routine simplicity: `A simple 2-step routine that takes about 5 minutes a day.`
+- Authority + proof + time: `Created by Dr. Arun Tyagi and trusted by 70,000+ Indians for visible progress in 15 days.`
+- Mechanism + practical benefit: `Morning support helps fullness; night support helps digestion and next-day follow-through.`
+- Result + sacrifice reduction: `Designed for 3 to 5 kg weight-loss support without feeling weak, drained, or overwhelmed.`
+- Event/deadline support: `Designed for people who want guided progress before a wedding, trip, or important event.`
+
+Human editor pass (mandatory before returning copy JSON):
+- Rewrite every headline once as a performance-ad editor.
+- Remove generic AI phrases, abstract benefit language, and planning labels.
+- Make the headline shorter and more spoken.
+- Keep one central idea in the headline.
+- Move extra explanation into support line or bullets.
+- If headline and support line say the same thing, rewrite the support line with proof, mechanism, or ease.
+
+Bad-to-better rewrite guidance (direction only):
+- Weak: `Start mornings with a clearer 15-day weight-loss routine.` Better pattern: `Too tired to track every weight-loss step?`
+- Weak: `Ayurvedic support for daily appetite control.` Better pattern: `When cravings run the day, weight loss feels impossible.`
+- Weak: `Guided support for practical progress.` Better pattern: `Clear steps when dieting feels like too much work.`
+- Weak: `Fast visible progress for busy people.` Better pattern: `Need visible progress in 15 days?`
+- Weak: `A simple routine for your lifestyle.` Better pattern: `A 5-minute routine for stubborn weight days.`
+
+Preferred CTA family:
+- Prefer direct, low-friction CTAs: `See How It Works`, `See The Steps`, `View Details`, `See The Routine`, `Start Today`.
+- Vary CTAs enough to avoid registry collisions, but keep the style simple and non-salesy.
 
 Examples (direction only, do not copy-paste):
 - "Cravings control nahi ho rahe? 15 din mein routine palat sakta hai."
@@ -275,8 +331,7 @@ Fresh caption rule: generate fresh each run, keep meaning stable, vary phrasing 
 Goal: Every ad generation session must use a distinctly different background/scene setting so no two outputs look the same.
 
 Background files and purpose:
-- `BACKGROUND_VARIANTS.JSON` = master slot catalog (ID, title, format eligibility)
-- `background_variant.json` = safe-zone enriched structured descriptors used for seeded scene sentence generation
+- `background_variant.json` = structured background catalog (ID, title, format eligibility + safe-zone descriptors) used for seeded scene sentence generation
 
 Background hygiene rule (mandatory):
 - Avoid workstation-heavy props by default (keyboard, laptop, monitor, mouse, dense office clutter), unless user explicitly requests office-device context.
@@ -287,9 +342,9 @@ Background hygiene rule (mandatory):
 
 Before generating any prompt, the assistant must:
 1. Check `AD_GENERATION_REGISTRY.JSON` slot usage for the selected format.
-2. Build allowed catalog pool from `BACKGROUND_VARIANTS.JSON` where `formats` contains the selected format.
+2. Build allowed catalog pool from `background_variant.json` where `formats` contains the selected format.
 3. Select only from slots not yet used in current cycle for that format (`indexes.slot_exhaustion_tracker.<FORMAT>.remaining_slots_current_cycle`).
-4. Generate a seeded scene sentence with `scripts/upgrade_safezone_backgrounds.py` using the same slot ID.
+4. Generate seeded scene sentence via the in-pipeline background sentence builder using the same slot ID and seed.
 5. Include both slot ID and seeded sentence in Section 8 (VISUAL DIRECTION BLOCK), then log slot + seed in registry.
 6. When remaining pool becomes empty, reset cycle for that format and continue.
 
@@ -301,14 +356,10 @@ Before generating any prompt, the assistant must:
 
 ### Background selection algorithm (mandatory)
 
-- Use catalog-first selection from `BACKGROUND_VARIANTS.JSON` and enforce exhaustive rotation using `indexes.slot_exhaustion_tracker`.
+- Use catalog-first selection from `background_variant.json` and enforce exhaustive rotation using `indexes.slot_exhaustion_tracker`.
 - Select from `remaining_slots_current_cycle`, then move selected slot to `used_slots_current_cycle`.
 - If `remaining_slots_current_cycle` is empty, increment cycle number and repopulate from current allowed pool.
-- Safe-zone sentence generation must use:
-  - `python3 scripts/upgrade_safezone_backgrounds.py --prompt-only --id BG-XXX --format 4:5 --seed <SEED>`
-- Mandatory script execution note:
-  - Do not simulate this command. Run it and use the real stdout sentence.
-  - If command fails, stop prompt finalization, surface stderr, and retry only after fixing the failure.
+- Safe-zone sentence generation must be deterministic from slot + seed and produced by the active prompt assembly pipeline.
 - SEED rule: `SEED = (BATCH_NUMBER * 1000) + (PERSONA_NUMBER * 10) + VARIATION`
 - Include in Section 8:
   - `Background slot: BG-XXX`
@@ -346,6 +397,9 @@ In production mode:
       "persona_number": 2,
       "persona_name": "Busy Professional",
       "headline_angle": "sacrifice_reduction",
+      "awareness_stage": "problem_aware",
+      "concept_angle": "desired_outcome",
+      "concept_structure": "four_us",
       "headline_en": "Weight loss without life disruption.",
       "headline_hi": "जीवन बिगाड़े बिना वज़न घटाएं।",
       "support_line_en": "Control cravings, support metabolism daily.",
@@ -381,8 +435,11 @@ In production mode:
   "indexes": {
     "backgrounds_by_format": {},
     "slot_exhaustion_tracker": {},
-    "used_text": {},
-    "copy_patterns": {
+      "used_text": {},
+      "concept_combos": {
+        "recent": []
+      },
+      "copy_patterns": {
       "by_format_language": {},
       "recent_opening_4tok": {},
       "recent_skeletons": {},
@@ -399,9 +456,12 @@ In production mode:
 - id: sequential entry ID (entry_001, entry_002, etc.)
 - timestamp: ISO 8601 format
 - format: HERO / BA / TEST / FEAT / UGC
-- persona_number: 1-22
+- persona_number: 1-26
 - persona_name: readable name
 - headline_angle: pain / objection / mechanism / time / proof / sacrifice_reduction
+- awareness_stage: unaware / problem_aware / solution_aware / product_aware
+- concept_angle: pain_point / desired_outcome / customer_scale_70k / authority / story / curiosity / comparison / offer
+- concept_structure: pas / bab / fab / four_us
 - headline_en: exact English headline used
 - headline_hi: exact Hindi headline used
 - support_line_en/support_line_hi: exact support line used on image
@@ -414,8 +474,8 @@ In production mode:
 - fresh_background_signature: required when source is fresh, else null
 - opening_pattern_4tok_en/opening_pattern_4tok_hi: first 4-token normalized opening pattern of headline
 - copy_skeleton: high-level copy structure tag (for example: pain_mechanism_time)
-- hook_structure_class: hook composition class (question_lead / contrast_loop / command_lead / confession_lead / proof_lead)
-- proof_style_class: trust framing class (social_proof / mechanism_explainer / authority_anchor / routine_clarity / objection_flip)
+- hook_structure_class: hook composition class (question_led / contrast_loop / command_led / confession_led / proof_led)
+- proof_style_class: trust framing class (customer_scale_70k / mechanism_explainer / authority_anchor / routine_clarity / objection_flip)
 - cta_voice_class: CTA intent class (urgent_start / guided_next_step / reassurance_start / challenge_action / discovery_action)
 - language: EN / HI / BOTH
 - output_quality: approved / rejected / pending
@@ -432,19 +492,20 @@ In production mode:
 - Same opening_pattern_4tok + same format/language = hard block in recent window (last 10 entries).
 - Same copy_skeleton + same format/language = hard block if repeated in last 5 entries.
 - Same hook_structure_class + proof_style_class + cta_voice_class trio = hard block in last 12 entries (prevents "same ad with new words" effect).
+- Same `awareness_stage + concept_angle + concept_structure + format` = creative warning only. Prefer rotating the idea path, but do not block prompt assembly if generated copy is otherwise valid and unique.
 
 ### Copy diversity matrix (mandatory for scaled production)
 
 Every ad must be tagged before finalization using these 4 axes and rotated intentionally across a batch.
 
 - hook_structure_class:
-  - `question_lead`
+  - `question_led`
   - `contrast_loop`
-  - `command_lead`
-  - `confession_lead`
-  - `proof_lead`
+  - `command_led`
+  - `confession_led`
+  - `proof_led`
 - proof_style_class:
-  - `social_proof`
+  - `customer_scale_70k`
   - `mechanism_explainer`
   - `authority_anchor`
   - `routine_clarity`
@@ -457,10 +518,37 @@ Every ad must be tagged before finalization using these 4 axes and rotated inten
   - `discovery_action`
 - copy_skeleton (examples):
   - `pain_mechanism_time`
+  - `pain_agitate_solve`
   - `objection_flip_mechanism`
   - `proof_then_routine`
   - `micro_story_then_action`
   - `problem_reframe_then_next_step`
+
+Concept-combo matrix (mandatory for headline ideation):
+- awareness_stage:
+  - `unaware`
+  - `problem_aware`
+  - `solution_aware`
+  - `product_aware`
+- concept_angle:
+  - `pain_point`
+  - `desired_outcome`
+  - `customer_scale_70k`
+  - `authority`
+  - `story`
+  - `curiosity`
+  - `comparison`
+  - `offer`
+- concept_structure:
+  - `pas`
+  - `bab`
+  - `fab`
+  - `four_us`
+
+Concept-combo rule:
+- Treat `awareness_stage + concept_angle + concept_structure` as the creative idea ID.
+- Rotate concept combos intentionally across a batch.
+- If the same format is repeated in one run, prefer a different concept combo unless user explicitly requests a controlled duplicate test. This is an instruction to the AI/operator, not a machine-blocking validation gate.
 
 Batch diversity minimum:
 - In any 5-ad batch, at least 4 unique `hook_structure_class` values.
@@ -645,12 +733,13 @@ Variation operating mode:
 - Persona use: first-person micro-story from persona POV
 - Copy shape: my routine support + 3 practical wins + CTA
 - Text budget: 16-26 words + disclaimer
-- Default text policy: headline (max 8 words) + support line (max 8 words) + CTA (max 4 words) + disclaimer only
+- Default text policy: headline + support line + CTA + disclaimer only
 - Minimum copy units: headline + 1 short support line + CTA + disclaimer
 - No bullets or long paragraph quote unless explicitly requested
 - Prompt-detail baseline:
   - Casual phone-captured feel with natural framing, not polished studio symmetry.
   - Product remains clearly visible and exactly matched to reference.
+  - Human subject must never hold, grab, lift, open, pinch, or touch any product/package; products stay independently arranged on a table/counter at correct scale.
   - Authentic setting aligned to persona (kitchen, desk, bedroom, commute, etc.).
   - Overlay text stays punchy and legible; avoid dense copy in UGC.
 - UGC variation lanes:
@@ -760,8 +849,8 @@ Section 9 — Typography Sharpness Block: minimum 6 bullets
   - Hindi output must be fully Hindi in Devanagari script.
   - Do not mix scripts in one line unless explicitly requested.
 - Image-generation default rule:
-  - Send only EN prompt to Nano Banana API by default.
-  - Do not submit HI prompt unless user explicitly asks.
+  - Generate EN images by default.
+  - Do not generate HI images unless user explicitly asks.
 
 ### Text clarity and sharpness rule (mandatory):
 - Prioritize crisp typography over decorative styling.
@@ -853,6 +942,7 @@ NEGATIVE CONSTRAINTS
 - Do not overcrowd the layout
 - Do not make medical cure claims of any kind
 - Do not render unnatural or anatomically incorrect hands (for UGC)
+- Do not show a human hand holding, grabbing, lifting, opening, pinching, or touching any product/package in UGC; use pointing/open-palm gestures near surface-placed products only.
 - Do not use ring light, studio flash, or overproduced lighting
 
 QUALITY BAR — verify before accepting output:
@@ -870,7 +960,7 @@ VISUAL DIRECTION BLOCK
 - Background slot: [BG-XXX — slot name] (selected from background variation engine using exhaustive format-wise rotation)
 - Scene: [describe scene based on selected slot]
 - Subject: [for UGC — Indian woman 27-35, natural unposed expression. For product-only formats — no subject]
-- Action: [holding product toward camera / products arranged on surface — specify]
+- Action: [for UGC — products arranged on surface while creator points/gestures nearby; never holding/grabbing product. For product-only formats — products arranged on surface]
 - Camera: [handheld close-medium / editorial medium / overhead — specify]
 - Lighting: [warm desk lamp + soft ambient fill / soft natural daylight from left / etc. — match slot]
 - Props: [per slot — minimal, non-competing, background zone only]
@@ -917,7 +1007,7 @@ Decision policy (mandatory):
 - Do not narrate internal workflow steps (for example: "reading files", "extracting sections", "checking patterns"). Return only final outputs and blockers.
 
 Read-scope rule for `create ads` (mandatory):
-- Read only required sources: this playbook, `productinfomain.txt`, `faq.txt`, `PRODUCT_MECHANISM_V1.txt`, `BACKGROUND_VARIANTS.JSON`, `background_variant.json`, `AD_GENERATION_REGISTRY.JSON`.
+- Read only required sources: this playbook, `input/docs/product master doc.txt`, `background_variant.json`, `AD_GENERATION_REGISTRY.JSON`.
 - Do not mine old `output/v*` prompt files for style or structure unless user explicitly asks to replicate a specific past batch.
 - Historical checks must use registry indexes first; do not crawl old output folders by default.
 - Forbidden sources for normal create-ad runs: `generated_image/v*/prompt_task_*.txt`, `generated_image/v*/task_*.json`, `generated_image/v*/batch_run_summary.json`.
@@ -932,7 +1022,7 @@ Input parsing rules:
 
 Defaults when missing:
 - Headline mode default: AI-generated fresh headlines.
-- Persona default: random selection from persona library (1-22), format-wise.
+- Persona default: random selection from persona library (1-26), format-wise.
 - Randomization rule: avoid repeating the same persona across formats in the same batch when possible.
 - If registry history exists, avoid persona+format combinations that appear in the recent dedupe window.
 
@@ -950,7 +1040,7 @@ Step 4 — Background slot selection
 
 Step 4.25 — Safe-zone enforcement (mandatory)
 - Every background must be treated as a *safe-zone controlled* scene: keep key subject and all important copy away from edge risk bands.
-- Use the structured background catalog in `background_variant.json` (not `BACKGROUND_VARIANTS.JSON`) because it includes safe-zone control fields:
+- Use the structured background catalog in `background_variant.json` because it includes safe-zone control fields:
   - `composition`, `layout_intent`, `cta_safe_space`, `crop_safety`
 - When you pick a background slot `BG-XXX`, generate a *seeded* background prompt so the safe-zone phrasing is deterministic per batch.
   - Selection order (mandatory):
@@ -958,13 +1048,10 @@ Step 4.25 — Safe-zone enforcement (mandatory)
     2) If that list is empty/missing, pick a slot not in `indexes.backgrounds_by_format.<FORMAT>` recent window; if still not possible, fall back to any valid slot but state it explicitly.
   - Seed rule (mandatory, deterministic): `SEED = (BATCH_NUMBER * 1000) + (PERSONA_NUMBER * 10) + VARIATION`
     - Example: batch `v7`, persona `7`, variation `1` → seed `7071`
-  - Use: `python3 scripts/upgrade_safezone_backgrounds.py --prompt-only --id BG-XXX --format 4:5 --seed <SEED>`
-  - Mandatory script execution note:
-    - Do not simulate this command. Run it and paste the real stdout sentence.
-    - If the script errors, stop and fix; never continue with guessed seed text.
+  - Use the active prompt assembly pipeline to build the seeded background sentence from slot + seed.
   - Paste the resulting *seeded* sentence into Section 8 (VISUAL DIRECTION BLOCK) and keep the selected `BG-XXX`.
   - Add a line in Section 8: `Seed: <SEED>` so reviewers can verify deterministic seeding was applied.
-  - MANDATORY CHECKPOINT: Section 8 must contain the full OUTPUT of upgrade_safezone_backgrounds.py (seeded sentence), not just the seed number. If your prompt only says "Seed: <SEED>" without the seeded background sentence, it is INVALID — regenerate immediately.
+  - MANDATORY CHECKPOINT: Section 8 must contain the full seeded background sentence, not just the seed number. If your prompt only says "Seed: <SEED>" without the seeded background sentence, it is INVALID — regenerate immediately.
   - ALSO: Extract and include these 4 safe-zone fields from background_variant.json into Section 8: composition, layout_intent, cta_safe_space, crop_safety. All 4 must be present in the final prompt.
   - Store both `BG-XXX` and `<SEED>` in the registry notes (or dedicated fields) so the background prompt can be reproduced later.
 - Never “fix safe-zones after the fact” by rewriting the prompt mid-run; safe-zone rules must be present in the prompt *before* the API call.
@@ -1019,6 +1106,9 @@ Validation checklist (machine-checkable):
 - `CHK-24` support_line_outcome_anchor: support lines must not be generic routine-only language; they must connect approved mechanism logic to weight-loss / excess-weight / obesity-reduction intent using compliant wording.
 - `CHK-25` safe_zone_rules_present: prompt must include the correct safe-zone rule set for the selected canvas ratio before write.
 - `CHK-26` critical_elements_inside_safe_zone: headline, support line, CTA, logos, and product-signaling elements must stay out of declared top/bottom/side risk bands for 4:5 and 9:16 outputs.
+- `CHK-27` concept_fields_present: each ad declares `awareness_stage`, `concept_angle`, and `concept_structure` or has them inferred from `copy_requirements.concept_variation` before assembly.
+- `CHK-28` reserved: concept-combo rotation is a writing/operation instruction, not a machine-blocking validation gate.
+- `CHK-29` reserved: 4U is a writing instruction for the AI/operator, not a machine-blocking validation gate. Do not fail prompt assembly solely because a generated headline uses words outside a scorer vocabulary.
 
 Operational examples of CHK-22 failure (reject and regenerate):
 - `Raat ko control nahi ho raha?`
@@ -1048,22 +1138,17 @@ Step 5.5 — Prompt assembly for API
 - Never merge multiple format prompts into one API call.
 - Traceability: save the *composed* prompt (startingprompt + generated prompt) under `generated_image/vN/<format>-<language>/prompt_task_<taskId>.txt`.
 
-Step 5.6 — API execution (Nano Banana 2 via Kie)
-- Endpoint: `POST https://api.kie.ai/api/v1/jobs/createTask`
-- Auth: `Authorization: Bearer <KIE_API_KEY>`
-- API key source priority:
-  - First read `KIE_API_KEY` from shell environment.
-  - If not present, load it from root `.env.dashboard`.
-  - Expected format in `.env.dashboard`: `KIE_API_KEY=your_key_here`
-- Model: `nano-banana-2`
-- Images source for API: read URLs from `input/activeimages.txt` (one URL per line, max 14)
-- Keep `input/passiveimage.txt` for fallback inventory only (do not use by default)
-- Default generation settings: `resolution=2K`, `aspect_ratio=4:5`, `output_format=png`
-- Submit one job per prompt file (EN by default).
-- Poll task state via `GET /api/v1/jobs/recordInfo?taskId=...` until `success` or `fail`.
-- Mandatory script execution note:
-  - If running `scripts/kie_nano_batch.py`, execute it for real and rely on actual API responses.
-  - Never claim submission/poll/download success without task IDs and saved file paths from command output.
+Step 5.6 — Image generation (Gemini Web automation)
+- Triggered from Dashboard:
+  - `/api/runs/{id}/generate-images-45` — generates 4:5 images in Gemini.
+  - `/api/runs/{id}/generate-images-916-from-45` — generates 9:16 from 4:5 references.
+- Images are generated via `scripts/gemini_web_automation.py` using Playwright + Gemini Web.
+- Reference images are uploaded from `input/images/` to each Gemini chat session.
+- For 9:16 conversion, the 4:5 output image is used as the single visual reference.
+- Prompt integrity is verified (98%+ character match) before sending.
+- Generated images are saved under `generated_images/v{N}/GEMINI_4_5/` and `generated_images/v{N}/GEMINI_9_16/`.
+- Mandatory execution note:
+  - Never claim generation success without confirmed saved file paths from the automation run.
 
 Step 5.7 — Generated image storage
 - Save results in `generated_image/vN/<format>-<language>/`
@@ -1120,6 +1205,33 @@ Mandatory visual-direction block (add by default):
 
 ---
 
+## 15A) Quick Ideation Mode
+
+Purpose:
+- Use this mode only when the user asks for headline ideas, concept routes, hooks, or brainstorming before production.
+- This mode generates creative options without assembling image prompts.
+
+Input model:
+- Pick 1 `awareness_stage` from Section 6A.
+- Pick 1 `concept_angle` from Section 7.
+- Pick 1 `concept_structure` from Section 7.
+- Optional: pick persona and format.
+
+Output model:
+- Generate 5-10 headline/support-line pairs.
+- Each option must include the chosen awareness stage, concept angle, concept structure, and one sentence explaining the test hypothesis.
+- Do not write to `output/vN/`.
+- Do not select backgrounds.
+- Do not call image APIs.
+- Do not append to registry unless the user promotes an option to production.
+
+Promotion to production:
+- When the user selects an ideation option, convert it into the normal production copy payload.
+- Carry forward `awareness_stage`, `concept_angle`, and `concept_structure`.
+- Run all production dedupe and registry checks before prompt assembly.
+
+---
+
 ## 16) Quality Guardrails
 
 Reject and regenerate if any one fails:
@@ -1160,9 +1272,9 @@ Minimum required on-image copy units by format:
 - UGC: headline + 1 short support line + CTA
 
 UGC default text policy:
-- One headline (max 8 words)
-- One short support line (max 8 words)
-- One CTA (max 4 words)
+- One headline
+- One short support line
+- One CTA
 - No bullets or long paragraph quote unless requested
 
 Text budget repair commands:
@@ -1247,6 +1359,11 @@ Follow these rules strictly:
 - For each ad, use one persona input block (pain, desire, friction, proof needed, tone cue).
 - Build persona inputs from the selected persona and the 5-field model (pain, desire, friction, proof needed, tone cue).
 - Headline must do two things: scroll stop + pain-solution fit.
+- Every ad must use one concept path: awareness_stage + concept_angle + concept_structure.
+- Awareness stages are unaware, problem_aware, solution_aware, and product_aware. If missing, infer from persona pain/friction/proof needed.
+- Concept angles are pain_point, desired_outcome, customer_scale_70k, authority, story, curiosity, comparison, and offer.
+- Concept structures are pas, bab, fab, and four_us.
+- Use the 4U lens while writing headlines: Useful, honestly Urgent, Unique, and Ultra-specific. This is an AI/operator writing guideline, not a machine-scored blocker.
 - Caption must increase Value = (Dream Outcome x Likelihood) / (Time Delay x Sacrifice).
 - Keep language simple, active, specific, and short.
 - Reject generic templates; prioritize clear hierarchy and premium composition.
@@ -1260,6 +1377,7 @@ Follow these rules strictly:
 - Select a background slot from the Background Variation Engine (Section 9 of playbook) using exhaustive format-wise rotation (no repeat until all allowed slots for that format are used once). State which slot you selected.
 - Enforce strict text uniqueness: headline/support/CTA/caption/bullets in EN and HI must never repeat any previously used string.
 - Check the registry at `AD_GENERATION_REGISTRY.JSON` before generation to avoid persona, angle, and background repetition.
+- Track concept combos in the registry; use them as creative guidance to avoid repeating the same awareness_stage + concept_angle + concept_structure + format in the recent window.
 - Registry is in production mode. Write one entry after each generation.
 - When user says "create ads", write to next available `output/vN/` (max existing + 1). Never overwrite old version folders.
 - "Create registry" or "update registry" must target existing root `AD_GENERATION_REGISTRY.JSON` only.
@@ -1280,7 +1398,7 @@ When I ask for ad creation with no specific inputs, generate the default starter
 4. Start with: "Create ad."
 5. If no inputs are provided, generate default starter batch immediately.
 6. If partial/specific inputs are provided, apply them and fill missing fields from defaults.
-7. Save generated prompts in `output/vN/` and run API jobs (EN by default) using links from `input/activeimages.txt`.
+7. Run Gemini image generation via Dashboard for 4:5 and/or 9:16 outputs.
 8. Store generated images in `generated_image/vN/<format>-en/` (or `-hi` only when requested).
 9. Use repair commands (Section 16) if quality fails.
 10. In production (`mode.write_enabled: true`), append each generation to `entries` and update indexes.
@@ -1289,6 +1407,7 @@ How to avoid repetition at scale:
 - Never reuse old text directly (headline, support line, CTA, caption, bullets).
 - Recompute all copy every generation from persona fields and approved claims.
 - Use registry for both angle-level dedupe and strict text-level dedupe.
+- Use registry for concept-combo awareness and creative guidance: awareness_stage + concept_angle + concept_structure + format.
 - Rotate catalog background slots with exhaustive format-wise cycles (no repeat until pool exhaustion, then reset cycle).
 
 ---
@@ -1313,6 +1432,9 @@ Starting state example (append entries in live production):
     "backgrounds_by_format": {},
     "slot_exhaustion_tracker": {},
     "used_text": {},
+    "concept_combos": {
+      "recent": []
+    },
     "copy_patterns": {
       "by_format_language": {},
       "recent_opening_4tok": {},
@@ -1329,6 +1451,7 @@ Registry indexing requirement (production):
 - Maintain `indexes.backgrounds_by_format` for per-format background tracking.
 - Maintain `indexes.slot_exhaustion_tracker` for catalog cycle state per format.
 - Maintain `indexes.used_text` for global text uniqueness tracking.
+- Maintain `indexes.concept_combos.recent` for recent concept path tracking.
 - Maintain `indexes.copy_patterns` for structural diversity tracking (opening patterns, skeletons, hook/proof/CTA classes).
 - Treat every string in `indexes.used_text` as permanently blocked from reuse.
 
@@ -1336,5 +1459,6 @@ Production live rules:
 - Keep `mode.write_enabled` true.
 - Set `mode.last_updated` to current timestamp on every write.
 - Append one entry per generation to `entries`.
+- Append one concept-combo record per generation to `indexes.concept_combos.recent`.
 - Never overwrite existing entries — append only.
 - Read registry before every generation to check deduplication rules.

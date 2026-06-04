@@ -1,11 +1,47 @@
+# Secrets / environment
 .env
 .env.*
 !.env.example
 
-dashboard_storage/
-__pycache__/
-*.pyc
+# Virtual environments
 .venv/
 
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Generated / runtime output (content ignored, .gitkeep files tracked to preserve dirs)
 output/*
-trash/
+!output/.gitkeep
+
+generated_images/*
+!generated_images/.gitkeep
+
+runtime/*
+!runtime/.gitkeep
+runtime/*/*
+!runtime/*/.gitkeep
+
+dashboard_storage/*
+!dashboard_storage/.gitkeep
+dashboard_storage/*/*
+!dashboard_storage/*/.gitkeep
+
+trash/*
+!trash/.gitkeep
+trash/*/*
+!trash/*/.gitkeep
+
+# Tool directories
+.sixth/
+.opencode/
+graphify-out/
+
+# Python cache in scripts (added from current_working)
+scripts/__pycache__/*
+
+# Local tool cache
+.commandcode

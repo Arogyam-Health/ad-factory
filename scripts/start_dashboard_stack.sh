@@ -12,7 +12,6 @@ OPENCODE_PORT="4090"
 DASHBOARD_HOST="127.0.0.1"
 DASHBOARD_PORT="8787"
 OPENCODE_PASSWORD="${OPENCODE_SERVER_PASSWORD:-opencode-local-pass}"
-
 DEFAULT_XDG_DATA_HOME="${HOME}/.local/share"
 if [[ -f "$DEFAULT_XDG_DATA_HOME/opencode/auth.json" ]]; then
   CURRENT_XDG_DATA_HOME="${XDG_DATA_HOME:-$DEFAULT_XDG_DATA_HOME}"
@@ -76,10 +75,16 @@ start_dashboard() {
 wait_for_url() {
   local url="$1"
   local name="$2"
+  local auth_flag=""
+  if [[ "$1" == "-u" ]]; then
+    auth_flag="-u $2"
+    url="$3"
+    name="$4"
+  fi
   local retries=60
   local delay=0.2
   for _ in $(seq 1 "$retries"); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    if curl -fsS $auth_flag "$url" >/dev/null 2>&1; then
       echo "$name is ready"
       return 0
     fi

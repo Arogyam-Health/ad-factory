@@ -1,6 +1,25 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    ".opencode/plugins/graphify.js"
-  ]
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "@anthropic-ai/playwright-mcp"],
+      "enabled": true
+    },
+    "firecrawl": {
+      "type": "local",
+      "command": ["npx", "@anthropic-ai/firecrawl-mcp"],
+      "enabled": true
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": ["npx", "@anthropic-ai/chrome-devtools-mcp"],
+      "enabled": true
+    },
+    "glif": {
+      "type": "local",
+      "command": ["npx", "@anthropic-ai/glif-mcp-server"],
+      "enabled": true
+    }
+  }
 }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Ad Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -29,40 +29,130 @@
           <div id="personaList" class="grid"></div>
           <label>Apply these formats to selected personas only</label>
           <div id="globalFormats" class="chips"></div>
+          <div id="formatPatterns" class="format-patterns"></div>
+        </section>
+
+        <section class="card card-input-prompts">
+          <h2>2) Input Prompts</h2>
+          <div class="input-prompts-grid">
+            <div class="input-prompt-card" data-prompt-type="starting_prompt">
+              <strong>Starting Prompt</strong>
+              <span>Prepended to all generation prompts</span>
+            </div>
+            <div class="input-prompt-card" data-prompt-type="916_conversion">
+              <strong>9:16 Conversion Prompt</strong>
+              <span>Converts 4:5 creatives to 9:16</span>
+            </div>
+          </div>
         </section>
 
         <section class="card card-images">
-          <h2>3) Active Images</h2>
-          <textarea id="activeImages" rows="6"></textarea>
-          <p class="hint">One URL per line. Defaults prefilled from input/activeimages.txt</p>
+          <h2>3) Input Images (Gemini Upload Set)</h2>
+          <label>Add images to <code>input/images</code></label>
+          <input id="inputImageFiles" type="file" multiple accept="image/*" />
+          <label><input id="clearInputImages" type="checkbox" /> Clear previously stored images before adding these</label>
+          <p class="hint">By default, uploaded images are added to existing images in input/images and all are used for Gemini uploads.</p>
+          <div id="inputImageGallery" class="input-image-gallery"></div>
+        </section>
+
+        <section class="card card-files">
+          <h2>4) Config Files</h2>
+          <div class="input-prompts-grid">
+            <div class="input-prompt-card" data-file-path="persona_seeds.json">
+              <strong>Persona Seeds</strong>
+              <span>30 personas with tags, guardrails, headline anchors</span>
+            </div>
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_architecture.json">
+              <strong>Copy Architecture</strong>
+              <span>Headline &amp; support line architecture definitions</span>
+            </div>
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_prompt_templates.json">
+              <strong>Copy Prompt Templates</strong>
+              <span>System prompts, format rules, schema, angle definitions</span>
+            </div>
+            <div class="input-prompt-card" data-file-path="scripts/prompt_assembler_templates.json">
+              <strong>Prompt Assembler Templates</strong>
+              <span>Image prompt assembly blocks (product lock, proof bar, safe zone, etc.)</span>
+            </div>
+            <div class="input-prompt-card" data-file-path="background_variant.json">
+              <strong>Background Variants</strong>
+              <span>500 background visual variants catalog</span>
+            </div>
+          </div>
         </section>
       </div>
 
       <div class="column column-right">
+        <section class="card card-hypothesis">
+          <h2>5) Hypothesis Testing</h2>
+          <p class="hint">Select a variable to A/B test. The pipeline will generate controlled variants where only this variable changes.</p>
+          <label>Hypothesis Variable</label>
+          <select id="hypothesisType"></select>
+          <div id="hypothesisVariantRow" class="hidden">
+            <label>Style</label>
+            <select id="hypothesisVariant"></select>
+          </div>
+          <div id="hypothesisSummary" class="hint"></div>
+        </section>
+
         <section class="card card-execution">
-          <h2>2) Execution</h2>
-          <label>OpenCode API URL (auto-wired by launcher; editable)</label>
+          <h2>6) Execution</h2>
+          <label>Server</label>
+          <select id="serverType">
+            <option value="opencode">OpenCode</option>
+          </select>
+          <label>API URL (auto-wired by launcher; editable)</label>
           <input id="opencodeApiUrl" type="text" placeholder="http://127.0.0.1:4090" />
-          <label>OpenCode API Key (optional)</label>
+          <label>API Key (optional - defaults to server password)</label>
           <input id="opencodeApiKey" type="password" placeholder="sk-..." />
           <label>Provider</label>
           <select id="opencodeProvider"></select>
           <label>Model</label>
           <select id="opencodeModel"></select>
+          <label>Ad multiplier per selected persona/format</label>
+          <input id="adMultiplier" type="number" min="1" max="20" value="1" />
+          <p class="hint">Use this to create multiple ads for the same persona, format, and hypothesis. The selected background stays locked across those multiplied ads.</p>
+          <label>Ads per LLM call (batch size)</label>
+          <input id="batchSize" type="number" min="1" max="500" value="10" />
+          <p class="hint">How many ad requests to send in a single LLM call. Higher = fewer calls, larger context.</p>
+          <label class="toggle-label execution-toggle" title="Use the same background for the same selected format across all selected personas in this run.">
+            <input id="shareBackgroundAcrossPersonas" type="checkbox" />
+            <span>Keep same background across personas for each format</span>
+          </label>
+          <label class="toggle-label execution-toggle" title="Reuse background slot and seed from a previous run so hypothesis/variant tests keep background constant.">
+            <input id="reuseBackgrounds" type="checkbox" />
+            <span>Reuse backgrounds from previous run</span>
+          </label>
+          <select id="backgroundReuseRun" disabled></select>
+          <label class="toggle-label execution-toggle" title="Reuse the selected visual pattern from a previous run for fair testing.">
+            <input id="reuseVisualPatterns" type="checkbox" />
+            <span>Reuse visual patterns from previous run</span>
+          </label>
+          <select id="visualPatternReuseRun" disabled></select>
 
           <p class="hint">Image and Cloudinary credentials are loaded from root <code>.env.dashboard</code>.</p>
 
           <button id="runBtn">Run Pipeline</button>
+          <button id="cancelRunBtn" class="ghost-btn" type="button" style="display:none">Cancel</button>
           <pre id="status" class="status"></pre>
         </section>
 
         <section class="card card-uploads">
-          <h2>4) Optional File Uploads</h2>
+          <h2>7) Optional File Uploads</h2>
           <div class="uploads">
-            <label>Product Info <input id="productFile" type="file" /></label>
-            <label>Mechanism <input id="mechanismFile" type="file" /></label>
-            <label>FAQ <input id="faqFile" type="file" /></label>
-            <label>Active Images TXT <input id="activeImagesFile" type="file" /></label>
+            <label>Product Master Doc <input id="productFile" type="file" /></label>
+             
+          </div>
+          <div id="productDocInfo" class="product-doc-info"></div>
+          <div id="productDocEditor" class="product-doc-editor hidden">
+            <div class="product-doc-editor-top">
+              <strong>Edit Product Doc</strong>
+              <div class="product-doc-editor-actions">
+                <button id="saveProductDoc" class="ghost-btn" type="button">Save</button>
+                <button id="closeProductDoc" class="ghost-btn" type="button">Close</button>
+              </div>
+            </div>
+            <textarea id="productDocText" spellcheck="false"></textarea>
           </div>
           <div id="defaultsInfo" class="hint"></div>
         </section>
@@ -70,19 +160,36 @@
     </div>
 
     <section class="card card-runs">
-      <h2>5) Latest Runs</h2>
+      <h2>8) Latest Runs</h2>
       <div class="runs-toolbar">
         <button id="refreshRuns" class="ghost-btn" type="button">Refresh</button>
-        <div class="carousel-controls">
-          <button id="runPrev" class="carousel-btn" type="button" aria-label="Previous run">◀</button>
-          <span id="runIndex" class="run-index">0 / 0</span>
-          <button id="runNext" class="carousel-btn" type="button" aria-label="Next run">▶</button>
+        <div class="batch-dropdown">
+          <button id="batchDropdownBtn" class="ghost-btn batch-dropdown-btn" type="button">Select batch(es)</button>
+          <div id="batchDropdownMenu" class="dropdown-menu hidden"></div>
         </div>
+        <button id="batchGen45" class="ghost-btn" type="button">Generate 4:5</button>
+        <button id="batchGenBoth" class="ghost-btn" type="button">Generate 4:5+9:16</button>
+        <button id="batchGen916" class="ghost-btn" type="button">Generate 9:16</button>
+        <button id="stopGeneration" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">⏹ Stop Gen</button>
+        <button id="batchDownload" class="ghost-btn" type="button" title="Download all generated images for this run as ZIP">Download Batch</button>
+        <button id="launchChrome" class="ghost-btn" type="button">🚀 Launch Visible Chrome</button>
+        <button id="killChrome" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">⛔ Kill Chrome</button>
+        <label id="headlessToggle" class="toggle-label" title="Toggle headless mode for Gemini image generation">
+          <input type="checkbox" id="headlessMode" />
+          <span>Headless</span>
+        </label>
+        <button id="runPrev" class="carousel-btn" type="button">◀</button>
+        <span id="runIndex" class="run-index">0 / 0</span>
+        <button id="runNext" class="carousel-btn" type="button">▶</button>
       </div>
       <div id="runs" class="runs-carousel"></div>
+      <div class="log-terminal-wrap">
+        <div class="log-terminal-header">Activity Log</div>
+        <pre id="logStatus" class="status log-status"></pre>
+      </div>
     </section>
   </div>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>

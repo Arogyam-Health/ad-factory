@@ -30,7 +30,7 @@ if ! command -v opencode >/dev/null 2>&1; then
     echo "npm not found. Install Node.js LTS first: https://nodejs.org/"
     exit 1
   fi
-  npm install -g opencode-cli
+  npm install -g opencode-ai
 fi
 
 echo "[5/6] Verifying OpenCode"
