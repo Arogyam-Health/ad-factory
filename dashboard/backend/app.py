@@ -7138,14 +7138,13 @@ def api_download_single_image(run_id: str, image_file: str):
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Image file not found")
 
-    naming = _parse_image_naming(image_file, run_dir)
     meta_path = full_path.with_suffix(".json")
     legacy_meta_path = full_path.with_suffix(full_path.suffix + ".json")
 
     import io, zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(full_path, f"{naming['stem']}{naming['ext']}")
+        zf.write(full_path, full_path.name)
         meta_content = {"source": image_file}
         if meta_path.exists() or legacy_meta_path.exists():
             try:
@@ -7155,12 +7154,12 @@ def api_download_single_image(run_id: str, image_file: str):
             except Exception:
                 pass
         meta_content = _clean_metadata_for_download(meta_content, image_file, run_dir)
-        meta_content["_download_name"] = naming["stem"]
-        zf.writestr(f"{naming['stem']}_metadata.json", json.dumps(meta_content, ensure_ascii=False, indent=2))
+        meta_content["_download_name"] = full_path.stem
+        zf.writestr(f"{full_path.stem}_metadata.json", json.dumps(meta_content, ensure_ascii=False, indent=2))
 
     buf.seek(0)
     return StreamingResponse(buf, media_type="application/zip",
-                             headers={"Content-Disposition": f'attachment; filename="{naming["stem"]}.zip"'})
+                             headers={"Content-Disposition": f'attachment; filename="{full_path.stem}.zip"'})
 
 
 def api_download_batch_images(run_id: str):
@@ -7191,12 +7190,11 @@ def api_download_batch_images(run_id: str):
             vn = _extract_vn_from_image_path(img_path) or batch_label or "images"
             vns.add(vn)
             aspect = _extract_aspect_from_image_path(img_path)
-            naming = _parse_image_naming(img_path, run_dir)
             meta_path = full_path.with_suffix(".json")
             legacy_meta_path = full_path.with_suffix(full_path.suffix + ".json")
 
             folder = f"{vn}/{aspect}" if aspect else vn
-            zf.write(full_path, f"{folder}/{naming['stem']}{naming['ext']}")
+            zf.write(full_path, f"{folder}/{full_path.name}")
 
             meta_content = {"source": img_path}
             if meta_path.exists() or legacy_meta_path.exists():
@@ -7207,8 +7205,8 @@ def api_download_batch_images(run_id: str):
                 except Exception:
                     pass
             meta_content = _clean_metadata_for_download(meta_content, img_path, run_dir)
-            meta_content["_download_name"] = naming["stem"]
-            zf.writestr(f"{folder}/{naming['stem']}_metadata.json",
+            meta_content["_download_name"] = full_path.stem
+            zf.writestr(f"{folder}/{full_path.stem}_metadata.json",
                         json.dumps(meta_content, ensure_ascii=False, indent=2))
 
         if not image_files:
@@ -7238,12 +7236,11 @@ def api_download_batches(batch_names: list[str]):
                 full_path = ROOT / img_path
                 if not full_path.exists():
                     continue
-                naming = _parse_image_naming(img_path, None)
                 aspect = _extract_aspect_from_image_path(img_path)
                 meta_path = full_path.with_suffix(".json")
                 legacy_meta_path = full_path.with_suffix(full_path.suffix + ".json")
                 folder = f"{vn}/{aspect}" if aspect else vn
-                zf.write(full_path, f"{folder}/{naming['stem']}{naming['ext']}")
+                zf.write(full_path, f"{folder}/{full_path.name}")
                 meta_content = {"source": img_path}
                 if meta_path.exists() or legacy_meta_path.exists():
                     try:
@@ -7253,8 +7250,8 @@ def api_download_batches(batch_names: list[str]):
                     except Exception:
                         pass
                 meta_content = _clean_metadata_for_download(meta_content, img_path, None)
-                meta_content["_download_name"] = naming["stem"]
-                zf.writestr(f"{folder}/{naming['stem']}_metadata.json",
+                meta_content["_download_name"] = full_path.stem
+                zf.writestr(f"{folder}/{full_path.stem}_metadata.json",
                             json.dumps(meta_content, ensure_ascii=False, indent=2))
 
         if not image_files_by_vn:
