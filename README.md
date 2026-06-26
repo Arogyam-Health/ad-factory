@@ -9,7 +9,14 @@ The full system map and pipeline live in [`docs/HANDOVER.md`](docs/HANDOVER.md).
 - Python 3.10+
 - Node.js LTS (only required if `opencode` CLI is not already installed — the bootstrap script installs it via npm)
 
-## Setup (fresh clone)
+## Platform setup guides
+
+| Platform | Guide |
+| --- | --- |
+| **Windows + WSL2** (Intel/AMD or Snapdragon) | [`docs/WSL_SETUP.md`](docs/WSL_SETUP.md) |
+| **macOS** (Apple Silicon or Intel) | [`docs/MAC_SETUP.md`](docs/MAC_SETUP.md) |
+
+For a quick start on any Linux machine (or inside WSL/WSL2):
 
 ```bash
 bash scripts/bootstrap_stack.sh
@@ -74,8 +81,10 @@ CDP (Chrome DevTools Protocol) is used via Playwright's `connect_over_cdp` and `
 4. `/snap/bin/chromium`
 5. `/usr/bin/chromium-browser`
 6. `/usr/bin/chromium`
+7. `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
+8. `/Applications/Chromium.app/Contents/MacOS/Chromium`
 
-Install one of these before running browser automation. On Debian/Ubuntu: `sudo apt install google-chrome-stable` (or `chromium-browser`).
+Install one of these before running browser automation. On Debian/Ubuntu: `sudo apt install google-chrome-stable` (or `chromium-browser`). On macOS: install Chrome from <https://google.com/chrome/> (the path #7 above will be found automatically).
 
 After `pip install`, also run:
 

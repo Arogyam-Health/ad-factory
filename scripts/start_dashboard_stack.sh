@@ -100,6 +100,8 @@ open_browser() {
     xdg-open "$url" >/dev/null 2>&1 || true
   elif command -v sensible-browser >/dev/null 2>&1; then
     sensible-browser "$url" >/dev/null 2>&1 || true
+  elif command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || true
   else
     echo "Open this URL manually: $url"
   fi

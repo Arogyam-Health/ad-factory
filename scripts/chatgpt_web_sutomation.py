@@ -646,6 +646,8 @@ def resolve_browser_binary() -> str:
         "/snap/bin/chromium",
         "/usr/bin/chromium-browser",
         "/usr/bin/chromium",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
     ]:
         if Path(candidate).exists():
             return candidate

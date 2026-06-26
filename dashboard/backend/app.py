@@ -6168,6 +6168,8 @@ def api_launch_visible_browser() -> dict[str, Any]:
         "/snap/bin/chromium",
         "/usr/bin/chromium-browser",
         "/usr/bin/chromium",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
     ]:
         if Path(candidate).exists():
             chrome_bin = candidate
