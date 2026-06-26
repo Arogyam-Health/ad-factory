@@ -6126,7 +6126,7 @@ def api_launch_visible_browser() -> dict[str, Any]:
         port_held = True
         sock.close()
 
-    if port_held:
+    if port_held and Path("/mnt/c").exists():
         try:
             netstat = subprocess.run(
                 ["netstat.exe", "-ano", "-p", "TCP"],
