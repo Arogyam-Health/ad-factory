@@ -2198,64 +2198,56 @@ def _upload_with_playwright_input(page: Page, file_paths: list[str]) -> bool:
     return False
 
 
-def _active_window_title() -> str:
-    if not shutil.which("xdotool"):
-        return ""
+def _find_file_input_anywhere(page: Page) -> Locator | None:
+    """Find a visible or hidden file input element anywhere in the page."""
     try:
-        result = subprocess.run(
-            ["xdotool", "getactivewindow", "getwindowname"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        return (result.stdout or "").strip()
+        loc = page.locator("input[type='file']").first
+        if loc and loc.count() > 0:
+            return loc
     except Exception:
-        return ""
+        pass
+    return None
 
 
-def _native_file_dialog_active() -> bool:
-    title = _active_window_title().lower()
-    if not title:
-        return False
-    return ("open" in title and "file" in title) or "select file" in title or "choose file" in title
-
-
-def _native_dialog_choose_file(file_path: str, timeout: int = 20) -> bool:
-    """Drive the Linux Open Files dialog with xdotool when Playwright misses it.
-
-    This is a last-resort path for CDP-connected Chrome. It uploads one file at
-    a time to avoid ambiguous multi-select behavior in GTK/KDE file choosers.
-    """
-    if not shutil.which("xdotool"):
-        print("  [upload] Native dialog fallback needs xdotool, but xdotool is not installed.")
-        return False
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if _native_file_dialog_active():
-            break
-        time.sleep(0.25)
-    else:
-        print("  [upload] Native file dialog was not the active window; not typing into the desktop.")
-        return False
-
+def _upload_with_playwright_input(page: Page, file_path: str) -> bool:
+    """Upload a file via Playwright's set_input_files on the hidden file input.
+    Works on all platforms — no xdotool needed."""
     try:
-        print(f"  [upload] Native dialog fallback selecting: {file_path}")
-        subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+l"], check=False, timeout=3)
-        time.sleep(0.25)
-        subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "0", file_path], check=False, timeout=10)
-        time.sleep(0.25)
-        subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], check=False, timeout=3)
-        time.sleep(1.0)
-        # Some file choosers focus the file after the first Return and need a second Return/Open.
-        if _native_file_dialog_active():
-            subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], check=False, timeout=3)
-            time.sleep(0.8)
-        return not _native_file_dialog_active()
+        loc = _find_file_input_anywhere(page)
+        if loc is None:
+            print("  [upload] No file input found for playwright input upload")
+            return False
+        loc.set_input_files(file_path, timeout=0)
+        print("  [upload] set_input_files accepted the file.")
+        return True
     except Exception as exc:
-        print(f"  [upload] Native dialog fallback failed: {exc}")
+        print(f"  [upload] set_input_files failed: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
         return False
+
+
+def _upload_with_cdp_dom(page: Page, file_path: str) -> bool:
+    """Upload a file via CDP DOM.setFileInputFiles. Works on all platforms."""
+    try:
+        session = page.context.new_cdp_session(page)
+        doc = session.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        root_id = doc["root"]["nodeId"]
+        node_ids = session.send("DOM.querySelectorAll", {"nodeId": root_id, "selector": "input[type='file']"}).get("nodeIds", [])
+        if not node_ids:
+            print("  [upload] No file input nodes found via CDP")
+            return False
+        for node_id in reversed(node_ids):
+            try:
+                session.send("DOM.setFileInputFiles", {"nodeId": int(node_id), "files": [file_path]})
+                print("  [upload] CDP setFileInputFiles accepted the file.")
+                return True
+            except Exception:
+                continue
+    except Exception as exc:
+        print(f"  [upload] CDP direct upload failed: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
+    return False
+
+
+
 
 
 def _open_upload_file_chooser(page: Page, timeout_ms: int = 7000):
@@ -2284,13 +2276,11 @@ def _open_upload_file_chooser(page: Page, timeout_ms: int = 7000):
                 page.get_by_text("Upload files", exact=True).click(timeout=2500)
         return chooser_info.value
     except PWTimeoutError:
-        # In CDP-attached Chrome on Linux, the native dialog can open while
-        # Playwright misses the filechooser event. Do not retry blindly here;
-        # the caller can use the native-dialog fallback once.
-        if _native_file_dialog_active():
-            print("  [upload] Native file dialog opened, but Playwright did not catch the filechooser event.")
-            return None
-        raise
+        # In CDP-attached Chrome, the native OS dialog can open while
+        # Playwright misses the filechooser event. Return None so the caller
+        # can fall back to set_input_files / CDP DOM file input.
+        print("  [upload] Playwright did not catch the filechooser event; trying fallback upload.")
+        return None
 
 
 def _wait_for_uploaded_count_at_least(
@@ -2326,28 +2316,31 @@ def _upload_one_file_via_menu(page: Page, file_path: str, before_srcs: set[str],
     try:
         chooser = _open_upload_file_chooser(page, timeout_ms=7000)
     except Exception as exc:
-        # If the native dialog is active after this failure, xdotool can still rescue it.
-        if not _native_file_dialog_active():
-            raise PWTimeoutError(f"Could not open Upload files chooser for {file_path}: {exc}")
+        print(f"  [upload] Could not open Upload files chooser: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
 
     if chooser is not None:
         try:
             chooser.set_files(file_path, timeout=0)
             print("  [upload] Playwright filechooser accepted file.")
+            _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+            return
         except Exception as exc:
-            # Do not retry immediately. On CDP Chrome the file can still be
-            # handed to Gemini even when FileChooser.set_files reports a timeout.
             print(f"  [upload] FileChooser.set_files reported: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
-            if _native_file_dialog_active():
-                if not _native_dialog_choose_file(file_path):
-                    raise PWTimeoutError("FileChooser.set_files failed and native dialog fallback could not select the file")
-    else:
-        if not _native_dialog_choose_file(file_path):
-            raise PWTimeoutError(
-                "Native file chooser opened and Playwright missed it. Install xdotool or run in a Playwright-launched Chrome profile."
-            )
 
-    _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+    # Cross-platform fallbacks: try set_input_files then CDP DOM
+    print("  [upload] Trying cross-platform upload fallbacks...")
+    if _upload_with_playwright_input(page, file_path):
+        _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+        return
+    if _upload_with_cdp_dom(page, file_path):
+        _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+        return
+    raise PWTimeoutError(
+        "Could not upload file. Playwright missed the native dialog and "
+        "fallback upload via set_input_files / CDP DOM also failed. "
+        "On Linux, try: sudo apt install xdotool. On macOS, ensure "
+        "Chrome has Accessibility permissions in System Settings."
+    )
 
 
 def _upload_one_by_one_via_menu(page: Page, file_paths: list[str], before_srcs: set[str]) -> bool:
