@@ -6325,19 +6325,20 @@ def api_kill_chrome() -> dict[str, Any]:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
-    # Also kill Windows Chrome CDP instances (when launched via WSL interop)
+    # Kill Windows Chrome CDP instances (only relevant when running inside WSL)
     win_chrome_killed = 0
-    for candidate in ["taskkill.exe", "/mnt/c/Windows/System32/taskkill.exe"]:
-        if Path(candidate).exists() or shutil.which(candidate):
-            try:
-                subprocess.run(
-                    [candidate, "/F", "/IM", "chrome.exe", "/FI", "WINDOWTITLE eq ChromeCDP*"],
-                    capture_output=True, timeout=5,
-                )
-                win_chrome_killed = 1
-            except Exception:
-                pass
-            break
+    if Path("/mnt/c").exists():
+        for candidate in ["taskkill.exe", "/mnt/c/Windows/System32/taskkill.exe"]:
+            if Path(candidate).exists() or shutil.which(candidate):
+                try:
+                    subprocess.run(
+                        [candidate, "/F", "/IM", "chrome.exe", "/FI", "WINDOWTITLE eq ChromeCDP*"],
+                        capture_output=True, timeout=5,
+                    )
+                    win_chrome_killed = 1
+                except Exception:
+                    pass
+                break
 
     return {"status": "killed", "chrome": killed, "gemini_processes": gemini_killed, "chatgpt_processes": chatgpt_killed, "windows_chrome": win_chrome_killed}
 
