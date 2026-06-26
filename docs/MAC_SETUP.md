@@ -148,14 +148,14 @@ it's x86_64. Both work identically for the dashboard.
 cd ~
 git clone https://github.com/Vinay-003/ad-factory.git ad-factory
 cd ad-factory
-git checkout windows-setup
+git checkout mac-setup
 ```
 
 Verify:
 
 ```bash
 git log --oneline -1
-# Should show the current windows-setup tip commit
+# Should show the current mac-setup tip commit
 ```
 
 ---
@@ -470,7 +470,7 @@ and create a new venv.
 | --- | --- | --- |
 | Start dashboard | `export OPENCODE_SERVER_PASSWORD="$(grep OPENCODE_SERVER_PASSWORD .env.dashboard \| cut -d'=' -f2)" && bash scripts/start_dashboard_stack.sh` | Terminal |
 | Stop dashboard | `bash scripts/stop_dashboard_stack.sh` | Terminal |
-| Pull latest | `git pull origin windows-setup` | Terminal |
+| Pull latest | `git pull origin mac-setup` | Terminal |
 | Re-login to AI | `opencode providers login` | Terminal |
 | Open dashboard | <http://127.0.0.1:8787> | Browser |
 | Kill Chrome CDP | `lsof -ti :9222 \| xargs kill -9` | Terminal |
