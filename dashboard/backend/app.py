@@ -754,123 +754,6 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
     return None
 
 
-GENERIC_HEADLINE_SKELETONS = [
-    "keeps blocking weight loss",
-    "keeps weight loss stuck",
-    "weight loss stalls when",
-    "diets fail because",
-    "finally a weight loss system",
-    "weight loss should not feel like",
-]
-
-GENERIC_SUPPORT_OPENERS = [
-    "this doctor-formulated ayurvedic kit supports",
-    "this guided ayurvedic system supports",
-    "a simple routine supports",
-]
-
-
-def _normalized_words(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", (text or "").lower().replace("'", ""))
-
-
-def _normalized_text(text: str) -> str:
-    return " ".join(_normalized_words(text))
-
-
-def _opening_pattern_4tok(text: str) -> str:
-    return "_".join(_normalized_words(text)[:4])
-
-
-def _phrase_matches_skeleton(text: str, skeleton: str) -> bool:
-    normalized = _normalized_text(text)
-    normalized_skeleton = re.sub(r"\{[^}]+\}", " ", skeleton.lower())
-    skeleton_words = _normalized_words(normalized_skeleton)
-    if not skeleton_words:
-        return False
-    return " ".join(skeleton_words) in normalized
-
-
-def _recent_registry_opening_counts(fmt: str, limit: int = 150) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    registry_path = ROOT / "AD_GENERATION_REGISTRY.JSON"
-    if not registry_path.exists():
-        return counts
-    try:
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    except Exception:
-        return counts
-    entries = registry.get("entries") if isinstance(registry, dict) else []
-    if not isinstance(entries, list):
-        return counts
-    for entry in entries[-limit:]:
-        if not isinstance(entry, dict):
-            continue
-        if str(entry.get("format") or "").strip().upper() != fmt:
-            continue
-        pattern = str(entry.get("opening_pattern_4tok_en") or "").strip()
-        if not pattern:
-            pattern = _opening_pattern_4tok(str(entry.get("headline_en") or ""))
-        if pattern:
-            counts[pattern] = counts.get(pattern, 0) + 1
-    return counts
-
-
-def semantic_copy_rejection(candidate: dict[str, Any], planned_ad: dict[str, Any], previous_same_format: list[dict[str, Any]]) -> str | None:
-    fmt = str(candidate.get("format") or planned_ad.get("format") or "").strip().upper()
-    copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
-    en = copy.get("EN") if isinstance(copy.get("EN"), dict) else {}
-    headline = str(en.get("headline") or "").strip()
-    support_line = str(en.get("subheadline") or en.get("support_line") or "").strip()
-    cta = str(en.get("cta") or "").strip()
-    if not headline:
-        return None
-
-    normalized_headline = _normalized_text(headline)
-    for skeleton in GENERIC_HEADLINE_SKELETONS:
-        if skeleton in normalized_headline:
-            return f"headline uses banned generic skeleton: {skeleton}"
-
-    copy_req = planned_ad.get("copy_requirements") if isinstance(planned_ad.get("copy_requirements"), dict) else {}
-    direction = copy_req.get("creative_direction") if isinstance(copy_req.get("creative_direction"), dict) else {}
-    for entry in direction.values():
-        if not isinstance(entry, dict):
-            continue
-        for skeleton in entry.get("avoid_skeletons", []):
-            if isinstance(skeleton, str) and _phrase_matches_skeleton(headline, skeleton):
-                return f"headline matches avoid_skeleton: {skeleton}"
-
-    opening = _opening_pattern_4tok(headline)
-    if opening:
-        current_count = sum(1 for prev in previous_same_format if _opening_pattern_4tok(str(prev.get("headline") or "")) == opening)
-        registry_count = _recent_registry_opening_counts(fmt).get(opening, 0)
-        if current_count + registry_count >= 2:
-            return f"headline opening pattern repeated too often: {opening}"
-
-    normalized_support = _normalized_text(support_line)
-    for opener in GENERIC_SUPPORT_OPENERS:
-        if normalized_support.startswith(opener):
-            return f"support line starts with generic opener: {opener}"
-
-    persona = planned_ad.get("persona") if isinstance(planned_ad.get("persona"), dict) else {}
-    persona_text = " ".join(
-        " ".join(v) if isinstance(v, list) else str(v)
-        for key, v in persona.items()
-        if key in {"pain_points", "core_message", "objections", "trust_anchors", "english_ready"}
-    ).lower()
-    persona_terms = [word for word in _normalized_words(persona_text) if len(word) >= 6]
-    if support_line and persona_terms and not any(term in normalized_support for term in persona_terms[:24]):
-        if not any(term in normalized_support for term in ["craving", "hunger", "digestion", "routine", "homemade", "guided", "pcod", "outfit", "work", "travel"]):
-            return "support line is too generic for the persona"
-
-    if cta:
-        cta_repeats = sum(1 for prev in previous_same_format if str(prev.get("cta") or "").strip().lower() == cta.lower())
-        if cta_repeats >= 2:
-            return f"CTA repeats too frequently in {fmt}: {cta}"
-
-    return None
-
-
 def extract_generated_ad_candidate(payload: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
@@ -3473,8 +3356,6 @@ def rerender_prompts_for_run(run_dir: Path, batch: str, copy_file: Path, languag
             batch,
             "--language-mode",
             language_mode,
-            "--no-registry-write",
-            "--skip-uniqueness-check",
         ],
         cwd=ROOT,
         run_id=run_dir.name,
@@ -5672,10 +5553,7 @@ async def api_run_execute(
         copy_req["concept_variation"] = concept
         ads_context.append({"persona": persona_payload, "format_rules": format_payload, "format": fmt, "copy_requirements": copy_req, "hypothesis": hyp_meta, "visual_archetype": item.get("visual_archetype"), "visual_pattern_reused_from_run_id": item.get("visual_pattern_reused_from_run_id"), "visual_pattern_reuse_key": item.get("visual_pattern_reuse_key"), "creative_index": item.get("creative_index", 1), "creative_total": item.get("creative_total", 1), "background_group_key": item.get("background_group_key"), "share_background_across_personas": item.get("share_background_across_personas", False)})
 
-    banlist_result = run_cmd(["python3", "scripts/registry_banlist.py", "--last", "150"], cwd=ROOT)
-    banlist_payload = parse_json_stdout(banlist_result, "registry_banlist")
-
-    full_context = {"generated_at": now_iso(), "run_id": run_id, "language_mode": resolve_language_mode(cfg), "context_source": product_ctx_source, "context_extractor_model": extractor_model, "opencode_model": execution_model, "product_file_path": str(product_file), "ads": ads_context, "banlist": banlist_payload}
+    full_context = {"generated_at": now_iso(), "run_id": run_id, "language_mode": resolve_language_mode(cfg), "context_source": product_ctx_source, "context_extractor_model": extractor_model, "opencode_model": execution_model, "product_file_path": str(product_file), "ads": ads_context}
     (run_dir / "context" / "run_context.json").write_text(json.dumps({k: full_context[k] for k in ["generated_at", "run_id", "language_mode", "context_source", "context_extractor_model", "opencode_model", "product_file_path"]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     # Run pipeline in background thread so frontend can poll partial results
@@ -5750,7 +5628,7 @@ def _run_pipeline_background(
         copy_file = run_dir / "context" / "copy_batch.json"
         copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode, "--skip-uniqueness-check"], cwd=ROOT, run_id=run_dir.name)
+        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode], cwd=ROOT, run_id=run_dir.name)
         if assembler_result.returncode != 0:
             if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
                 print(f"[PIPELINE] Assembler cancelled by user for run {run_dir.name}", file=sys.stderr)
