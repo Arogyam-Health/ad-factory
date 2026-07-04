@@ -315,7 +315,6 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                     if ext in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
                         image_id = hashlib.sha256(rel.encode()).hexdigest()[:16]
                         meta: dict[str, Any] = {}
-                        # Read sidecar JSON if present
                         sidecar = f.with_suffix(f"{f.suffix}.json")
                         if not sidecar.exists():
                             sidecar = f.with_suffix(".json")
@@ -324,9 +323,16 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                                 meta = json.loads(sidecar.read_text(encoding="utf-8", errors="ignore"))
                             except Exception:
                                 pass
-                        db[COLL_IMAGES].update_one(
-                            {"image_id": image_id},
-                            {"$set": {
+                        # Upload via active storage backend (local or cloudinary)
+                        try:
+                            from dashboard.backend.services.storage.service import image_metadata_for_db
+                            img_doc = image_metadata_for_db(
+                                f, run_id=run_id, user_id=user_id, batch=batch,
+                                file_path=rel,
+                                width=meta.get("width", 0), height=meta.get("height", 0),
+                            )
+                        except Exception:
+                            img_doc = {
                                 "user_id": user_id,
                                 "run_id": run_id,
                                 "image_id": image_id,
@@ -340,7 +346,10 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                                 "metadata": meta,
                                 "created_at": now,
                                 "updated_at": now,
-                            }},
+                            }
+                        db[COLL_IMAGES].update_one(
+                            {"image_id": image_id},
+                            {"$set": img_doc},
                             upsert=True,
                         )
 
@@ -7649,20 +7658,29 @@ def _register_download_routes():
         try:
             from dashboard.backend.db.client import get_sync_db
             from dashboard.backend.db.collections import COLL_IMAGES
-            doc = get_sync_db()[COLL_IMAGES].find_one({"_id": ObjectId(image_id)})
+            doc = get_sync_db()[COLL_IMAGES].find_one({"image_id": image_id})
         except Exception:
             doc = None
         if not doc:
             raise HTTPException(status_code=404, detail="Image not found")
         if doc.get("user_id") != user["user_id"]:
             raise HTTPException(status_code=403, detail="Access denied")
-        if doc.get("local_path"):
-            img_path = ROOT / doc["local_path"]
+        # Cloudinary: redirect to secure_url
+        secure_url = doc.get("secure_url") or ""
+        if secure_url:
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(secure_url)
+        # Legacy storage_url fallback
+        storage_url = doc.get("storage_url") or ""
+        if storage_url:
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(storage_url)
+        # Local file fallback
+        local_path = doc.get("local_path") or ""
+        if local_path:
+            img_path = ROOT / local_path
             if img_path.exists():
                 return FileResponse(img_path, filename=doc.get("filename", "image.png"))
-        if doc.get("storage_url"):
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(doc["storage_url"])
         raise HTTPException(status_code=404, detail="Image file not available")
 
     @app.get("/api/files/download/prompt/{prompt_id}")

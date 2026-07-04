@@ -47,6 +47,18 @@ class Settings:
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     password_hash_rounds: int = 12
+    storage_provider: str = field(default_factory=lambda: os.getenv(
+        "STORAGE_PROVIDER", "local"
+    ))
+    cloudinary_cloud_name: str = field(default_factory=lambda: os.getenv(
+        "CLOUDINARY_CLOUD_NAME", ""
+    ))
+    cloudinary_api_key: str = field(default_factory=lambda: os.getenv(
+        "CLOUDINARY_API_KEY", ""
+    ))
+    cloudinary_api_secret: str = field(default_factory=lambda: os.getenv(
+        "CLOUDINARY_API_SECRET", ""
+    ))
 
     @property
     def is_production(self) -> bool:
