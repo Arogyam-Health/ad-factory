@@ -2516,15 +2516,10 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_API_KEY", "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
     model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
     config["opencode_model"] = model
-    provider = str(config.get("opencode_provider") or "").strip()
-    if not provider and "/" in model:
-        provider = model.split("/", 1)[0]
-    config["opencode_provider"] = provider
 
     print(f"[call_opencode_compatible] api_url={api_url}, model={model}", file=sys.stderr)
 
     api_model = model.split("/", 1)[-1] if "/" in model else model
-
     language_mode = resolve_language_mode(config)
     product_file = Path(str(context.get("product_file_path") or DEFAULT_PRODUCT_MASTER))
     generated_ads: list[dict[str, Any]] = []
@@ -5583,11 +5578,7 @@ async def api_run_execute(
     product_ctx_source = "attached_product_master_doc"
     extractor_model = "none"
     execution_model = sanitize_dashboard_model((cfg.get("opencode_model") or "").strip(), list_opencode_models())
-    execution_provider = str(cfg.get("opencode_provider") or "").strip()
-    if not execution_provider and "/" in execution_model:
-        execution_provider = execution_model.split("/", 1)[0]
     cfg["opencode_model"] = execution_model
-    cfg["opencode_provider"] = execution_provider
 
     persona_library = parse_persona_library()
     ads_context: list[dict[str, Any]] = []
@@ -5621,11 +5612,11 @@ async def api_run_execute(
     banlist_result = run_cmd(["python3", "scripts/registry_banlist.py", "--last", "150"], cwd=ROOT)
     banlist_payload = parse_json_stdout(banlist_result, "registry_banlist")
 
-    full_context = {"generated_at": now_iso(), "run_id": run_id, "language_mode": resolve_language_mode(cfg), "context_source": product_ctx_source, "context_extractor_model": extractor_model, "opencode_provider": execution_provider, "opencode_model": execution_model, "product_file_path": str(product_file), "ads": ads_context, "banlist": banlist_payload}
-    (run_dir / "context" / "run_context.json").write_text(json.dumps({k: full_context[k] for k in ["generated_at", "run_id", "language_mode", "context_source", "context_extractor_model", "opencode_provider", "opencode_model", "product_file_path"]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    full_context = {"generated_at": now_iso(), "run_id": run_id, "language_mode": resolve_language_mode(cfg), "context_source": product_ctx_source, "context_extractor_model": extractor_model, "opencode_model": execution_model, "product_file_path": str(product_file), "ads": ads_context, "banlist": banlist_payload}
+    (run_dir / "context" / "run_context.json").write_text(json.dumps({k: full_context[k] for k in ["generated_at", "run_id", "language_mode", "context_source", "context_extractor_model", "opencode_model", "product_file_path"]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     # Run pipeline in background thread so frontend can poll partial results
-    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_provider=execution_provider, execution_model=execution_model, ads_context=ads_context)
+    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_model=execution_model, ads_context=ads_context)
     threading.Thread(target=_run_pipeline_background, kwargs=bg_kwargs, daemon=True).start()
 
     return {"run_id": run_id, "status": "started"}
@@ -5654,7 +5645,7 @@ def _run_pipeline_background(
     image_sources_file_path: Path, saved_input_images: list,
     reuse_visual_patterns_from_run_id: str,
     product_ctx_source: str, extractor_model: str,
-    execution_provider: str, execution_model: str,
+    execution_model: str,
     ads_context: list,
 ) -> None:
     """Run the full pipeline in a background thread, writing results incrementally."""
@@ -5726,7 +5717,6 @@ def _run_pipeline_background(
             manifest["copy_session_log"] = str((run_dir / "logs" / "opencode_session.log").relative_to(ROOT))
         manifest["context_source"] = product_ctx_source
         manifest["context_extractor_model"] = extractor_model
-        manifest["opencode_provider"] = execution_provider
         manifest["opencode_model"] = execution_model
         manifest["image_sources_file"] = str(image_sources_file_path)
         manifest["input_images_dir"] = str(INPUT_IMAGES_DIR.relative_to(ROOT)).replace("\\", "/")

@@ -9,7 +9,6 @@ import { initTheme } from "./theme.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { enhanceAllSelects, refreshSelect } from "./custom-select.js";
 
-const providerSelectEl = document.getElementById("opencodeProvider");
 const modelSelectEl = document.getElementById("opencodeModel");
 const defaultsInfoEl = document.getElementById("defaultsInfo");
 
@@ -219,7 +218,6 @@ async function runPipeline() {
     server_type: state.currentServerType,
     opencode_api_url: document.getElementById("opencodeApiUrl").value.trim(),
     opencode_api_key: document.getElementById("opencodeApiKey").value.trim(),
-    opencode_provider: (providerSelectEl.value || "").trim(),
     opencode_model: (modelSelectEl.value || "").trim(),
     hypothesis: getHypothesisConfig(),
   };
@@ -290,9 +288,8 @@ async function runPipeline() {
           const noteLine = Array.isArray(data.copy_generation_notes) && data.copy_generation_notes.length
             ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
             : "";
-          const providerLine = data.opencode_provider ? `\nProvider: ${data.opencode_provider}` : "";
           const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
-          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${providerLine}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${warningLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
+          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${warningLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
           fetchJSON("/api/defaults")
             .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
             .catch(() => {});
@@ -353,11 +350,6 @@ document.getElementById("cancelRunBtn")?.addEventListener("click", async () => {
   }
 });
 
-document.getElementById("serverType")?.addEventListener("change", () => {
-  state.currentServerType = "opencode";
-  document.getElementById("opencodeApiUrl").value = "http://127.0.0.1:4090";
-  initDefaults();
-});
 
 document.getElementById("runBtn")?.addEventListener("click", () => {
   runPipeline().catch((err) => setStatus(String(err)));
