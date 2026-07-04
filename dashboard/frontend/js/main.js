@@ -171,11 +171,9 @@ async function initDefaults() {
     state.modelsByProvider = opencode.models_by_provider || {};
     document.getElementById("opencodeApiUrl").value = opencode.api_url || "http://127.0.0.1:4090";
 
-    const providers = opencode.providers || Object.keys(state.modelsByProvider);
     const defaultModel = opencode.default_model || "";
-    const defaultProvider = defaultModel.includes("/") ? defaultModel.split("/", 1)[0] : (providers[0] || "");
+    const defaultProvider = (opencode.providers || Object.keys(state.modelsByProvider))[0] || "";
 
-    setSelectOptions(providerSelectEl, providers.length ? providers : [""], defaultProvider);
     renderModelOptions(defaultProvider, defaultModel);
   } catch (err) {
     setStatus(`Failed to load defaults: ${String(err)}`);
@@ -396,12 +394,6 @@ document.getElementById("reuseVisualPatterns")?.addEventListener("change", (even
   }
   refreshSelect(select);
 });
-
-if (providerSelectEl) {
-  providerSelectEl.addEventListener("change", () => {
-    renderModelOptions(providerSelectEl.value, "");
-  });
-}
 
 // Input Prompts
 document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((card) => {
