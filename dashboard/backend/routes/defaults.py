@@ -6,12 +6,14 @@ from dashboard.backend.app import (
     api_delete_input_image,
     api_upload_input_images,
     api_opencode_catalog,
+    api_google_models,
     api_product_doc,
     api_save_product_doc,
     api_prompt_file_content,
     api_save_prompt_file_content,
     api_input_prompt,
     api_save_input_prompt,
+    api_save_provider_config,
 )
 
 router = APIRouter()
@@ -58,3 +60,13 @@ def _input_prompt(prompt_type: str = "916_conversion") -> dict[str, Any]:
 @router.post("/api/input-prompt")
 def _save_input_prompt(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_save_input_prompt(payload)
+
+
+@router.post("/api/config/provider")
+def _save_provider_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return api_save_provider_config(payload)
+
+
+@router.get("/api/google/models")
+def _google_models(api_key: str = "") -> list[str]:
+    return api_google_models(api_key)

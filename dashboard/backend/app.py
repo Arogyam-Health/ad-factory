@@ -56,6 +56,8 @@ STARTING_PROMPT_PATH = ROOT / "input" / "startingprompt.txt"
 
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
 DEFAULT_OPENCODE_API_URL = os.getenv("OPENCODE_API_URL", "http://127.0.0.1:4090")
+DEFAULT_GOOGLE_API_URL = "https://generativelanguage.googleapis.com/v1beta"
+DEFAULT_GOOGLE_MODEL = "gemini-2.0-flash"
 OPENCODE_ADS_PER_SESSION_SCHEDULE = [25, 15, 10, 5, 2, 1]
 OPENCODE_AD_TIMEOUT_SECONDS = 600
 OPENCODE_MAX_CONCURRENT = 2
@@ -2064,21 +2066,45 @@ LLM_TRACES_MAX_FILES = 500
 
 def _log_llm_trace(run_id: str, label: str, model: str, request_body: dict, response_body: Any, status_code: int, duration_s: float, error: str | None = None) -> None:
     LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
+    is_google = "contents" in request_body
+    if is_google:
+        req = {
+            "contents": request_body.get("contents", []),
+            "system_instruction": request_body.get("system_instruction"),
+            "generationConfig": request_body.get("generationConfig"),
+        }
+    else:
+        req = {
+            "messages": request_body.get("messages", []),
+            "max_tokens": request_body.get("max_tokens"),
+            "temperature": request_body.get("temperature"),
+        }
+    if status_code == 200 and isinstance(response_body, dict):
+        if is_google:
+            candidates = response_body.get("candidates", [])
+            cand = candidates[0] if candidates else {}
+            resp = {
+                "content": cand.get("content", {}).get("parts", [{}])[0].get("text", "") if cand.get("content") else "",
+                "finish_reason": cand.get("finishReason"),
+                "usage": response_body.get("usageMetadata"),
+            }
+        else:
+            resp = {
+                "content": response_body.get("choices", [{}])[0].get("message", {}).get("content", ""),
+                "finish_reason": response_body.get("choices", [{}])[0].get("finish_reason"),
+                "usage": response_body.get("usage"),
+            }
+    else:
+        resp = None
+
     trace = {
         "timestamp": now_iso(),
         "run_id": run_id,
         "label": label,
         "model": model,
-        "request": {
-            "messages": request_body.get("messages", []),
-            "max_tokens": request_body.get("max_tokens"),
-            "temperature": request_body.get("temperature"),
-        },
-        "response": {
-            "content": response_body.get("choices", [{}])[0].get("message", {}).get("content", "") if isinstance(response_body, dict) else str(response_body),
-            "finish_reason": response_body.get("choices", [{}])[0].get("finish_reason") if isinstance(response_body, dict) else None,
-            "usage": response_body.get("usage") if isinstance(response_body, dict) else None,
-        } if status_code == 200 else None,
+        "provider": "google" if is_google else "opencode",
+        "request": req,
+        "response": resp,
         "status_code": status_code,
         "duration_s": round(duration_s, 2),
         "error": error,
@@ -2112,7 +2138,7 @@ def call_opencode_repair_copy(
             "Return valid JSON only",
             "Keep existing structure and fields",
             "Only change collided fields",
-            "Do not use generic repeated support lines",
+            "Write creative, fresh support lines that feel specific to this ad, not generic or templated",
             "Do not add internal tags or IDs",
         ],
         "collisions": collisions,
@@ -2447,6 +2473,155 @@ def normalize_generated_copy(
     return base
 
 
+def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir: Path, reserved_batch: str | None = None, language_mode: str | None = None) -> dict[str, Any] | None:
+    api_key = (config.get("google_api_key") or "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
+    model = (config.get("google_model") or "").strip() or DEFAULT_GOOGLE_MODEL
+    if not api_key:
+        print("[call_google_gemini] No Google API key configured", file=sys.stderr)
+        return None
+
+    print(f"[call_google_gemini] model={model}", file=sys.stderr)
+
+    language_mode = resolve_language_mode(config)
+    product_file = Path(str(context.get("product_file_path") or DEFAULT_PRODUCT_MASTER))
+    generated_ads: list[dict[str, Any]] = []
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not product_file.exists() or not product_file.is_file():
+        errors.append(f"Product master doc missing: {product_file}")
+        (run_dir / "logs" / "opencode_error.txt").write_text("\n\n---\n\n".join(errors), encoding="utf-8")
+        return None
+
+    product_doc_content = product_file.read_text(encoding="utf-8")
+
+    def call_llm(prompt: str, label: str = "ad_generation") -> tuple[dict[str, Any] | None, str, str, int]:
+        sys_part = prompt.replace("SYSTEM:\n", "", 1).split("\nUSER_PAYLOAD_JSON:\n", 1)[0] if prompt.startswith("SYSTEM:\n") else prompt
+        user_part = ""
+        if "\nUSER_PAYLOAD_JSON:\n" in prompt:
+            user_part = "USER_PAYLOAD_JSON:\n" + prompt.split("\nUSER_PAYLOAD_JSON:\n", 1)[1]
+
+        body: dict[str, Any] = {
+            "system_instruction": {"parts": [{"text": sys_part}]},
+            "contents": [
+                {"role": "user", "parts": [{"text": f"Product document:\n{product_doc_content}\n\n---\n\n{user_part}"}]},
+            ],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 8192,
+            },
+        }
+
+        try:
+            resp_raw = _gemini_generate(model, api_key, body, run_dir, label)
+        except httpx.TimeoutException:
+            return None, "", f"TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s", -1
+        except httpx.HTTPError as exc:
+            return None, "", f"HTTP error: {exc}", -1
+
+        if resp_raw is None:
+            return None, "", "Gemini API returned empty", -1
+
+        if hasattr(resp_raw, "status_code") and resp_raw.status_code != 200:
+            try:
+                err_body = resp_raw.json()
+                err = err_body.get("error", {})
+                code = err.get("code", resp_raw.status_code)
+                msg = err.get("message", resp_raw.text[:500])
+                status = err.get("status", "")
+                detail = f"HTTP {code} ({status}): {msg}" if status else f"HTTP {code}: {msg}"
+            except Exception:
+                detail = f"HTTP {resp_raw.status_code}: {resp_raw.text[:300]}"
+            return None, "", detail, -1
+
+        try:
+            data = resp_raw.json() if hasattr(resp_raw, "json") else resp_raw
+        except (json.JSONDecodeError, AttributeError) as exc:
+            return None, str(resp_raw), f"Parse error: {exc}", -1
+
+        candidates = data.get("candidates") if isinstance(data, dict) else None
+        if not candidates:
+            err = data.get("error", {}).get("message", str(data))
+            return None, json.dumps(data), f"Gemini error: {err}", -1
+
+        try:
+            content = candidates[0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError) as exc:
+            return None, json.dumps(data), f"Gemini parse error: {exc}", -1
+
+        parsed = parse_opencode_json_output(content)
+        return parsed, content, "", 0
+
+    with _opencode_queue_slot(f"copy_session {run_dir.name}"):
+        _cancel_current_run.clear()
+        cancel_event_for_run(run_dir.name).clear()
+
+        all_items = context.get("ads") or []
+        if not all_items:
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} No ads to generate")
+            return {"ads": [], "default_aspect_ratio": "4:5"}
+
+        payload = build_generation_payload_for_llm(context)
+
+        formats_in_batch = sorted({str(a.get("format", "")).strip().upper() for a in all_items if isinstance(a, dict)})
+        single_format = formats_in_batch[0] if len(formats_in_batch) == 1 else "ALL"
+        skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch)
+        prompt = json.dumps(payload, ensure_ascii=False) + "\n\n" + skeleton_tail
+
+        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Gemini call for {len(all_items)} ad(s)")
+
+        parsed, raw_content, err_msg, code = call_llm(prompt, label="ad_generation")
+
+        if code == -1 and err_msg in ("CANCELLED",):
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Cancelled")
+        elif parsed is None:
+            errors.append(err_msg)
+            if raw_content:
+                (run_dir / "logs" / "opencode_raw").mkdir(parents=True, exist_ok=True)
+                (run_dir / "logs" / "opencode_raw" / "batch.txt").write_text(raw_content, encoding="utf-8")
+        else:
+            ads_out = parsed.get("ads") or []
+            for ad_idx, ad_item in enumerate(all_items):
+                if ad_idx < len(ads_out):
+                    generated_ads.append(ads_out[ad_idx])
+                else:
+                    warnings.append(f"No ad output for item {ad_idx}")
+
+        result_payload: dict[str, Any] = {
+            "ads": generated_ads,
+            "default_aspect_ratio": "4:5",
+        }
+        if errors:
+            result_payload["_opencode_failures"] = errors
+        if warnings:
+            result_payload["_opencode_warnings"] = warnings
+        return result_payload
+
+
+def _gemini_generate(model: str, api_key: str, body: dict[str, Any], run_dir: Path, label: str) -> Any:
+    t0 = time.time()
+    client = httpx.Client(timeout=httpx.Timeout(OPENCODE_AD_TIMEOUT_SECONDS, connect=5))
+    _register_httpx_client(client)
+    try:
+        resp = client.post(
+            f"{DEFAULT_GOOGLE_API_URL}/models/{model}:generateContent?key={api_key}",
+            headers={"Content-Type": "application/json"},
+            json=body,
+        )
+        elapsed = time.time() - t0
+        if resp.status_code != 200:
+            _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=resp.text[:2000])
+            return resp
+        data = resp.json()
+        _log_llm_trace(run_dir.name, label, model, body, data, resp.status_code, elapsed)
+        return data
+    except Exception:
+        raise
+    finally:
+        _unregister_httpx_client()
+        client.close()
+
+
 def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], run_dir: Path, reserved_batch: str | None = None, language_mode: str | None = None) -> dict[str, Any] | None:
     api_url = (config.get("opencode_api_url") or "").strip() or os.getenv("OPENCODE_API_URL", "").strip() or DEFAULT_OPENCODE_API_URL
     api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_API_KEY", "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
@@ -2510,7 +2685,13 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
 
             if resp.status_code != 200:
                 _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=resp.text[:2000])
-                return None, resp.text, f"API error {resp.status_code}", resp.status_code
+                try:
+                    err_body = resp.json()
+                    err_msg = err_body.get("error", {}).get("message", "") or err_body.get("message", "")
+                    detail = f"HTTP {resp.status_code}: {err_msg}" if err_msg else f"HTTP {resp.status_code}: {resp.text[:200]}"
+                except Exception:
+                    detail = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                return None, resp.text, detail, resp.status_code
 
             try:
                 data = resp.json()
@@ -3823,6 +4004,13 @@ def api_defaults() -> dict[str, Any]:
 
         },
         "opencode": opencode,
+        "provider": {
+            "current": (os.getenv("LLM_PROVIDER") or "opencode").strip().lower(),
+            "google_api_key": bool(os.getenv("GOOGLE_API_KEY", "")),
+            "opencode_api_url": os.getenv("OPENCODE_API_URL", "") or DEFAULT_OPENCODE_API_URL,
+            "google_model": os.getenv("GOOGLE_MODEL", "") or DEFAULT_GOOGLE_MODEL,
+            "google_models": api_google_models(),
+        },
         "hypothesis": {
             "variables": HYPOTHESIS_VARIABLES,
             "default": {"type": "none", "variant": ""},
@@ -3869,6 +4057,69 @@ def api_opencode_catalog() -> dict[str, Any]:
         return catalog
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to discover OpenCode catalog: {exc}") from exc
+
+
+def api_save_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+    # Read current env file
+    current = {}
+    if ENV_PATH.exists():
+        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if "=" in line:
+                k, v = line.split("=", 1)
+                current[k.strip()] = v.strip()
+
+    # Override with payload fields
+    def merge(key, payload_key=None):
+        pk = payload_key or key.lower()
+        if pk in payload:
+            val = str(payload[pk]).strip()
+            if val:
+                current[key] = val
+            else:
+                current.pop(key, None)
+        return current.get(key, "")
+
+    merge("LLM_PROVIDER", "provider")
+    merge("GOOGLE_API_KEY")
+    merge("OPENCODE_API_URL")
+    merge("OPENCODE_API_KEY")
+    merge("GOOGLE_MODEL")
+
+    try:
+        ENV_PATH.write_text(
+            "\n".join(f"{k}={v}" for k, v in current.items() if v) + "\n",
+            encoding="utf-8",
+        )
+        for k, v in current.items():
+            if v:
+                os.environ[k] = v
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {exc}")
+
+    return {"status": "ok", "provider": current.get("LLM_PROVIDER", "opencode")}
+
+
+def api_google_models(api_key: str = "") -> list[str]:
+    key = api_key.strip() or os.getenv("GOOGLE_API_KEY", "").strip()
+    if not key:
+        return ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
+    url = f"{DEFAULT_GOOGLE_API_URL}/models?key={key}"
+    try:
+        resp = httpx.get(url, timeout=15)
+        if resp.status_code != 200:
+            return ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
+        data = resp.json()
+        raw = data.get("models") or []
+        models = []
+        for m in raw:
+            name = m.get("name", "")
+            methods = m.get("supportedGenerationMethods") or []
+            if "generateContent" in methods:
+                models.append(name.replace("models/", "", 1))
+        return sorted(models) if models else ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
+    except Exception:
+        return ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
 
 
 def _extract_backfill_batch(run_id: str) -> str | None:
@@ -5521,8 +5772,13 @@ async def api_run_execute(
 
     product_ctx_source = "attached_product_master_doc"
     extractor_model = "none"
-    execution_model = sanitize_dashboard_model((cfg.get("opencode_model") or "").strip(), list_opencode_models())
-    cfg["opencode_model"] = execution_model
+    provider = (cfg.get("provider") or "").strip().lower()
+    if provider == "google":
+        execution_model = (cfg.get("google_model") or "").strip() or DEFAULT_GOOGLE_MODEL
+        cfg["opencode_model"] = ""
+    else:
+        execution_model = sanitize_dashboard_model((cfg.get("opencode_model") or "").strip(), list_opencode_models())
+        cfg["opencode_model"] = execution_model
 
     persona_library = parse_persona_library()
     ads_context: list[dict[str, Any]] = []
@@ -5595,10 +5851,16 @@ def _run_pipeline_background(
         # Reserve batch number early so incremental assembler runs write to the same batch dir
         reserved_batch = _reserve_batch_name()
         language_mode = assembler_language_mode(cfg)
-        llm_mode = "opencode"
-        copy_json = call_opencode_compatible(cfg, full_context, run_dir, reserved_batch=reserved_batch, language_mode=language_mode)
+        provider = (cfg.get("provider") or "").strip().lower()
+        if provider == "google":
+            llm_mode = "google_gemini"
+            copy_json = call_google_gemini(cfg, full_context, run_dir, reserved_batch=reserved_batch, language_mode=language_mode)
+        else:
+            llm_mode = "opencode"
+            copy_json = call_opencode_compatible(cfg, full_context, run_dir, reserved_batch=reserved_batch, language_mode=language_mode)
         if not copy_json:
-            error_msg = "OpenCode copy generation unavailable (no LLM response) and fallback template has been removed."
+            provider_label = "Google Gemini" if llm_mode == "google_gemini" else "OpenCode"
+            error_msg = f"{provider_label} copy generation unavailable (no LLM response) and fallback template has been removed."
             (run_dir / "partial").mkdir(parents=True, exist_ok=True)
             (run_dir / "partial" / "error.txt").write_text(error_msg, encoding="utf-8")
             print(f"[PIPELINE ERROR] {error_msg}", file=sys.stderr)
@@ -5621,7 +5883,12 @@ def _run_pipeline_background(
         if generated_copy_error:
             (run_dir / "logs" / "opencode_error.txt").write_text(generated_copy_error + "\n\nGenerated payload:\n" + json.dumps(copy_json, ensure_ascii=False, indent=2), encoding="utf-8")
             (run_dir / "partial").mkdir(parents=True, exist_ok=True)
-            (run_dir / "partial" / "error.txt").write_text(f"OpenCode copy generation returned incomplete copy: {generated_copy_error}", encoding="utf-8")
+            provider_label = "Google Gemini" if llm_mode == "google_gemini" else "OpenCode"
+            if opencode_failures:
+                error_detail = "; ".join(str(e).splitlines()[0] for e in opencode_failures[:3])
+                (run_dir / "partial" / "error.txt").write_text(f"{provider_label} API error: {error_detail}", encoding="utf-8")
+            else:
+                (run_dir / "partial" / "error.txt").write_text(f"{provider_label} copy generation returned incomplete copy: {generated_copy_error}", encoding="utf-8")
             print(f"[PIPELINE ERROR] {generated_copy_error}", file=sys.stderr)
             return
 
@@ -5644,10 +5911,13 @@ def _run_pipeline_background(
 
         manifest = collect_run_result(run_dir, batch, image_generated=False)
         manifest["llm_mode"] = llm_mode
-        manifest["copy_source"] = "opencode generated copy"
+        if llm_mode == "google_gemini":
+            manifest["copy_source"] = f"google gemini — {execution_model}"
+        else:
+            manifest["copy_source"] = "opencode generated copy"
         if opencode_failures:
             manifest["copy_generation_failures"] = len(opencode_failures)
-            manifest["copy_generation_notes"] = [f"{len(opencode_failures)} ad(s) had generation failures"]
+            manifest["copy_generation_notes"] = [str(e).splitlines()[0] for e in opencode_failures[:5]]
         if opencode_warnings:
             manifest["copy_generation_warnings"] = len(opencode_warnings)
             manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
@@ -5659,6 +5929,7 @@ def _run_pipeline_background(
         manifest["context_source"] = product_ctx_source
         manifest["context_extractor_model"] = extractor_model
         manifest["opencode_model"] = execution_model
+        manifest["llm_mode"] = llm_mode
         manifest["image_sources_file"] = str(image_sources_file_path)
         manifest["input_images_dir"] = str(INPUT_IMAGES_DIR.relative_to(ROOT)).replace("\\", "/")
         manifest["input_images_uploaded"] = saved_input_images
@@ -6869,12 +7140,13 @@ def api_download_batches(batch_names: list[str]):
 def api_llm_traces(limit: int = 50, offset: int = 0, run_id_filter: str | None = None) -> dict[str, Any]:
     LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
     files = sorted(LLM_TRACES_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
-    all_traces = []
+    all_traces: list[tuple[str, dict]] = []
     for f in files:
         try:
             trace = json.loads(f.read_text(encoding="utf-8"))
             if run_id_filter and trace.get("run_id") != run_id_filter:
                 continue
+            trace["_file"] = f.name
             all_traces.append(trace)
         except (json.JSONDecodeError, OSError):
             continue
@@ -6883,12 +7155,15 @@ def api_llm_traces(limit: int = 50, offset: int = 0, run_id_filter: str | None =
     return {"traces": page, "total": total, "offset": offset, "limit": limit}
 
 
-def api_delete_llm_traces(run_id_filter: str | None = None) -> dict[str, Any]:
+def api_delete_llm_traces(run_id_filter: str | None = None, trace_files: list[str] | None = None) -> dict[str, Any]:
     LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
-    files = sorted(LLM_TRACES_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    files = sorted(LLM_TRACES_DIR.glob("*.json"), key=lambda f: f.st_mtime)
     deleted = 0
     for f in files:
-        if run_id_filter:
+        if trace_files:
+            if f.name not in trace_files:
+                continue
+        elif run_id_filter:
             try:
                 trace = json.loads(f.read_text(encoding="utf-8"))
                 if trace.get("run_id") != run_id_filter:
@@ -6897,7 +7172,18 @@ def api_delete_llm_traces(run_id_filter: str | None = None) -> dict[str, Any]:
                 continue
         f.unlink()
         deleted += 1
-    return {"deleted": deleted, "filter": run_id_filter}
+    return {"deleted": deleted, "filter": run_id_filter, "trace_files": trace_files}
+
+
+def api_delete_llm_traces_by_files(files: list[str]) -> dict[str, Any]:
+    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
+    deleted = 0
+    for fname in files:
+        f = LLM_TRACES_DIR / fname
+        if f.exists() and f.suffix == ".json":
+            f.unlink()
+            deleted += 1
+    return {"deleted": deleted, "files": files}
 
 
 # ── Modular routes ───────────────────────────────────────────────────────────

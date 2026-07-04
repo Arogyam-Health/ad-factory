@@ -21,6 +21,7 @@ from dashboard.backend.app import (
     api_download_batches,
     api_llm_traces,
     api_delete_llm_traces,
+    api_delete_llm_traces_by_files,
     signal_cancel_run,
     signal_cancel_current_run,
 )
@@ -116,5 +117,10 @@ def _llm_traces(limit: int = 50, offset: int = 0, run_id: str | None = None) -> 
 
 
 @router.delete("/api/llm-traces")
-def _delete_llm_traces(run_id: str | None = None) -> dict[str, Any]:
-    return api_delete_llm_traces(run_id_filter=run_id)
+def _delete_llm_traces(run_id: str | None = None, trace_files: str | None = None) -> dict[str, Any]:
+    files_list = trace_files.split(",") if trace_files else None
+    return api_delete_llm_traces(run_id_filter=run_id, trace_files=files_list)
+
+@router.post("/api/llm-traces/delete")
+def _delete_llm_traces_by_files(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return api_delete_llm_traces_by_files(payload.get("files", []))

@@ -175,10 +175,102 @@ async function initDefaults() {
     const defaultProvider = (opencode.providers || Object.keys(state.modelsByProvider))[0] || "";
 
     renderModelOptions(defaultProvider, defaultModel);
+
+    // Load provider config
+    const pcfg = data.provider || {};
+    const provider = pcfg.current || "opencode";
+    document.getElementById("llmProvider").value = provider;
+    toggleProviderConfig(provider);
+    refreshSelect(document.getElementById("llmProvider"));
+    populateGoogleModels(pcfg.google_models || [], pcfg.google_model || "");
+    document.getElementById("googleApiKey").value = "";
+    if (pcfg.google_api_key) {
+      document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
+    }
   } catch (err) {
     setStatus(`Failed to load defaults: ${String(err)}`);
   }
 }
+
+function populateGoogleModels(models, selectedModel) {
+  const sel = document.getElementById("googleModel");
+  if (!sel) return;
+  sel.innerHTML = "";
+  const list = Array.isArray(models) && models.length ? models : ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"];
+  list.forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    sel.appendChild(opt);
+  });
+  if (selectedModel && list.includes(selectedModel)) sel.value = selectedModel;
+  refreshSelect(sel);
+}
+
+async function fetchGoogleModels(apiKey) {
+  if (!apiKey) return;
+  try {
+    const models = await fetchJSON(`/api/google/models?api_key=${encodeURIComponent(apiKey)}`);
+    if (Array.isArray(models) && models.length) {
+      const sel = document.getElementById("googleModel");
+      const current = sel ? sel.value : "";
+      populateGoogleModels(models, current);
+    }
+  } catch {}
+}
+
+function toggleProviderConfig(provider) {
+  const opencodeEl = document.getElementById("opencodeConfig");
+  const googleEl = document.getElementById("googleConfig");
+  if (opencodeEl) opencodeEl.classList.toggle("hidden", provider !== "opencode");
+  if (googleEl) googleEl.classList.toggle("hidden", provider !== "google");
+}
+
+document.getElementById("llmProvider")?.addEventListener("change", (e) => {
+  const val = e.target.value || document.getElementById("llmProvider").value;
+  toggleProviderConfig(val);
+  refreshSelect(document.getElementById("llmProvider"));
+  if (val === "google") {
+    const key = document.getElementById("googleApiKey").value.trim();
+    if (key) fetchGoogleModels(key);
+  }
+});
+
+function saveProviderField(field, value) {
+  return fetchJSON("/api/config/provider", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ [field]: value }),
+  });
+}
+
+document.getElementById("saveGoogleKey")?.addEventListener("click", async () => {
+  const key = document.getElementById("googleApiKey").value.trim();
+  if (!key) { setStatus("Enter a Google API key first."); return; }
+  try {
+    const res = await saveProviderField("google_api_key", key);
+    setStatus(`Google API key saved`);
+    fetchGoogleModels(key);
+  } catch (err) { setStatus(`Failed: ${String(err)}`); }
+});
+
+document.getElementById("saveOpenCodeUrl")?.addEventListener("click", async () => {
+  const url = document.getElementById("opencodeApiUrl").value.trim();
+  if (!url) { setStatus("Enter an API URL first."); return; }
+  try {
+    await saveProviderField("opencode_api_url", url);
+    setStatus(`OpenCode URL saved`);
+  } catch (err) { setStatus(`Failed: ${String(err)}`); }
+});
+
+document.getElementById("saveOpenCodeKey")?.addEventListener("click", async () => {
+  const key = document.getElementById("opencodeApiKey").value.trim();
+  if (!key) { setStatus("Enter an API key first."); return; }
+  try {
+    await saveProviderField("opencode_api_key", key);
+    setStatus(`OpenCode API key saved`);
+  } catch (err) { setStatus(`Failed: ${String(err)}`); }
+});
 
 const runBtn = document.getElementById("runBtn");
 
@@ -214,9 +306,12 @@ async function runPipeline() {
     reuse_visual_patterns_from_run_id: reuseVisualPatterns ? visualPatternReuseRunId : "",
     generate_images: false,
     server_type: state.currentServerType,
+    provider: document.getElementById("llmProvider").value,
     opencode_api_url: document.getElementById("opencodeApiUrl").value.trim(),
     opencode_api_key: document.getElementById("opencodeApiKey").value.trim(),
-    opencode_model: (modelSelectEl.value || "").trim(),
+    opencode_model: document.getElementById("llmProvider").value === "opencode" ? (modelSelectEl.value || "").trim() : "",
+    google_api_key: document.getElementById("googleApiKey").value.trim(),
+    google_model: document.getElementById("googleModel").value,
     hypothesis: getHypothesisConfig(),
   };
 

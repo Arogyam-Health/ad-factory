@@ -620,6 +620,20 @@ textarea {
   display: none !important;
 }
 
+.input-save-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.input-save-row input {
+  flex: 1;
+}
+.inline-save-btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
 .persona:hover {
   border-color: color-mix(in srgb, var(--accent-violet) 30%, var(--line));
   box-shadow: 0 6px 16px color-mix(in srgb, var(--accent-violet) 12%, transparent);
@@ -813,6 +827,7 @@ button.is-loading::after {
 }
 
 .ghost-btn:hover { background: color-mix(in srgb, var(--primary) 10%, var(--surface)); border-color: var(--primary); }
+.ghost-btn:active { transform: scale(0.95); background: color-mix(in srgb, var(--primary) 18%, var(--surface)); transition: transform 0.08s ease, background 0.08s ease; }
 
 /* ── Hints & Uploads ─────────────────────────────────────────────────────── */
 .hint { color: var(--muted); font-size: 11px; line-height: 1.4; }

@@ -10,46 +10,146 @@
   <link rel="stylesheet" href="/styles.css" />
   <style>
     body { padding: 24px; max-width: 1200px; margin: 0 auto; }
-    .traces-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
-    .traces-header h1 { margin: 0; font-family: var(--font-head); font-size: 1.5rem; }
-    .traces-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    .traces-controls input, .traces-controls select { padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-family: var(--font-body); font-size: 0.85rem; }
-    .trace-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px; margin-bottom: 12px; }
-    .trace-card .meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); margin-bottom: 8px; }
-    .trace-card .meta .run-id { font-family: var(--font-mono); }
-    .trace-card .meta .status { font-weight: 600; }
-    .trace-card .meta .status.ok { color: var(--good-ink); }
-    .trace-card .meta .status.err { color: var(--accent-coral); }
-    .trace-card .meta .duration { font-family: var(--font-mono); }
-    .trace-card .label { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; background: var(--primary); color: #fff; }
-    .trace-card .model { font-family: var(--font-mono); font-size: 0.8rem; }
-    .trace-details { margin-top: 8px; }
-    .trace-details summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; padding: 4px 0; }
-    .trace-details pre { background: var(--status-bg); color: var(--status-fg); padding: 12px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 0; }
-    .empty-state { text-align: center; padding: 48px; color: var(--muted); }
-    .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 20px; }
-    .pagination button { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); cursor: pointer; font-family: var(--font-body); }
-    .pagination button:disabled { opacity: 0.4; cursor: default; }
-    .pagination span { font-size: 0.85rem; color: var(--muted); }
     #themeToggle { position: static; }
+
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+    .page-header h1 { margin: 0; font-family: var(--font-head); font-size: 1.5rem; font-weight: 600; }
+    .page-header .breadcrumb { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    .page-header .breadcrumb a { color: var(--primary); text-decoration: none; }
+    .page-header .breadcrumb a:hover { text-decoration: underline; }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); }
+    .toolbar-left { display: flex; align-items: center; gap: 8px; }
+    .toolbar-right { display: flex; align-items: center; gap: 8px; }
+    .toolbar .stat { font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
+    .toolbar .stat strong { color: var(--ink); font-weight: 600; }
+
+    .toolbar input[type="text"] { padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 0.82rem; width: 200px; outline: none; transition: border-color 0.15s; }
+    .toolbar input[type="text"]:focus { border-color: var(--primary); }
+
+    .batch-bar { display: none; align-items: center; gap: 10px; padding: 8px 14px; margin-bottom: 12px; background: var(--primary); color: #fff; border-radius: var(--radius-md); font-size: 0.85rem; font-weight: 500; animation: slideDown 0.15s ease; }
+    .batch-bar .count { flex: 1; }
+    .batch-bar button { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 4px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.82rem; font-family: var(--font-body); transition: background 0.15s; }
+    .batch-bar button:hover { background: rgba(255,255,255,0.35); }
+    .batch-bar .batch-cancel { background: transparent; border: none; color: rgba(255,255,255,0.8); cursor: pointer; font-size: 1.1rem; padding: 2px 6px; }
+    .batch-bar .batch-cancel:hover { color: #fff; }
+
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .traces-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .trace-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); transition: border-color 0.15s, box-shadow 0.15s; }
+    .trace-card:hover { border-color: var(--primary-muted); }
+    .trace-card.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+
+    .trace-card-inner { display: flex; align-items: flex-start; }
+    .trace-check { padding: 14px 0 14px 12px; display: flex; align-items: flex-start; }
+    .trace-check input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; border: 1.5px solid var(--line); border-radius: 3px; cursor: pointer; position: relative; flex-shrink: 0; margin-top: 2px; background: var(--bg); transition: all 0.12s; }
+    .trace-check input[type="checkbox"]:checked { background: var(--primary); border-color: var(--primary); }
+    .trace-check input[type="checkbox"]:checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .trace-check input[type="checkbox"]:hover { border-color: var(--primary-muted); }
+
+    .trace-body { flex: 1; padding: 12px 12px 12px 8px; cursor: pointer; min-width: 0; }
+
+    .trace-row1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .trace-row2 { display: flex; align-items: center; gap: 12px; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
+
+    .label-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+    .label-badge.ad_generation { background: #e8f5e9; color: #2e7d32; }
+    .label-badge.copy { background: #e3f2fd; color: #1565c0; }
+    .label-badge.repair { background: #fff3e0; color: #e65100; }
+    .label-badge.fix { background: #fce4ec; color: #c62828; }
+    .label-badge.default { background: #f3e5f5; color: #6a1b9a; }
+    .dark .label-badge.ad_generation { background: rgba(46,125,50,0.2); color: #81c784; }
+    .dark .label-badge.copy { background: rgba(21,101,192,0.2); color: #64b5f6; }
+    .dark .label-badge.repair { background: rgba(230,81,0,0.2); color: #ffb74d; }
+    .dark .label-badge.fix { background: rgba(198,40,40,0.2); color: #e57373; }
+    .dark .label-badge.default { background: rgba(106,27,154,0.2); color: #ce93d8; }
+
+    .status-dot { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .status-dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.ok { color: var(--good-ink); }
+    .status-dot.ok::before { background: var(--good-ink); }
+    .status-dot.err { color: var(--accent-coral); }
+    .status-dot.err::before { background: var(--accent-coral); }
+
+    .model-mono { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); }
+    .duration-num { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .run-id-text { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+    .timestamp-text { font-size: 0.78rem; }
+    .provider-badge { font-size: 0.68rem; padding: 1px 7px; border-radius: 3px; background: var(--status-bg); color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
+    .trace-delete-btn { opacity: 0; background: none; border: none; color: var(--accent-coral); cursor: pointer; font-size: 0.9rem; padding: 4px 8px; border-radius: var(--radius-sm); transition: all 0.12s; flex-shrink: 0; align-self: flex-start; margin-top: 10px; margin-right: 8px; }
+    .trace-card:hover .trace-delete-btn { opacity: 1; }
+    .trace-delete-btn:hover { background: rgba(229,115,115,0.12); }
+
+    .trace-details { margin-top: 0; }
+    .trace-details[open] .trace-body { padding-bottom: 8px; }
+    .details-sections { border-top: 1px solid var(--line); margin: 0 12px 8px; padding-top: 8px; }
+    .details-sections summary { cursor: pointer; font-size: 0.8rem; font-weight: 600; padding: 6px 0; color: var(--muted); user-select: none; display: flex; align-items: center; gap: 6px; }
+    .details-sections summary::before { content: "▶"; font-size: 0.65rem; transition: transform 0.12s; }
+    .details-sections[open] summary::before { transform: rotate(90deg); }
+    .details-sections pre { background: var(--status-bg); color: var(--status-fg); padding: 12px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.72rem; overflow-x: auto; max-height: 360px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 8px; line-height: 1.5; }
+    .details-error { padding: 0 12px 8px; font-size: 0.82rem; color: var(--accent-coral); }
+
+    .empty-state { text-align: center; padding: 64px 24px; color: var(--muted); }
+    .empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.3; }
+    .empty-state .empty-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+    .empty-state .empty-desc { font-size: 0.85rem; color: var(--muted); }
+
+    .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 20px; padding: 12px 0; }
+    .pagination button { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); cursor: pointer; font-family: var(--font-body); font-size: 0.82rem; transition: all 0.12s; }
+    .pagination button:hover:not(:disabled) { border-color: var(--primary-muted); background: var(--primary-muted); }
+    .pagination button:disabled { opacity: 0.35; cursor: default; }
+    .pagination .page-info { font-size: 0.82rem; color: var(--muted); min-width: 140px; text-align: center; }
+
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 20px; border-radius: var(--radius-md); font-size: 0.85rem; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.2); z-index: 1000; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+    .toast.show { opacity: 1; }
   </style>
 </head>
 <body>
-  <div class="traces-header">
-    <h1>LLM Traces</h1>
-    <div class="traces-controls">
-      <input id="filterRunId" type="text" placeholder="Filter by run ID..." />
-      <button id="deleteAllBtn" class="ghost-btn" type="button" style="color:var(--accent-coral)">Delete All</button>
+
+  <div class="page-header">
+    <div>
+      <h1>LLM Traces</h1>
+      <div class="breadcrumb"><a href="/">Dashboard</a> &rsaquo; LLM Traces</div>
+    </div>
+    <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
+  </div>
+
+  <div class="toolbar" id="toolbar">
+    <div class="toolbar-left">
+      <span class="stat">Total: <strong id="totalStat">0</strong></span>
+      <input id="filterInput" type="text" placeholder="Filter by run ID..." spellcheck="false" />
+    </div>
+    <div class="toolbar-right">
+      <button id="selectAllBtn" class="ghost-btn" type="button" title="Select all on this page">Select All</button>
       <button id="refreshBtn" class="ghost-btn" type="button">Refresh</button>
-      <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
+      <button id="deleteAllBtn" class="ghost-btn" type="button" style="color:var(--accent-coral)" title="Delete all traces">Delete All</button>
     </div>
   </div>
-  <div id="tracesContainer"><div class="empty-state">No traces yet. Run an ad generation to see LLM calls here.</div></div>
+
+  <div class="batch-bar" id="batchBar">
+    <span class="count" id="batchCount">0 selected</span>
+    <button id="batchDeleteBtn">Delete Selected</button>
+    <button class="batch-cancel" id="batchCancelBtn" title="Clear selection">&times;</button>
+  </div>
+
+  <div id="tracesContainer">
+    <div class="empty-state">
+      <div class="empty-icon">&#9744;</div>
+      <div class="empty-title">No traces yet</div>
+      <div class="empty-desc">Run an ad generation to see LLM calls here.</div>
+    </div>
+  </div>
+
   <div class="pagination" id="pagination" style="display:none">
     <button id="prevPage" disabled>Previous</button>
-    <span id="pageInfo"></span>
+    <span class="page-info" id="pageInfo"></span>
     <button id="nextPage">Next</button>
   </div>
+
+  <div class="toast" id="toast"></div>
 
   <script type="module">
     import { initTheme } from "/js/theme.js";
@@ -58,60 +158,104 @@
     const LIMIT = 50;
     let offset = 0;
     let runIdFilter = "";
+    let tracesData = [];
+    let selectedFiles = new Set();
+
+    const container = document.getElementById("tracesContainer");
+    const pagination = document.getElementById("pagination");
+    const batchBar = document.getElementById("batchBar");
+
+    const toastEl = document.getElementById("toast");
+    let toastTimer = null;
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2500);
+    }
 
     async function loadTraces() {
       const params = new URLSearchParams({ limit: LIMIT, offset });
       if (runIdFilter) params.set("run_id", runIdFilter);
       const resp = await fetch(`/api/llm-traces?${params}`);
       const data = await resp.json();
+      tracesData = data.traces || [];
       renderTraces(data);
     }
 
-    async function deleteAllTraces() {
-      if (!confirm("Delete all LLM traces?")) return;
-      await fetch("/api/llm-traces", { method: "DELETE" });
-      offset = 0;
-      loadTraces();
-    }
-
-    async function deleteTraceByRunId(runId) {
-      if (!confirm(`Delete all traces for run ${runId}?`)) return;
-      await fetch(`/api/llm-traces?run_id=${encodeURIComponent(runId)}`, { method: "DELETE" });
-      loadTraces();
-    }
-
     function renderTraces(data) {
-      const container = document.getElementById("tracesContainer");
-      const pagination = document.getElementById("pagination");
-      if (!data.traces.length) {
-        container.innerHTML = '<div class="empty-state">No traces found.</div>';
+      selectedFiles.clear();
+      updateBatchBar();
+
+      if (!tracesData.length) {
+        container.innerHTML = `<div class="empty-state">
+          <div class="empty-icon">&#9744;</div>
+          <div class="empty-title">No traces found</div>
+          <div class="empty-desc">${data.total === 0 ? "Run an ad generation to see LLM calls here." : "Try adjusting your filter."}</div>
+        </div>`;
         pagination.style.display = "none";
+        document.getElementById("totalStat").textContent = "0";
         return;
       }
-      container.innerHTML = data.traces.map(t => {
+
+      document.getElementById("totalStat").textContent = data.total;
+
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < tracesData.length; i++) {
+        const t = tracesData[i];
+        const card = document.createElement("div");
+        card.className = "trace-card";
+        card.dataset.index = i;
+        card.dataset.file = t._file || "";
+
         const statusClass = t.status_code === 200 ? "ok" : "err";
-        const errorHtml = t.error ? `<div style="color:var(--accent-coral);font-size:0.85rem;margin-top:4px">Error: ${t.error}</div>` : "";
-        const usageHtml = t.response?.usage ? ` · ${JSON.stringify(t.response.usage)}` : "";
-        const runId = t.run_id || "";
-        return `<div class="trace-card">
-          <div class="meta">
-            <span class="label">${t.label || "?"}</span>
-            <span class="model">${t.model || "?"}</span>
-            <span class="status ${statusClass}">${t.status_code}</span>
-            <span class="duration">${t.duration_s || "?"}s</span>
-            <span class="run-id">${runId}</span>
-            <span>${t.timestamp || ""}</span>
-            ${runId ? `<button class="ghost-btn trace-delete" onclick="deleteTraceByRunId('${runId}')" title="Delete traces for this run">✕</button>` : ""}
+        const labelClass = (t.label || "default").replace(/[^a-zA-Z0-9_-]/g, "_") || "default";
+        const provider = t.provider || "opencode";
+
+        const errorHtml = t.error ? `<div class="details-error">&#9888; ${escapeHtml(t.error)}</div>` : "";
+
+        const respUsage = t.response?.usage;
+        const usageLabel = respUsage ? ` &middot; usage` : "";
+
+        const timestamp = t.timestamp || "";
+        const displayTime = timestamp ? timestamp.replace("T", " ").replace(/\.\d+Z?/, "").replace(/Z$/, "") : "";
+
+        card.innerHTML = `
+          <div class="trace-card-inner">
+            <div class="trace-check"><input type="checkbox" class="trace-cb" data-file="${escapeAttr(t._file || "")}" /></div>
+            <div class="trace-body">
+              <div class="trace-row1">
+                <span class="label-badge ${labelClass}">${escapeHtml(t.label || "?")}</span>
+                <span class="status-dot ${statusClass}">${t.status_code}</span>
+                <span class="model-mono">${escapeHtml(t.model || "?")}</span>
+                <span class="duration-num">${t.duration_s != null ? t.duration_s + "s" : "?"}</span>
+                <span class="provider-badge">${provider}</span>
+              </div>
+              <div class="trace-row2">
+                <span class="run-id-text" title="${escapeAttr(t.run_id || "")}">${escapeHtml(t.run_id || "")}</span>
+                <span class="timestamp-text">${displayTime}</span>
+              </div>
+            </div>
+            <button class="trace-delete-btn" data-file="${escapeAttr(t._file || "")}" title="Delete this trace">&times;</button>
           </div>
           ${errorHtml}
-          <details class="trace-details"><summary>Request</summary><pre>${escapeHtml(JSON.stringify(t.request, null, 2))}</pre></details>
-          <details class="trace-details"><summary>Response${usageHtml}</summary><pre>${escapeHtml(JSON.stringify(t.response, null, 2))}</pre></details>
-        </div>`;
-      }).join("");
-      document.getElementById("pageInfo").textContent = `${data.offset + 1}–${Math.min(data.offset + data.limit, data.total)} of ${data.total}`;
+          <div class="details-sections" style="display:none">
+            <details class="trace-details"><summary>Request</summary><pre>${escapeHtml(JSON.stringify(t.request, null, 2))}</pre></details>
+            <details class="trace-details"><summary>Response${usageLabel}</summary><pre>${escapeHtml(JSON.stringify(t.response, null, 2))}</pre></details>
+          </div>`;
+
+        frag.appendChild(card);
+      }
+
+      container.innerHTML = "";
+      container.appendChild(frag);
+
+      pagination.style.display = "flex";
+      const start = data.offset + 1;
+      const end = Math.min(data.offset + data.limit, data.total);
+      document.getElementById("pageInfo").innerHTML = `<strong>${start}</strong>&ndash;<strong>${end}</strong> of <strong>${data.total}</strong>`;
       document.getElementById("prevPage").disabled = data.offset <= 0;
       document.getElementById("nextPage").disabled = data.offset + data.limit >= data.total;
-      pagination.style.display = "flex";
     }
 
     function escapeHtml(s) {
@@ -120,14 +264,179 @@
       return d.innerHTML;
     }
 
+    function escapeAttr(s) {
+      return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function updateBatchBar() {
+      const count = selectedFiles.size;
+      document.getElementById("batchCount").textContent = count + " selected";
+      batchBar.style.display = count > 0 ? "flex" : "none";
+    }
+
+    function selectAllOnPage() {
+      const cbs = container.querySelectorAll(".trace-cb");
+      const allChecked = Array.from(cbs).every(cb => cb.checked);
+      cbs.forEach(cb => {
+        cb.checked = !allChecked;
+        if (cb.checked) {
+          selectedFiles.add(cb.dataset.file);
+        } else {
+          selectedFiles.delete(cb.dataset.file);
+        }
+      });
+      updateBatchBar();
+      updateCardSelectedStates();
+    }
+
+    function updateCardSelectedStates() {
+      container.querySelectorAll(".trace-card").forEach(card => {
+        const cb = card.querySelector(".trace-cb");
+        card.classList.toggle("selected", cb && cb.checked);
+      });
+    }
+
+    function clearSelection() {
+      selectedFiles.clear();
+      container.querySelectorAll(".trace-cb").forEach(cb => cb.checked = false);
+      updateBatchBar();
+      updateCardSelectedStates();
+    }
+
+    async function deleteSelectedTraces() {
+      if (selectedFiles.size === 0) return;
+      if (!confirm(`Delete ${selectedFiles.size} selected trace${selectedFiles.size > 1 ? "s" : ""}?`)) return;
+      const files = Array.from(selectedFiles);
+      try {
+        const resp = await fetch("/api/llm-traces/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files }),
+        });
+        const result = await resp.json();
+        showToast(`Deleted ${result.deleted} trace${result.deleted !== 1 ? "s" : ""}`);
+        clearSelection();
+        offset = 0;
+        loadTraces();
+      } catch {
+        showToast("Failed to delete traces");
+      }
+    }
+
+    async function deleteTraceByFile(file) {
+      if (!file) return;
+      if (!confirm(`Delete this trace?`)) return;
+      try {
+        const resp = await fetch("/api/llm-traces/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files: [file] }),
+        });
+        const result = await resp.json();
+        showToast(`Deleted ${result.deleted} trace`);
+        offset = 0;
+        loadTraces();
+      } catch {
+        showToast("Failed to delete trace");
+      }
+    }
+
+    async function deleteAllTraces() {
+      if (!confirm("Delete ALL LLM traces? This cannot be undone.")) return;
+      await fetch("/api/llm-traces", { method: "DELETE" });
+      showToast("All traces deleted");
+      offset = 0;
+      loadTraces();
+    }
+
+    let lastCheckedIndex = -1;
+
+    container.addEventListener("change", (e) => {
+      const cb = e.target.closest(".trace-cb");
+      if (!cb) return;
+      const file = cb.dataset.file;
+      if (cb.checked) {
+        selectedFiles.add(file);
+      } else {
+        selectedFiles.delete(file);
+      }
+      updateBatchBar();
+      updateCardSelectedStates();
+
+      if (e.shiftKey && lastCheckedIndex >= 0) {
+        const cards = container.querySelectorAll(".trace-card");
+        const currentIdx = Array.from(cards).findIndex(c => c.dataset.file === file);
+        if (currentIdx >= 0) {
+          const min = Math.min(lastCheckedIndex, currentIdx);
+          const max = Math.max(lastCheckedIndex, currentIdx);
+          for (let i = min; i <= max; i++) {
+            const card = cards[i];
+            const cb2 = card.querySelector(".trace-cb");
+            if (cb2 && !cb2.checked) {
+              cb2.checked = true;
+              selectedFiles.add(cb2.dataset.file);
+            }
+          }
+          updateBatchBar();
+          updateCardSelectedStates();
+        }
+      }
+
+      const cards = container.querySelectorAll(".trace-card");
+      const currentIdx = Array.from(cards).findIndex(c => c.dataset.file === file);
+      if (currentIdx >= 0) lastCheckedIndex = currentIdx;
+    });
+
+    container.addEventListener("click", (e) => {
+      const body = e.target.closest(".trace-body");
+      if (body) {
+        const card = body.closest(".trace-card");
+        if (card) {
+          const details = card.querySelector(".details-sections");
+          if (details) {
+            details.style.display = details.style.display === "none" ? "block" : "none";
+          }
+        }
+        return;
+      }
+
+      const deleteBtn = e.target.closest(".trace-delete-btn");
+      if (deleteBtn) {
+        deleteTraceByFile(deleteBtn.dataset.file);
+        return;
+      }
+    });
+
+    container.addEventListener("dblclick", (e) => {
+      const cb = e.target.closest(".trace-cb");
+      if (!cb) return;
+      const file = cb.dataset.file;
+      const cards = container.querySelectorAll(".trace-card");
+      const idx = Array.from(cards).findIndex(c => c.dataset.file === file);
+      if (idx >= 0) {
+        const allFiles = Array.from(container.querySelectorAll(".trace-cb")).map(c => c.dataset.file);
+        selectedFiles = new Set(allFiles);
+        container.querySelectorAll(".trace-cb").forEach(c => c.checked = true);
+        updateBatchBar();
+        updateCardSelectedStates();
+      }
+    });
+
+    document.getElementById("selectAllBtn").addEventListener("click", selectAllOnPage);
     document.getElementById("refreshBtn").addEventListener("click", () => { offset = 0; loadTraces(); });
     document.getElementById("deleteAllBtn").addEventListener("click", deleteAllTraces);
-    document.getElementById("prevPage").addEventListener("click", () => { offset = Math.max(0, offset - LIMIT); loadTraces(); });
-    document.getElementById("nextPage").addEventListener("click", () => { offset += LIMIT; loadTraces(); });
-    document.getElementById("filterRunId").addEventListener("input", (e) => {
+    document.getElementById("batchDeleteBtn").addEventListener("click", deleteSelectedTraces);
+    document.getElementById("batchCancelBtn").addEventListener("click", clearSelection);
+    document.getElementById("prevPage").addEventListener("click", () => { clearSelection(); offset = Math.max(0, offset - LIMIT); loadTraces(); });
+    document.getElementById("nextPage").addEventListener("click", () => { clearSelection(); offset += LIMIT; loadTraces(); });
+    document.getElementById("filterInput").addEventListener("input", (e) => {
       runIdFilter = e.target.value.trim();
       offset = 0;
       loadTraces();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") clearSelection();
     });
 
     loadTraces();

@@ -97,12 +97,38 @@
 
         <section class="card card-execution">
           <h2>6) Execution</h2>
-          <label>API URL</label>
-          <input id="opencodeApiUrl" type="text" placeholder="http://127.0.0.1:4090" />
-          <label>API Key</label>
-          <input id="opencodeApiKey" type="password" placeholder="sk-..." />
-          <label>Model</label>
-          <select id="opencodeModel"></select>
+          <label>LLM Provider</label>
+          <select id="llmProvider">
+            <option value="opencode">OpenCode (OpenAI-compatible)</option>
+            <option value="google">Google Gemini</option>
+          </select>
+          <div id="opencodeConfig">
+            <label>API URL</label>
+            <div class="input-save-row">
+              <input id="opencodeApiUrl" type="text" placeholder="http://127.0.0.1:4090" />
+              <button id="saveOpenCodeUrl" class="ghost-btn inline-save-btn" type="button">Save</button>
+            </div>
+            <label>API Key</label>
+            <div class="input-save-row">
+              <input id="opencodeApiKey" type="password" placeholder="sk-..." />
+              <button id="saveOpenCodeKey" class="ghost-btn inline-save-btn" type="button">Save</button>
+            </div>
+            <label>Model</label>
+            <select id="opencodeModel"></select>
+          </div>
+          <div id="googleConfig" class="hidden">
+            <label>Google API Key</label>
+            <div class="input-save-row">
+              <input id="googleApiKey" type="password" placeholder="AIza..." />
+              <button id="saveGoogleKey" class="ghost-btn inline-save-btn" type="button">Save</button>
+            </div>
+            <label>Model</label>
+            <select id="googleModel">
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            </select>
+          </div>
           <label>Ad multiplier per selected persona/format</label>
           <input id="adMultiplier" type="number" min="1" max="20" value="1" />
           <p class="hint">Use this to create multiple ads for the same persona, format, and hypothesis. The selected background stays locked across those multiplied ads.</p>
@@ -185,6 +211,6 @@
     </section>
   </div>
 
-  <script type="module" src="/js/main.js"></script>
+  <script type="module" src="/js/main.js?v=2"></script>
 </body>
 </html>
