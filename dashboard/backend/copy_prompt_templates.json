@@ -1,7 +1,7 @@
 {
   "format": "v1",
   "_description": "All prompt text templates for ad copy LLM generation. Edit this file to change what the LLM sees — no code changes needed. Dynamic placeholders use {fmt}, {support_target}, {copy_fields}.",
-  "product_doc_bootstrap_prompt": "Read the attached product master doc completely. For every following ad-copy request in this same OpenCode session, use that doc as the single source of product truth for benefits, proof, mechanism, differentiators, exclusions, and priority hierarchy. Do not rewrite, summarize, modify, or ignore the doc. The following messages will provide only ad format/persona/concept/schema instructions. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.",
+  "product_doc_bootstrap_prompt": "Read the attached product master doc completely. Use this doc as the single source of product truth for benefits, proof, mechanism, differentiators, exclusions, and priority hierarchy. Do not rewrite, summarize, modify, or ignore the doc. The ad format/persona/concept/schema instructions follow in the same request. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.",
   "visual_archetypes": {
     "HERO": [
       {

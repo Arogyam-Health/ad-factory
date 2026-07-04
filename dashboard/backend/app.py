@@ -2592,41 +2592,31 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         cancel_event_for_run(run_dir.name).clear()
 
         all_items = context.get("ads") or []
-        batch_by_prompt: dict[str, list[dict[str, Any]]] = {}
-        for item in all_items:
-            prompt = build_generation_payload_for_llm(context, ad=item, config=config)
-            batch_by_prompt.setdefault(prompt, []).append(item)
+        if not all_items:
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} No ads to generate")
+            return {"ads": [], "default_aspect_ratio": "4:5"}
 
-        prompt_keys = list(batch_by_prompt.keys())
-        total_batches = len(prompt_keys)
+        payload = build_generation_payload_for_llm(context)
+        prompt = json.dumps(payload, ensure_ascii=False)
 
-        for batch_idx, prompt in enumerate(prompt_keys):
-            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Generation cancelled by user (batch {batch_idx + 1}/{total_batches})")
-                break
+        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} LLM call for {len(all_items)} ad(s)")
 
-            batch_items = batch_by_prompt[prompt]
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} LLM call {batch_idx + 1}/{total_batches} for {len(batch_items)} ad(s)")
+        parsed, raw_content, err_msg, code = call_llm(prompt, label="ad_generation")
 
-            parsed, raw_content, err_msg, code = call_llm(prompt, label=f"batch_{batch_idx + 1}")
-
-            if code == -1 and err_msg in ("CANCELLED",):
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Cancelled")
-                break
-
-            if parsed is None:
-                errors.append(f"batch_{batch_idx + 1}: {err_msg}")
-                if raw_content:
-                    (run_dir / "logs" / "opencode_raw").mkdir(parents=True, exist_ok=True)
-                    (run_dir / "logs" / "opencode_raw" / f"batch_{batch_idx + 1}.txt").write_text(raw_content, encoding="utf-8")
-                continue
-
+        if code == -1 and err_msg in ("CANCELLED",):
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Cancelled")
+        elif parsed is None:
+            errors.append(err_msg)
+            if raw_content:
+                (run_dir / "logs" / "opencode_raw").mkdir(parents=True, exist_ok=True)
+                (run_dir / "logs" / "opencode_raw" / "batch.txt").write_text(raw_content, encoding="utf-8")
+        else:
             ads_out = parsed.get("ads") or []
-            for ad_idx, ad_item in enumerate(batch_items):
+            for ad_idx, ad_item in enumerate(all_items):
                 if ad_idx < len(ads_out):
                     generated_ads.append(ads_out[ad_idx])
                 else:
-                    warnings.append(f"No ad output for item {ad_idx} in batch {batch_idx + 1}")
+                    warnings.append(f"No ad output for item {ad_idx}")
 
         result_payload: dict[str, Any] = {
             "ads": generated_ads,

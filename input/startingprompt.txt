@@ -42,8 +42,6 @@ A4. COLOR AND LIGHTING
 A5. TYPOGRAPHY AND COPY
 - Use Poppins only for on-image ad copy.
 - Use maximum two weights: Medium/Regular and Bold. Avoid thin/light weights.
-- Keep copy short, clean, benefit-led, premium, and mobile-readable.
-- Avoid hype, salesy language, unrealistic claims, exclamation spam, and dense copy blocks.
 - Do not use decorative fonts, serif fonts, outlines, glows, or drop shadows on ad copy text.
 
 A6. MASTER FORBIDDEN LIST
