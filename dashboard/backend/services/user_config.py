@@ -51,7 +51,11 @@ def has_custom_config(user_id: str) -> bool:
 
 
 def push_vinaysaini_config() -> None:
-    vinay_id = "vinaysaini@arogyamhealth.in"
+    from dashboard.backend.auth.service import find_user_by_email
+    user = find_user_by_email("vinaysaini@arogyamhealth.in")
+    if user is None:
+        return
+    vinay_id = user["user_id"]
     if has_custom_config(vinay_id):
         return
 
