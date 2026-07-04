@@ -193,6 +193,19 @@ Set `DEPLOYMENT_MODE=production` on Render. This enables:
 - **No public data mounts** — `/storage`, `/output`, `/generated_images` are NOT mounted in production. Use `/api/files/download/*` endpoints instead (authenticated, path-traversal protected)
 - **Chrome routes disabled** — `/api/launch-visible-browser`, `/api/kill-chrome`, `/api/stop-generation` return 400 with "Use local agent"
 
+### Image storage backend
+
+Generated images must be served from a CDN in production, since there is no local filesystem on Render (or any ephemeral host).
+
+| Provider | `STORAGE_PROVIDER` | Status |
+|----------|--------------------|--------|
+| Local disk | `local` | Dev/internal only — images written to `generated_images/`, served via `localhost` |
+| Cloudinary | `cloudinary` | **Required for production** — uploaded on pipeline completion, served via CDN (`secure_url` redirect) |
+
+Set `STORAGE_PROVIDER=cloudinary` and provide `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in your Render env vars.
+
+Cloudinary uploads happen automatically in `_store_output_mapping` when the pipeline finishes — no manual step needed.
+
 > **⚠️ WARNING — Filesystem-backed core flows**
 > 
 > Run creation, prompt generation, image metadata, and manifest reads still use the **local filesystem** (`dashboard_storage/runs/`, `output/`, `generated_images/`).
