@@ -193,9 +193,21 @@ Set `DEPLOYMENT_MODE=production` on Render. This enables:
 - **No public data mounts** — `/storage`, `/output`, `/generated_images` are NOT mounted in production. Use `/api/files/download/*` endpoints instead (authenticated, path-traversal protected)
 - **Chrome routes disabled** — `/api/launch-visible-browser`, `/api/kill-chrome`, `/api/stop-generation` return 400 with "Use local agent"
 
+> **⚠️ WARNING — Filesystem-backed core flows**
+> 
+> Run creation, prompt generation, image metadata, and manifest reads still use the **local filesystem** (`dashboard_storage/runs/`, `output/`, `generated_images/`).
+> **These are NOT safe for multi-user production use.** Only the auth layer, LLM traces, provider configs, agent dispatch, and JSON blobs have been migrated to MongoDB.
+> 
+> Until `api_run_execute` and all prompt/image/manifest storage are fully DB-backed, the deploy:
+> - Works correctly for **single-user / internal** use
+> - Is **not** safe for untrusted multi-user access
+> - Must run `DEPLOYMENT_MODE=development` (which disables auth) for any read/write of runs
+> 
+> See task 6 below for the integration path.
+
 ### Current status (what's still local-only)
 
-The following operations still use the local filesystem in dev mode, even when MongoDB is available:
+The following operations still use the local filesystem, even with MongoDB available:
 
 | Area | Filesystem path | Status |
 |------|----------------|--------|
@@ -204,7 +216,7 @@ The following operations still use the local filesystem in dev mode, even when M
 | Generated images | `generated_images/` | Local-only |
 | Image metadata JSONs | Sidecar `.json` next to images | Local-only |
 | Input images | `input/images/` | Local-only |
-| LLM traces | `runtime/llm_traces/` | **Dual**: writes to MongoDB, still reads from disk |
+| LLM traces | `runtime/llm_traces/` | **Dual**: writes to MongoDB, reads from disk |
 | Product master doc | `input/docs/product master doc.txt` | Local-only |
 | Persona seeds | `persona_seeds.json` | Local-only |
 | Copy architecture | `dashboard/backend/copy_architecture.json` | Local-only |

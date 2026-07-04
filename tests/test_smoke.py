@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient
 
 from dashboard.backend.app import app
+from dashboard.backend.app import _record_run_owner, _get_run_owner, _check_ownership, RUNS_ROOT
 from dashboard.backend.db.settings import settings, DEPLOYMENT_PROD, validate_production_settings
 from dashboard.backend.security.crypto import encrypt_value, decrypt_value, hash_token, mask_key, generate_token
 from dashboard.backend.auth.models import generate_user_id, generate_session_token
@@ -190,6 +191,83 @@ def test_settings_validation() -> int:
     return failed
 
 
+# ─── Ownership isolation tests ──────────────────────────────────────────────
+
+
+def _login_as(user_id: str) -> dict[str, str]:
+    """Return cookies dict simulating a logged-in user."""
+    from dashboard.backend.auth.service import create_session
+    token = create_session(user_id)
+    return {"session": token}
+
+
+def test_ownership_isolation() -> int:
+    failed = 0
+    print("\n[Ownership isolation]")
+
+    _record_run_owner("test-run-aaa", "user_A")
+    _record_run_owner("test-run-bbb", "user_B")
+    failed += ok(_get_run_owner("test-run-aaa") == "user_A", "_record_run_owner / _get_run_owner user_A")
+    failed += ok(_get_run_owner("test-run-bbb") == "user_B", "_record_run_owner / _get_run_owner user_B")
+    failed += ok(_get_run_owner("test-run-nonexistent") is None, "_get_run_owner returns None for unknown run")
+
+    # _check_ownership: owner passes, non-owner raises
+    _check_ownership("test-run-aaa", "user_A")
+    failed += ok(True, "_check_ownership passes for owner")
+    try:
+        _check_ownership("test-run-aaa", "user_B")
+        failed += ok(False, "_check_ownership should raise for non-owner")
+    except Exception:
+        failed += ok(True, "_check_ownership raises 403 for non-owner")
+
+    try:
+        _check_ownership("test-run-nonexistent", "user_A")
+        failed += ok(False, "_check_ownership should raise for unknown run in production")
+    except Exception:
+        failed += ok(True, "_check_ownership raises 403 for unknown run in production")
+
+    if db_available():
+        # Create a minimal run dir and test HTTP endpoints
+        run_id = "test-ownership-run"
+        run_dir = RUNS_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "manifest.json").write_text('{"test": true}', encoding="utf-8")
+        (run_dir / ".owner").write_text("user_A", encoding="utf-8")
+        _record_run_owner(run_id, "user_A")
+
+        cookies_a = _login_as("user_A")
+        resp = client.get(f"/api/files/download/run/{run_id}/manifest.json", cookies=cookies_a)
+        failed += ok(resp.status_code == 200, "User A can download own run file")
+
+        cookies_b = _login_as("user_B")
+        resp = client.get(f"/api/files/download/run/{run_id}/manifest.json", cookies=cookies_b)
+        failed += ok(resp.status_code == 403, "User B gets 403 for User A's run file")
+
+        resp = client.get("/api/files/download/run/nonexistent-run-id/manifest.json", cookies=cookies_a)
+        failed += ok(resp.status_code == 404, "Unknown run returns 404")
+
+        orphan_run_id = "test-orphan-run"
+        orphan_dir = RUNS_ROOT / orphan_run_id
+        orphan_dir.mkdir(parents=True, exist_ok=True)
+        (orphan_dir / "manifest.json").write_text('{"orphan": true}', encoding="utf-8")
+        resp = client.get(f"/api/files/download/run/{orphan_run_id}/manifest.json", cookies=cookies_a)
+        failed += ok(resp.status_code == 403, "Orphan run returns 403 in production (no owner)")
+
+        img_run_id = "run_test_owned"
+        _record_run_owner(img_run_id, "user_A")
+        resp = client.get(f"/api/files/download/generated/{img_run_id}/some/img.png", cookies=cookies_b)
+        failed += ok(resp.status_code == 403, "User B gets 403 for User A's generated image")
+
+        import shutil
+        shutil.rmtree(run_dir, ignore_errors=True)
+        shutil.rmtree(orphan_dir, ignore_errors=True)
+    else:
+        print("  SKIP HTTP ownership tests (MongoDB not available)")
+        failed += ok(True, "HTTP ownership tests skipped")
+
+    return failed
+
+
 # ─── Provider config isolation tests ───────────────────────────────────────
 
 
@@ -225,6 +303,7 @@ def main() -> int:
     total += test_user_isolation()
     total += test_settings_validation()
     total += test_provider_config_isolation()
+    total += test_ownership_isolation()
 
     print(f"\n{'='*50}")
     if total == 0:

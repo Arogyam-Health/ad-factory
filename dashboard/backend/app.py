@@ -117,6 +117,79 @@ _tracked_subprocesses_lock = threading.Lock()
 _active_httpx_clients: dict[int, httpx.Client] = {}
 _active_httpx_clients_lock = threading.Lock()
 
+# Run ownership registry: maps run_id -> user_id
+# Populated when runs are created; used for ownership checks and LLM traces
+_run_owner_registry: dict[str, str] = {}
+_run_owner_registry_lock = threading.Lock()
+
+
+def _record_run_owner(run_id: str, user_id: str, config: dict[str, Any] | None = None) -> None:
+    """Record that a user owns a run, both in-memory and in MongoDB."""
+    with _run_owner_registry_lock:
+        _run_owner_registry[run_id] = user_id
+    try:
+        from dashboard.backend.services.run_storage import create_run, get_run, update_run
+        doc = get_run(user_id, run_id)
+        if doc:
+            update_run(user_id, run_id, {"status": "created"})
+        else:
+            create_run(user_id, run_id, {"status": "created", "config": config or {}})
+    except Exception:
+        pass
+    try:
+        owner_path = RUNS_ROOT / run_id / ".owner"
+        owner_path.parent.mkdir(parents=True, exist_ok=True)
+        owner_path.write_text(user_id, encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _update_run_status_db(run_id: str, status: str, user_id: str | None = None, extra: dict[str, Any] | None = None) -> None:
+    """Update a run's status in MongoDB (best-effort, no-op on failure)."""
+    if not user_id:
+        user_id = _get_run_owner(run_id) or ""
+    if not user_id:
+        return
+    try:
+        from dashboard.backend.services.run_storage import update_run
+        updates: dict[str, Any] = {"status": status}
+        if extra:
+            updates.update(extra)
+        update_run(user_id, run_id, updates)
+    except Exception:
+        pass
+
+
+def _get_run_owner(run_id: str) -> str | None:
+    """Resolve the owner user_id for a run.
+
+    Checks: in-memory registry -> MongoDB -> .owner file.
+    Returns None if unknown.
+    """
+    with _run_owner_registry_lock:
+        uid = _run_owner_registry.get(run_id)
+        if uid is not None:
+            return uid
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_RUNS
+        doc = get_sync_db()[COLL_RUNS].find_one({"run_id": run_id}, {"user_id": 1})
+        if doc and doc.get("user_id"):
+            uid = doc["user_id"]
+            with _run_owner_registry_lock:
+                _run_owner_registry[run_id] = uid
+            return uid
+    except Exception:
+        pass
+    owner_file = RUNS_ROOT / run_id / ".owner"
+    if owner_file.exists():
+        uid = owner_file.read_text(encoding="utf-8").strip()
+        if uid:
+            with _run_owner_registry_lock:
+                _run_owner_registry[run_id] = uid
+            return uid
+    return None
+
 
 def _register_subprocess(run_id: str | None, proc: "subprocess.Popen[str]") -> None:
     with _tracked_subprocesses_lock:
@@ -2044,8 +2117,9 @@ def append_run_log(run_dir: Path, filename: str, message: str) -> None:
 
 def _log_llm_trace(run_id: str, label: str, model: str, request_body: dict, response_body: Any, status_code: int, duration_s: float, error: str | None = None) -> None:
     try:
+        user_id = _get_run_owner(run_id) or "unknown"
         from dashboard.backend.services.run_storage import save_llm_trace
-        save_llm_trace("system", {
+        save_llm_trace(user_id, {
             "run_id": run_id,
             "batch": label,
             "provider": "opencode" if "opencode" in label.lower() else "google",
@@ -5689,6 +5763,7 @@ async def api_run_execute(
     image_source_file: UploadFile | None = File(None),
     input_image_files: list[UploadFile] | None = File(None),
     clear_input_images: bool = Form(False),
+    user_id: str = "dev_user",
 ) -> dict[str, Any]:
     ensure_dirs()
     try:
@@ -5700,6 +5775,9 @@ async def api_run_execute(
 
     run_id = make_run_id()
     run_dir = RUNS_ROOT / run_id
+
+    # Record ownership + run config in MongoDB
+    _record_run_owner(run_id, user_id, config=cfg)
     (run_dir / "inputs").mkdir(parents=True, exist_ok=True)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     (run_dir / "context").mkdir(parents=True, exist_ok=True)
@@ -5812,8 +5890,10 @@ def _run_pipeline_background(
     ads_context: list,
 ) -> None:
     """Run the full pipeline in a background thread, writing results incrementally."""
+    run_id = run_dir.name
+    _update_run_status_db(run_id, "running")
     try:
-        print(f"[PIPELINE] Starting background pipeline for run {run_dir.name}", file=sys.stderr)
+        print(f"[PIPELINE] Starting background pipeline for run {run_id}", file=sys.stderr)
         # Reserve batch number early so incremental assembler runs write to the same batch dir
         reserved_batch = _reserve_batch_name()
         language_mode = assembler_language_mode(cfg)
@@ -5902,13 +5982,14 @@ def _run_pipeline_background(
         if reuse_visual_patterns_from_run_id:
             manifest["visual_pattern_reuse_from_run_id"] = reuse_visual_patterns_from_run_id
         (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        # Clean up partial results now that final manifest is written
+        _update_run_status_db(run_id, "completed", extra={"manifest_summary": {"format_count": len(manifest.get("results", [])), "batch": batch}})
         partial_dir = run_dir / "partial"
         if partial_dir.exists():
             import shutil
             shutil.rmtree(partial_dir)
-        print(f"[PIPELINE DONE] Run {run_dir.name} completed, batch={batch}", file=sys.stderr)
+        print(f"[PIPELINE DONE] Run {run_id} completed, batch={batch}", file=sys.stderr)
     except Exception as exc:
+        _update_run_status_db(run_id, "error", extra={"error": str(exc)[:500]})
         (run_dir / "logs" / "pipeline_error.txt").write_text(f"Pipeline background task failed: {exc}\n{traceback.format_exc()}", encoding="utf-8")
         (run_dir / "partial").mkdir(parents=True, exist_ok=True)
         (run_dir / "partial" / "error.txt").write_text(f"Pipeline failed: {exc}", encoding="utf-8")
@@ -7189,12 +7270,40 @@ def _get_user_from_request(request: Request) -> dict[str, Any]:
     return {"user_id": "dev_user", "is_admin": True}
 
 
+def _check_ownership(run_id: str, user_id: str) -> None:
+    """Verify a user owns a run. In dev mode, allow if no owner recorded."""
+    owner = _get_run_owner(run_id)
+    if owner is None:
+        if app_settings.is_production:
+            raise HTTPException(status_code=403, detail="Run ownership unknown")
+        return
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Access denied: run belongs to another user")
+
+
+def _extract_run_id_from_generated_path(path: str) -> str | None:
+    """Try to extract a run_id from a generated_images path like 'run_abc_123/4_5/img.png'."""
+    parts = path.replace("\\", "/").split("/")
+    for part in parts:
+        if part.startswith("run_"):
+            return part
+    return None
+
+
+def _extract_run_id_from_output_path(path: str) -> str | None:
+    """Try to extract a run_id from an output path like 'v1/45/prompt.txt'.
+    Falls back to scanning batch_run_summary.json or manifest.
+    """
+    return None  # output paths don't have a direct run_id mapping yet
+
+
 @app.get("/api/files/download/run/{run_id:path}")
 def download_run_file(
     run_id: str,
     request: Request,
 ):
-    _get_user_from_request(request)
+    user = _get_user_from_request(request)
+    _check_ownership(run_id, user["user_id"])
     safe_path = resolve_safe_path(f"dashboard_storage/runs/{run_id}")
     if not safe_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
@@ -7212,7 +7321,12 @@ def download_generated_file(
     path: str,
     request: Request,
 ):
-    _get_user_from_request(request)
+    user = _get_user_from_request(request)
+    run_id = _extract_run_id_from_generated_path(path)
+    if run_id:
+        _check_ownership(run_id, user["user_id"])
+    elif app_settings.is_production:
+        raise HTTPException(status_code=403, detail="Cannot determine run ownership from path")
     safe_path = resolve_safe_path(f"generated_images/{path}")
     if not safe_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -7230,7 +7344,12 @@ def download_output_file(
     path: str,
     request: Request,
 ):
-    _get_user_from_request(request)
+    user = _get_user_from_request(request)
+    run_id = _extract_run_id_from_output_path(path)
+    if run_id:
+        _check_ownership(run_id, user["user_id"])
+    elif app_settings.is_production:
+        raise HTTPException(status_code=403, detail="Cannot determine run ownership from output path")
     safe_path = resolve_safe_path(f"output/{path}")
     if not safe_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -7243,6 +7362,8 @@ def download_output_file(
     raise HTTPException(status_code=400, detail="Path is not a file")
 
 
+INPUT_ROOT = ROOT / "input"
+
 if app_settings.is_dev:
     # Dev: mount local folders directly for convenience
     app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
@@ -7250,10 +7371,35 @@ if app_settings.is_dev:
     GENERATED_IMAGES_ROOT.mkdir(parents=True, exist_ok=True)
     app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_ROOT)), name="generated_images")
     print("[startup] Local dev mode: /storage, /output, /generated_images mounted publicly")
+    # /input contains seed files stored in the repo
+    app.mount("/input", StaticFiles(directory=str(INPUT_ROOT)), name="input")
 else:
     # Production: do NOT mount user data folders publicly
     print("[startup] Production mode: user data folders not publicly mounted")
 
-# /input (product doc, prompts) is always useful as mounted repo seed data
-app.mount("/input", StaticFiles(directory=str(ROOT / "input")), name="input")
+
+@app.get("/api/seeds")
+def list_seed_files(request: Request) -> dict[str, list[dict[str, str]]]:
+    """List available seed file names and paths (safe for production)."""
+    files: list[dict[str, str]] = []
+    if INPUT_ROOT.is_dir():
+        for f in sorted(INPUT_ROOT.rglob("*")):
+            if f.is_file() and not f.name.startswith("."):
+                rel = f.relative_to(INPUT_ROOT)
+                files.append({"name": f.name, "path": str(rel.as_posix())})
+    return {"files": files}
+
+
+@app.get("/api/seeds/download/{path:path}")
+def download_seed_file(path: str, request: Request) -> FileResponse:
+    user = _get_user_from_request(request)
+    safe_path = resolve_safe_path(str(INPUT_ROOT / path))
+    if not safe_path.exists():
+        raise HTTPException(status_code=404, detail="Seed file not found")
+    target = safe_path.resolve()
+    if INPUT_ROOT.resolve() not in target.parents:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not target.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+    return FileResponse(target, filename=target.name)
 app.mount("/", StaticFiles(directory=str(ROOT / "dashboard" / "frontend"), html=True), name="frontend")
