@@ -112,6 +112,9 @@ _cancel_current_run: threading.Event = threading.Event()
 # Each entry: (run_id_or_None, subprocess.Popen)
 _tracked_subprocesses: list[tuple[str | None, "subprocess.Popen[str]"]] = []
 _tracked_subprocesses_lock = threading.Lock()
+# Registry of active httpx clients so cancel can interrupt in-flight HTTP calls.
+_active_httpx_clients: dict[int, httpx.Client] = {}
+_active_httpx_clients_lock = threading.Lock()
 
 
 def _register_subprocess(run_id: str | None, proc: "subprocess.Popen[str]") -> None:
@@ -146,6 +149,23 @@ def _kill_tracked_subprocesses(run_id: str | None) -> list[str]:
     return killed
 
 
+def _register_httpx_client(client: httpx.Client) -> None:
+    with _active_httpx_clients_lock:
+        _active_httpx_clients[threading.get_ident()] = client
+
+def _unregister_httpx_client() -> None:
+    with _active_httpx_clients_lock:
+        _active_httpx_clients.pop(threading.get_ident(), None)
+
+def _close_active_httpx_clients() -> None:
+    with _active_httpx_clients_lock:
+        for tid, client in list(_active_httpx_clients.items()):
+            try:
+                client.close()
+            except Exception:
+                pass
+        _active_httpx_clients.clear()
+
 def signal_cancel_run(run_id: str) -> None:
     ev = _cancel_events.get(run_id)
     if ev:
@@ -155,6 +175,7 @@ def signal_cancel_run(run_id: str) -> None:
 
 def signal_cancel_current_run() -> None:
     _cancel_current_run.set()
+    _close_active_httpx_clients()
     _kill_tracked_subprocesses(None)
 
 
@@ -2236,13 +2257,17 @@ def call_opencode_repair_copy(
 
     run_id = run_dir.name if run_dir else "repair"
     t0 = time.time()
+    client = httpx.Client(timeout=httpx.Timeout(120, connect=10))
+    _register_httpx_client(client)
     try:
-        with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as client:
-            resp = client.post(f"{api_url}/chat/completions", headers=headers, json=body)
+        resp = client.post(f"{api_url}/chat/completions", headers=headers, json=body)
     except (httpx.HTTPError, OSError) as exc:
         _log_llm_trace(run_id, "repair", model, body, None, -1, time.time() - t0, error=str(exc))
         (run_dir / "logs" / "opencode_repair_error.txt").write_text(f"Repair HTTP call failed: {exc}", encoding="utf-8")
         return None
+    finally:
+        _unregister_httpx_client()
+        client.close()
 
     elapsed = time.time() - t0
 
@@ -2567,28 +2592,33 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             return None, "", "CANCELLED", -1
 
         t0 = time.time()
+        client = httpx.Client(timeout=httpx.Timeout(OPENCODE_AD_TIMEOUT_SECONDS, connect=2))
+        _register_httpx_client(client)
         try:
-            with httpx.Client(timeout=httpx.Timeout(OPENCODE_AD_TIMEOUT_SECONDS, connect=10)) as client:
+            try:
                 resp = client.post(f"{api_url}/chat/completions", headers=headers, json=body)
-        except httpx.TimeoutException:
-            _log_llm_trace(run_dir.name, label, model, body, None, -1, time.time() - t0, error="TIMEOUT")
-            return None, "", f"TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s", -1
-        except httpx.HTTPError as exc:
-            _log_llm_trace(run_dir.name, label, model, body, None, -1, time.time() - t0, error=str(exc))
-            return None, "", f"HTTP error: {exc}", -1
+            except httpx.TimeoutException:
+                _log_llm_trace(run_dir.name, label, model, body, None, -1, time.time() - t0, error="TIMEOUT")
+                return None, "", f"TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s", -1
+            except httpx.HTTPError as exc:
+                _log_llm_trace(run_dir.name, label, model, body, None, -1, time.time() - t0, error=str(exc))
+                return None, "", f"HTTP error: {exc}", -1
 
-        elapsed = time.time() - t0
+            elapsed = time.time() - t0
 
-        if resp.status_code != 200:
-            _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=resp.text[:2000])
-            return None, resp.text, f"API error {resp.status_code}", resp.status_code
+            if resp.status_code != 200:
+                _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=resp.text[:2000])
+                return None, resp.text, f"API error {resp.status_code}", resp.status_code
 
-        try:
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-        except (json.JSONDecodeError, KeyError, IndexError) as exc:
-            _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=str(exc))
-            return None, resp.text, f"Parse error: {exc}", -1
+            try:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+            except (json.JSONDecodeError, KeyError, IndexError) as exc:
+                _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=str(exc))
+                return None, resp.text, f"Parse error: {exc}", -1
+        finally:
+            _unregister_httpx_client()
+            client.close()
 
         _log_llm_trace(run_dir.name, label, model, body, data, resp.status_code, elapsed)
         parsed = parse_opencode_json_output(content)
