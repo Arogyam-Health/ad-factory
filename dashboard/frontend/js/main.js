@@ -573,4 +573,12 @@ document.getElementById("inputImageFiles")?.addEventListener("change", async (ev
 initTheme();
 enhanceAllSelects();
 showRunsSkeletons();
+
+import { initAuth } from "./auth.js";
+import { initAgentStatus } from "./agents.js";
+
+initAuth().then(() => {
+  initAgentStatus();
+});
+
 Promise.all([initDefaults(), loadAndRenderRuns()]).catch((err) => setStatus(String(err)));

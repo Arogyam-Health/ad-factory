@@ -2007,3 +2007,122 @@ button.is-loading::after {
 [data-theme="dark"] .run-prompt-files-header:hover {
   background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 22%, var(--surface)), color-mix(in srgb, var(--primary) 14%, var(--surface-2)));
 }
+
+/* ── Auth / Agent Bar ───────────────────────────────────────────────────── */
+
+.auth-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 0 4px;
+  margin-bottom: 4px;
+  min-height: 36px;
+  transition: opacity var(--transition-base);
+}
+
+.auth-bar.auth-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.auth-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.auth-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary) 20%, var(--surface));
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.auth-user-name {
+  font-weight: 500;
+}
+
+.auth-user-name.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auth-btn {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
+.login-btn {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-btn:hover {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+/* ── Agent Status ───────────────────────────────────────────────────────── */
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 80%, var(--surface-2));
+  border: 1px solid var(--line);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-status-dot.online {
+  background: #2eb872;
+  box-shadow: 0 0 6px rgba(46, 184, 114, 0.5);
+}
+
+.agent-status-dot.stale {
+  background: var(--accent-amber);
+  box-shadow: 0 0 6px rgba(221, 155, 62, 0.4);
+}
+
+.agent-status-dot.offline {
+  background: var(--muted);
+}
+
+.agent-status-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.agent-status-detail {
+  color: var(--muted);
+  font-size: 10px;
+  opacity: 0.7;
+}

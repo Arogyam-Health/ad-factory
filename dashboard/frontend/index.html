@@ -11,13 +11,20 @@
 </head>
 <body>
   <div class="page">
+    <div id="authBar" class="auth-bar auth-hidden">
+      <span class="auth-user-info"><span class="auth-user-name muted">Loading...</span></span>
+    </div>
+
     <header class="hero">
       <div class="hero-copy">
         <p class="eyebrow">Local-first creative pipeline</p>
         <h1>Ad Generation Dashboard</h1>
         <p>Token-optimized creative ops with sharper controls, richer visual system, and cleaner execution flow.</p>
       </div>
-      <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
+      <div class="hero-actions">
+        <span id="agentStatus" class="agent-status"><span class="agent-status-dot offline"></span><span class="agent-status-label">Checking...</span></span>
+        <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
+      </div>
     </header>
 
     <div class="layout-columns">

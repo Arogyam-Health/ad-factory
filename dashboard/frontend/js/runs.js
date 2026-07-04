@@ -89,7 +89,25 @@ function buildPromptFileSummary(promptFiles) {
 
 function Path(p) { return { name: p.split("/").pop() || p }; }
 
-export function renderRun(run) {
+async function fetchImagesData(runId) {
+  try {
+    const data = await fetchJSON(`/api/runs/${runId}/images`);
+    return Array.isArray(data?.images) ? data.images : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchPromptsData(runId) {
+  try {
+    const data = await fetchJSON(`/api/runs/${runId}/prompts`);
+    return Array.isArray(data?.prompts) ? data.prompts : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function renderRun(run) {
   const div = document.createElement("div");
   div.className = "run run-active";
 
@@ -117,13 +135,18 @@ export function renderRun(run) {
   llm.textContent = `Updated: ${run.updated_at || "-"}`;
   div.appendChild(llm);
 
+  const [imagesData, promptsData] = await Promise.all([
+    fetchImagesData(run.run_id),
+    fetchPromptsData(run.run_id),
+  ]);
+
   if (run.prompt_files && run.prompt_files.length) {
     div.appendChild(buildPromptFileSummary(run.prompt_files));
   }
 
   const promptActions = document.createElement("div");
   promptActions.className = "prompt-actions";
-  buildPromptEditor(run, promptActions);
+  buildPromptEditor(run, promptActions, promptsData);
   div.appendChild(promptActions);
 
   const galleryContainer = document.createElement("div");
@@ -134,7 +157,7 @@ export function renderRun(run) {
     if (entries[0].isIntersecting && !galleryBuilt) {
       galleryBuilt = true;
       observer.disconnect();
-      const gallery = buildImageGallery(run);
+      const gallery = buildImageGallery(run, imagesData);
       if (gallery) galleryContainer.appendChild(gallery);
     }
   }, { rootMargin: "400px" });
@@ -154,7 +177,7 @@ function updateRunNav() {
   if (runNextEl) runNextEl.disabled = total <= 1;
 }
 
-export function renderRunCarousel() {
+export async function renderRunCarousel() {
   if (!runsEl) return;
   runsEl.innerHTML = "";
   if (!state.runsData.length) {
@@ -167,7 +190,8 @@ export function renderRunCarousel() {
   }
   if (state.currentRunIndex < 0) state.currentRunIndex = 0;
   if (state.currentRunIndex >= state.runsData.length) state.currentRunIndex = state.runsData.length - 1;
-  runsEl.appendChild(renderRun(state.runsData[state.currentRunIndex]));
+  const runEl = await renderRun(state.runsData[state.currentRunIndex]);
+  runsEl.appendChild(runEl);
   updateRunNav();
 }
 
@@ -317,14 +341,14 @@ if (runPrevEl) {
   runPrevEl.addEventListener("click", () => {
     if (!state.runsData.length) return;
     state.currentRunIndex = (state.currentRunIndex - 1 + state.runsData.length) % state.runsData.length;
-    renderRunCarousel();
+    renderRunCarousel().catch(() => {});
   });
 }
 if (runNextEl) {
   runNextEl.addEventListener("click", () => {
     if (!state.runsData.length) return;
     state.currentRunIndex = (state.currentRunIndex + 1) % state.runsData.length;
-    renderRunCarousel();
+    renderRunCarousel().catch(() => {});
   });
 }
 

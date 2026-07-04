@@ -2,7 +2,22 @@ import { appendLog } from "./ui.js";
 import { state } from "./state.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 
-export function buildPromptEditor(run, container) {
+function promptUrl(item, path) {
+  if (item && item.prompt_id) {
+    return `/api/files/download/prompt/${item.prompt_id}`;
+  }
+  return path ? `/output/${path.replace(/^output\//, "")}` : "";
+}
+
+export function buildPromptEditor(run, container, promptsData) {
+  const promptsByPath = new Map();
+  if (Array.isArray(promptsData)) {
+    promptsData.forEach((d) => {
+      const key = d.file_path || "";
+      if (key) promptsByPath.set(key, d);
+    });
+  }
+
   const loadBtn = document.createElement("button");
   loadBtn.type = "button";
   loadBtn.className = "ghost-btn";
@@ -131,7 +146,7 @@ export function buildPromptEditor(run, container) {
 
         const items = [];
         prompts.forEach((prompt) => {
-          const card = buildPromptCard(prompt, run, items);
+          const card = buildPromptCard(prompt, run, items, promptsByPath);
           editorList.appendChild(card);
         });
 
@@ -209,7 +224,7 @@ function mkBtn(text) {
   return b;
 }
 
-function buildPromptCard(prompt, run, items) {
+function buildPromptCard(prompt, run, items, promptsByPath) {
   const card = document.createElement("div");
   card.className = "prompt-editor";
 
@@ -219,8 +234,10 @@ function buildPromptCard(prompt, run, items) {
   checkbox.type = "checkbox";
   checkbox.checked = true;
 
+  const pp = promptsByPath ? (promptsByPath.get(prompt.prompt_file) || promptsByPath.get(prompt.review_url)) : null;
+  const href = pp && pp.prompt_id ? `/api/files/download/prompt/${pp.prompt_id}` : (prompt.review_url || "");
   const link = document.createElement("a");
-  link.href = prompt.review_url;
+  link.href = href;
   link.target = "_blank";
   link.textContent = prompt.prompt_file;
 

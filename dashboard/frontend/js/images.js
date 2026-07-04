@@ -2,7 +2,15 @@ import { appendLog } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 
-export function buildImageGallery(run) {
+function imageUrl(item, path) {
+  if (item && item.image_id) {
+    return `/api/files/download/image/${item.image_id}`;
+  }
+  const cleanPath = path.replace(/^generated_images\//, "");
+  return `/generated_images/${cleanPath}`;
+}
+
+export function buildImageGallery(run, imagesData) {
   const activeImageFiles = run.image_files || [];
   const queuedImageFiles = run.regeneration_queue_files || [];
   const hasActive = activeImageFiles.length > 0;
@@ -10,6 +18,15 @@ export function buildImageGallery(run) {
   if (!hasActive && !hasQueued) return null;
   const imageItemsByPath = new Map((run.image_items || []).map((item) => [item.path, item]));
   const queueItemsByPath = new Map((run.regeneration_queue_items || []).map((item) => [item.path, item]));
+
+  const imageByPath = new Map();
+  if (Array.isArray(imagesData)) {
+    imagesData.forEach((d) => {
+      const key = d.file_path || d.local_path || "";
+      if (key) imageByPath.set(key, d);
+    });
+  }
+
   const selectedItems = new Map();
 
   const gal = document.createElement("div");
@@ -176,6 +193,8 @@ export function buildImageGallery(run) {
 
   activeImageFiles.forEach((path) => {
     const imageItem = imageItemsByPath.get(path) || { path, prompt_file: "", regenerate_prompt_file: "", prompt_excerpt: "" };
+    const dbItem = imageByPath.get(path);
+    Object.assign(imageItem, dbItem);
     const card = document.createElement("div");
     card.className = "image-card";
     card.dataset.path = path;
@@ -186,8 +205,7 @@ export function buildImageGallery(run) {
     card.dataset.aspect = is916 ? "9_16" : "4_5";
     card.dataset.aspectLabel = arLabel;
 
-    const cleanPath = path.replace(/^generated_images\//, "");
-    const url = `/generated_images/${cleanPath}`;
+    const url = imageUrl(imageItem, path);
 
     const imgWrap = document.createElement("div");
     imgWrap.className = "image-wrap";
@@ -497,6 +515,8 @@ export function buildImageGallery(run) {
 
     queuedImageFiles.forEach((path) => {
       const queueItem = queueItemsByPath.get(path) || { path, prompt_file: "", prompt_excerpt: "", is_queued: true };
+      const dbItem = imageByPath.get(path);
+      Object.assign(queueItem, dbItem);
       const card = document.createElement("div");
       card.className = "image-card regeneration-queue-card";
       card.dataset.path = path;
@@ -506,8 +526,7 @@ export function buildImageGallery(run) {
       const arLabel = is916 ? "9:16" : "4:5";
       card.dataset.aspect = is916 ? "9_16" : "4_5";
 
-      const cleanPath = path.replace(/^generated_images\//, "");
-      const url = `/generated_images/${cleanPath}`;
+      const url = imageUrl(queueItem, path);
 
       const imgWrap = document.createElement("div");
       imgWrap.className = "image-wrap";
