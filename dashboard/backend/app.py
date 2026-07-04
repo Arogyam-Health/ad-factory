@@ -2163,12 +2163,12 @@ def _log_llm_trace(run_id: str, label: str, model: str, request_body: dict, resp
         "label": label,
         "model": model,
         "request": {
-            "messages": [{k: v for k, v in m.items() if k != "content" or len(str(v)) < 2000} for m in request_body.get("messages", [])],
+            "messages": request_body.get("messages", []),
             "max_tokens": request_body.get("max_tokens"),
             "temperature": request_body.get("temperature"),
         },
         "response": {
-            "content": (response_body.get("choices", [{}])[0].get("message", {}).get("content", "")[:5000] if isinstance(response_body, dict) else str(response_body)[:5000]),
+            "content": response_body.get("choices", [{}])[0].get("message", {}).get("content", "") if isinstance(response_body, dict) else str(response_body),
             "finish_reason": response_body.get("choices", [{}])[0].get("finish_reason") if isinstance(response_body, dict) else None,
             "usage": response_body.get("usage") if isinstance(response_body, dict) else None,
         } if status_code == 200 else None,
@@ -2475,6 +2475,12 @@ def normalize_generated_copy(
                 ad[key] = value
 
         cand_copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
+        # If the LLM returned flat copy (no EN/HI/HINGLISH wrapper), treat it as EN
+        # and propagate to HI/HINGLISH as fallback so validation doesn't reject
+        flat_keys = {"headline", "subheadline", "support_line", "cta", "body", "bullets", "trust_line"}
+        if cand_copy and not any(k in cand_copy for k in {"EN", "HI", "HINGLISH"}):
+            flat_en = dict(cand_copy)
+            cand_copy = {"EN": flat_en, "HI": dict(flat_en), "HINGLISH": dict(flat_en)}
         for lang in ["EN", "HI", "HINGLISH"]:
             if lang not in ad["copy"]:
                 continue
@@ -2493,7 +2499,7 @@ def normalize_generated_copy(
                     base_lang["headline"] = ensure_testimonial_headline(base_lang.get("headline", ""), lang, persona)
 
             if fmt in {"HERO", "UGC"}:
-                support = _clean_str(src_lang.get("support_line"))
+                support = _clean_str(src_lang.get("support_line")) or _clean_str(src_lang.get("subheadline"))
                 if support:
                     base_lang["support_line"] = shorten_copy_line(support)
             elif fmt in {"BA", "FEAT"}:
