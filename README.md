@@ -184,6 +184,35 @@ python scripts/local_agent.py --api-base https://your-app.onrender.com --name my
 # 4. The agent registers with Render and waits for jobs
 ```
 
+### Production mode
+
+Set `DEPLOYMENT_MODE=production` on Render. This enables:
+
+- **Auth middleware** — All `/api/*` routes (except `/api/auth/*`) require a valid session cookie. Returns 401 if missing.
+- **Startup validation** — App refuses to start if critical env vars are missing/default (MONGODB_URI, APP_SECRET_KEY, ENCRYPTION_KEY, GOOGLE OAuth, CORS)
+- **No public data mounts** — `/storage`, `/output`, `/generated_images` are NOT mounted in production. Use `/api/files/download/*` endpoints instead (authenticated, path-traversal protected)
+- **Chrome routes disabled** — `/api/launch-visible-browser`, `/api/kill-chrome`, `/api/stop-generation` return 400 with "Use local agent"
+
+### Current status (what's still local-only)
+
+The following operations still use the local filesystem in dev mode, even when MongoDB is available:
+
+| Area | Filesystem path | Status |
+|------|----------------|--------|
+| Run manifests, configs | `dashboard_storage/runs/` | Local-only |
+| Generated prompt files | `output/v{NN}/` | Local-only |
+| Generated images | `generated_images/` | Local-only |
+| Image metadata JSONs | Sidecar `.json` next to images | Local-only |
+| Input images | `input/images/` | Local-only |
+| LLM traces | `runtime/llm_traces/` | **Dual**: writes to MongoDB, still reads from disk |
+| Product master doc | `input/docs/product master doc.txt` | Local-only |
+| Persona seeds | `persona_seeds.json` | Local-only |
+| Copy architecture | `dashboard/backend/copy_architecture.json` | Local-only |
+| Copy prompt templates | `dashboard/backend/copy_prompt_templates.json` | Local-only |
+| Google/Gemini provider config | `.env.dashboard` | Local-only |
+
+Full migration of these to MongoDB-backed services is ongoing.
+
 ### Migration from local files
 
 ```bash
