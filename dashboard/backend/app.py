@@ -2653,7 +2653,12 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             return {"ads": [], "default_aspect_ratio": "4:5"}
 
         payload = build_generation_payload_for_llm(context)
-        prompt = json.dumps(payload, ensure_ascii=False)
+
+        # Build response skeleton instruction so the LLM knows the expected JSON format
+        formats_in_batch = sorted({str(a.get("format", "")).strip().upper() for a in all_items if isinstance(a, dict)})
+        single_format = formats_in_batch[0] if len(formats_in_batch) == 1 else "ALL"
+        skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch)
+        prompt = json.dumps(payload, ensure_ascii=False) + "\n\n" + skeleton_tail
 
         append_run_log(run_dir, "opencode_session.log", f"{now_iso()} LLM call for {len(all_items)} ad(s)")
 
