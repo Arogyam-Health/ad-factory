@@ -191,29 +191,57 @@ def _get_run_owner(run_id: str) -> str | None:
     return None
 
 
+def _parse_prompt_meta(file_path: str) -> dict[str, str]:
+    """Parse format, language, persona_slug, concept_angle from a prompt filename.
+
+    Expected pattern: {FMT}_{slug}_{LANG}_{angle}[_A{NN}].txt
+    Returns dict with format, language, persona_slug, concept_angle keys (may be empty).
+    """
+    import re
+    stem = Path(file_path).stem
+    m = re.match(
+        r"^(HERO|BA|TEST|FEAT|UGC)_(.+?)_(EN|HI|HINGLISH)_(.+?)(?:_A\d{2,})?$",
+        stem,
+        re.IGNORECASE,
+    )
+    if m:
+        return {
+            "format": m.group(1).upper(),
+            "persona_slug": m.group(2),
+            "language": m.group(3).upper(),
+            "concept_angle": m.group(4),
+        }
+    return {"format": "", "persona_slug": "", "language": "", "concept_angle": ""}
+
+
 def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[str, Any]) -> None:
     """Scan output and generated_images dirs for a batch and store file->run mapping in MongoDB.
 
     Called after a pipeline completes so that download endpoints can resolve
     file paths to run owners via MongoDB instead of parsing filesystem paths.
+    Also upserts prompt and image documents into COLL_PROMPTS and COLL_IMAGES
+    so the DB-backed download endpoints (/image/{image_id}, /prompt/{prompt_id})
+    have usable records.
     Best-effort: silently ignores if MongoDB is unavailable.
     """
     try:
         import time
+        import hashlib
         from dashboard.backend.db.client import get_sync_db
-        from dashboard.backend.db.collections import COLL_FILE_MAP
+        from dashboard.backend.db.collections import COLL_FILE_MAP, COLL_PROMPTS, COLL_IMAGES
 
         db = get_sync_db()
         now = time.time()
-        entries: list[dict[str, Any]] = []
 
         # Remove any stale mapping for this run
         db[COLL_FILE_MAP].delete_many({"run_id": run_id})
 
+        file_entries: list[dict[str, Any]] = []
+
         # Map the batch's output directory
         output_batch_dir = ROOT / "output" / batch
         if output_batch_dir.is_dir():
-            entries.append({
+            file_entries.append({
                 "file_path": f"output/{batch}/",
                 "file_type": "output_dir",
                 "run_id": run_id,
@@ -226,7 +254,7 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                     rel = f.relative_to(ROOT).as_posix()
                     ext = f.suffix.lower()
                     file_type = "output_json" if ext == ".json" else "prompt"
-                    entries.append({
+                    file_entries.append({
                         "file_path": rel,
                         "file_type": file_type,
                         "run_id": run_id,
@@ -234,11 +262,36 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                         "batch": batch,
                         "created_at": now,
                     })
+                    if ext == ".txt":
+                        prompt_id = hashlib.sha256(rel.encode()).hexdigest()[:16]
+                        meta = _parse_prompt_meta(rel)
+                        content = f.read_text(encoding="utf-8", errors="ignore")
+                        db[COLL_PROMPTS].update_one(
+                            {"prompt_id": prompt_id},
+                            {"$set": {
+                                "user_id": user_id,
+                                "run_id": run_id,
+                                "prompt_id": prompt_id,
+                                "batch": batch,
+                                "file_path": rel,
+                                "format": meta.get("format", ""),
+                                "persona_slug": meta.get("persona_slug", ""),
+                                "language": meta.get("language", ""),
+                                "concept_angle": meta.get("concept_angle", ""),
+                                "filename": f.name,
+                                "content": content,
+                                "status": "completed",
+                                "storage_provider": "local",
+                                "created_at": now,
+                                "updated_at": now,
+                            }},
+                            upsert=True,
+                        )
 
         # Map the batch's generated_images directory
         img_batch_dir = GENERATED_IMAGES_ROOT / batch
         if img_batch_dir.is_dir():
-            entries.append({
+            file_entries.append({
                 "file_path": f"generated_images/{batch}/",
                 "file_type": "image_dir",
                 "run_id": run_id,
@@ -251,7 +304,7 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                     rel = f.relative_to(ROOT).as_posix()
                     ext = f.suffix.lower()
                     file_type = "image_metadata" if ext == ".json" else "image"
-                    entries.append({
+                    file_entries.append({
                         "file_path": rel,
                         "file_type": file_type,
                         "run_id": run_id,
@@ -259,12 +312,43 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                         "batch": batch,
                         "created_at": now,
                     })
+                    if ext in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+                        image_id = hashlib.sha256(rel.encode()).hexdigest()[:16]
+                        meta: dict[str, Any] = {}
+                        # Read sidecar JSON if present
+                        sidecar = f.with_suffix(f"{f.suffix}.json")
+                        if not sidecar.exists():
+                            sidecar = f.with_suffix(".json")
+                        if sidecar.exists():
+                            try:
+                                meta = json.loads(sidecar.read_text(encoding="utf-8", errors="ignore"))
+                            except Exception:
+                                pass
+                        db[COLL_IMAGES].update_one(
+                            {"image_id": image_id},
+                            {"$set": {
+                                "user_id": user_id,
+                                "run_id": run_id,
+                                "image_id": image_id,
+                                "batch": batch,
+                                "file_path": rel,
+                                "local_path": rel,
+                                "filename": f.name,
+                                "format": meta.get("format", ""),
+                                "status": "completed",
+                                "storage_provider": "local",
+                                "metadata": meta,
+                                "created_at": now,
+                                "updated_at": now,
+                            }},
+                            upsert=True,
+                        )
 
         # Also map all known prompt files from manifest
         for pf in manifest.get("prompt_files") or []:
             pf_str = str(pf).replace("\\", "/")
-            if not any(e["file_path"] == pf_str for e in entries):
-                entries.append({
+            if not any(e["file_path"] == pf_str for e in file_entries):
+                file_entries.append({
                     "file_path": pf_str,
                     "file_type": "prompt",
                     "run_id": run_id,
@@ -276,8 +360,8 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
         # Also map all known image files from manifest
         for imgf in manifest.get("image_files") or []:
             imgf_str = str(imgf).replace("\\", "/")
-            if not any(e["file_path"] == imgf_str for e in entries):
-                entries.append({
+            if not any(e["file_path"] == imgf_str for e in file_entries):
+                file_entries.append({
                     "file_path": imgf_str,
                     "file_type": "image",
                     "run_id": run_id,
@@ -286,8 +370,8 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                     "created_at": now,
                 })
 
-        if entries:
-            db[COLL_FILE_MAP].insert_many(entries)
+        if file_entries:
+            db[COLL_FILE_MAP].insert_many(file_entries)
     except Exception:
         pass
 
@@ -7411,6 +7495,60 @@ def api_delete_llm_traces_by_files(files: list[str]) -> dict[str, Any]:
             f.unlink()
             deleted += 1
     return {"deleted": deleted, "files": files}
+
+
+# ── DB-backed prompt / image list endpoints ──────────────────────────────
+
+
+def api_run_prompts(user_id: str, run_id: str, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_PROMPTS
+        docs = list(
+            get_sync_db()[COLL_PROMPTS]
+            .find({"user_id": user_id, "run_id": run_id})
+            .sort("created_at", 1)
+            .skip(offset)
+            .limit(limit)
+        )
+        for d in docs:
+            d.pop("_id", None)
+            d.pop("content", None)
+        return {"prompts": docs, "total": len(docs), "run_id": run_id}
+    except Exception:
+        return {"prompts": [], "total": 0, "run_id": run_id}
+
+
+def api_run_images(user_id: str, run_id: str, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_IMAGES
+        docs = list(
+            get_sync_db()[COLL_IMAGES]
+            .find({"user_id": user_id, "run_id": run_id})
+            .sort("created_at", 1)
+            .skip(offset)
+            .limit(limit)
+        )
+        for d in docs:
+            d.pop("_id", None)
+        return {"images": docs, "total": len(docs), "run_id": run_id}
+    except Exception:
+        return {"images": [], "total": 0, "run_id": run_id}
+
+
+@app.get("/api/runs/{run_id}/prompts")
+def get_run_prompts(run_id: str, request: Request, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    user = _get_user_from_request(request)
+    _check_ownership(run_id, user["user_id"])
+    return api_run_prompts(user["user_id"], run_id, limit=limit, offset=offset)
+
+
+@app.get("/api/runs/{run_id}/images")
+def get_run_images(run_id: str, request: Request, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    user = _get_user_from_request(request)
+    _check_ownership(run_id, user["user_id"])
+    return api_run_images(user["user_id"], run_id, limit=limit, offset=offset)
 
 
 # ── Modular routes ───────────────────────────────────────────────────────────

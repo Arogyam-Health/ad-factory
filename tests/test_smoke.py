@@ -41,6 +41,8 @@ from dashboard.backend.app import (
     _store_output_mapping,
     _extract_run_id_from_output_path,
     _extract_run_id_from_generated_path,
+    api_run_prompts,
+    api_run_images,
     RUNS_ROOT,
 )
 from dashboard.backend.db.settings import settings, DEPLOYMENT_PROD, validate_production_settings
@@ -337,18 +339,62 @@ def test_file_mapping() -> int:
 
     # Legacy generated download returns production-guard message when authenticated
     if app_settings.is_production:
-        # Simulate auth
         from dashboard.backend.auth.service import create_session
         tok = create_session("user_map_test")
         resp = client.get("/api/files/download/generated/v999/4_5/generated images/test_img.png", cookies={"session": tok})
         failed += ok(resp.status_code == 403, "Legacy generated download returns 403 in production with auth")
         failed += ok("Use /api/files/download/image/{image_id}" in resp.text, "Legacy endpoint tells frontend to migrate")
 
+    # Verify COLL_PROMPTS and COLL_IMAGES were populated
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_PROMPTS, COLL_IMAGES
+    db = get_sync_db()
+    prompt_docs = list(db[COLL_PROMPTS].find({"run_id": run_id}))
+    failed += ok(len(prompt_docs) >= 1, "COLL_PROMPTS has at least 1 document after _store_output_mapping")
+    if prompt_docs:
+        d = prompt_docs[0]
+        failed += ok(d.get("user_id") == user_id, "Prompt doc has correct user_id")
+        failed += ok(d.get("run_id") == run_id, "Prompt doc has correct run_id")
+        failed += ok(bool(d.get("prompt_id")), "Prompt doc has non-empty prompt_id")
+        failed += ok(d.get("storage_provider") == "local", "Prompt doc has storage_provider = local")
+        failed += ok(d.get("status") == "completed", "Prompt doc has status = completed")
+
+    image_docs = list(db[COLL_IMAGES].find({"run_id": run_id}))
+    failed += ok(len(image_docs) >= 1, "COLL_IMAGES has at least 1 document after _store_output_mapping")
+    if image_docs:
+        d = image_docs[0]
+        failed += ok(d.get("user_id") == user_id, "Image doc has correct user_id")
+        failed += ok(d.get("run_id") == run_id, "Image doc has correct run_id")
+        failed += ok(bool(d.get("image_id")), "Image doc has non-empty image_id")
+        failed += ok(d.get("storage_provider") == "local", "Image doc has storage_provider = local")
+
+    # Test list endpoints
+    prompts_resp = api_run_prompts(user_id, run_id)
+    failed += ok(prompts_resp["total"] >= 1, "api_run_prompts returns >= 1 prompt")
+    if prompts_resp["prompts"]:
+        p = prompts_resp["prompts"][0]
+        failed += ok("prompt_id" in p, "api_run_prompts returns prompt_id")
+        failed += ok("content" not in p, "api_run_prompts excludes content body from list")
+
+    images_resp = api_run_images(user_id, run_id)
+    failed += ok(images_resp["total"] >= 1, "api_run_images returns >= 1 image")
+    if images_resp["images"]:
+        im = images_resp["images"][0]
+        failed += ok("image_id" in im, "api_run_images returns image_id")
+        failed += ok("file_path" in im, "api_run_images returns file_path")
+
+    # User B listing User A's run should return 0 results
+    resp_b = api_run_prompts("user_B", run_id)
+    failed += ok(resp_b["total"] == 0, "api_run_prompts filters by user_id (User B sees 0)")
+
     # Clean up
     try:
-        from dashboard.backend.db.client import get_sync_db
         from dashboard.backend.db.collections import COLL_FILE_MAP
-        get_sync_db()[COLL_FILE_MAP].delete_many({"run_id": {"$in": [run_id, "run-b-999"]}})
+        db[COLL_FILE_MAP].delete_many({"run_id": {"$in": [run_id, "run-b-999"]}})
+        db[COLL_PROMPTS].delete_many({"run_id": run_id})
+        db[COLL_IMAGES].delete_many({"run_id": run_id})
+        db[COLL_PROMPTS].delete_many({"run_id": "run-b-999"})
+        db[COLL_IMAGES].delete_many({"run_id": "run-b-999"})
     except Exception:
         pass
 
