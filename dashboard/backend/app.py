@@ -19,6 +19,7 @@ import mimetypes
 import traceback
 import uuid
 import asyncio
+import httpx
 import psutil
 
 if sys.platform == "win32":
@@ -1180,9 +1181,6 @@ def api_save_input_prompt(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
     return {"status": "saved", "path": str(p.relative_to(ROOT))}
 
 
-def _is_opencode_run_cmd(cmd: list[str]) -> bool:
-    return bool(cmd) and Path(cmd[0]).name == "opencode" and len(cmd) > 1 and cmd[1] == "run"
-
 
 def _append_opencode_queue_log(message: str) -> None:
     try:
@@ -1256,12 +1254,6 @@ def _opencode_queue_slot(label: str) -> Iterator[None]:
         time.sleep(0.25)
 
 
-def _run_opencode_queued(cmd: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    with _opencode_queue_slot("command"):
-        resolved = _resolve_opencode_cmd(cmd)
-        return subprocess.run(resolved, cwd=str(cwd), text=True, capture_output=True, check=False, env=env, encoding="utf-8", errors="replace")
-
-
 def run_cmd(
     cmd: list[str],
     cwd: Path,
@@ -1270,8 +1262,6 @@ def run_cmd(
     poll_cancel: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     env = dashboard_subprocess_env()
-    if _is_opencode_run_cmd(cmd):
-        return _run_opencode_queued(cmd, cwd, env)
     proc = subprocess.Popen(
         cmd,
         cwd=str(cwd),
@@ -1800,124 +1790,42 @@ def strip_ansi(text: str | None) -> str:
     return re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", text)
 
 
-def opencode_discovery_env() -> dict[str, str]:
-    env = os.environ.copy()
-    if sys.platform == "win32":
-        local_appdata = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
-        default_auth_dir = Path(local_appdata) / "opencode"
-    else:
-        default_auth_dir = Path.home() / ".local" / "share" / "opencode"
-    default_auth = default_auth_dir / "auth.json"
-
-    if sys.platform == "win32":
-        raw_xdg = ""
-    else:
-        raw_xdg = env.get("XDG_DATA_HOME", "").strip()
-    if raw_xdg:
-        current_xdg = Path(raw_xdg).expanduser()
-    elif sys.platform == "win32":
-        current_xdg = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
-    else:
-        current_xdg = Path.home() / ".local" / "share"
-    current_auth = current_xdg / "opencode" / "auth.json"
-
-    if default_auth.exists() and not current_auth.exists():
-        if sys.platform == "win32":
-            env["LOCALAPPDATA"] = str(Path(local_appdata))
-        else:
-            env["XDG_DATA_HOME"] = str(Path.home() / ".local" / "share")
-    return env
 
 
-def _resolve_opencode_cmd(cmd: list[str]) -> list[str]:
-    if sys.platform == "win32" and cmd and cmd[0] == "opencode":
-        candidates = [
-            shutil.which("opencode.cmd"),
-            shutil.which("opencode.ps1"),
-            shutil.which("opencode"),
-        ]
-        appdata = os.getenv("APPDATA", "")
-        if appdata:
-            candidates.extend([
-                str(Path(appdata) / "npm" / "opencode.cmd"),
-                str(Path(appdata) / "npm" / "opencode.ps1"),
-            ])
-        chosen = ""
-        for candidate in candidates:
-            if candidate and Path(candidate).exists():
-                chosen = candidate
-                break
-        if chosen.lower().endswith(".ps1"):
-            return ["powershell", "-ExecutionPolicy", "Bypass", "-File", chosen] + cmd[1:]
-        if chosen:
-            return [chosen] + cmd[1:]
-    return cmd
 
 
-def run_opencode_cmd(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    resolved = _resolve_opencode_cmd(cmd)
-    return subprocess.run(
-        resolved,
-        cwd=str(cwd) if cwd else str(ROOT),
-        text=True,
-        capture_output=True,
-        check=False,
-        env=env or opencode_discovery_env(),
-        encoding="utf-8",
-        errors="replace",
-    )
 
 
-def run_opencode_discovery_cmd(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    return run_opencode_cmd(cmd, env=opencode_discovery_env())
 
 
-def list_opencode_models() -> list[str]:
-    result = run_opencode_discovery_cmd(["opencode", "models"])
-    if result.returncode != 0:
+def list_opencode_models(api_url: str | None = None) -> list[str]:
+    url = (api_url or "").strip() or os.getenv("OPENCODE_API_URL", "").strip() or DEFAULT_OPENCODE_API_URL
+    api_key = os.getenv("OPENCODE_API_KEY", "").strip()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(f"{url}/models", headers=headers)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+    except (httpx.HTTPError, OSError, json.JSONDecodeError):
         return []
-    lines = [line.strip() for line in strip_ansi(result.stdout).splitlines()]
-    return [line for line in lines if line and "/" in line]
-
-
-def list_opencode_provider_labels() -> list[str]:
-    result = run_opencode_discovery_cmd(["opencode", "providers", "list"])
-    if result.returncode != 0:
+    if isinstance(data, list):
+        model_ids = [m["id"] if isinstance(m, dict) else str(m) for m in data]
+    elif isinstance(data, dict):
+        models_data = data.get("data") or data.get("models") or []
+        model_ids = [m["id"] if isinstance(m, dict) else str(m) for m in models_data]
+    else:
         return []
-    lines = [line.strip() for line in strip_ansi(result.stdout).splitlines()]
-    labels: list[str] = []
-    for line in lines:
-        match = re.search(r"[●•]\s+(.+?)\s+(oauth|api|token|key)\b", line, flags=re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-        else:
-            fallback = re.search(r"^[│\s]*[●•]\s+(.+)$", line)
-            if not fallback:
-                continue
-            value = re.sub(r"\s+(oauth|api|token|key)\b.*$", "", fallback.group(1), flags=re.IGNORECASE).strip()
-        if value:
-            labels.append(value)
-    return labels
+    return [m for m in model_ids if "/" in m] or [f"opencode/{m}" for m in model_ids]
 
 
-def provider_id_from_label(label: str) -> str:
-    known = {
-        "github copilot": "github-copilot",
-        "github-copilot": "github-copilot",
-        "opencode": "opencode",
-    }
-    key = label.strip().lower()
-    if key in known:
-        return known[key]
-    return re.sub(r"[^a-z0-9]+", "-", key).strip("-")
 
 
-def list_models_for_provider(provider: str) -> list[str]:
-    result = run_opencode_discovery_cmd(["opencode", "models", provider])
-    if result.returncode != 0:
-        return []
-    lines = [line.strip() for line in strip_ansi(result.stdout).splitlines()]
-    return [line for line in lines if line and line.startswith(provider + "/")]
+
+
 
 
 def choose_openai_gpt52(models: list[str]) -> str:
@@ -1948,45 +1856,19 @@ def sanitize_dashboard_model(selected: str, models: list[str]) -> str:
 
 def build_opencode_catalog() -> dict[str, Any]:
     models = list_opencode_models()
-    provider_labels = list_opencode_provider_labels()
-    provider_ids = {line.split("/", 1)[0] for line in models}
-
-    known_providers = ["opencode", "openai"]
-    for provider in known_providers:
-        provider_ids.add(provider)
-    for label in provider_labels:
-        pid = provider_id_from_label(label)
-        if pid:
-            provider_ids.add(pid)
-
-    for provider in sorted(provider_ids):
-        if any(model.startswith(provider + "/") for model in models):
-            continue
-        models.extend(list_models_for_provider(provider))
-
-    providers = sorted(provider for provider in provider_ids if provider.lower() != "github-copilot")
-    grouped: dict[str, list[str]] = {provider: [] for provider in providers}
+    grouped: dict[str, list[str]] = {}
     for model in models:
         provider = model.split("/", 1)[0]
-        if provider.lower() == "github-copilot":
-            continue
         grouped.setdefault(provider, []).append(model)
     for provider in grouped:
         grouped[provider] = sorted(grouped[provider])
-    providers_with_models = [provider for provider, values in grouped.items() if values]
-    copilot_models = [model for model in models if model.lower().startswith("github-copilot/")]
-    if providers_with_models:
-        providers = sorted(providers_with_models)
-    elif copilot_models:
-        providers = ["github-copilot"]
-        grouped = {"github-copilot": sorted(copilot_models)}
+    providers = sorted(grouped.keys())
     default_model = ""
     if models:
         default_model = choose_openai_gpt52(models)
     return {
         "api_url": DEFAULT_OPENCODE_API_URL,
         "providers": providers,
-        "provider_labels": provider_labels,
         "models_by_provider": grouped,
         "default_model": default_model,
     }
@@ -2629,8 +2511,8 @@ def normalize_generated_copy(
 
 
 def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], run_dir: Path, reserved_batch: str | None = None, language_mode: str | None = None) -> dict[str, Any] | None:
-    api_url = (config.get("opencode_api_url") or "").strip() or DEFAULT_OPENCODE_API_URL
-    api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
+    api_url = (config.get("opencode_api_url") or "").strip() or os.getenv("OPENCODE_API_URL", "").strip() or DEFAULT_OPENCODE_API_URL
+    api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_API_KEY", "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
     model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
     config["opencode_model"] = model
     provider = str(config.get("opencode_provider") or "").strip()
@@ -2641,370 +2523,120 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
     print(f"[call_opencode_compatible] api_url={api_url}, model={model}", file=sys.stderr)
 
     language_mode = resolve_language_mode(config)
-    cli_password = api_key or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
     product_file = Path(str(context.get("product_file_path") or DEFAULT_PRODUCT_MASTER))
     generated_ads: list[dict[str, Any]] = []
     errors: list[str] = []
     warnings: list[str] = []
-    session_id: str | None = None
-    session_request_count = 0
-    session_rollovers = 0
 
     if not product_file.exists() or not product_file.is_file():
         errors.append(f"Product master doc missing: {product_file}")
         (run_dir / "logs" / "opencode_error.txt").write_text("\n\n---\n\n".join(errors), encoding="utf-8")
         return None
 
-    env = dashboard_subprocess_env()
+    product_doc_content = product_file.read_text(encoding="utf-8")
 
-    def build_cmd(prompt: str, *, use_session: bool, attach_product_doc: bool) -> list[str]:
-        cmd = [
-            "opencode",
-            "run",
-            "--pure",
-            "--attach",
-            api_url,
-            "--model",
-            model,
-            "--format",
-            "json",
-        ]
-        if use_session and session_id:
-            cmd.extend(["--session", session_id])
-        if attach_product_doc:
-            cmd.extend(["--file", str(product_file)])
-        if cli_password:
-            cmd.extend(["--password", cli_password])
-        cmd.extend(["--", prompt])
-        return cmd
+    def call_llm(prompt: str, label: str = "ad_generation") -> tuple[dict[str, Any] | None, str, str, int]:
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
-    def run_opencode(prompt: str) -> tuple[dict[str, Any] | None, str, str, int]:
-        use_session = bool(session_id)
-        cmd = build_cmd(prompt, use_session=use_session, attach_product_doc=not use_session)
-        proc = subprocess.Popen(cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-        poll_interval = 0.1
-        elapsed = 0
-        while elapsed < OPENCODE_AD_TIMEOUT_SECONDS:
-            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                proc.kill()
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED mid-ad; killed subprocess after {elapsed}s")
-                return None, "", f"CANCELLED after {elapsed}s", -1
-            try:
-                proc.wait(timeout=poll_interval)
-                break
-            except subprocess.TimeoutExpired:
-                elapsed += poll_interval
-        else:
-            proc.kill()
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s on ad prompt")
+        sys_part = prompt.replace("SYSTEM:\n", "", 1).split("\nUSER_PAYLOAD_JSON:\n", 1)[0] if prompt.startswith("SYSTEM:\n") else prompt
+        user_part = ""
+        if "\nUSER_PAYLOAD_JSON:\n" in prompt:
+            user_part = "USER_PAYLOAD_JSON:\n" + prompt.split("\nUSER_PAYLOAD_JSON:\n", 1)[1]
+
+        body = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": sys_part},
+                {"role": "user", "content": f"Product document:\n{product_doc_content}\n\n---\n\n{user_part}"},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.7,
+            "max_tokens": 8192,
+        }
+
+        if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
+            return None, "", "CANCELLED", -1
+
+        t0 = time.time()
+        try:
+            with httpx.Client(timeout=OPENCODE_AD_TIMEOUT_SECONDS) as client:
+                resp = client.post(f"{api_url}/chat/completions", headers=headers, json=body)
+        except httpx.TimeoutException:
+            _log_llm_trace(run_dir.name, label, model, body, None, -1, time.time() - t0, error="TIMEOUT")
             return None, "", f"TIMEOUT after {OPENCODE_AD_TIMEOUT_SECONDS}s", -1
-        stdout = proc.stdout.read() if proc.stdout else ""
-        stderr = proc.stderr.read() if proc.stderr else ""
-        if proc.returncode != 0:
-            return None, stdout, stderr, proc.returncode
-        parsed = parse_opencode_json_output(stdout)
-        return parsed, stdout, stderr, proc.returncode
+        except httpx.HTTPError as exc:
+            _log_llm_trace(run_dir.name, label, model, body, None, -1, time.time() - t0, error=str(exc))
+            return None, "", f"HTTP error: {exc}", -1
 
-    def current_session_limit() -> int:
-        idx = min(session_rollovers, len(OPENCODE_ADS_PER_SESSION_SCHEDULE) - 1)
-        return OPENCODE_ADS_PER_SESSION_SCHEDULE[idx]
+        elapsed = time.time() - t0
 
-    def bootstrap_product_doc_session(reason: str) -> bool:
-        """Returns True if cancelled by user, False otherwise."""
-        nonlocal session_id, session_request_count, session_rollovers
-        append_run_log(
-            run_dir,
-            "opencode_session.log",
-            f"{now_iso()} Starting OpenCode product-doc session ({reason}) with file: {product_file}",
-        )
-        bootstrap_cmd = build_cmd(build_product_doc_bootstrap_prompt(), use_session=False, attach_product_doc=True)
-        proc = subprocess.Popen(bootstrap_cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-        bootstrap_timeout = 120
-        poll_start = time.time()
-        cancelled = False
-        while proc.poll() is None:
-            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                proc.kill()
-                proc.wait(timeout=5)
-                cancelled = True
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Bootstrap CANCELLED by user during {reason}")
-                break
-            if time.time() - poll_start > bootstrap_timeout:
-                proc.kill()
-                proc.wait(timeout=5)
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Bootstrap TIMEOUT after {bootstrap_timeout}s during {reason}")
-                break
-            time.sleep(0.1)
-        stdout, stderr = proc.communicate()
-        bootstrap = subprocess.CompletedProcess(bootstrap_cmd, proc.returncode, stdout, stderr)
-        append_run_log(
-            run_dir,
-            "opencode_session.log",
-            (
-                f"{now_iso()} Bootstrap reason={reason} return_code={bootstrap.returncode}\n"
-                f"STDOUT:\n{bootstrap.stdout or ''}\nSTDERR:\n{bootstrap.stderr or ''}"
-            ),
-        )
-        if cancelled:
-            session_id = None
-            session_request_count = 0
-            return True
-        if bootstrap.returncode == 0:
-            next_session_id = parse_opencode_session_id(bootstrap.stdout or "")
-            if next_session_id:
-                if session_id:
-                    previous_limit = current_session_limit()
-                    session_rollovers += 1
-                    append_run_log(
-                        run_dir,
-                        "opencode_session.log",
-                        f"{now_iso()} Rolled OpenCode session after {previous_limit} ad requests: {session_id} -> {next_session_id}",
-                    )
-                session_id = next_session_id
-                session_request_count = 0
-                append_run_log(
-                    run_dir,
-                    "opencode_session.log",
-                    f"{now_iso()} Reusing OpenCode session: {session_id}; max_ad_requests={current_session_limit()}",
-                )
-            else:
-                session_id = None
-                session_request_count = 0
-                warning = "OpenCode did not expose a session id; proceeding without session reuse."
-                warnings.append(warning)
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
-        else:
-            session_id = None
-            session_request_count = 0
-            warning = "OpenCode product-doc session bootstrap failed; proceeding without session reuse."
-            warnings.append(warning)
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
-        return False
+        if resp.status_code != 200:
+            _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=resp.text[:2000])
+            return None, resp.text, f"API error {resp.status_code}", resp.status_code
+
+        try:
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+        except (json.JSONDecodeError, KeyError, IndexError) as exc:
+            _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=str(exc))
+            return None, resp.text, f"Parse error: {exc}", -1
+
+        _log_llm_trace(run_dir.name, label, model, body, data, resp.status_code, elapsed)
+        parsed = parse_opencode_json_output(content)
+        return parsed, content, "", 0
 
     with _opencode_queue_slot(f"copy_session {run_dir.name}"):
         _cancel_current_run.clear()
         cancel_event_for_run(run_dir.name).clear()
-        if bootstrap_product_doc_session("initial"):
-            warnings.append("Run cancelled by user during initial bootstrap")
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during initial bootstrap")
-            return None, [], warnings
 
         all_items = context.get("ads") or []
-        total_items = len(all_items)
-        batch_size = int(config.get("batch_size") or 10)
-        def _build_previous_same_format(fmt: str, persona_num: int | None) -> list[dict[str, Any]]:
-            result: list[dict[str, Any]] = []
-            for prev in generated_ads:
-                if not isinstance(prev, dict):
-                    continue
-                if fmt != "ALL" and str(prev.get("format") or "").strip().upper() != fmt:
-                    continue
-                prev_persona = prev.get("persona") if isinstance(prev.get("persona"), dict) else {}
-                if persona_num is not None and prev_persona.get("persona_number") != persona_num:
-                    continue
-                prev_copy = prev.get("copy") if isinstance(prev.get("copy"), dict) else {}
-                prev_en = prev_copy.get("EN") if isinstance(prev_copy.get("EN"), dict) else {}
-                result.append({
-                    "persona": prev_persona.get("name") if isinstance(prev.get("persona"), dict) else "",
-                    "headline_angle": prev.get("headline_angle"),
-                    "headline": prev_en.get("headline"),
-                    "support_line": prev_en.get("subheadline") or prev_en.get("support_line"),
-                    "cta": prev_en.get("cta"),
-                    "bullets": prev_en.get("bullets") if isinstance(prev_en.get("bullets"), list) else [],
-                })
-            return result
+        batch_by_prompt: dict[str, list[dict[str, Any]]] = {}
+        for item in all_items:
+            prompt = build_generation_payload_for_llm(context, ad=item, config=config)
+            batch_by_prompt.setdefault(prompt, []).append(item)
 
-        all_items_tuples: list[tuple[int, dict]] = [(i + 1, item) for i, item in enumerate(all_items)]
-        all_items_flat = sorted(all_items_tuples, key=lambda x: str((x[1].get("format") or "") if isinstance(x, tuple) else (x.get("format") or "")))
-        for chunk_start in range(0, len(all_items_flat), batch_size):
-            chunk = all_items_flat[chunk_start:chunk_start + batch_size]
-            chunk_ads = [ad for _, ad in chunk]
-            chunk_indices = [idx for idx, _ in chunk]
-            batch_label = f"ads {chunk_indices[0]}-{chunk_indices[-1]}"
+        prompt_keys = list(batch_by_prompt.keys())
+        total_batches = len(prompt_keys)
 
+        for batch_idx, prompt in enumerate(prompt_keys):
             if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                if not cancel_event_for_run(run_dir.name).is_set():
-                    cancel_event_for_run(run_dir.name).set()
-                warnings.append(f"Run cancelled by user after {chunk_indices[0] - 1} ads")
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED by user after {chunk_indices[0] - 1} ads")
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Generation cancelled by user (batch {batch_idx + 1}/{total_batches})")
                 break
 
-            if session_id and session_request_count >= current_session_limit():
-                if bootstrap_product_doc_session(f"rollover_before_{batch_label}"):
-                    warnings.append(f"Run cancelled during session rollover before {batch_label}")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during session rollover")
-                    break
+            batch_items = batch_by_prompt[prompt]
+            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} LLM call {batch_idx + 1}/{total_batches} for {len(batch_items)} ad(s)")
 
-            # Build previous_same_format across all previously generated ads (all formats mixed now)
-            previous_same_format = _build_previous_same_format("ALL", None)
-            first_ad = chunk_ads[0] if chunk_ads else {}
+            parsed, raw_content, err_msg, code = call_llm(prompt, label=f"batch_{batch_idx + 1}")
 
-            # Build a batch context with all ads in this chunk
-            batch_context = {**context, "ads": chunk_ads}
-            user_payload = {
-                "task": "Generate fresh ad copy JSON for provided context.",
-                "context": build_generation_payload_for_llm(batch_context),
-                "already_used_ads_DO_NOT_REUSE": previous_same_format,
-                "constraints": {
-                    "language": TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"]),
-                    "language_mode": language_mode,
-                    "return_json_only": True,
-                },
-            }
-            target_langs_list = TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"])
-            hyp_meta = first_ad.get("hypothesis") if isinstance(first_ad.get("hypothesis"), dict) else {}
-            hyp_type = str(hyp_meta.get("type") or "none").strip().lower()
-            concept_angle_rules = ""
-            if hyp_type == "none":
-                all_rules = COPY_PROMPTS.get("concept_angle_definitions", {}).get("all_rules", [])
-                if all_rules:
-                    concept_angle_rules = "\n\n" + "\n".join(all_rules)
-            chunk_formats = sorted({str(ad.get("format") or "").strip().upper() for ad in chunk_ads if isinstance(ad, dict)})
-            cli_prompt = (
-                "SYSTEM:\n"
-                f"{build_ad_copy_system_prompt('ALL', formats=chunk_formats)}{concept_angle_rules}\n\n"
-                "USER_PAYLOAD_JSON:\n"
-                f"{json.dumps(user_payload, ensure_ascii=False)}\n\n"
-                f"{build_ad_prompt_tail('ALL', formats=chunk_formats)}\n\n"
-                f"{build_strict_schema_note('ALL', target_langs_list)}"
-            )
-
-            try:
-                candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
-            except OSError as exc:
-                errors.append(f"Batch {batch_label}: launch failed: {exc}")
-                for idx in chunk_indices:
-                    errors.append(f"Ad {idx}: launch failed in batch {batch_label}")
-                continue
-
-            if last_code == -1 and "CANCELLED" in last_stderr:
-                warnings.append(f"Batch {batch_label}: cancelled mid-generation; saving already generated results")
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label}")
+            if code == -1 and err_msg in ("CANCELLED",):
+                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Cancelled")
                 break
 
-            if last_code == -1:  # timeout
-                warning = f"Batch {batch_label}: LLM call timed out after {OPENCODE_AD_TIMEOUT_SECONDS}s; bootstrapping fresh session and retrying."
-                warnings.append(warning)
-                append_run_log(run_dir, "opencode_session.log", f"{now_iso()} {warning}")
-                if bootstrap_product_doc_session("timeout_retry"):
-                    warnings.append(f"Run cancelled during timeout retry bootstrap for {batch_label}")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED during timeout retry bootstrap")
-                    break
-                try:
-                    candidate, last_stdout, last_stderr, last_code = run_opencode(cli_prompt)
-                except OSError as exc:
-                    errors.append(f"Batch {batch_label}: retry launch failed after timeout: {exc}")
-                    for idx in chunk_indices:
-                        errors.append(f"Ad {idx}: timeout retry failed in batch {batch_label}")
-                    continue
-                if last_code == -1 and "CANCELLED" in last_stderr:
-                    warnings.append(f"Batch {batch_label}: cancelled during timeout retry; saving already generated results")
-                    append_run_log(run_dir, "opencode_session.log", f"{now_iso()} CANCELLED batch {batch_label} timeout retry")
-                    break
-
-            if last_code != 0:
-                warnings.append(f"Batch {batch_label}: LLM call failed (exit code {last_code})\nSTDOUT:\n{last_stdout}\nSTDERR:\n{last_stderr}")
-                for idx in chunk_indices:
-                    errors.append(f"Ad {idx}: LLM call failed in batch {batch_label}")
+            if parsed is None:
+                errors.append(f"batch_{batch_idx + 1}: {err_msg}")
+                if raw_content:
+                    (run_dir / "logs" / "opencode_raw").mkdir(parents=True, exist_ok=True)
+                    (run_dir / "logs" / "opencode_raw" / f"batch_{batch_idx + 1}.txt").write_text(raw_content, encoding="utf-8")
                 continue
 
-            # Parse the multi-ad response
-            response_ads: list[dict] = []
-            if candidate and isinstance(candidate, dict):
-                raw_ads = candidate.get("ads")
-                if isinstance(raw_ads, list):
-                    response_ads = raw_ads
+            ads_out = parsed.get("ads") or []
+            for ad_idx, ad_item in enumerate(batch_items):
+                if ad_idx < len(ads_out):
+                    generated_ads.append(ads_out[ad_idx])
+                else:
+                    warnings.append(f"No ad output for item {ad_idx} in batch {batch_idx + 1}")
 
-            for local_idx, (global_idx, ad_item) in enumerate(chunk):
-                response_ad = response_ads[local_idx] if local_idx < len(response_ads) else None
-                if not response_ad or not isinstance(response_ad, dict):
-                    msg = f"Ad {global_idx}: LLM returned no usable ad at position {local_idx} in batch"
-                    warnings.append(msg)
-                    errors.append(f"Ad {global_idx}: no usable ad JSON at batch position {local_idx}")
-                    if session_id:
-                        session_request_count += 1
-                    continue
-
-                mismatch = hypothesis_mismatch(response_ad, ad_item)
-                if mismatch:
-                    msg = f"Ad {global_idx}: hypothesis mismatch (accepted, no retry): {mismatch}"
-                    warnings.append(msg)
-                    print(f"[WARNING] {msg}", file=sys.stderr)
-
-                ad_format = str(ad_item.get("format") or "").strip().upper()
-                semantic_prev = _build_previous_same_format(ad_format,
-                        (ad_item.get("persona") if isinstance(ad_item.get("persona"), dict) else {}).get("persona_number"))
-                semantic_rejection = semantic_copy_rejection(response_ad, ad_item, semantic_prev)
-                if semantic_rejection:
-                    msg = f"Ad {global_idx}: semantic copy quality flag (accepted, no retry): {semantic_rejection}"
-                    warnings.append(msg)
-                    print(f"[WARNING] {msg}", file=sys.stderr)
-
-                template_leak = detect_template_leakage(response_ad)
-                if template_leak:
-                    warnings.append(f"Ad {global_idx}: {template_leak}")
-
-                if last_stdout:
-                    raw_dir = run_dir / "logs" / "opencode_raw"
-                    raw_dir.mkdir(parents=True, exist_ok=True)
-                    (raw_dir / f"ad_{global_idx:02d}_stdout.ndjson").write_text(last_stdout, encoding="utf-8")
-                    (raw_dir / f"ad_{global_idx:02d}_candidate.json").write_text(
-                        json.dumps({"candidate": response_ad, "ad_item": ad_item}, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8",
-                    )
-
-                if response_ad:
-                    generated_ads.append(hydrate_generated_ad_candidate(response_ad, ad_item))
-                if session_id:
-                    session_request_count += 1
-
-            # Log batch progress and write partial results
-            print(f"[COPY BATCH DONE] {batch_label}: {len(generated_ads)}/{total_items} ads generated", file=sys.stderr)
-            partial_dir = run_dir / "partial"
-            partial_dir.mkdir(parents=True, exist_ok=True)
-            (partial_dir / "ads.json").write_text(
-                json.dumps({"default_aspect_ratio": "4:5", "ads": generated_ads}, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            (partial_dir / "progress.txt").write_text(f"{len(generated_ads)}/{total_items}\n", encoding="utf-8")
-
-            # Run assembler incrementally so prompts appear in output/ during the pipeline
-            if reserved_batch and language_mode:
-                partial_copy_file = partial_dir / "copy_batch.json"
-                partial_copy_file.write_text(
-                    json.dumps({"default_aspect_ratio": "4:5", "ads": generated_ads}, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-                asm_result = run_cmd([
-                    "python3", "scripts/generate_ads.py",
-                    "--copy-file", str(partial_copy_file),
-                    "--batch", reserved_batch,
-                    "--language-mode", language_mode,
-                    "--skip-uniqueness-check",
-                    "--no-registry-write",
-                    "--seed", "0",
-                ], cwd=ROOT)
-                if asm_result.returncode != 0:
-                    asm_err = asm_result.stderr or asm_result.stdout
-                    print(f"[INCREMENTAL ASSEMBLER] batch {batch_label} failed: {asm_err}", file=sys.stderr)
-
-            if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
-                    break
-
-    if errors or warnings:
-        (run_dir / "logs" / "opencode_error.txt").write_text("\n\n---\n\n".join(errors + warnings), encoding="utf-8")
-
-    if not generated_ads:
-        return None
-
-    result_payload: dict[str, Any] = {"default_aspect_ratio": "4:5", "ads": generated_ads}
-    if errors:
-        result_payload["_opencode_failures"] = errors
-    if warnings:
-        result_payload["_opencode_warnings"] = warnings
-    if session_rollovers:
-        result_payload["_opencode_session_rollovers"] = session_rollovers
-    return result_payload
+        result_payload: dict[str, Any] = {
+            "ads": generated_ads,
+            "default_aspect_ratio": "4:5",
+        }
+        if errors:
+            result_payload["_opencode_failures"] = errors
+        if warnings:
+            result_payload["_opencode_warnings"] = warnings
+        return result_payload
 
 
 def collect_run_result(run_dir: Path, batch_name: str, image_generated: bool) -> dict[str, Any]:
@@ -4212,7 +3844,6 @@ def _build_opencode_catalog_cached():
         catalog = {
             "api_url": DEFAULT_OPENCODE_API_URL,
             "providers": [],
-            "provider_labels": [],
             "models_by_provider": {},
             "default_model": "",
         }
@@ -4245,7 +3876,6 @@ def api_defaults() -> dict[str, Any]:
             opencode = {
                 "api_url": DEFAULT_OPENCODE_API_URL,
                 "providers": [],
-                "provider_labels": [],
                 "models_by_provider": {},
                 "default_model": "",
             }
