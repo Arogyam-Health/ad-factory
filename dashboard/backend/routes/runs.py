@@ -20,6 +20,7 @@ from dashboard.backend.app import (
     api_download_batch_images,
     api_download_batches,
     api_llm_traces,
+    api_delete_llm_traces,
     signal_cancel_run,
     signal_cancel_current_run,
 )
@@ -112,3 +113,8 @@ def _cancel_current_run() -> dict[str, Any]:
 @router.get("/api/llm-traces")
 def _llm_traces(limit: int = 50, offset: int = 0, run_id: str | None = None) -> dict[str, Any]:
     return api_llm_traces(limit=limit, offset=offset, run_id_filter=run_id)
+
+
+@router.delete("/api/llm-traces")
+def _delete_llm_traces(run_id: str | None = None) -> dict[str, Any]:
+    return api_delete_llm_traces(run_id_filter=run_id)

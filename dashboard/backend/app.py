@@ -6883,6 +6883,23 @@ def api_llm_traces(limit: int = 50, offset: int = 0, run_id_filter: str | None =
     return {"traces": page, "total": total, "offset": offset, "limit": limit}
 
 
+def api_delete_llm_traces(run_id_filter: str | None = None) -> dict[str, Any]:
+    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(LLM_TRACES_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    deleted = 0
+    for f in files:
+        if run_id_filter:
+            try:
+                trace = json.loads(f.read_text(encoding="utf-8"))
+                if trace.get("run_id") != run_id_filter:
+                    continue
+            except (json.JSONDecodeError, OSError):
+                continue
+        f.unlink()
+        deleted += 1
+    return {"deleted": deleted, "filter": run_id_filter}
+
+
 # ── Modular routes ───────────────────────────────────────────────────────────
 from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, chrome
 

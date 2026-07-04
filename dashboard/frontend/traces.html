@@ -39,6 +39,7 @@
     <h1>LLM Traces</h1>
     <div class="traces-controls">
       <input id="filterRunId" type="text" placeholder="Filter by run ID..." />
+      <button id="deleteAllBtn" class="ghost-btn" type="button" style="color:var(--accent-coral)">Delete All</button>
       <button id="refreshBtn" class="ghost-btn" type="button">Refresh</button>
       <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
     </div>
@@ -66,6 +67,19 @@
       renderTraces(data);
     }
 
+    async function deleteAllTraces() {
+      if (!confirm("Delete all LLM traces?")) return;
+      await fetch("/api/llm-traces", { method: "DELETE" });
+      offset = 0;
+      loadTraces();
+    }
+
+    async function deleteTraceByRunId(runId) {
+      if (!confirm(`Delete all traces for run ${runId}?`)) return;
+      await fetch(`/api/llm-traces?run_id=${encodeURIComponent(runId)}`, { method: "DELETE" });
+      loadTraces();
+    }
+
     function renderTraces(data) {
       const container = document.getElementById("tracesContainer");
       const pagination = document.getElementById("pagination");
@@ -78,14 +92,16 @@
         const statusClass = t.status_code === 200 ? "ok" : "err";
         const errorHtml = t.error ? `<div style="color:var(--accent-coral);font-size:0.85rem;margin-top:4px">Error: ${t.error}</div>` : "";
         const usageHtml = t.response?.usage ? ` · ${JSON.stringify(t.response.usage)}` : "";
+        const runId = t.run_id || "";
         return `<div class="trace-card">
           <div class="meta">
             <span class="label">${t.label || "?"}</span>
             <span class="model">${t.model || "?"}</span>
             <span class="status ${statusClass}">${t.status_code}</span>
             <span class="duration">${t.duration_s || "?"}s</span>
-            <span class="run-id">${t.run_id || ""}</span>
+            <span class="run-id">${runId}</span>
             <span>${t.timestamp || ""}</span>
+            ${runId ? `<button class="ghost-btn trace-delete" onclick="deleteTraceByRunId('${runId}')" title="Delete traces for this run">✕</button>` : ""}
           </div>
           ${errorHtml}
           <details class="trace-details"><summary>Request</summary><pre>${escapeHtml(JSON.stringify(t.request, null, 2))}</pre></details>
@@ -105,6 +121,7 @@
     }
 
     document.getElementById("refreshBtn").addEventListener("click", () => { offset = 0; loadTraces(); });
+    document.getElementById("deleteAllBtn").addEventListener("click", deleteAllTraces);
     document.getElementById("prevPage").addEventListener("click", () => { offset = Math.max(0, offset - LIMIT); loadTraces(); });
     document.getElementById("nextPage").addEventListener("click", () => { offset += LIMIT; loadTraces(); });
     document.getElementById("filterRunId").addEventListener("input", (e) => {
