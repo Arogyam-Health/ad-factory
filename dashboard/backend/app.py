@@ -2195,6 +2195,7 @@ def call_opencode_repair_copy(
     api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_API_KEY", "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
     api_url = (config.get("opencode_api_url") or "").strip() or os.getenv("OPENCODE_API_URL", "").strip() or DEFAULT_OPENCODE_API_URL
     model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
+    api_model = model.split("/", 1)[-1] if "/" in model else model
     if not api_url:
         return None
 
@@ -2221,7 +2222,7 @@ def call_opencode_repair_copy(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     body = {
-        "model": model,
+        "model": api_model,
         "messages": [
             {"role": "user", "content": prompt},
         ],
@@ -2522,6 +2523,8 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
 
     print(f"[call_opencode_compatible] api_url={api_url}, model={model}", file=sys.stderr)
 
+    api_model = model.split("/", 1)[-1] if "/" in model else model
+
     language_mode = resolve_language_mode(config)
     product_file = Path(str(context.get("product_file_path") or DEFAULT_PRODUCT_MASTER))
     generated_ads: list[dict[str, Any]] = []
@@ -2546,7 +2549,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             user_part = "USER_PAYLOAD_JSON:\n" + prompt.split("\nUSER_PAYLOAD_JSON:\n", 1)[1]
 
         body = {
-            "model": model,
+            "model": api_model,
             "messages": [
                 {"role": "system", "content": sys_part},
                 {"role": "user", "content": f"Product document:\n{product_doc_content}\n\n---\n\n{user_part}"},
