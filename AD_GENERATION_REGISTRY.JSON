@@ -520,6 +520,50 @@
       "test_group": "",
       "variant_variable": "",
       "variant_value": ""
+    },
+    {
+      "id": "entry_021",
+      "timestamp": "2026-07-04T15:28:08Z",
+      "format": "TEST",
+      "persona_number": 7,
+      "persona_name": "Post-Failure Re-starter",
+      "headline_angle": null,
+      "concept_angle": "desired_outcome",
+      "visual_archetype": "test_editorial_quote_card",
+      "headline_en": "Lose 3-5 kg in 15 days – the simple plan that finally works for you.",
+      "headline_hi": "\"मुझे आखिर ऐसा आसान सिस्टम चाहिए जो रोज निभ सके वाला रूटीन मिला जो वजन घटाने में मदद करता है।\"",
+      "support_line_en": "Trusted by 70,000+ Indians. No strict diets, no gym, no starvation.",
+      "support_line_hi": "",
+      "cta_en": "Start Your Journey",
+      "cta_hi": "",
+      "disclaimer_en": "",
+      "disclaimer_hi": "",
+      "caption_en": "",
+      "caption_hi": "",
+      "bullets_en": [],
+      "bullets_hi": [],
+      "background_slot": "BG-169",
+      "background_name": "Overhead Flat-Lay Spread 4",
+      "background_source": "catalog",
+      "fresh_background_signature": null,
+      "language": "BOTH",
+      "output_quality": "pending",
+      "notes": "assembled_from=copy_batch.json; batch=v1; aspect_ratio=4:5; seed=1887853169; visual_archetype=test_editorial_quote_card",
+      "opening_pattern_4tok_en": "lose_kg_in_days",
+      "opening_pattern_4tok_hi": "मुझे_आखिर_ऐसा_आसान",
+      "copy_skeleton": "proof_time_cta",
+      "hook_structure_class": "proof_led",
+      "proof_style_class": "social_proof",
+      "cta_voice_class": "urgent_start",
+      "headline_word_count": 15,
+      "support_line_word_count": 11,
+      "has_protocol_mechanics": false,
+      "has_social_proof_number": true,
+      "background_scene_category": "lifestyle",
+      "hypothesis_id": "",
+      "test_group": "",
+      "variant_variable": "",
+      "variant_value": ""
     }
   ],
   "indexes": {
@@ -535,7 +579,8 @@
         "70,000+ customers chose a course they could stick to",
         "Scale stuck? Track what’s actually blocking weight loss",
         "With PCOD, cravings make weight loss feel 2x harder",
-        "Always hungry? Many Obesity Killer Kit users say the plan feels easier to follow."
+        "Always hungry? Many Obesity Killer Kit users say the plan feels easier to follow.",
+        "Lose 3-5 kg in 15 days – the simple plan that finally works for you."
       ],
       "cta_en": [
         "Get the 15-day guided kit",
@@ -548,7 +593,8 @@
         "Learn More",
         "Learn More",
         "Check Eligibility",
-        "See How It Works"
+        "See How It Works",
+        "Start Your Journey"
       ],
       "support_line_en": [
         "Strict diets flare acidity and constipation; this doctor-formulated Ayurvedic system supports 3–5 kg loss in 15 days with digestion support and homemade-food fit.",
@@ -557,7 +603,8 @@
         "When cravings hit again and again, Obesity Killer Liquid helps reduce hunger and cravings so eating less feels easier to follow inside the Obesity Killer Kit 15-day routine.",
         "For stress-snacking moments, Obesity Killer Liquid helps reduce hunger and cravings so the plan depends less on willpower.",
         "I needed something simple I could follow. Obesity Killer Liquid helped reduce my cravings, and Obesity Killer Kit gave me a clear 15-day routine instead of confusing diet charts.",
-        "Trusted by 70,000+ customers in India. Obesity Killer Liquid helps reduce hunger and cravings so you are not relying on willpower."
+        "Trusted by 70,000+ customers in India. Obesity Killer Liquid helps reduce hunger and cravings so you are not relying on willpower.",
+        "Trusted by 70,000+ Indians. No strict diets, no gym, no starvation."
       ],
       "bullets_en": [
         "Meetings, travel, late lunches and your plan collapses by day 3",
@@ -1026,10 +1073,10 @@
         "cycle_number": 1,
         "used": [
           "BG-231",
-          "BG-302"
+          "BG-302",
+          "BG-169"
         ],
         "remaining": [
-          "BG-169",
           "BG-013",
           "BG-266",
           "BG-318",
