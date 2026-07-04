@@ -33,7 +33,16 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient
 
 from dashboard.backend.app import app
-from dashboard.backend.app import _record_run_owner, _get_run_owner, _check_ownership, RUNS_ROOT
+from dashboard.backend.app import (
+    _record_run_owner,
+    _get_run_owner,
+    _check_ownership,
+    _resolve_file_owner,
+    _store_output_mapping,
+    _extract_run_id_from_output_path,
+    _extract_run_id_from_generated_path,
+    RUNS_ROOT,
+)
 from dashboard.backend.db.settings import settings, DEPLOYMENT_PROD, validate_production_settings
 from dashboard.backend.security.crypto import encrypt_value, decrypt_value, hash_token, mask_key, generate_token
 from dashboard.backend.auth.models import generate_user_id, generate_session_token
@@ -268,6 +277,84 @@ def test_ownership_isolation() -> int:
     return failed
 
 
+# ─── File mapping / output path ownership tests ────────────────────────────
+
+
+def test_file_mapping() -> int:
+    failed = 0
+    print("\n[File mapping]")
+
+    from dashboard.backend.db.settings import settings as app_settings
+
+    if not db_available():
+        print("  SKIP (MongoDB not available)")
+        return failed
+
+    run_id = "test-file-map-run"
+    user_id = "user_map_test"
+    batch = "v999"
+    manifest = {
+        "prompt_files": ["output/v999/45/TEST_slug_EN_pain_point.txt"],
+        "image_files": ["generated_images/v999/4_5/generated images/test_img.png"],
+        "results": [{"format": "TEST"}],
+    }
+
+    # Without stored mapping, lookup returns None
+    owner = _resolve_file_owner("output/v999/45/TEST_slug_EN_pain_point.txt")
+    failed += ok(owner is None, "_resolve_file_owner returns None before mapping is stored")
+
+    # Store mapping
+    _store_output_mapping(run_id, user_id, batch, manifest)
+
+    # Now lookup should find the owner
+    owner = _resolve_file_owner("output/v999/45/TEST_slug_EN_pain_point.txt")
+    failed += ok(owner is not None and owner["run_id"] == run_id and owner["user_id"] == user_id, "Stored prompt file resolves to correct owner")
+
+    owner = _resolve_file_owner("generated_images/v999/4_5/generated images/test_img.png")
+    failed += ok(owner is not None and owner["user_id"] == user_id, "Stored image file resolves to correct owner")
+
+    # User B should get a different result for their run
+    _store_output_mapping("run-b-999", "user_B", "v999", {"prompt_files": ["output/v999/45/BA_other_EN_pain.txt"], "image_files": ["generated_images/v999/4_5/other.png"]})
+    owner_b = _resolve_file_owner("output/v999/45/BA_other_EN_pain.txt")
+    failed += ok(owner_b is not None and owner_b["user_id"] == "user_B", "User B files map to User B")
+
+    # User A cannot access User B's file via _check_ownership
+    owner_a = _resolve_file_owner("output/v999/45/BA_other_EN_pain.txt")
+    failed += ok(owner_a is not None and owner_a["user_id"] == "user_B", "Same file still maps to User B regardless of who looks up")
+    try:
+        _check_ownership(owner_a["run_id"], "user_A")
+        failed += ok(False, "_check_ownership should block User A from User B's run")
+    except Exception:
+        failed += ok(True, "_check_ownership blocks User A from User B's run")
+
+    # _extract_run_id_from_output_path (uses MongoDB file_map)
+    rid = _extract_run_id_from_output_path("output/v999/45/TEST_slug_EN_pain_point.txt")
+    failed += ok(rid == run_id, "_extract_run_id_from_output_path resolves via file_map")
+
+    # Generated path lookup via file_map (not path-parsing)
+    rid = _extract_run_id_from_generated_path("generated_images/v999/4_5/generated images/test_img.png")
+    failed += ok(rid == run_id, "_extract_run_id_from_generated_path resolves via file_map")
+
+    # Legacy generated download returns production-guard message when authenticated
+    if app_settings.is_production:
+        # Simulate auth
+        from dashboard.backend.auth.service import create_session
+        tok = create_session("user_map_test")
+        resp = client.get("/api/files/download/generated/v999/4_5/generated images/test_img.png", cookies={"session": tok})
+        failed += ok(resp.status_code == 403, "Legacy generated download returns 403 in production with auth")
+        failed += ok("Use /api/files/download/image/{image_id}" in resp.text, "Legacy endpoint tells frontend to migrate")
+
+    # Clean up
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_FILE_MAP
+        get_sync_db()[COLL_FILE_MAP].delete_many({"run_id": {"$in": [run_id, "run-b-999"]}})
+    except Exception:
+        pass
+
+    return failed
+
+
 # ─── Provider config isolation tests ───────────────────────────────────────
 
 
@@ -304,6 +391,7 @@ def main() -> int:
     total += test_settings_validation()
     total += test_provider_config_isolation()
     total += test_ownership_isolation()
+    total += test_file_mapping()
 
     print(f"\n{'='*50}")
     if total == 0:

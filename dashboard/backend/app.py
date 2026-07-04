@@ -191,6 +191,184 @@ def _get_run_owner(run_id: str) -> str | None:
     return None
 
 
+def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[str, Any]) -> None:
+    """Scan output and generated_images dirs for a batch and store file->run mapping in MongoDB.
+
+    Called after a pipeline completes so that download endpoints can resolve
+    file paths to run owners via MongoDB instead of parsing filesystem paths.
+    Best-effort: silently ignores if MongoDB is unavailable.
+    """
+    try:
+        import time
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_FILE_MAP
+
+        db = get_sync_db()
+        now = time.time()
+        entries: list[dict[str, Any]] = []
+
+        # Remove any stale mapping for this run
+        db[COLL_FILE_MAP].delete_many({"run_id": run_id})
+
+        # Map the batch's output directory
+        output_batch_dir = ROOT / "output" / batch
+        if output_batch_dir.is_dir():
+            entries.append({
+                "file_path": f"output/{batch}/",
+                "file_type": "output_dir",
+                "run_id": run_id,
+                "user_id": user_id,
+                "batch": batch,
+                "created_at": now,
+            })
+            for f in sorted(output_batch_dir.rglob("*")):
+                if f.is_file():
+                    rel = f.relative_to(ROOT).as_posix()
+                    ext = f.suffix.lower()
+                    file_type = "output_json" if ext == ".json" else "prompt"
+                    entries.append({
+                        "file_path": rel,
+                        "file_type": file_type,
+                        "run_id": run_id,
+                        "user_id": user_id,
+                        "batch": batch,
+                        "created_at": now,
+                    })
+
+        # Map the batch's generated_images directory
+        img_batch_dir = GENERATED_IMAGES_ROOT / batch
+        if img_batch_dir.is_dir():
+            entries.append({
+                "file_path": f"generated_images/{batch}/",
+                "file_type": "image_dir",
+                "run_id": run_id,
+                "user_id": user_id,
+                "batch": batch,
+                "created_at": now,
+            })
+            for f in sorted(img_batch_dir.rglob("*")):
+                if f.is_file():
+                    rel = f.relative_to(ROOT).as_posix()
+                    ext = f.suffix.lower()
+                    file_type = "image_metadata" if ext == ".json" else "image"
+                    entries.append({
+                        "file_path": rel,
+                        "file_type": file_type,
+                        "run_id": run_id,
+                        "user_id": user_id,
+                        "batch": batch,
+                        "created_at": now,
+                    })
+
+        # Also map all known prompt files from manifest
+        for pf in manifest.get("prompt_files") or []:
+            pf_str = str(pf).replace("\\", "/")
+            if not any(e["file_path"] == pf_str for e in entries):
+                entries.append({
+                    "file_path": pf_str,
+                    "file_type": "prompt",
+                    "run_id": run_id,
+                    "user_id": user_id,
+                    "batch": batch,
+                    "created_at": now,
+                })
+
+        # Also map all known image files from manifest
+        for imgf in manifest.get("image_files") or []:
+            imgf_str = str(imgf).replace("\\", "/")
+            if not any(e["file_path"] == imgf_str for e in entries):
+                entries.append({
+                    "file_path": imgf_str,
+                    "file_type": "image",
+                    "run_id": run_id,
+                    "user_id": user_id,
+                    "batch": batch,
+                    "created_at": now,
+                })
+
+        if entries:
+            db[COLL_FILE_MAP].insert_many(entries)
+    except Exception:
+        pass
+
+
+def _resolve_file_owner(file_path: str) -> dict[str, str] | None:
+    """Look up the owner of a file path from the MongoDB file map.
+
+    Returns dict with "run_id" and "user_id" if found, else None.
+    """
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_FILE_MAP
+        doc = get_sync_db()[COLL_FILE_MAP].find_one(
+            {"file_path": file_path},
+            {"run_id": 1, "user_id": 1},
+        )
+        if doc and doc.get("run_id") and doc.get("user_id"):
+            return {"run_id": doc["run_id"], "user_id": doc["user_id"]}
+    except Exception:
+        pass
+    return None
+
+
+def _extract_run_id_from_output_path(path: str) -> str | None:
+    """Resolve output/{batch}/... path to run_id via MongoDB file map."""
+    clean = path.replace("\\", "/").lstrip("/")
+    owner = _resolve_file_owner(clean)
+    if owner:
+        return owner["run_id"]
+    # Fallback: extract batch from path, look up in runs table
+    parts = clean.split("/")
+    for i, p in enumerate(parts):
+        if p.startswith("v") and p[1:].isdigit():
+            batch = p
+            try:
+                from dashboard.backend.db.client import get_sync_db
+                from dashboard.backend.db.collections import COLL_RUNS
+                doc = get_sync_db()[COLL_RUNS].find_one(
+                    {"batch": batch},
+                    {"run_id": 1, "user_id": 1},
+                    sort=[("created_at", -1)],
+                )
+                if doc and doc.get("run_id"):
+                    return doc["run_id"]
+            except Exception:
+                pass
+            break
+    return None
+
+
+def _extract_run_id_from_generated_path(path: str) -> str | None:
+    """Resolve generated_images/{batch}/... path to run_id via MongoDB file map."""
+    clean = path.replace("\\", "/").lstrip("/")
+    owner = _resolve_file_owner(clean)
+    if owner:
+        return owner["run_id"]
+    # Legacy fallback: check if path contains run_X / batch_v prefix
+    parts = clean.split("/")
+    for part in parts:
+        if part.startswith("run_"):
+            return part
+    # Fallback to batch lookup
+    for i, p in enumerate(parts):
+        if p.startswith("v") and p[1:].isdigit():
+            batch = p
+            try:
+                from dashboard.backend.db.client import get_sync_db
+                from dashboard.backend.db.collections import COLL_RUNS
+                doc = get_sync_db()[COLL_RUNS].find_one(
+                    {"batch": batch},
+                    {"run_id": 1},
+                    sort=[("created_at", -1)],
+                )
+                if doc and doc.get("run_id"):
+                    return doc["run_id"]
+            except Exception:
+                pass
+            break
+    return None
+
+
 def _register_subprocess(run_id: str | None, proc: "subprocess.Popen[str]") -> None:
     with _tracked_subprocesses_lock:
         _tracked_subprocesses.append((run_id, proc))
@@ -5857,7 +6035,7 @@ async def api_run_execute(
     (run_dir / "context" / "run_context.json").write_text(json.dumps({k: full_context[k] for k in ["generated_at", "run_id", "language_mode", "context_source", "context_extractor_model", "opencode_model", "product_file_path"]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     # Run pipeline in background thread so frontend can poll partial results
-    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_model=execution_model, ads_context=ads_context)
+    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_model=execution_model, ads_context=ads_context, user_id=user_id)
     threading.Thread(target=_run_pipeline_background, kwargs=bg_kwargs, daemon=True).start()
 
     return {"run_id": run_id, "status": "started"}
@@ -5888,6 +6066,7 @@ def _run_pipeline_background(
     product_ctx_source: str, extractor_model: str,
     execution_model: str,
     ads_context: list,
+    user_id: str = "",
 ) -> None:
     """Run the full pipeline in a background thread, writing results incrementally."""
     run_id = run_dir.name
@@ -5983,6 +6162,7 @@ def _run_pipeline_background(
             manifest["visual_pattern_reuse_from_run_id"] = reuse_visual_patterns_from_run_id
         (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         _update_run_status_db(run_id, "completed", extra={"manifest_summary": {"format_count": len(manifest.get("results", [])), "batch": batch}})
+        _store_output_mapping(run_id, user_id, batch, manifest)
         partial_dir = run_dir / "partial"
         if partial_dir.exists():
             import shutil
@@ -7281,85 +7461,165 @@ def _check_ownership(run_id: str, user_id: str) -> None:
         raise HTTPException(status_code=403, detail="Access denied: run belongs to another user")
 
 
-def _extract_run_id_from_generated_path(path: str) -> str | None:
-    """Try to extract a run_id from a generated_images path like 'run_abc_123/4_5/img.png'."""
-    parts = path.replace("\\", "/").split("/")
-    for part in parts:
-        if part.startswith("run_"):
-            return part
-    return None
+def _register_download_routes():
+    """Register download endpoints.
 
-
-def _extract_run_id_from_output_path(path: str) -> str | None:
-    """Try to extract a run_id from an output path like 'v1/45/prompt.txt'.
-    Falls back to scanning batch_run_summary.json or manifest.
+    New DB-backed endpoints are registered first so they take priority over
+    the legacy path-based endpoints (which use {param:path} catch-alls).
     """
-    return None  # output paths don't have a direct run_id mapping yet
+    from bson.objectid import ObjectId
 
+    # ── New DB-backed endpoints (production-safe) ──────────────────────
 
-@app.get("/api/files/download/run/{run_id:path}")
-def download_run_file(
-    run_id: str,
-    request: Request,
-):
-    user = _get_user_from_request(request)
-    _check_ownership(run_id, user["user_id"])
-    safe_path = resolve_safe_path(f"dashboard_storage/runs/{run_id}")
-    if not safe_path.exists():
-        raise HTTPException(status_code=404, detail="Run not found")
-    target = safe_path.resolve()
-    runs_root = RUNS_ROOT.resolve()
-    if runs_root not in target.parents and target != runs_root:
-        raise HTTPException(status_code=403, detail="Access denied")
-    if target.is_file():
-        return FileResponse(target, filename=target.name)
-    raise HTTPException(status_code=400, detail="Path is not a file")
-
-
-@app.get("/api/files/download/generated/{path:path}")
-def download_generated_file(
-    path: str,
-    request: Request,
-):
-    user = _get_user_from_request(request)
-    run_id = _extract_run_id_from_generated_path(path)
-    if run_id:
+    @app.get("/api/files/download/run/{run_id}/{file_id:path}")
+    def download_run_file_new(
+        run_id: str,
+        file_id: str,
+        request: Request,
+    ):
+        user = _get_user_from_request(request)
         _check_ownership(run_id, user["user_id"])
-    elif app_settings.is_production:
-        raise HTTPException(status_code=403, detail="Cannot determine run ownership from path")
-    safe_path = resolve_safe_path(f"generated_images/{path}")
-    if not safe_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    target = safe_path.resolve()
-    images_root = GENERATED_IMAGES_ROOT.resolve()
-    if images_root not in target.parents:
-        raise HTTPException(status_code=403, detail="Access denied")
-    if target.is_file():
-        return FileResponse(target, filename=target.name)
-    raise HTTPException(status_code=400, detail="Path is not a file")
+        known_files = {
+            "manifest": "manifest.json",
+            "run_context": "context/run_context.json",
+            "copy_batch": "context/copy_batch.json",
+            "hypothesis_config": "context/hypothesis_config.json",
+            "visual_pattern_reuse": "context/visual_pattern_reuse.json",
+            "background_reuse": "context/background_reuse.json",
+        }
+        relative = known_files.get(file_id, file_id)
+        safe_path = resolve_safe_path(f"dashboard_storage/runs/{run_id}/{relative}")
+        if not safe_path.exists():
+            raise HTTPException(status_code=404, detail="File not found in run")
+        target = safe_path.resolve()
+        runs_root = RUNS_ROOT.resolve()
+        run_dir_resolved = (RUNS_ROOT / run_id).resolve()
+        if runs_root not in target.parents and target != runs_root:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if run_dir_resolved not in target.parents and target != run_dir_resolved:
+            raise HTTPException(status_code=403, detail="File outside run directory")
+        if target.is_file():
+            return FileResponse(target, filename=target.name)
+        raise HTTPException(status_code=400, detail="Path is not a file")
 
+    @app.get("/api/files/download/image/{image_id}")
+    def download_image_by_id(
+        image_id: str,
+        request: Request,
+    ):
+        user = _get_user_from_request(request)
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_IMAGES
+            doc = get_sync_db()[COLL_IMAGES].find_one({"_id": ObjectId(image_id)})
+        except Exception:
+            doc = None
+        if not doc:
+            raise HTTPException(status_code=404, detail="Image not found")
+        if doc.get("user_id") != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if doc.get("local_path"):
+            img_path = ROOT / doc["local_path"]
+            if img_path.exists():
+                return FileResponse(img_path, filename=doc.get("filename", "image.png"))
+        if doc.get("storage_url"):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(doc["storage_url"])
+        raise HTTPException(status_code=404, detail="Image file not available")
 
-@app.get("/api/files/download/output/{path:path}")
-def download_output_file(
-    path: str,
-    request: Request,
-):
-    user = _get_user_from_request(request)
-    run_id = _extract_run_id_from_output_path(path)
-    if run_id:
+    @app.get("/api/files/download/prompt/{prompt_id}")
+    def download_prompt_by_id(
+        prompt_id: str,
+        request: Request,
+    ):
+        user = _get_user_from_request(request)
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_PROMPTS
+            doc = get_sync_db()[COLL_PROMPTS].find_one({"_id": ObjectId(prompt_id)})
+        except Exception:
+            doc = None
+        if not doc:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        if doc.get("user_id") != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        content = doc.get("content", "")
+        filename = doc.get("filename", "prompt.txt")
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(content, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    # ── Legacy path-based endpoints (dev-only in production) ───────────
+
+    @app.get("/api/files/download/run/{run_id:path}")
+    def download_run_file_legacy(
+        run_id: str,
+        request: Request,
+    ):
+        user = _get_user_from_request(request)
         _check_ownership(run_id, user["user_id"])
-    elif app_settings.is_production:
-        raise HTTPException(status_code=403, detail="Cannot determine run ownership from output path")
-    safe_path = resolve_safe_path(f"output/{path}")
-    if not safe_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    target = safe_path.resolve()
-    output_root = (ROOT / "output").resolve()
-    if output_root not in target.parents:
-        raise HTTPException(status_code=403, detail="Access denied")
-    if target.is_file():
-        return FileResponse(target, filename=target.name)
-    raise HTTPException(status_code=400, detail="Path is not a file")
+        if app_settings.is_production:
+            raise HTTPException(status_code=403, detail="Use /api/files/download/run/{run_id}/{file_id} in production")
+        safe_path = resolve_safe_path(f"dashboard_storage/runs/{run_id}")
+        if not safe_path.exists():
+            raise HTTPException(status_code=404, detail="Run not found")
+        target = safe_path.resolve()
+        runs_root = RUNS_ROOT.resolve()
+        if runs_root not in target.parents and target != runs_root:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if target.is_file():
+            return FileResponse(target, filename=target.name)
+        raise HTTPException(status_code=400, detail="Path is not a file")
+
+    @app.get("/api/files/download/generated/{path:path}")
+    def download_generated_file_legacy(
+        path: str,
+        request: Request,
+    ):
+        user = _get_user_from_request(request)
+        if app_settings.is_production:
+            raise HTTPException(status_code=403, detail="Use /api/files/download/image/{image_id} in production")
+        run_id = _extract_run_id_from_generated_path(path)
+        if run_id:
+            _check_ownership(run_id, user["user_id"])
+        elif app_settings.is_production:
+            raise HTTPException(status_code=403, detail="Cannot determine run ownership from path")
+        safe_path = resolve_safe_path(f"generated_images/{path}")
+        if not safe_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        target = safe_path.resolve()
+        images_root = GENERATED_IMAGES_ROOT.resolve()
+        if images_root not in target.parents:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if target.is_file():
+            return FileResponse(target, filename=target.name)
+        raise HTTPException(status_code=400, detail="Path is not a file")
+
+    @app.get("/api/files/download/output/{path:path}")
+    def download_output_file_legacy(
+        path: str,
+        request: Request,
+    ):
+        user = _get_user_from_request(request)
+        if app_settings.is_production:
+            raise HTTPException(status_code=403, detail="Use /api/files/download/run/{run_id}/copy_batch in production")
+        run_id = _extract_run_id_from_output_path(path)
+        if run_id:
+            _check_ownership(run_id, user["user_id"])
+        elif app_settings.is_production:
+            raise HTTPException(status_code=403, detail="Cannot determine run ownership from output path")
+        safe_path = resolve_safe_path(f"output/{path}")
+        if not safe_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        target = safe_path.resolve()
+        output_root = (ROOT / "output").resolve()
+        if output_root not in target.parents:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if target.is_file():
+            return FileResponse(target, filename=target.name)
+        raise HTTPException(status_code=400, detail="Path is not a file")
+
+
+_register_download_routes()
 
 
 INPUT_ROOT = ROOT / "input"

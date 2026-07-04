@@ -14,6 +14,7 @@ COLL_LLM_TRACES = "llm_traces"
 COLL_AGENTS = "agents"
 COLL_AGENT_JOBS = "agent_jobs"
 COLL_BROWSER_SESSIONS = "browser_sessions"
+COLL_FILE_MAP = "file_map"
 
 
 FIELD_USER_ID = "user_id"
@@ -25,3 +26,4 @@ FIELD_BLOB_TYPE = "blob_type"
 FIELD_JOB_TYPE = "job_type"
 FIELD_STATUS = "status"
 FIELD_PROVIDER = "provider"
+FIELD_BATCH = "batch"

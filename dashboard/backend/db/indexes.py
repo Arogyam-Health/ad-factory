@@ -64,6 +64,12 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([("domain", ASCENDING)]),
         IndexModel([(FIELD_CREATED_AT, ASCENDING)], expireAfterSeconds=86400 * 30),
     ],
+    COLL_FILE_MAP: [
+        IndexModel([("file_path", ASCENDING)]),
+        IndexModel([("file_path", ASCENDING), (FIELD_USER_ID, ASCENDING)]),
+        IndexModel([(FIELD_RUN_ID, ASCENDING)]),
+        IndexModel([(FIELD_BATCH, ASCENDING)]),
+    ],
 }
 
 
