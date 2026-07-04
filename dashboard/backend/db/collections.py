@@ -15,6 +15,7 @@ COLL_AGENTS = "agents"
 COLL_AGENT_JOBS = "agent_jobs"
 COLL_BROWSER_SESSIONS = "browser_sessions"
 COLL_FILE_MAP = "file_map"
+COLL_USER_CONFIGS = "user_configs"
 
 
 FIELD_USER_ID = "user_id"

@@ -184,9 +184,8 @@ async function initDefaults() {
     refreshSelect(document.getElementById("llmProvider"));
     populateGoogleModels(pcfg.google_models || [], pcfg.google_model || "");
     document.getElementById("googleApiKey").value = "";
-    if (pcfg.google_api_key) {
-      document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
-    }
+
+    await loadProviderConfigsIntoFields();
   } catch (err) {
     setStatus(`Failed to load defaults: ${String(err)}`);
   }
@@ -236,20 +235,56 @@ document.getElementById("llmProvider")?.addEventListener("change", (e) => {
   }
 });
 
-function saveProviderField(field, value) {
-  return fetchJSON("/api/config/provider", {
-    method: "POST",
+async function saveProviderConfig(provider, config) {
+  return fetchJSON(`/api/user/provider-config/${encodeURIComponent(provider)}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ [field]: value }),
+    body: JSON.stringify({ config }),
   });
+}
+
+async function deleteAllCredentials() {
+  const providers = ["opencode", "google_gemini"];
+  for (const p of providers) {
+    try {
+      await fetchJSON(`/api/user/provider-config/${encodeURIComponent(p)}`, { method: "DELETE" });
+    } catch {}
+  }
+}
+
+async function loadProviderConfigsIntoFields() {
+  try {
+    const configs = await fetchJSON("/api/user/provider-config");
+    for (const entry of configs) {
+      const p = entry.provider;
+      const cfg = entry.config || {};
+      if (p === "opencode") {
+        if (cfg.api_url) document.getElementById("opencodeApiUrl").value = cfg.api_url;
+        if (cfg.api_key) document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
+        if (cfg.default_model) {
+          const sel = document.getElementById("opencodeModel");
+          if (sel) { sel.value = cfg.default_model; refreshSelect(sel); }
+        }
+      } else if (p === "google_gemini") {
+        if (cfg.api_key) document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
+        if (cfg.default_model) {
+          const sel = document.getElementById("googleModel");
+          if (sel) { sel.value = cfg.default_model; refreshSelect(sel); }
+        }
+      }
+    }
+  } catch {}
 }
 
 document.getElementById("saveGoogleKey")?.addEventListener("click", async () => {
   const key = document.getElementById("googleApiKey").value.trim();
   if (!key) { setStatus("Enter a Google API key first."); return; }
   try {
-    const res = await saveProviderField("google_api_key", key);
-    setStatus(`Google API key saved`);
+    const model = document.getElementById("googleModel").value;
+    await saveProviderConfig("google_gemini", { api_key: key, default_model: model });
+    document.getElementById("googleApiKey").value = "";
+    document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
+    setStatus("Google API key saved to MongoDB");
     fetchGoogleModels(key);
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
@@ -258,8 +293,8 @@ document.getElementById("saveOpenCodeUrl")?.addEventListener("click", async () =
   const url = document.getElementById("opencodeApiUrl").value.trim();
   if (!url) { setStatus("Enter an API URL first."); return; }
   try {
-    await saveProviderField("opencode_api_url", url);
-    setStatus(`OpenCode URL saved`);
+    await saveProviderConfig("opencode", { api_url: url });
+    setStatus("OpenCode URL saved to MongoDB");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
@@ -267,8 +302,24 @@ document.getElementById("saveOpenCodeKey")?.addEventListener("click", async () =
   const key = document.getElementById("opencodeApiKey").value.trim();
   if (!key) { setStatus("Enter an API key first."); return; }
   try {
-    await saveProviderField("opencode_api_key", key);
-    setStatus(`OpenCode API key saved`);
+    const model = document.getElementById("opencodeModel")?.value || "";
+    await saveProviderConfig("opencode", { api_key: key, default_model: model });
+    document.getElementById("opencodeApiKey").value = "";
+    document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
+    setStatus("OpenCode API key saved to MongoDB");
+  } catch (err) { setStatus(`Failed: ${String(err)}`); }
+});
+
+document.getElementById("deleteAllCredentialsBtn")?.addEventListener("click", async () => {
+  if (!confirm("Delete all saved API credentials? This cannot be undone.")) return;
+  try {
+    await deleteAllCredentials();
+    document.getElementById("googleApiKey").value = "";
+    document.getElementById("googleApiKey").placeholder = "AIza...";
+    document.getElementById("opencodeApiKey").value = "";
+    document.getElementById("opencodeApiKey").placeholder = "sk-...";
+    document.getElementById("opencodeApiUrl").value = "http://127.0.0.1:4090";
+    setStatus("All API credentials deleted");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
@@ -576,9 +627,11 @@ showRunsSkeletons();
 
 import { initAuth } from "./auth.js";
 import { initAgentStatus } from "./agents.js";
+import { loadUserConfig } from "./user-config.js";
 
 initAuth().then(() => {
   initAgentStatus();
+  loadUserConfig();
 });
 
 Promise.all([initDefaults(), loadAndRenderRuns()]).catch((err) => setStatus(String(err)));

@@ -54,6 +54,37 @@ COPY_ARCH_PATH = ROOT / "dashboard" / "backend" / "copy_architecture.json"
 COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
 STARTING_PROMPT_PATH = ROOT / "input" / "startingprompt.txt"
 
+
+def _resolve_starting_prompt_path() -> Path:
+    user_prompt = _resolve_user_config("starting_prompt")
+    if user_prompt:
+        tmp = RUNTIME_ROOT / "user_starting_prompt.txt"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(user_prompt, encoding="utf-8")
+        return tmp
+    return STARTING_PROMPT_PATH
+
+# Per-request user config overrides (thread-local)
+_current_user_config: dict[str, Any] = {}
+_user_config_lock = threading.Lock()
+
+
+def _set_user_config_overrides(config: dict[str, Any]) -> None:
+    global _current_user_config
+    _current_user_config = config or {}
+
+
+def _clear_user_config_overrides() -> None:
+    global _current_user_config
+    _current_user_config = {}
+
+
+def _resolve_user_config(key: str, default: Any = None) -> Any:
+    if _current_user_config and key in _current_user_config:
+        return _current_user_config[key]
+    return default
+
+
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
 DEFAULT_OPENCODE_API_URL = os.getenv("OPENCODE_API_URL", "http://127.0.0.1:4090")
 DEFAULT_GOOGLE_API_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -531,7 +562,7 @@ def cancel_event_for_run(run_id: str) -> threading.Event:
 
 
 def load_format_visual_archetypes() -> dict[str, list[dict[str, str]]]:
-    raw = COPY_PROMPTS.get("visual_archetypes") or {}
+    raw = _resolve_copy_prompts().get("visual_archetypes") or {}
     out: dict[str, list[dict[str, str]]] = {}
     for fmt in FORMATS:
         items = raw.get(fmt) or []
@@ -754,6 +785,18 @@ def _load_persona_seeds() -> dict[int, dict[str, str]]:
 PERSONA_SEED_INPUTS = _load_persona_seeds()
 
 
+def _resolve_persona_seeds() -> dict[int, dict[str, Any]]:
+    user_seeds_raw = _resolve_user_config("persona_seeds")
+    if user_seeds_raw:
+        try:
+            parsed = json.loads(user_seeds_raw) if isinstance(user_seeds_raw, str) else user_seeds_raw
+            if isinstance(parsed, list):
+                return {s["persona_number"]: s for s in parsed if "persona_number" in s}
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return PERSONA_SEED_INPUTS
+
+
 def _load_copy_architecture() -> dict[str, Any]:
     path = COPY_ARCH_PATH
     if not path.exists():
@@ -816,6 +859,19 @@ def _build_hypothesis_variables() -> dict[str, dict[str, Any]]:
 
 
 COPY_PROMPTS = _load_copy_prompts()
+
+
+def _resolve_copy_prompts() -> dict[str, Any]:
+    user_templates_raw = _resolve_user_config("copy_prompt_templates")
+    if user_templates_raw:
+        try:
+            parsed = json.loads(user_templates_raw) if isinstance(user_templates_raw, str) else user_templates_raw
+            if isinstance(parsed, dict) and parsed:
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return COPY_PROMPTS
+
 
 HYPOTHESIS_VARIABLES = _build_hypothesis_variables()
 
@@ -919,7 +975,7 @@ def _compact_product_truth() -> dict[str, Any]:
 
 
 def build_copy_requirements(persona_number: int, fmt: str, format_sequence_index: int, variation_seed: str = "") -> dict[str, Any]:
-    persona_seed = PERSONA_SEED_INPUTS.get(persona_number, {})
+    persona_seed = _resolve_persona_seeds().get(persona_number, {})
 
     return {
         "selection_mode": "llm_choose",
@@ -947,7 +1003,7 @@ def build_ad_copy_system_prompt(fmt: str, formats: list[str] | None = None) -> s
 
 def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
-    prompts = COPY_PROMPTS.get("strict_schema_note", {})
+    prompts = _resolve_copy_prompts().get("strict_schema_note", {})
     field_map = prompts.get("field_map", {})
     if fmt == "ALL":
         copy_fields = "the fields required by each ad's format (see Ad format rules above)"
@@ -965,7 +1021,7 @@ def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> st
 
 def build_ad_prompt_tail(fmt: str, formats: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
-    tail = COPY_PROMPTS.get("prompt_tail", {})
+    tail = _resolve_copy_prompts().get("prompt_tail", {})
     support_map = tail.get("support_target_map", {})
     support_target = support_map.get(fmt, tail.get("default_support_target", "subheadline"))
     display_fmt = fmt if fmt != "ALL" else "ad"
@@ -978,7 +1034,7 @@ def build_ad_prompt_tail(fmt: str, formats: list[str] | None = None) -> str:
 
 def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
     fmt = fmt.strip().upper()
-    skeletons = COPY_PROMPTS.get("response_skeleton", {})
+    skeletons = _resolve_copy_prompts().get("response_skeleton", {})
     base = copy.deepcopy(skeletons.get("default", {}))
 
     if fmt != "ALL" or not formats:
@@ -1250,7 +1306,7 @@ def build_persona_payload(persona_number: int, personas: list[dict[str, Any]]) -
             if name:
                 persona_name = name
             break
-    seed = PERSONA_SEED_INPUTS.get(persona_number, {})
+    seed = _resolve_persona_seeds().get(persona_number, {})
     mapping = _PERSONA_SEED_MAPPING
     seed_to_payload = mapping.get("seed_to_payload", {})
     fallbacks = mapping.get("persona_fallbacks", {})
@@ -1407,7 +1463,7 @@ def api_input_prompt(prompt_type: str = "916_conversion") -> dict[str, Any]:
     """Return the content of an input prompt file."""
     path_map = {
         "916_conversion": CONVERT_916_TEMPLATE_PATH,
-        "starting_prompt": STARTING_PROMPT_PATH,
+        "starting_prompt": _resolve_starting_prompt_path(),
     }
     p = path_map.get(prompt_type)
     if not p or not p.exists():
@@ -1747,7 +1803,7 @@ def run_gemini_generation(
 
     starting_prompt = ""
     if prepend_starting_prompt:
-        starting_prompt_path = ROOT / "input" / "startingprompt.txt"
+        starting_prompt_path = _resolve_starting_prompt_path()
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip() if starting_prompt_path.exists() else ""
     for prompt_file in prompt_files:
         source = Path(prompt_file)
@@ -1843,7 +1899,7 @@ def run_chatgpt_generation(
 
     starting_prompt = ""
     if prepend_starting_prompt:
-        starting_prompt_path = ROOT / "input" / "startingprompt.txt"
+        starting_prompt_path = _resolve_starting_prompt_path()
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip() if starting_prompt_path.exists() else ""
     for prompt_file in prompt_files:
         source = Path(prompt_file)
@@ -2376,7 +2432,7 @@ def parse_opencode_session_id(stdout: str) -> str | None:
 
 
 def build_product_doc_bootstrap_prompt() -> str:
-    return COPY_PROMPTS.get("product_doc_bootstrap_prompt", "Read the attached product master doc completely. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.")
+    return _resolve_copy_prompts().get("product_doc_bootstrap_prompt", "Read the attached product master doc completely. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.")
 
 
 def append_run_log(run_dir: Path, filename: str, message: str) -> None:
@@ -4890,7 +4946,7 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
 
     if isinstance(persona_number, int):
         # Pull full persona data from persona_seeds.json
-        seed = PERSONA_SEED_INPUTS.get(persona_number) or {}
+        seed = _resolve_persona_seeds().get(persona_number) or {}
         persona_name = str(seed.get("persona_name") or f"Persona {persona_number}")
         persona_pain = str(seed.get("core_pattern", ""))
         persona_desire = str(seed.get("common_indian_moments", ""))
@@ -5478,7 +5534,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
     prompt_work_dir = RUNTIME_ROOT / f"{engine.lower()}_selected_prompts" / f"{batch_name}_{work_id}"
     prompt_work_dir.mkdir(parents=True, exist_ok=True)
     starting_prompt = ""
-    starting_prompt_path = ROOT / "input" / "startingprompt.txt"
+    starting_prompt_path = _resolve_starting_prompt_path()
     if starting_prompt_path.exists():
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
     prompt_files_created: list[str] = []
@@ -5600,7 +5656,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[
     prompt_work_dir = RUNTIME_ROOT / f"{engine.lower()}_selected_prompts" / f"{batch_name}_{work_id}"
     prompt_work_dir.mkdir(parents=True, exist_ok=True)
     starting_prompt = ""
-    starting_prompt_path = ROOT / "input" / "startingprompt.txt"
+    starting_prompt_path = _resolve_starting_prompt_path()
     if starting_prompt_path.exists():
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
     for src_pf in all_prompt_files:
@@ -6053,10 +6109,23 @@ async def api_run_execute(
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     (run_dir / "context").mkdir(parents=True, exist_ok=True)
 
+    # Load per-user config overrides from MongoDB
+    try:
+        from dashboard.backend.services.user_config import get_user_config
+        user_cfg = get_user_config(user_id)
+        _set_user_config_overrides(user_cfg)
+    except Exception:
+        _set_user_config_overrides({})
+
     product_path = save_upload(run_dir / "inputs" / "product master doc.txt", product_info_file)
     image_sources_path = save_upload(run_dir / "inputs" / "image_sources.txt", image_source_file)
     saved_input_images = store_uploaded_input_images(input_image_files or [], clear_input_images)
 
+    # Use user's product master doc if uploaded file is empty and user has custom config
+    user_product_doc = _resolve_user_config("product_master_doc")
+    if not product_path.exists() and user_product_doc:
+        product_path.parent.mkdir(parents=True, exist_ok=True)
+        product_path.write_text(user_product_doc, encoding="utf-8")
     product_file = coalesce_path(product_path, DEFAULT_PRODUCT_MASTER)
     image_sources_file_path = coalesce_path(image_sources_path, default_image_sources_file())
 
@@ -6128,9 +6197,10 @@ async def api_run_execute(
     (run_dir / "context" / "run_context.json").write_text(json.dumps({k: full_context[k] for k in ["generated_at", "run_id", "language_mode", "context_source", "context_extractor_model", "opencode_model", "product_file_path"]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     # Run pipeline in background thread so frontend can poll partial results
-    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_model=execution_model, ads_context=ads_context, user_id=user_id)
+    bg_kwargs = dict(run_dir=run_dir, cfg=cfg, full_context=full_context, image_sources_file_path=image_sources_file_path, saved_input_images=saved_input_images, reuse_visual_patterns_from_run_id=reuse_visual_patterns_from_run_id, product_ctx_source=product_ctx_source, extractor_model=extractor_model, execution_model=execution_model, ads_context=ads_context, user_id=user_id, user_config_overrides=_current_user_config.copy())
     threading.Thread(target=_run_pipeline_background, kwargs=bg_kwargs, daemon=True).start()
 
+    _clear_user_config_overrides()
     return {"run_id": run_id, "status": "started"}
 
 
@@ -6160,8 +6230,11 @@ def _run_pipeline_background(
     execution_model: str,
     ads_context: list,
     user_id: str = "",
+    user_config_overrides: dict | None = None,
 ) -> None:
     """Run the full pipeline in a background thread, writing results incrementally."""
+    if user_config_overrides:
+        _set_user_config_overrides(user_config_overrides)
     run_id = run_dir.name
     _update_run_status_db(run_id, "running")
     try:
@@ -6267,6 +6340,8 @@ def _run_pipeline_background(
         (run_dir / "partial").mkdir(parents=True, exist_ok=True)
         (run_dir / "partial" / "error.txt").write_text(f"Pipeline failed: {exc}", encoding="utf-8")
         print(f"[PIPELINE ERROR] {exc}", file=sys.stderr)
+    finally:
+        _clear_user_config_overrides()
 
 
 # Chrome process tracking
@@ -7576,11 +7651,13 @@ app.include_router(chrome.router)
 from dashboard.backend.auth.routes import router as auth_router
 from dashboard.backend.services.provider_routes import router as provider_router
 from dashboard.backend.services.blob_routes import router as blob_router
+from dashboard.backend.services.user_config_routes import router as user_config_router
 from dashboard.backend.agent.routes import router as agent_router
 
 app.include_router(auth_router)
 app.include_router(provider_router)
 app.include_router(blob_router)
+app.include_router(user_config_router)
 app.include_router(agent_router)
 
 # ── Authenticated file download endpoints (production-safe) ────────────────

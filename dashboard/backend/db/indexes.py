@@ -70,6 +70,9 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_RUN_ID, ASCENDING)]),
         IndexModel([(FIELD_BATCH, ASCENDING)]),
     ],
+    COLL_USER_CONFIGS: [
+        IndexModel([(FIELD_USER_ID, ASCENDING)], unique=True),
+    ],
 }
 
 

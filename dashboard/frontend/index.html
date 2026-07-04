@@ -136,6 +136,9 @@
               <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
             </select>
           </div>
+          <div style="margin-top: 0.6rem;">
+            <button id="deleteAllCredentialsBtn" class="ghost-btn danger-btn" type="button">Delete All Saved Credentials</button>
+          </div>
           <label>Ad multiplier per selected persona/format</label>
           <input id="adMultiplier" type="number" min="1" max="20" value="1" />
           <p class="hint">Use this to create multiple ads for the same persona, format, and hypothesis. The selected background stays locked across those multiplied ads.</p>
@@ -182,6 +185,34 @@
             <textarea id="productDocText" spellcheck="false"></textarea>
           </div>
           <div id="defaultsInfo" class="hint"></div>
+        </section>
+
+        <section class="card card-config" id="userConfigSection">
+          <h2>9) Your Config <span class="hint">(per-user, stored in MongoDB)</span></h2>
+          <p class="hint" id="configStatus">Loading your config...</p>
+          <div class="config-editor-grid">
+            <div class="config-col">
+              <label>Product Master Doc</label>
+              <textarea id="cfgProductMaster" class="config-textarea" spellcheck="false" placeholder="Your product truth library..."></textarea>
+            </div>
+            <div class="config-col">
+              <label>Starting Prompt (Image Rules)</label>
+              <textarea id="cfgStartingPrompt" class="config-textarea" spellcheck="false" placeholder="Global product rules for image generation..."></textarea>
+            </div>
+            <div class="config-col">
+              <label>Persona Seeds (JSON)</label>
+              <textarea id="cfgPersonaSeeds" class="config-textarea config-textarea-code" spellcheck="false" placeholder='[{"persona_number": 1, "persona_name": "..."}]'></textarea>
+            </div>
+            <div class="config-col">
+              <label>Copy Prompt Templates (JSON)</label>
+              <textarea id="cfgCopyTemplates" class="config-textarea config-textarea-code" spellcheck="false" placeholder='{"system_prompt_base_rules": [...]}'></textarea>
+            </div>
+          </div>
+          <div class="config-actions">
+            <button id="saveUserConfig" class="ghost-btn" type="button">Save Config</button>
+            <button id="resetUserConfig" class="ghost-btn danger-btn" type="button">Reset to Generic Defaults</button>
+            <span id="configSaveStatus" class="hint"></span>
+          </div>
         </section>
       </div>
     </div>
