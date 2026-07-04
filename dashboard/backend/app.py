@@ -2043,7 +2043,20 @@ def append_run_log(run_dir: Path, filename: str, message: str) -> None:
 
 
 def _log_llm_trace(run_id: str, label: str, model: str, request_body: dict, response_body: Any, status_code: int, duration_s: float, error: str | None = None) -> None:
-    pass
+    try:
+        from dashboard.backend.services.run_storage import save_llm_trace
+        save_llm_trace("system", {
+            "run_id": run_id,
+            "batch": label,
+            "provider": "opencode" if "opencode" in label.lower() else "google",
+            "model": model,
+            "prompt": json.dumps(request_body, ensure_ascii=False)[:5000],
+            "response": json.dumps(response_body, ensure_ascii=False)[:10000] if response_body else "",
+            "duration_ms": int(duration_s * 1000),
+            "status": "error" if error else "completed",
+        })
+    except Exception:
+        pass
 
 
 def call_opencode_repair_copy(
