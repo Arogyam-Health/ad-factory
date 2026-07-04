@@ -29,7 +29,7 @@ function renderInputImages(images = []) {
     card.dataset.aspect = "INPUT_IMAGE";
 
     const cleanPath = path.replace(/^input\//, "");
-    const url = `/input/${cleanPath}`;
+    const url = `/api/files/input/${cleanPath}`;
     const imgWrap = document.createElement("div");
     imgWrap.className = "image-wrap";
 

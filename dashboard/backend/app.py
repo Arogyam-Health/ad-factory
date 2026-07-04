@@ -7818,4 +7818,21 @@ def download_seed_file(path: str, request: Request) -> FileResponse:
     if not target.is_file():
         raise HTTPException(status_code=400, detail="Path is not a file")
     return FileResponse(target, filename=target.name)
+
+
+@app.get("/api/files/input/{path:path}")
+def download_input_file(path: str, request: Request) -> FileResponse:
+    user = _get_user_from_request(request)
+    if app_settings.is_dev:
+        safe_path = resolve_safe_path(str(INPUT_ROOT / path))
+    else:
+        safe_path = resolve_safe_path(str(INPUT_ROOT / path))
+        if not safe_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+    target = safe_path.resolve()
+    if INPUT_ROOT.resolve() not in target.parents:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not target.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+    return FileResponse(target, filename=target.name)
 app.mount("/", StaticFiles(directory=str(ROOT / "dashboard" / "frontend"), html=True), name="frontend")
