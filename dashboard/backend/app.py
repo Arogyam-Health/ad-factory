@@ -31,8 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -62,7 +62,6 @@ OPENCODE_ADS_PER_SESSION_SCHEDULE = [25, 15, 10, 5, 2, 1]
 OPENCODE_AD_TIMEOUT_SECONDS = 600
 OPENCODE_MAX_CONCURRENT = 2
 OPENCODE_QUEUE_DIR = RUNTIME_ROOT / "opencode_queue"
-OPENCODE_QUEUE_LOG = OPENCODE_QUEUE_DIR / "queue.log"
 LLM_TRACES_DIR = RUNTIME_ROOT / "llm_traces"
 
 _PERSONA_SEED_MAPPING: dict[str, Any] = {
@@ -1089,12 +1088,7 @@ def api_save_input_prompt(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
 
 
 def _append_opencode_queue_log(message: str) -> None:
-    try:
-        OPENCODE_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
-        with OPENCODE_QUEUE_LOG.open("a", encoding="utf-8") as handle:
-            handle.write(f"{now_iso()} {message}\n")
-    except OSError:
-        pass
+    pass
 
 
 def dashboard_subprocess_env() -> dict[str, str]:
@@ -1550,29 +1544,15 @@ def run_chatgpt_generation(
         cmd.extend(["--image-source-file", image_sources_file])
     cmd.extend(["--aspect-ratio", aspect_ratio])
 
-    # Pass CDP URL if running in WSL
-    cdp_url_for_log = ""
     if Path("/mnt/c").exists():
         cdp_url = wsl_chrome_cdp_url()
         cmd.extend(["--cdp-url", cdp_url])
-        cdp_url_for_log = cdp_url
-    else:
-        cdp_url_for_log = "NOT WSL - /mnt/c not found"
-
-    log_dir = RUNTIME_ROOT / "generation_logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"gen_{batch}_{aspect_folder}_chatgpt.log"
 
     env = dashboard_subprocess_env()
 
-    with open(log_path, "w") as log_file:
-        log_file.write(f"[DEBUG] CDP URL: {cdp_url_for_log}\n")
-        log_file.write(f"[DEBUG] Command: {' '.join(cmd)}\n")
-        log_file.write(f"[DEBUG] /mnt/c exists: {Path('/mnt/c').exists()}\n")
-        log_file.flush()
-        result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=log_file, stderr=subprocess.STDOUT, check=False, env=env)
+    result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, env=env)
 
-    full_output = log_path.read_text() if log_path.exists() else ""
+    full_output = ""
     result.stdout = full_output
     result.stderr = ""
     return result
@@ -2062,60 +2042,8 @@ def append_run_log(run_dir: Path, filename: str, message: str) -> None:
         handle.write(message.rstrip() + "\n")
 
 
-LLM_TRACES_MAX_FILES = 500
-
 def _log_llm_trace(run_id: str, label: str, model: str, request_body: dict, response_body: Any, status_code: int, duration_s: float, error: str | None = None) -> None:
-    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
-    is_google = "contents" in request_body
-    if is_google:
-        req = {
-            "contents": request_body.get("contents", []),
-            "system_instruction": request_body.get("system_instruction"),
-            "generationConfig": request_body.get("generationConfig"),
-        }
-    else:
-        req = {
-            "messages": request_body.get("messages", []),
-            "max_tokens": request_body.get("max_tokens"),
-            "temperature": request_body.get("temperature"),
-        }
-    if status_code == 200 and isinstance(response_body, dict):
-        if is_google:
-            candidates = response_body.get("candidates", [])
-            cand = candidates[0] if candidates else {}
-            resp = {
-                "content": cand.get("content", {}).get("parts", [{}])[0].get("text", "") if cand.get("content") else "",
-                "finish_reason": cand.get("finishReason"),
-                "usage": response_body.get("usageMetadata"),
-            }
-        else:
-            resp = {
-                "content": response_body.get("choices", [{}])[0].get("message", {}).get("content", ""),
-                "finish_reason": response_body.get("choices", [{}])[0].get("finish_reason"),
-                "usage": response_body.get("usage"),
-            }
-    else:
-        resp = None
-
-    trace = {
-        "timestamp": now_iso(),
-        "run_id": run_id,
-        "label": label,
-        "model": model,
-        "provider": "google" if is_google else "opencode",
-        "request": req,
-        "response": resp,
-        "status_code": status_code,
-        "duration_s": round(duration_s, 2),
-        "error": error,
-    }
-    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", run_id or "unknown")
-    trace_file = LLM_TRACES_DIR / f"{safe_id}_{int(time.time()*1000)}.json"
-    trace_file.write_text(json.dumps(trace, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    existing = sorted(LLM_TRACES_DIR.glob("*.json"))
-    while len(existing) > LLM_TRACES_MAX_FILES:
-        existing[0].unlink()
-        existing = existing[1:]
+    pass
 
 
 def call_opencode_repair_copy(
@@ -2558,7 +2486,6 @@ def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir:
 
         all_items = context.get("ads") or []
         if not all_items:
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} No ads to generate")
             return {"ads": [], "default_aspect_ratio": "4:5"}
 
         payload = build_generation_payload_for_llm(context)
@@ -2568,17 +2495,12 @@ def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir:
         skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch)
         prompt = json.dumps(payload, ensure_ascii=False) + "\n\n" + skeleton_tail
 
-        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Gemini call for {len(all_items)} ad(s)")
-
         parsed, raw_content, err_msg, code = call_llm(prompt, label="ad_generation")
 
         if code == -1 and err_msg in ("CANCELLED",):
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Cancelled")
+            pass
         elif parsed is None:
             errors.append(err_msg)
-            if raw_content:
-                (run_dir / "logs" / "opencode_raw").mkdir(parents=True, exist_ok=True)
-                (run_dir / "logs" / "opencode_raw" / "batch.txt").write_text(raw_content, encoding="utf-8")
         else:
             ads_out = parsed.get("ads") or []
             for ad_idx, ad_item in enumerate(all_items):
@@ -2713,7 +2635,6 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
 
         all_items = context.get("ads") or []
         if not all_items:
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} No ads to generate")
             return {"ads": [], "default_aspect_ratio": "4:5"}
 
         payload = build_generation_payload_for_llm(context)
@@ -2724,17 +2645,12 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch)
         prompt = json.dumps(payload, ensure_ascii=False) + "\n\n" + skeleton_tail
 
-        append_run_log(run_dir, "opencode_session.log", f"{now_iso()} LLM call for {len(all_items)} ad(s)")
-
         parsed, raw_content, err_msg, code = call_llm(prompt, label="ad_generation")
 
         if code == -1 and err_msg in ("CANCELLED",):
-            append_run_log(run_dir, "opencode_session.log", f"{now_iso()} Cancelled")
+            pass
         elif parsed is None:
             errors.append(err_msg)
-            if raw_content:
-                (run_dir / "logs" / "opencode_raw").mkdir(parents=True, exist_ok=True)
-                (run_dir / "logs" / "opencode_raw" / "batch.txt").write_text(raw_content, encoding="utf-8")
         else:
             ads_out = parsed.get("ads") or []
             for ad_idx, ad_item in enumerate(all_items):
@@ -3936,11 +3852,14 @@ def expand_plan_with_hypothesis(plan: list[dict[str, Any]], hypothesis_cfg: dict
 
 app = FastAPI(title="Ad Dashboard API", version="1.0.0")
 
+# Load settings-based CORS
+from dashboard.backend.db.settings import settings as app_settings
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:4090", "http://localhost:4090"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_origins=app_settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
@@ -3973,6 +3892,18 @@ def _get_opencode_catalog():
 def startup() -> None:
     load_env_file(ENV_PATH)
     ensure_dirs()
+
+    # Initialize MongoDB indexes (best-effort)
+    try:
+        from dashboard.backend.db.indexes import create_indexes
+        idx_result = create_indexes()
+        created = sum(v for v in idx_result.values() if v > 0)
+        failed = sum(1 for v in idx_result.values() if v < 0)
+        if created or failed:
+            print(f"[startup] MongoDB indexes: {created} created, {failed} failed")
+    except Exception as e:
+        print(f"[startup] MongoDB index init skipped: {e}")
+
     threading.Thread(target=_build_opencode_catalog_cached, daemon=True).start()
 
 
@@ -4627,12 +4558,7 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
 
 
 def _append_audit_log(run_dir: Path, event_type: str, payload: dict[str, Any]) -> None:
-    audit_dir = run_dir / "audit"
-    audit_dir.mkdir(parents=True, exist_ok=True)
-    path = audit_dir / "audit_log.jsonl"
-    entry = {"ts": now_iso(), "event_type": event_type, "payload": payload}
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    pass
 
 
 def api_export_on_image_copy(run_id: str) -> StreamingResponse:
@@ -7197,6 +7123,17 @@ app.include_router(batch.router)
 app.include_router(export_import.router)
 app.include_router(execute.router)
 app.include_router(chrome.router)
+
+# ── Cloud/multi-user routes ─────────────────────────────────────────────────
+from dashboard.backend.auth.routes import router as auth_router
+from dashboard.backend.services.provider_routes import router as provider_router
+from dashboard.backend.services.blob_routes import router as blob_router
+from dashboard.backend.agent.routes import router as agent_router
+
+app.include_router(auth_router)
+app.include_router(provider_router)
+app.include_router(blob_router)
+app.include_router(agent_router)
 
 app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
 app.mount("/output", StaticFiles(directory=str(ROOT / "output")), name="output")

@@ -126,3 +126,70 @@ See `docs/HANDOVER.md` for the full pipeline reference, validation gates, and wh
 - `dashboard_storage/` — dashboard run manifests
 - `runtime/` — generation logs, queues, prompt caches
 - `.sixth/`, `.commandcode/` — local tool caches
+
+---
+
+## Cloud Deployment (Render)
+
+The dashboard can be deployed to Render as a multi-user cloud service, while browser automation stays on your local machine.
+
+### Architecture
+
+```
+[Render]
+  ├── FastAPI backend + static frontend
+  ├── MongoDB Atlas (all persistent data)
+  ├── Google OAuth login
+  └── REST API for local agent
+
+[Your Machine]
+  └── Local Playwright agent
+      ├── Connects to Chrome at http://127.0.0.1:9222
+      ├── Polls Render for jobs
+      └── Runs Gemini/ChatGPT automation scripts
+```
+
+### Setup
+
+1. **MongoDB Atlas** — Create a free cluster at https://mongodb.com, get your connection string
+2. **Google OAuth** — Create credentials at https://console.cloud.google.com/apis/credentials, configure redirect URI
+3. **Render** — Deploy from GitHub, set env vars (see `.env.example`)
+4. **Local agent** — Run on your machine:
+   ```bash
+   python scripts/local_agent.py --api-base https://your-app.onrender.com
+   ```
+
+### Environment variables
+
+See `.env.example` for all required env vars.
+
+### Browser automation stays local
+
+Render does **not** launch Chrome. The local agent:
+- Connects to your Chrome at `http://127.0.0.1:9222` (start it with `--remote-debugging-port=9222`)
+- Polls the Render API for assigned jobs
+- Reports progress and results back to Render
+
+### Local agent setup
+
+```bash
+# 1. Start Chrome with remote debugging
+google-chrome --remote-debugging-port=9222
+
+# 2. Login to ChatGPT/Gemini in that Chrome window
+
+# 3. Run the local agent
+python scripts/local_agent.py --api-base https://your-app.onrender.com --name my-laptop
+
+# 4. The agent registers with Render and waits for jobs
+```
+
+### Migration from local files
+
+```bash
+# Import existing local data into MongoDB
+python scripts/migrate_to_mongo.py --user-id <your-user-id>
+
+# See what would be imported first
+python scripts/migrate_to_mongo.py --user-id <your-user-id> --dry-run
+```
