@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 
+DEPLOYMENT_DEV = "development"
+DEPLOYMENT_PROD = "production"
+
+
 @dataclass
 class Settings:
+    deployment_mode: str = field(default_factory=lambda: os.getenv(
+        "DEPLOYMENT_MODE", DEPLOYMENT_DEV
+    ))
     mongodb_uri: str = field(default_factory=lambda: os.getenv(
         "MONGODB_URI", "mongodb://localhost:27017/ad-factory?retryWrites=true"
     ))
@@ -41,6 +49,14 @@ class Settings:
     password_hash_rounds: int = 12
 
     @property
+    def is_production(self) -> bool:
+        return self.deployment_mode == DEPLOYMENT_PROD
+
+    @property
+    def is_dev(self) -> bool:
+        return self.deployment_mode == DEPLOYMENT_DEV
+
+    @property
     def encryption_key_bytes(self) -> bytes:
         key = self.encryption_key
         if len(key) < 32:
@@ -49,3 +65,30 @@ class Settings:
 
 
 settings = Settings()
+
+
+def validate_production_settings() -> None:
+    if not settings.is_production:
+        return
+    errors: list[str] = []
+    if not settings.mongodb_uri or settings.mongodb_uri.startswith("mongodb://localhost"):
+        errors.append("MONGODB_URI must point to a remote MongoDB (not localhost) in production")
+    if not settings.app_secret_key or "change-me" in settings.app_secret_key.lower():
+        errors.append("APP_SECRET_KEY must be changed from the default in production")
+    if not settings.encryption_key or "change-me" in settings.encryption_key.lower():
+        errors.append("ENCRYPTION_KEY must be changed from the default in production")
+    if not settings.google_client_id or not settings.google_client_secret:
+        errors.append("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in production")
+    if not settings.google_redirect_uri or "localhost" in settings.google_redirect_uri.lower():
+        errors.append("GOOGLE_REDIRECT_URI must be set to the production URL in production")
+    origins = settings.cors_origins
+    if any("*" in o for o in origins):
+        errors.append("CORS_ORIGINS must not contain wildcard in production")
+    if not origins:
+        errors.append("CORS_ORIGINS must be set in production")
+    if errors:
+        print("[startup] PRODUCTION VALIDATION FAILED:", file=sys.stderr)
+        for e in errors:
+            print(f"  - {e}", file=sys.stderr)
+        sys.exit(1)
+    print("[startup] Production settings validated OK")

@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile, Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -3853,7 +3853,7 @@ def expand_plan_with_hypothesis(plan: list[dict[str, Any]], hypothesis_cfg: dict
 app = FastAPI(title="Ad Dashboard API", version="1.0.0")
 
 # Load settings-based CORS
-from dashboard.backend.db.settings import settings as app_settings
+from dashboard.backend.db.settings import settings as app_settings, validate_production_settings
 
 app.add_middleware(
     CORSMiddleware,
@@ -3862,6 +3862,26 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+
+# ── Auth middleware (protects old routes without modifying them) ────────────
+from dashboard.backend.auth.service import get_current_user_from_cookie
+
+PUBLIC_API_PREFIXES = ("/api/auth/",)
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next) -> Response:
+    if app_settings.is_production:
+        path = request.url.path
+        if path.startswith("/api/") and not path.startswith(PUBLIC_API_PREFIXES):
+            session_token = request.cookies.get("session")
+            user = get_current_user_from_cookie(session_token)
+            if user is None:
+                return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+            request.state.user = user
+    response = await call_next(request)
+    return response
 
 
 _opencode_catalog_cache: dict[str, Any] = {}
@@ -3893,6 +3913,9 @@ def startup() -> None:
     load_env_file(ENV_PATH)
     ensure_dirs()
 
+    # Validate production settings (exits if critical vars missing)
+    validate_production_settings()
+
     # Initialize MongoDB indexes (best-effort)
     try:
         from dashboard.backend.db.indexes import create_indexes
@@ -3902,7 +3925,11 @@ def startup() -> None:
         if created or failed:
             print(f"[startup] MongoDB indexes: {created} created, {failed} failed")
     except Exception as e:
-        print(f"[startup] MongoDB index init skipped: {e}")
+        msg = str(e)
+        if app_settings.is_production:
+            print(f"[startup] FATAL: MongoDB connection failed in production: {msg}", file=sys.stderr)
+            sys.exit(1)
+        print(f"[startup] MongoDB index init skipped (dev): {e}")
 
     threading.Thread(target=_build_opencode_catalog_cached, daemon=True).start()
 
@@ -7135,9 +7162,17 @@ app.include_router(provider_router)
 app.include_router(blob_router)
 app.include_router(agent_router)
 
-app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
-app.mount("/output", StaticFiles(directory=str(ROOT / "output")), name="output")
+if app_settings.is_dev:
+    # Dev: mount local folders directly for convenience
+    app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
+    app.mount("/output", StaticFiles(directory=str(ROOT / "output")), name="output")
+    GENERATED_IMAGES_ROOT.mkdir(parents=True, exist_ok=True)
+    app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_ROOT)), name="generated_images")
+    print("[startup] Local dev mode: /storage, /output, /generated_images mounted publicly")
+else:
+    # Production: do NOT mount user data folders publicly
+    print("[startup] Production mode: user data folders not publicly mounted")
+
+# /input (product doc, prompts) is always useful as mounted repo seed data
 app.mount("/input", StaticFiles(directory=str(ROOT / "input")), name="input")
-GENERATED_IMAGES_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_ROOT)), name="generated_images")
 app.mount("/", StaticFiles(directory=str(ROOT / "dashboard" / "frontend"), html=True), name="frontend")
