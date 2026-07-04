@@ -153,7 +153,7 @@ The dashboard can be deployed to Render as a multi-user cloud service, while bro
 
 1. **MongoDB Atlas** — Create a free cluster at https://mongodb.com, get your connection string
 2. **Google OAuth** — Create credentials at https://console.cloud.google.com/apis/credentials, configure redirect URI
-3. **Render** — Deploy from GitHub, set env vars (see `.env.example`)
+3. **Render** — Deploy from GitHub, set env vars (see `.env.example`). Must set `DEPLOYMENT_MODE=production` and `STORAGE_PROVIDER=cloudinary` with Cloudinary credentials.
 4. **Local agent** — Run on your machine:
    ```bash
    python scripts/local_agent.py --api-base https://your-app.onrender.com
