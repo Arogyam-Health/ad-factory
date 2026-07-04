@@ -1805,11 +1805,14 @@ def list_opencode_models(api_url: str | None = None) -> list[str]:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     try:
-        with httpx.Client(timeout=10) as client:
+        with httpx.Client(timeout=httpx.Timeout(15, connect=10)) as client:
             resp = client.get(f"{url}/models", headers=headers)
         if resp.status_code != 200:
             return []
-        data = resp.json()
+        try:
+            data = resp.json()
+        except json.JSONDecodeError:
+            return []
     except (httpx.HTTPError, OSError, json.JSONDecodeError):
         return []
     if isinstance(data, list):
@@ -2234,7 +2237,7 @@ def call_opencode_repair_copy(
     run_id = run_dir.name if run_dir else "repair"
     t0 = time.time()
     try:
-        with httpx.Client(timeout=120) as client:
+        with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as client:
             resp = client.post(f"{api_url}/chat/completions", headers=headers, json=body)
     except (httpx.HTTPError, OSError) as exc:
         _log_llm_trace(run_id, "repair", model, body, None, -1, time.time() - t0, error=str(exc))
@@ -2565,7 +2568,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
 
         t0 = time.time()
         try:
-            with httpx.Client(timeout=OPENCODE_AD_TIMEOUT_SECONDS) as client:
+            with httpx.Client(timeout=httpx.Timeout(OPENCODE_AD_TIMEOUT_SECONDS, connect=10)) as client:
                 resp = client.post(f"{api_url}/chat/completions", headers=headers, json=body)
         except httpx.TimeoutException:
             _log_llm_trace(run_dir.name, label, model, body, None, -1, time.time() - t0, error="TIMEOUT")
