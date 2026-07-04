@@ -7162,6 +7162,74 @@ app.include_router(provider_router)
 app.include_router(blob_router)
 app.include_router(agent_router)
 
+# ── Authenticated file download endpoints (production-safe) ────────────────
+from fastapi.responses import FileResponse
+from fastapi import Cookie
+
+
+def _get_user_from_request(request: Request) -> dict[str, Any]:
+    if app_settings.is_production:
+        user = getattr(request.state, "user", None)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        return user
+    return {"user_id": "dev_user", "is_admin": True}
+
+
+@app.get("/api/files/download/run/{run_id:path}")
+def download_run_file(
+    run_id: str,
+    request: Request,
+):
+    _get_user_from_request(request)
+    safe_path = resolve_safe_path(f"dashboard_storage/runs/{run_id}")
+    if not safe_path.exists():
+        raise HTTPException(status_code=404, detail="Run not found")
+    target = safe_path.resolve()
+    runs_root = RUNS_ROOT.resolve()
+    if runs_root not in target.parents and target != runs_root:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if target.is_file():
+        return FileResponse(target, filename=target.name)
+    raise HTTPException(status_code=400, detail="Path is not a file")
+
+
+@app.get("/api/files/download/generated/{path:path}")
+def download_generated_file(
+    path: str,
+    request: Request,
+):
+    _get_user_from_request(request)
+    safe_path = resolve_safe_path(f"generated_images/{path}")
+    if not safe_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    target = safe_path.resolve()
+    images_root = GENERATED_IMAGES_ROOT.resolve()
+    if images_root not in target.parents:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if target.is_file():
+        return FileResponse(target, filename=target.name)
+    raise HTTPException(status_code=400, detail="Path is not a file")
+
+
+@app.get("/api/files/download/output/{path:path}")
+def download_output_file(
+    path: str,
+    request: Request,
+):
+    _get_user_from_request(request)
+    safe_path = resolve_safe_path(f"output/{path}")
+    if not safe_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    target = safe_path.resolve()
+    output_root = (ROOT / "output").resolve()
+    if output_root not in target.parents:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if target.is_file():
+        return FileResponse(target, filename=target.name)
+    raise HTTPException(status_code=400, detail="Path is not a file")
+
+
 if app_settings.is_dev:
     # Dev: mount local folders directly for convenience
     app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
