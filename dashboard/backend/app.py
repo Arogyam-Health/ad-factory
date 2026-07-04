@@ -2448,7 +2448,19 @@ def normalize_generated_copy(
     run_id: str,
 ) -> dict[str, Any]:
     base = _build_copy_skeleton(context, run_id)
-    ads_generated = generated.get("ads") if isinstance(generated, dict) else None
+    generated = generated or {}
+    ads_generated = generated.get("ads") if isinstance(generated.get("ads"), list) else None
+    # Normalise flat responses: single ad wrapped in "ad" key, direct flat object, or array
+    if ads_generated is None:
+        single = generated.get("ad") if isinstance(generated.get("ad"), dict) else None
+        if single:
+            ads_generated = [single]
+        elif isinstance(generated.get("format"), str) and generated.get("format").strip():
+            ads_generated = [generated]
+        elif isinstance(generated, list):
+            ads_generated = generated
+        else:
+            ads_generated = []
     candidates = ads_generated if isinstance(ads_generated, list) else []
     for cand in candidates:
         if isinstance(cand, dict):
@@ -2498,11 +2510,18 @@ def normalize_generated_copy(
             ad["headline_angle"] = angle
 
         for key in ["concept_angle"]:
-            value = _clean_str(candidate.get(key))
+            value = _clean_str(candidate.get(key) or candidate.get("image_description"))
             if value:
                 ad[key] = value
 
         cand_copy = candidate.get("copy") if isinstance(candidate.get("copy"), dict) else {}
+        # If the candidate has flat fields at top level (no "copy" key), wrap them into a copy block
+        copy_level_keys = {"headline", "subheadline", "support_line", "cta", "body", "bullets", "trust_line", "call_to_action", "image_description"}
+        if not cand_copy and any(k in candidate for k in copy_level_keys):
+            cand_flat = {k: candidate[k] for k in copy_level_keys if k in candidate}
+            for k in list(copy_level_keys):
+                candidate.pop(k, None)
+            cand_copy = cand_flat
         # If the LLM returned flat copy (no EN/HI/HINGLISH wrapper), treat it as EN
         # and propagate to HI/HINGLISH as fallback so validation doesn't reject
         flat_keys = {"headline", "subheadline", "support_line", "cta", "body", "bullets", "trust_line"}
@@ -2516,7 +2535,7 @@ def normalize_generated_copy(
             src_lang = cand_copy.get(lang) if isinstance(cand_copy.get(lang), dict) else {}
 
             headline = _clean_str(src_lang.get("headline"))
-            cta = _clean_str(src_lang.get("cta"))
+            cta = _clean_str(src_lang.get("cta") or src_lang.get("call_to_action"))
             if headline:
                 base_lang["headline"] = shorten_copy_line(headline)
             if cta:
@@ -2527,7 +2546,7 @@ def normalize_generated_copy(
                     base_lang["headline"] = ensure_testimonial_headline(base_lang.get("headline", ""), lang, persona)
 
             if fmt in {"HERO", "UGC"}:
-                support = _clean_str(src_lang.get("support_line")) or _clean_str(src_lang.get("subheadline"))
+                support = _clean_str(src_lang.get("support_line")) or _clean_str(src_lang.get("subheadline")) or _clean_str(src_lang.get("body"))
                 if support:
                     base_lang["support_line"] = shorten_copy_line(support)
             elif fmt in {"BA", "FEAT"}:
@@ -2538,7 +2557,7 @@ def normalize_generated_copy(
                         bullets = [strip_ba_panel_label(b) for b in bullets]
                     base_lang["bullets"] = [shorten_copy_line(b) for b in bullets]
             else:
-                trust = _clean_str(src_lang.get("trust_line"))
+                trust = _clean_str(src_lang.get("trust_line") or src_lang.get("body"))
                 if trust:
                     base_lang["trust_line"] = shorten_copy_line(trust)
 
