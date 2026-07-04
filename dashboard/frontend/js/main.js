@@ -115,6 +115,8 @@ function renderProductDocInfo(productDoc) {
       </div>
     </div>
   `;
+  document.getElementById("openTraces")?.addEventListener("click", () => window.open("/traces.html", "_blank"));
+
   document.getElementById("openProductDoc")?.addEventListener("click", () => {
     fetchJSON("/api/product-doc").then((doc) => {
       showPromptFullscreen(

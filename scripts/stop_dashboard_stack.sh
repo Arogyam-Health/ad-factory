@@ -27,4 +27,3 @@ stop_pid_file() {
 }
 
 stop_pid_file "$PID_DIR/dashboard.pid" "dashboard"
-stop_pid_file "$PID_DIR/opencode.pid" "opencode"

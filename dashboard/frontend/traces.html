@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Traces</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .traces-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    .traces-header h1 { margin: 0; font-family: var(--font-head); font-size: 1.5rem; }
+    .traces-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .traces-controls input, .traces-controls select { padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-family: var(--font-body); font-size: 0.85rem; }
+    .trace-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px; margin-bottom: 12px; }
+    .trace-card .meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); margin-bottom: 8px; }
+    .trace-card .meta .run-id { font-family: var(--font-mono); }
+    .trace-card .meta .status { font-weight: 600; }
+    .trace-card .meta .status.ok { color: var(--good-ink); }
+    .trace-card .meta .status.err { color: var(--accent-coral); }
+    .trace-card .meta .duration { font-family: var(--font-mono); }
+    .trace-card .label { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; background: var(--primary); color: #fff; }
+    .trace-card .model { font-family: var(--font-mono); font-size: 0.8rem; }
+    .trace-details { margin-top: 8px; }
+    .trace-details summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; padding: 4px 0; }
+    .trace-details pre { background: var(--status-bg); color: var(--status-fg); padding: 12px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 0; }
+    .empty-state { text-align: center; padding: 48px; color: var(--muted); }
+    .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 20px; }
+    .pagination button { padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); cursor: pointer; font-family: var(--font-body); }
+    .pagination button:disabled { opacity: 0.4; cursor: default; }
+    .pagination span { font-size: 0.85rem; color: var(--muted); }
+    #themeToggle { position: static; }
+  </style>
+</head>
+<body>
+  <div class="traces-header">
+    <h1>LLM Traces</h1>
+    <div class="traces-controls">
+      <input id="filterRunId" type="text" placeholder="Filter by run ID..." />
+      <button id="refreshBtn" class="ghost-btn" type="button">Refresh</button>
+      <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
+    </div>
+  </div>
+  <div id="tracesContainer"><div class="empty-state">No traces yet. Run an ad generation to see LLM calls here.</div></div>
+  <div class="pagination" id="pagination" style="display:none">
+    <button id="prevPage" disabled>Previous</button>
+    <span id="pageInfo"></span>
+    <button id="nextPage">Next</button>
+  </div>
+
+  <script type="module">
+    import { initTheme } from "/js/theme.js";
+    initTheme();
+
+    const LIMIT = 50;
+    let offset = 0;
+    let runIdFilter = "";
+
+    async function loadTraces() {
+      const params = new URLSearchParams({ limit: LIMIT, offset });
+      if (runIdFilter) params.set("run_id", runIdFilter);
+      const resp = await fetch(`/api/llm-traces?${params}`);
+      const data = await resp.json();
+      renderTraces(data);
+    }
+
+    function renderTraces(data) {
+      const container = document.getElementById("tracesContainer");
+      const pagination = document.getElementById("pagination");
+      if (!data.traces.length) {
+        container.innerHTML = '<div class="empty-state">No traces found.</div>';
+        pagination.style.display = "none";
+        return;
+      }
+      container.innerHTML = data.traces.map(t => {
+        const statusClass = t.status_code === 200 ? "ok" : "err";
+        const errorHtml = t.error ? `<div style="color:var(--accent-coral);font-size:0.85rem;margin-top:4px">Error: ${t.error}</div>` : "";
+        const usageHtml = t.response?.usage ? ` · ${JSON.stringify(t.response.usage)}` : "";
+        return `<div class="trace-card">
+          <div class="meta">
+            <span class="label">${t.label || "?"}</span>
+            <span class="model">${t.model || "?"}</span>
+            <span class="status ${statusClass}">${t.status_code}</span>
+            <span class="duration">${t.duration_s || "?"}s</span>
+            <span class="run-id">${t.run_id || ""}</span>
+            <span>${t.timestamp || ""}</span>
+          </div>
+          ${errorHtml}
+          <details class="trace-details"><summary>Request</summary><pre>${escapeHtml(JSON.stringify(t.request, null, 2))}</pre></details>
+          <details class="trace-details"><summary>Response${usageHtml}</summary><pre>${escapeHtml(JSON.stringify(t.response, null, 2))}</pre></details>
+        </div>`;
+      }).join("");
+      document.getElementById("pageInfo").textContent = `${data.offset + 1}–${Math.min(data.offset + data.limit, data.total)} of ${data.total}`;
+      document.getElementById("prevPage").disabled = data.offset <= 0;
+      document.getElementById("nextPage").disabled = data.offset + data.limit >= data.total;
+      pagination.style.display = "flex";
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    document.getElementById("refreshBtn").addEventListener("click", () => { offset = 0; loadTraces(); });
+    document.getElementById("prevPage").addEventListener("click", () => { offset = Math.max(0, offset - LIMIT); loadTraces(); });
+    document.getElementById("nextPage").addEventListener("click", () => { offset += LIMIT; loadTraces(); });
+    document.getElementById("filterRunId").addEventListener("input", (e) => {
+      runIdFilter = e.target.value.trim();
+      offset = 0;
+      loadTraces();
+    });
+
+    loadTraces();
+  </script>
+</body>
+</html>

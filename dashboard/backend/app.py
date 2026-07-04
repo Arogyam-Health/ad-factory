@@ -60,6 +60,7 @@ OPENCODE_AD_TIMEOUT_SECONDS = 600
 OPENCODE_MAX_CONCURRENT = 2
 OPENCODE_QUEUE_DIR = RUNTIME_ROOT / "opencode_queue"
 OPENCODE_QUEUE_LOG = OPENCODE_QUEUE_DIR / "queue.log"
+LLM_TRACES_DIR = RUNTIME_ROOT / "llm_traces"
 
 _PERSONA_SEED_MAPPING: dict[str, Any] = {
     "seed_to_payload": {
@@ -2270,6 +2271,38 @@ def append_run_log(run_dir: Path, filename: str, message: str) -> None:
         handle.write(message.rstrip() + "\n")
 
 
+LLM_TRACES_MAX_FILES = 500
+
+def _log_llm_trace(run_id: str, label: str, model: str, request_body: dict, response_body: Any, status_code: int, duration_s: float, error: str | None = None) -> None:
+    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
+    trace = {
+        "timestamp": now_iso(),
+        "run_id": run_id,
+        "label": label,
+        "model": model,
+        "request": {
+            "messages": [{k: v for k, v in m.items() if k != "content" or len(str(v)) < 2000} for m in request_body.get("messages", [])],
+            "max_tokens": request_body.get("max_tokens"),
+            "temperature": request_body.get("temperature"),
+        },
+        "response": {
+            "content": (response_body.get("choices", [{}])[0].get("message", {}).get("content", "")[:5000] if isinstance(response_body, dict) else str(response_body)[:5000]),
+            "finish_reason": response_body.get("choices", [{}])[0].get("finish_reason") if isinstance(response_body, dict) else None,
+            "usage": response_body.get("usage") if isinstance(response_body, dict) else None,
+        } if status_code == 200 else None,
+        "status_code": status_code,
+        "duration_s": round(duration_s, 2),
+        "error": error,
+    }
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", run_id or "unknown")
+    trace_file = LLM_TRACES_DIR / f"{safe_id}_{int(time.time()*1000)}.json"
+    trace_file.write_text(json.dumps(trace, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    existing = sorted(LLM_TRACES_DIR.glob("*.json"))
+    while len(existing) > LLM_TRACES_MAX_FILES:
+        existing[0].unlink()
+        existing = existing[1:]
+
+
 def call_opencode_repair_copy(
     config: dict[str, Any],
     context: dict[str, Any],
@@ -2277,7 +2310,8 @@ def call_opencode_repair_copy(
     collisions: list[dict[str, Any]],
     run_dir: Path,
 ) -> dict[str, Any] | None:
-    api_url = (config.get("opencode_api_url") or "").strip()
+    api_key = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_API_KEY", "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
+    api_url = (config.get("opencode_api_url") or "").strip() or os.getenv("OPENCODE_API_URL", "").strip() or DEFAULT_OPENCODE_API_URL
     model = sanitize_dashboard_model((config.get("opencode_model") or "").strip(), list_opencode_models())
     if not api_url:
         return None
@@ -2301,35 +2335,46 @@ def call_opencode_repair_copy(
         + json.dumps(payload, ensure_ascii=False)
     )
 
-    password = (config.get("opencode_api_key") or "").strip() or os.getenv("OPENCODE_SERVER_PASSWORD", "").strip()
-    cmd = [
-        "opencode",
-        "run",
-        "--pure",
-        "--attach",
-        api_url,
-        "--model",
-        model,
-        "--format",
-        "json",
-        prompt,
-    ]
-    if password:
-        cmd.extend(["--password", password])
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.3,
+        "max_tokens": 4096,
+    }
+
+    run_id = run_dir.name if run_dir else "repair"
+    t0 = time.time()
     try:
-        result = run_cmd(cmd, cwd=ROOT)
-    except OSError as exc:
-        (run_dir / "logs" / "opencode_repair_error.txt").write_text(
-            f"Repair command launch failed: {exc}", encoding="utf-8"
-        )
-        return None
-    if result.returncode != 0:
-        (run_dir / "logs" / "opencode_repair_error.txt").write_text(
-            f"Repair command failed\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}", encoding="utf-8"
-        )
+        with httpx.Client(timeout=120) as client:
+            resp = client.post(f"{api_url}/chat/completions", headers=headers, json=body)
+    except (httpx.HTTPError, OSError) as exc:
+        _log_llm_trace(run_id, "repair", model, body, None, -1, time.time() - t0, error=str(exc))
+        (run_dir / "logs" / "opencode_repair_error.txt").write_text(f"Repair HTTP call failed: {exc}", encoding="utf-8")
         return None
 
-    return parse_opencode_json_output(result.stdout)
+    elapsed = time.time() - t0
+
+    if resp.status_code != 200:
+        _log_llm_trace(run_id, "repair", model, body, None, resp.status_code, elapsed, error=resp.text[:2000])
+        (run_dir / "logs" / "opencode_repair_error.txt").write_text(f"Repair API error {resp.status_code}\n{resp.text}", encoding="utf-8")
+        return None
+
+    try:
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+    except (json.JSONDecodeError, KeyError, IndexError) as exc:
+        _log_llm_trace(run_id, "repair", model, body, None, resp.status_code, elapsed, error=str(exc))
+        (run_dir / "logs" / "opencode_repair_error.txt").write_text(f"Repair parse error: {exc}\n{resp.text}", encoding="utf-8")
+        return None
+
+    _log_llm_trace(run_id, "repair", model, body, data, resp.status_code, elapsed)
+    return parse_opencode_json_output(content)
 
 
 def _clean_str(value: Any) -> str:
@@ -7266,6 +7311,22 @@ def api_download_batches(batch_names: list[str]):
     label = "_".join(batch_names) if batch_names else "batches"
     return StreamingResponse(buf, media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="{label}.zip"'})
+
+def api_llm_traces(limit: int = 50, offset: int = 0, run_id_filter: str | None = None) -> dict[str, Any]:
+    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(LLM_TRACES_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    all_traces = []
+    for f in files:
+        try:
+            trace = json.loads(f.read_text(encoding="utf-8"))
+            if run_id_filter and trace.get("run_id") != run_id_filter:
+                continue
+            all_traces.append(trace)
+        except (json.JSONDecodeError, OSError):
+            continue
+    total = len(all_traces)
+    page = all_traces[offset:offset + limit]
+    return {"traces": page, "total": total, "offset": offset, "limit": limit}
 
 
 # ── Modular routes ───────────────────────────────────────────────────────────
