@@ -4,7 +4,6 @@ from typing import Any
 
 
 def safe_user(user: dict[str, Any]) -> dict[str, Any]:
-    """Return a safe view of a user doc (no secrets, no internal fields)."""
     return {
         "user_id": user.get("user_id", ""),
         "email": user.get("email", ""),
@@ -12,13 +11,13 @@ def safe_user(user: dict[str, Any]) -> dict[str, Any]:
         "avatar_url": user.get("avatar_url", ""),
         "is_active": user.get("is_active", True),
         "is_super_admin": user.get("is_super_admin", False),
+        "is_platform_admin": user.get("is_platform_admin", False),
         "created_at": user.get("created_at", 0),
         "updated_at": user.get("updated_at", 0),
     }
 
 
 def safe_invite(invite: dict[str, Any]) -> dict[str, Any]:
-    """Return a safe view of an invite doc (no token_hash, no raw_token)."""
     return {
         "invite_id": invite.get("invite_id", ""),
         "org_id": invite.get("org_id", ""),
@@ -36,7 +35,6 @@ def safe_invite(invite: dict[str, Any]) -> dict[str, Any]:
 
 
 def safe_session(session: dict[str, Any]) -> dict[str, Any]:
-    """Return a safe view of a session doc (no token hash)."""
     return {
         "session_id": str(session.get("_id", "")),
         "user_id": session.get("user_id", ""),
@@ -47,7 +45,6 @@ def safe_session(session: dict[str, Any]) -> dict[str, Any]:
 
 
 def safe_audit_log(event: dict[str, Any]) -> dict[str, Any]:
-    """Return a safe view of an audit log entry."""
     return {
         "event_id": event.get("event_id", ""),
         "event_type": event.get("event_type", ""),
@@ -58,4 +55,22 @@ def safe_audit_log(event: dict[str, Any]) -> dict[str, Any]:
         "org_id": event.get("org_id"),
         "metadata": event.get("metadata", {}),
         "created_at": event.get("created_at", 0),
+    }
+
+
+def safe_provider_config(doc: dict[str, Any]) -> dict[str, Any]:
+    """Return safe view of a provider config (no decrypted keys, no ciphertext, no hashes)."""
+    masked = ""
+    raw_key = doc.get("api_key") or doc.get("encrypted_api_key") or ""
+    if raw_key:
+        visible = raw_key[:4] if len(raw_key) >= 4 else raw_key
+        masked = visible + "****"
+    return {
+        "user_id": doc.get("user_id", ""),
+        "provider": doc.get("provider", ""),
+        "owner_type": doc.get("owner_type", "user"),
+        "owner_id": doc.get("owner_id", doc.get("user_id", "")),
+        "configured": bool(doc.get("api_key") or doc.get("encrypted_api_key")),
+        "masked_key": masked,
+        "updated_at": doc.get("updated_at", 0),
     }

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import Cookie, HTTPException
 
 from dashboard.backend.auth.service import require_user
 from dashboard.backend.db.client import get_sync_db
@@ -27,13 +28,25 @@ def bootstrap_super_admin(user: dict[str, Any]) -> dict[str, Any]:
     super_admins = get_super_admin_emails()
     if not email or email not in super_admins:
         return user
-    if user.get("is_super_admin"):
-        return user
+
+    now = time.time()
+    updates: dict[str, Any] = {
+        "is_super_admin": True,
+        "is_platform_admin": True,
+        "updated_at": now,
+    }
+    if user.get("is_active") is False:
+        updates["is_active"] = True
+
     user["is_super_admin"] = True
+    user["is_platform_admin"] = True
+    if user.get("is_active") is False:
+        user["is_active"] = True
+
     try:
         get_sync_db()[COLL_USERS].update_one(
             {"user_id": user_id},
-            {"$set": {"is_super_admin": True, "updated_at": __import__("time").time()}},
+            {"$set": updates},
         )
     except Exception:
         pass
@@ -54,5 +67,5 @@ def require_active_user(session_token: str | None = None) -> dict[str, Any]:
     return user
 
 
-def require_super_admin_dependency(session: str | None = None) -> dict[str, Any]:
+def require_super_admin_dependency(session: str | None = Cookie(None)) -> dict[str, Any]:
     return require_super_admin(session)

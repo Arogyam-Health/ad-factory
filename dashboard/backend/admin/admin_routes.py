@@ -11,6 +11,7 @@ from dashboard.backend.admin.admin_serializers import (
     safe_invite,
     safe_session,
     safe_audit_log,
+    safe_provider_config,
 )
 from dashboard.backend.db.client import get_sync_db, ping
 from dashboard.backend.db.collections import (
@@ -25,7 +26,10 @@ from dashboard.backend.db.collections import (
     COLL_CONFIG_VERSIONS,
     COLL_RUNS,
     COLL_IMAGES,
+    COLL_PROMPTS,
+    COLL_PROVIDER_CONFIGS,
 )
+from dashboard.backend.services.org_helper import write_audit_event
 
 router = APIRouter()
 
@@ -50,6 +54,47 @@ def _paginate(
         "page": page,
         "per_page": per_page,
         "pages": -(-total // per_page) if total > 0 else 0,
+    }
+
+
+# ── Overview ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/api/admin/overview")
+def admin_overview(
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    db = get_sync_db()
+    now_ts = time.time()
+    day_ago = now_ts - 86400
+    week_ago = now_ts - 604800
+    return {
+        "users": {
+            "total": db[COLL_USERS].count_documents({}),
+            "active": db[COLL_USERS].count_documents({"is_active": {"$ne": False}}),
+            "super_admins": db[COLL_USERS].count_documents({"is_super_admin": True}),
+            "new_today": db[COLL_USERS].count_documents({"created_at": {"$gte": day_ago}}),
+            "new_this_week": db[COLL_USERS].count_documents({"created_at": {"$gte": week_ago}}),
+        },
+        "orgs": {
+            "total": db[COLL_ORGS].count_documents({}),
+            "active": db[COLL_ORGS].count_documents({"is_active": True}),
+        },
+        "members": {
+            "active": db[COLL_ORG_MEMBERS].count_documents({"status": "active"}),
+        },
+        "runs": {
+            "total": db[COLL_RUNS].count_documents({}),
+        },
+        "images": {
+            "total": db[COLL_IMAGES].count_documents({}),
+        },
+        "sessions": {
+            "active": db[COLL_SESSIONS].count_documents({"expires_at": {"$gt": now_ts}}),
+        },
+        "invites": {
+            "pending": db[COLL_ORG_INVITES].count_documents({"status": "pending"}),
+        },
     }
 
 
@@ -78,6 +123,25 @@ def admin_list_users(
     return result
 
 
+@router.get("/api/admin/individual-users")
+def admin_individual_users(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    search: str | None = Query(None),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    q: dict[str, Any] = {"is_super_admin": {"$ne": True}}
+    if search:
+        q["$or"] = [
+            {"email": {"$regex": search, "$options": "i"}},
+            {"display_name": {"$regex": search, "$options": "i"}},
+            {"user_id": {"$regex": search, "$options": "i"}},
+        ]
+    result = _paginate(COLL_USERS, q, page, per_page, sort=[("created_at", -1)])
+    result["items"] = [safe_user(u) for u in result["items"]]
+    return result
+
+
 @router.get("/api/admin/users/{user_id}")
 def admin_get_user(
     user_id: str,
@@ -95,20 +159,79 @@ def admin_update_user(
     payload: dict[str, Any],
     _admin: dict[str, Any] = Depends(require_super_admin_dependency),
 ) -> dict[str, Any]:
+    admin_user_id = _admin["user_id"]
+    admin_email = _admin.get("email", "")
     user = get_sync_db()[COLL_USERS].find_one({"user_id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    now = time.time()
     updates: dict[str, Any] = {}
+    audit_events: list[dict[str, Any]] = []
+
     if "is_active" in payload:
-        updates["is_active"] = bool(payload["is_active"])
+        if user_id == admin_user_id and payload["is_active"] is False:
+            raise HTTPException(status_code=400, detail="Cannot disable your own account")
+        new_active = bool(payload["is_active"])
+        if new_active != user.get("is_active", True):
+            updates["is_active"] = new_active
+            if new_active:
+                updates["reenabled_at"] = now
+                updates["reenabled_by_user_id"] = admin_user_id
+                audit_events.append({
+                    "event_type": "admin_user_enabled",
+                    "target_type": "user",
+                    "target_id": user_id,
+                    "metadata": {"reenabled_by": admin_user_id},
+                })
+            else:
+                updates["disabled_at"] = now
+                updates["disabled_by_user_id"] = admin_user_id
+                updates["disabled_reason"] = payload.get("reason", "manual_disable")
+                audit_events.append({
+                    "event_type": "admin_user_disabled",
+                    "target_type": "user",
+                    "target_id": user_id,
+                    "metadata": {
+                        "disabled_by": admin_user_id,
+                        "reason": payload.get("reason", "manual_disable"),
+                    },
+                })
+
     if "is_super_admin" in payload:
-        updates["is_super_admin"] = bool(payload["is_super_admin"])
+        if user_id == admin_user_id and payload["is_super_admin"] is False:
+            raise HTTPException(status_code=400, detail="Cannot revoke your own super admin status")
+        new_sa = bool(payload["is_super_admin"])
+        if new_sa != user.get("is_super_admin", False):
+            updates["is_super_admin"] = new_sa
+            updates["is_platform_admin"] = new_sa
+            audit_events.append({
+                "event_type": "admin_super_admin_granted" if new_sa else "admin_super_admin_revoked",
+                "target_type": "user",
+                "target_id": user_id,
+                "metadata": {"changed_by": admin_user_id},
+            })
+
     if "display_name" in payload:
         updates["display_name"] = str(payload["display_name"])
+
     if not updates:
         return safe_user(user)
-    updates["updated_at"] = time.time()
+
+    updates["updated_at"] = now
     get_sync_db()[COLL_USERS].update_one({"user_id": user_id}, {"$set": updates})
+
+    for ev in audit_events:
+        write_audit_event(
+            event_type=ev["event_type"],
+            actor_user_id=admin_user_id,
+            actor_email=admin_email,
+            target_type=ev["target_type"],
+            target_id=ev["target_id"],
+            org_id=None,
+            metadata=ev["metadata"],
+        )
+
     updated = get_sync_db()[COLL_USERS].find_one({"user_id": user_id})
     return safe_user(updated or user)
 
@@ -118,15 +241,37 @@ def admin_delete_user(
     user_id: str,
     _admin: dict[str, Any] = Depends(require_super_admin_dependency),
 ) -> dict[str, Any]:
+    admin_user_id = _admin["user_id"]
+    admin_email = _admin.get("email", "")
     user = get_sync_db()[COLL_USERS].find_one({"user_id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user_id == admin_user_id:
+        raise HTTPException(status_code=400, detail="Cannot disable your own account")
+
     now = time.time()
     get_sync_db()[COLL_USERS].update_one(
         {"user_id": user_id},
-        {"$set": {"is_active": False, "updated_at": now}},
+        {"$set": {
+            "is_active": False,
+            "disabled_at": now,
+            "disabled_by_user_id": admin_user_id,
+            "disabled_reason": "admin_delete",
+            "updated_at": now,
+        }},
     )
     get_sync_db()[COLL_SESSIONS].delete_many({"user_id": user_id})
+
+    write_audit_event(
+        event_type="admin_user_disabled",
+        actor_user_id=admin_user_id,
+        actor_email=admin_email,
+        target_type="user",
+        target_id=user_id,
+        org_id=None,
+        metadata={"disabled_by": admin_user_id, "reason": "admin_delete"},
+    )
+
     return {"status": "disabled", "user_id": user_id}
 
 
@@ -209,6 +354,35 @@ def admin_get_org(
         "members": members,
         "invites": [safe_invite(i) for i in invites],
     }
+
+
+@router.patch("/api/admin/orgs/{org_id}")
+def admin_update_org(
+    org_id: str,
+    payload: dict[str, Any],
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    db = get_sync_db()
+    org = db[COLL_ORGS].find_one({"org_id": org_id})
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    now = time.time()
+    updates: dict[str, Any] = {"updated_at": now}
+    if "name" in payload:
+        updates["name"] = str(payload["name"])
+    if "config_mode" in payload:
+        mode = payload["config_mode"]
+        if mode not in ("shared_org_config", "individual_member_config"):
+            raise HTTPException(status_code=400, detail="Invalid config_mode")
+        updates["config_mode"] = mode
+    if "is_active" in payload:
+        updates["is_active"] = bool(payload["is_active"])
+    if not updates:
+        return {"org": org}
+    db[COLL_ORGS].update_one({"org_id": org_id}, {"$set": updates})
+    updated = db[COLL_ORGS].find_one({"org_id": org_id})
+    updated.pop("_id", None) if updated else None
+    return {"org": updated or org}
 
 
 @router.delete("/api/admin/orgs/{org_id}")
@@ -295,12 +469,19 @@ def admin_list_configs(
 @router.get("/api/admin/configs/{config_id}")
 def admin_get_config(
     config_id: str,
+    include_content: bool = Query(False),
     _admin: dict[str, Any] = Depends(require_super_admin_dependency),
 ) -> dict[str, Any]:
     doc = get_sync_db()[COLL_USER_CONFIGS].find_one({"config_id": config_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Config not found")
     doc.pop("_id", None)
+    if not include_content:
+        files = doc.get("files", {})
+        for fk in list(files.keys()):
+            entry = files[fk]
+            if isinstance(entry, dict):
+                entry.pop("content", None)
     versions = list(
         get_sync_db()[COLL_CONFIG_VERSIONS]
         .find({"config_id": config_id})
@@ -309,6 +490,13 @@ def admin_get_config(
     )
     for v in versions:
         v.pop("_id", None)
+        if not include_content:
+            snapshot = v.get("snapshot", {})
+            sf = snapshot.get("files", {})
+            for sk in list(sf.keys()):
+                entry = sf[sk]
+                if isinstance(entry, dict):
+                    entry.pop("content", None)
     return {
         "config": doc,
         "versions": versions,
@@ -329,6 +517,124 @@ def admin_delete_config(
         {"$set": {"is_active": False, "updated_at": now}},
     )
     return {"status": "disabled", "config_id": config_id}
+
+
+@router.post("/api/admin/configs/copy")
+def admin_copy_config(
+    payload: dict[str, Any],
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    from dashboard.backend.services.config_version_service import copy_config as _copy_cfg
+    from dashboard.backend.services.user_config import get_config_doc
+
+    source_owner_type = payload.get("source_owner_type", "")
+    source_owner_id = payload.get("source_owner_id", "")
+    target_owner_type = payload.get("target_owner_type", "")
+    target_owner_id = payload.get("target_owner_id", "")
+    mode = payload.get("mode", "replace_all")
+    if not all([source_owner_type, source_owner_id, target_owner_type, target_owner_id]):
+        raise HTTPException(status_code=400, detail="source_owner_type, source_owner_id, target_owner_type, target_owner_id required")
+    if mode not in ("replace_all", "merge_missing"):
+        raise HTTPException(status_code=400, detail="mode must be 'replace_all' or 'merge_missing'")
+
+    source_doc = get_config_doc(source_owner_type, source_owner_id)
+    if not source_doc:
+        raise HTTPException(status_code=404, detail="Source config not found")
+
+    try:
+        result = _copy_cfg(
+            source_owner_type=source_owner_type,
+            source_owner_id=source_owner_id,
+            target_owner_type=target_owner_type,
+            target_owner_id=target_owner_id,
+            actor_user_id=_admin["user_id"],
+            actor_email=_admin.get("email", ""),
+            mode=mode,
+            reason="admin_copy",
+            org_id=None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status": "copied", "config": result, "mode": mode}
+
+
+# ── Provider Configs ────────────────────────────────────────────────────────
+
+
+@router.get("/api/admin/provider-configs")
+def admin_list_provider_configs(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    provider: str | None = Query(None),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    q: dict[str, Any] = {}
+    if provider:
+        q["provider"] = provider
+    result = _paginate(COLL_PROVIDER_CONFIGS, q, page, per_page, sort=[("updated_at", -1)])
+    result["items"] = [safe_provider_config(item) for item in result["items"]]
+    return result
+
+
+# ── Runs ─────────────────────────────────────────────────────────────────────
+
+
+@router.get("/api/admin/runs")
+def admin_list_runs(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    user_id: str | None = Query(None),
+    status: str | None = Query(None),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    q: dict[str, Any] = {}
+    if user_id:
+        q["user_id"] = user_id
+    if status:
+        q["status"] = status
+    result = _paginate(COLL_RUNS, q, page, per_page, sort=[("created_at", -1)])
+    for item in result["items"]:
+        item.pop("_id", None)
+    return result
+
+
+# ── Images ───────────────────────────────────────────────────────────────────
+
+
+@router.get("/api/admin/images")
+def admin_list_images(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    user_id: str | None = Query(None),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    q: dict[str, Any] = {}
+    if user_id:
+        q["user_id"] = user_id
+    result = _paginate(COLL_IMAGES, q, page, per_page, sort=[("created_at", -1)])
+    for item in result["items"]:
+        item.pop("_id", None)
+    return result
+
+
+# ── Prompts ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/api/admin/prompts")
+def admin_list_prompts(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    user_id: str | None = Query(None),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    q: dict[str, Any] = {}
+    if user_id:
+        q["user_id"] = user_id
+    result = _paginate(COLL_PROMPTS, q, page, per_page, sort=[("created_at", -1)])
+    for item in result["items"]:
+        item.pop("_id", None)
+    return result
 
 
 # ── Stats & Health ───────────────────────────────────────────────────────────

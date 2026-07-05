@@ -12,6 +12,10 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_USER_CONFIGS

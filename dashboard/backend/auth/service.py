@@ -152,4 +152,7 @@ def require_user(session_token: Optional[str] = None) -> dict[str, Any]:
 
 
 def require_user_dependency(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
-    return require_user(session)
+    user = require_user(session)
+    if user.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="User account is disabled")
+    return user
