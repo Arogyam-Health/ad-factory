@@ -31,6 +31,7 @@ from dashboard.backend.services.org_helper import (
 )
 from dashboard.backend.services.user_config import (
     create_or_update_config,
+    get_config_doc,
     resolve_effective_config,
     get_generic_config,
     CONFIG_KEYS,
@@ -398,10 +399,17 @@ def accept_invite(
         from dashboard.backend.services.user_config import has_custom_config as user_has_config
         if not user_has_config(user_id):
             try:
+                # Copy org config (or generic fallback) into user's personal config
+                from dashboard.backend.services.user_config import _extract_flat_from_new_schema
+                org_doc = get_config_doc("org", org_id)
+                if org_doc:
+                    org_config = _extract_flat_from_new_schema(org_doc)
+                else:
+                    org_config = get_generic_config()
                 create_or_update_config(
                     owner_type="user",
                     owner_id=user_id,
-                    files={k: "" for k in CONFIG_KEYS},
+                    files=org_config,
                     actor_user_id=user_id,
                     config_scope="personal",
                     source="invite_member_copy",
@@ -600,10 +608,51 @@ def get_effective_config(
                 "config_id": doc.get("config_id") if doc else None,
             }
 
-    # No org_id provided
-    from dashboard.backend.services.user_config import has_custom_config, get_config_doc
+    # No org_id provided — check default org first
+    from dashboard.backend.services.org_helper import get_user_default_org
+    from dashboard.backend.services.user_config import has_custom_config as user_has_config
+
+    default_org = get_user_default_org(user_id)
+    if default_org is not None:
+        org = default_org
+        resolved_org_id = org["org_id"]
+        membership = get_user_org_membership(user_id, resolved_org_id)
+        role = membership.get("role", "creator") if membership else "creator"
+        can_edit = role in ("owner", "config_admin")
+
+        config_mode = org.get("config_mode", "shared_org_config")
+        if config_mode == "shared_org_config":
+            config = resolve_effective_config(user_id, resolved_org_id)
+            doc = get_config_doc("org", resolved_org_id)
+            return {
+                "config": config,
+                "source": "org_shared",
+                "owner_type": "org",
+                "owner_id": resolved_org_id,
+                "org": org,
+                "membership": membership,
+                "mode": config_mode,
+                "can_edit": can_edit,
+                "config_id": doc.get("config_id") if doc else None,
+            }
+        else:
+            config = resolve_effective_config(user_id, resolved_org_id)
+            doc = get_config_doc("user", user_id) if user_has_config(user_id) else None
+            return {
+                "config": config,
+                "source": "user_personal",
+                "owner_type": "user",
+                "owner_id": user_id,
+                "org": org,
+                "membership": membership,
+                "mode": config_mode,
+                "can_edit": can_edit,
+                "config_id": doc.get("config_id") if doc else None,
+            }
+
+    # No org at all — return personal/generic
     config = resolve_effective_config(user_id)
-    has_custom = has_custom_config(user_id)
+    has_custom = user_has_config(user_id)
     doc = get_config_doc("user", user_id) if has_custom else None
 
     return {

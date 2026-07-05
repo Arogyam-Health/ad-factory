@@ -1,566 +1,483 @@
 {
   "format": "v1",
   "_description": "All prompt text templates for ad copy LLM generation. Edit this file to change what the LLM sees — no code changes needed. Dynamic placeholders use {fmt}, {support_target}, {copy_fields}.",
-  "product_doc_bootstrap_prompt": "Read the attached product master doc completely. Use this doc as the single source of product truth for benefits, proof, mechanism, differentiators, exclusions, and priority hierarchy. Do not rewrite, summarize, modify, or ignore the doc. The ad format/persona/concept/schema instructions follow in the same request. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.",
-  "visual_archetypes": {
-    "HERO": [
-      {
-        "id": "hero_center_stage",
-        "label": "Centered premium packshot",
-        "layout_lines": [
-          "- Archetype: centered premium packshot with headline centered above the product block.",
-          "- Keep the product cluster compact in the middle third with a balanced pedestal feel and strong whitespace around it.",
-          "- Use symmetrical spacing so the ad reads as premium and stable rather than busy or collage-like.",
-          "- Keep both text and product centered; do not introduce obvious left/right asymmetry in this variant."
-        ],
-        "direction_lines": [
-          "- Archetype direction: centered composition with soft pedestal energy and minimal side distractions.",
-          "- Text placement: headline/support centered in upper safe field; CTA centered below support with generous breathing room.",
-          "- This is the only HERO variant that should read as fully centered and symmetrical."
-        ]
-      },
-      {
-        "id": "hero_left_copy_right_product",
-        "label": "Left-copy right-product hero",
-        "layout_lines": [
-          "- Archetype: left-aligned copy block with product cluster weighted to the right half.",
-          "- Build a clear asymmetric composition where text owns the left safe field and product owns the right safe field.",
-          "- Preserve clean negative space between copy and product so the frame feels intentional, not cramped.",
-          "- Headline, support, and CTA must align left in a clean copy column; do not center the typography in this variant."
-        ],
-        "direction_lines": [
-          "- Archetype direction: editorial left-copy/right-product split with crisp column alignment.",
-          "- Product emphasis: product stack dominates the right-center while copy stays in a protected left column.",
-          "- Force visible asymmetry: if the result reads centered at a glance, reject and regenerate."
-        ]
-      },
-      {
-        "id": "hero_close_crop_pedestal",
-        "label": "Close crop pedestal hero",
-        "layout_lines": [
-          "- Archetype: larger, tighter product crop with the pack cluster feeling closer to camera.",
-          "- Let product presence feel slightly oversized while keeping every label readable and fully inside safe field.",
-          "- Copy should sit in a compact high-contrast block occupying one upper corner rather than a wide centered text stack.",
-          "- Crop the product group noticeably larger than other HERO variants so the pack mass dominates the lower half."
-        ],
-        "direction_lines": [
-          "- Archetype direction: premium close crop with a luxury pedestal feel and shallow scene complexity.",
-          "- Visual balance: oversized product hero, minimal props, restrained typography footprint.",
-          "- Composition should feel tighter and more zoomed-in than the centered or split variants; reject if it reads like a standard balanced packshot."
-        ]
-      },
-      {
-        "id": "hero_soft_lifestyle_frame",
-        "label": "Lifestyle-assisted premium hero",
-        "layout_lines": [
-          "- Archetype: premium hero layout softened by subtle lifestyle context, not pure studio isolation.",
-          "- Keep product dominant while allowing background context cues to add warmth and realism.",
-          "- Headline and support should sit in a calm editorial block with more atmospheric breathing room than strict commercial grid.",
-          "- Product cluster should sit lower-left or lower-right with the opposite upper zone reserved for copy; do not center both elements together."
-        ],
-        "direction_lines": [
-          "- Archetype direction: premium lifestyle frame with product dominance preserved over the environment.",
-          "- Background behavior: warm believable context adds credibility but never competes with the packshot.",
-          "- This variant must feel more environmental and editorial than the studio-centered HERO options."
-        ]
-      }
-    ],
-    "BA": [
-      {
-        "id": "ba_classic_split",
-        "label": "Classic vertical split contrast",
-        "layout_lines": [
-          "- Archetype: strict left/right split with a clear vertical divider and fast-scroll readability.",
-          "- Left side must instantly read as friction; right side must instantly read as first practical win.",
-          "- Keep products bridging the lower center so both panels still feel like one branded story."
-        ],
-        "direction_lines": [
-          "- Archetype direction: disciplined vertical split with highly legible contrast in mood, props, and posture.",
-          "- Contrast behavior: same overall palette family, different clarity and routine signals on each side."
-        ]
-      },
-      {
-        "id": "ba_soft_diagonal_transition",
-        "label": "Soft diagonal transition",
-        "layout_lines": [
-          "- Archetype: transition from struggle to control happens along a soft diagonal flow instead of a hard binary panel wall.",
-          "- Use composition to move the eye from upper-left friction toward lower-right control without losing split-story clarity.",
-          "- Keep the product cluster near lower center as the bridge that unifies the two states."
-        ],
-        "direction_lines": [
-          "- Archetype direction: diagonal story flow with subtle transition edge and premium editorial polish.",
-          "- Panel behavior: struggle cues and control cues remain distinct even without a thick central divider."
-        ]
-      },
-      {
-        "id": "ba_desk_to_discipline",
-        "label": "Desk-scene routine contrast",
-        "layout_lines": [
-          "- Archetype: same broad routine surface evolves from cluttered impulsive setup to clean repeatable setup.",
-          "- Let props and orderliness carry much of the contrast, not only facial expression.",
-          "- Keep the headline spanning both states while the lower product bridge anchors the solution."
-        ],
-        "direction_lines": [
-          "- Archetype direction: one routine zone shown in two states, emphasizing practical environmental contrast.",
-          "- Visual proof: clutter-to-clarity progression should feel plausible and grounded, never dramatic or fake."
-        ]
-      },
-      {
-        "id": "ba_emotion_to_control",
-        "label": "Emotion-to-control contrast",
-        "layout_lines": [
-          "- Archetype: subject emotion shift is the primary contrast driver, with supporting routine cues around it.",
-          "- The left panel should feel mentally stuck; the right panel should feel calmer, steadier, and more in control.",
-          "- Product cluster remains stable and premium so the frame does not become too portrait-heavy."
-        ],
-        "direction_lines": [
-          "- Archetype direction: human emotional contrast leads, product proof anchors, environment stays secondary.",
-          "- Contrast behavior: subtle mood correction rather than exaggerated transformation theatrics."
-        ]
-      },
-      {
-        "id": "ba_bridge_split",
-        "label": "3-zone bridge split",
-        "layout_lines": [
-          "- Archetype: 3-zone horizontal split — left panel = struggle, center = product as bridge, right panel = control.",
-          "- The center zone carries the product cluster prominently as the visual and narrative bridge between the two states.",
-          "- Background, lighting, and mood shift subtly across the three zones: left feels stuck or heavy, center feels clear and actionable, right feels lighter and more in control.",
-          "- Keep the product cluster large enough in the center so it reads as the answer, not just decoration."
-        ],
-        "direction_lines": [
-          "- Archetype direction: disciplined 3-zone composition where the product is the literal and visual centerpiece.",
-          "- Zone behavior: left third uses muted/warmer tones with friction cues; center third is brighter with clean product focus; right third shifts toward ease with subtle environmental clarity.",
-          "- This variant must clearly read as a journey (struggle -> solution -> control), not a static comparison."
-        ]
-      }
-    ],
-    "TEST": [
-      {
-        "id": "test_editorial_quote_card",
-        "label": "Editorial quote card",
-        "layout_lines": [
-          "- Archetype: large editorial quote card is the primary visual element, with strong quote-first hierarchy.",
-          "- Quote card should occupy the upper safe field prominently while product remains a secondary but visible proof anchor below.",
-          "- Use clean premium spacing so the testimonial feels designed, not templated."
-        ],
-        "direction_lines": [
-          "- Archetype direction: oversized quote card with calm editorial rhythm and a restrained premium card treatment.",
-          "- Product placement: compact bottom-right or bottom-center proof anchor beneath the quote hierarchy."
-        ]
-      },
-      {
-        "id": "test_portrait_overlay_card",
-        "label": "Portrait with floating review card",
-        "layout_lines": [
-          "- Archetype: believable human portrait is more visible, while the review card floats over part of the scene.",
-          "- The quote must still win attention first, but the portrait should noticeably increase authenticity and relatability.",
-          "- Product cluster should remain smaller than in HERO and act as proof, not main subject."
-        ],
-        "direction_lines": [
-          "- Archetype direction: portrait-led testimonial with floating review panel overlap and controlled depth.",
-          "- Layering: quote card overlaps portrait space without obscuring the face or reducing readability."
-        ]
-      },
-      {
-        "id": "test_minimal_review_poster",
-        "label": "Minimal review poster",
-        "layout_lines": [
-          "- Archetype: very large typography with minimal card chrome, almost like an editorial poster.",
-          "- Reduce decorative panel treatment and let type scale, spacing, and contrast carry the testimonial weight.",
-          "- Product cluster should stay compact and lower in frame so the quote remains the unmistakable hero."
-        ],
-        "direction_lines": [
-          "- Archetype direction: minimal poster-like layout, premium typography-first attitude, almost no ornamental card styling.",
-          "- Hierarchy: quote dominates first, proof strip and product sit as controlled secondary anchors."
-        ]
-      },
-      {
-        "id": "test_proof_strip_layout",
-        "label": "Proof-strip testimonial",
-        "layout_lines": [
-          "- Archetype: compact quote block with a clearer verification/proof strip and slightly stronger product presence.",
-          "- Trust line should feel like a deliberate proof rail, not just a small subheading.",
-          "- Product cluster can be larger here than other TEST variants, but testimonial hierarchy must still stay primary."
-        ],
-        "direction_lines": [
-          "- Archetype direction: compact testimonial card plus strong proof strip and polished product confirmation below.",
-          "- Structure: quote block -> attribution -> proof strip -> product cluster -> CTA with clean separation between each layer."
-        ]
-      }
-    ],
-    "FEAT": [
-      {
-        "id": "feat_bullet_panel",
-        "label": "Classic bullet panel",
-        "layout_lines": [
-          "- Archetype: structured bullet panel on one side and product proof on the opposite side.",
-          "- Bullets should read as a calm functional stack, never as dense paragraph copy.",
-          "- Keep the information panel crisp and balanced against the product cluster."
-        ],
-        "direction_lines": [
-          "- Archetype direction: classic info-column layout with bullets grouped neatly in one protected text panel.",
-          "- Product placement: product stack occupies the opposite side as a clear proof anchor."
-        ]
-      },
-      {
-        "id": "feat_modular_cards",
-        "label": "Modular feature cards",
-        "layout_lines": [
-          "- Archetype: features appear as small modular cards or tiles rather than one continuous bullet column.",
-          "- Maintain generous spacing between feature modules so each benefit scans instantly on mobile.",
-          "- Product cluster remains visually stable while feature modules create structured variation around it."
-        ],
-        "direction_lines": [
-          "- Archetype direction: modular information architecture with 3-4 clearly separated feature tiles.",
-          "- Layout behavior: feature cards can wrap around the product zone without feeling cluttered."
-        ]
-      },
-      {
-        "id": "feat_mechanism_steps",
-        "label": "Mechanism step stack",
-        "layout_lines": [
-          "- Archetype: present features as a clear step-by-step or mechanism ladder instead of isolated bullets.",
-          "- Create a directional reading flow from headline into numbered or sequenced feature logic.",
-          "- Product cluster should support the mechanism story rather than overpower it."
-        ],
-        "direction_lines": [
-          "- Archetype direction: vertical step stack with ordered reading rhythm and low-noise spacing.",
-          "- Information behavior: each feature line should feel like one stage of a practical routine or benefit chain."
-        ]
-      },
-      {
-        "id": "feat_callout_annotations",
-        "label": "Annotated product callouts",
-        "layout_lines": [
-          "- Archetype: feature lines behave like concise callout annotations pointing toward the product group.",
-          "- Keep annotation lines short and clean so the frame still reads premium, not technical or noisy.",
-          "- Product cluster stays central enough that the callouts feel attached to a real focal object."
-        ],
-        "direction_lines": [
-          "- Archetype direction: annotated product explainer with short callout labels and disciplined connector logic.",
-          "- Visual balance: callouts orbit the product safely without crowding the safe zones."
-        ]
-      }
-    ],
-    "UGC": [
-      {
-        "id": "ugc_selfie_hold",
-        "label": "Selfie beside-product frame",
-        "layout_lines": [
-          "- Archetype: creator appears beside the product in a selfie-like composition while products rest on a surface at correct scale.",
-          "- The frame should feel personal and immediate without losing product label readability.",
-          "- Text should stay compact and social-native, with clear protected space around the face and product."
-        ],
-        "direction_lines": [
-          "- Archetype direction: near-product selfie shot with intimate creator energy and stable phone realism, but products remain placed on a table/counter.",
-          "- Subject behavior: easy facial expression and optional open-palm gesture toward the product, never holding or gripping any package."
-        ]
-      },
-      {
-        "id": "ugc_desk_review",
-        "label": "Desk review setup",
-        "layout_lines": [
-          "- Archetype: creator is seated or standing by a desk/surface, presenting the product like a practical recommendation.",
-          "- Product cluster sits on the routine surface while one hand or gesture supports explanation.",
-          "- Text can occupy a cleaner side of the frame as if added to a real review moment."
-        ],
-        "direction_lines": [
-          "- Archetype direction: review-at-desk composition with believable routine props and calm speaking posture.",
-          "- Product behavior: some products rest on the desk while the main product stays clearly visible in the creator zone."
-        ]
-      },
-      {
-        "id": "ugc_morning_routine",
-        "label": "Morning routine scene",
-        "layout_lines": [
-          "- Archetype: morning-routine context with subtle vanity, counter, or getting-ready cues.",
-          "- The scene should feel like a real use moment, not a polished set or stock ad template.",
-          "- Keep text lighter and more integrated so the environment can carry authenticity."
-        ],
-        "direction_lines": [
-          "- Archetype direction: morning routine realism with warm, soft, believable domestic context.",
-          "- Environment behavior: lightly styled vanity or counter cues, never cluttered or glamorous."
-        ]
-      },
-      {
-        "id": "ugc_unboxing_reaction",
-        "label": "Soft unboxing / discovery moment",
-        "layout_lines": [
-          "- Archetype: creator appears near an already-opened product in a first-impression style frame, with all products placed on the surface.",
-          "- No product is held closer to camera; the full set remains grouped visibly at real-world package scale.",
-          "- Preserve premium cleanliness so the ad feels authentic but not sloppy."
-        ],
-        "direction_lines": [
-          "- Archetype direction: discovery moment with a pointing/open-palm reaction beside the arranged pack, not a hand-held reveal.",
-          "- Subject behavior: natural curiosity and calm approval, no exaggerated reaction faces."
-        ]
-      }
-    ]
-  },
   "system_prompt_base_rules": [
-    "You are a senior direct-response static ad copywriter.",
-    "Your job is to generate Meta static ad copy using the product truth library and persona mapping given below.",
-    "",
-    "OUTPUT FORMAT:",
-    "Return valid JSON matching the response skeleton shown at the end of these instructions. Do not include any text outside the JSON.",
-    "",
-    "CORE PRODUCT CONTEXT:",
-    "[YOUR PRODUCT NAME] is [one-line product description]. [Brief positioning statement about what the product does and who it is for.]",
-    "",
-    "TAG USAGE RULE:",
-    "For any ad batch, use only the selected persona's recommended tag pool.",
-    "Do not pull in the full product truth library.",
-    "Use 1 to 2 product truths per ad.",
-    "Never write tag names in copy.",
-    "Never write as if you are expanding product tags.",
-    "Product tags are supporting material, not the starting point of the ad.",
-    "",
-    "MAIN PRODUCT LEVER RULE:",
-    "For each persona, Main product levers are the product truths that should drive most ads.",
-    "Use when relevant tags are for variation, concept angle, trust, proof, support, or format fit.",
-    "Do not mechanically use one main lever, one use-when-relevant tag, and one proof tag in every ad.",
-    "The ad must first be built around the persona's real-life problem.",
-    "",
-    "FORMAT-SPECIFIC MAX PRODUCT TRUTHS:",
-    "Hero: maximum 3 truths",
-    "UGC: maximum 2 truths",
-    "Product-feature led: 1 main truth + 1 support truth",
-    "Testimonial: 1 proof truth + 1 reason truth",
-    "Before-after: maximum 2 truths",
-    "",
-    "Product naming rules (REQUIRED - use full names every time):",
-    "1. Always use the full product name — never abbreviate.",
-    "2. These apply to every occurrence: headline, subheadline, support line, trust line, body text, and CTA.",
-    "3. Do not use vague noun phrases like 'support' or 'help' in final ad copy. Use direct action language instead.",
-    "",
-    "CLAIM GUARDRAILS:",
-    "1. Do not claim the product treats, cures, reverses, fixes, or heals any disease or medical condition.",
-    "2. Do not guarantee specific results unless terms are explained.",
-    "3. Do not say no effort needed.",
-    "4. Do not target minors.",
-    "5. Do not body shame.",
-    "6. Do not portray struggles as lack of willpower.",
-    "",
-    "HEADLINE RULES:",
-    "1. Headline must do most of the work.",
-    "2. Headline must clearly signal the product benefit.",
-    "3. Headline must clearly signal the selected persona or persona context.",
-    "4. Headline must make sense even if the viewer does not read the subheadline.",
-    "5. Do not write generic headlines that could apply to every persona. Think creatively: imagine a real customer, their specific struggle, and write a headline that speaks directly to them.",
-    "",
-    "SUBHEADLINE RULES:",
-    "The subheadline must continue the headline, not start a separate product pitch.",
-    "",
-    "Rules:",
-    "1. Do not start every subheadline with the product name.",
-    "2. Do not blurt product facts.",
-    "3. Do not use more than 1 or 2 product truths.",
-    "4. First acknowledge the persona's actual problem, then bring in the product.",
-    "5. The subheadline must not work unchanged for another persona.",
-    "6. The headline and subheadline must feel like they belong to the same ad.",
-    "",
-    "CTA RULES:",
-    "Use short CTAs only:",
-    "Learn More",
-    "Shop Now",
-    "Get Started",
-    "See How It Works",
-    "Check Eligibility",
-    "",
-    "LANGUAGE STYLE:",
-    "Write like a real Indian customer-facing brand.",
-    "Use simple English.",
-    "Light Roman Hindi is allowed only if natural.",
-    "Avoid fancy words and marketing cliches.",
-    "Avoid exaggerated urgency.",
-    "Do not use emojis.",
-    "Do not use em dashes.",
-    "Keep each headline and subheadline short enough for static ad design.",
-    "",
-    "FRAMEWORK RULES:",
-    "Do not ask me to choose PAS, BAB, FAB, or 4U.",
-    "Use them silently only as writing logic.",
-    "Do not mention framework names in output.",
-    "",
-    "GENERATION PROCESS:",
-    "After I give persona, format, concept angle, and count:",
-    "",
-    "Step 1: Find the selected persona in the Persona Mapping section.",
-    "Step 2: Create an internal ad idea for each variation before writing the copy.",
-    "Step 3: Write the headline from the persona context and problem.",
-    "Step 4: Write the subheadline continuing the same story.",
-    "Step 5: Use mapped product tags only as supporting material.",
-    "Step 6: Use the selected format and concept angle.",
-    "Step 7: Generate the requested number of ads.",
-    "Step 8: Be creative. Before writing each ad, think of fresh, specific angles."
+    "Final deliverable must be composed for a 4:5 portrait crop. Keep all important text, face, hands, and products inside the central safe area. The image may be generated larger, but it must remain clean after cropping to 1080×1350.",
+    "You generate ad copy JSON only. Return valid JSON with keys default_aspect_ratio and ads.",
+    "Each ads item must include format, headline_angle, awareness_stage, concept_angle, concept_structure, persona, and copy fields. Provide copy.EN, copy.HI, and copy.HINGLISH blocks when constraints.language includes them.",
+    "Use the attached/read product master doc as the single source of product truth; the JSON payload is only request metadata, format/persona guidance, concept selection, and schema control.",
+    "Derive benefits, proof, mechanisms, differentiators, exclusions, and priority hierarchy from the product master doc, not from memory or invented claims.",
+    "The headline itself must clearly signal weight loss directly or through an unmistakable proxy such as kg loss, fat loss, slimming, eating less, craving control for weight loss, or visible weight-loss progress. Support lines can add mechanism/proof, but cannot be the only place that makes the ad about weight loss.",
+    "Never include price in on-image copy fields. Do not use currency symbols or words like INR, price, only, discount, off, or MRP.",
+    "copy_requirements.concept_variation contains 3 pre-selected execution axes: audience_stage (who the reader is), concept_angle (the headline angle to open with), message_structure (how to shape the headline-support flow). Copy each .id into your response's awareness_stage, concept_angle, and concept_structure fields respectively. Use the .direction text of each to guide your copy approach.",
+    "Before writing, combine the active audience_stage.direction + concept_angle.direction + message_structure.direction into one internal brief. Write from the brief, not from the field labels.",
+    "Before writing headline, read copy_requirements.persona_specificity_layer for the active persona. If it includes tension_vocabulary, at least one tension_vocabulary anchor must be semantically present in the headline.",
+    "Follow copy_requirements.voice_constraints.universal and copy_requirements.voice_constraints.persona. Reject headlines that violate the specificity_floor or persona forbidden_tones.",
+    "Do not produce a headline whose grammatical skeleton matches any entry in skeleton_ban, even if the words are different.",
+    "If copy_requirements.hypothesis exists and type is not none, obey it as the controlled test.",
+    "If concept_variation includes optional guidance fields (hook_structure_guidance, proof_style_guidance, cta_voice_guidance, concept_structure_guidance, awareness_stage_guidance, concept_angle_guidance), follow them. Otherwise derive naturally from the persona.",
+    "Read copy_requirements.headline_architecture.template and .examples — the headline must follow that sentence structure, not just match the content angle. If the template asks for the full framework, compress it into one headline idea and move the rest to support.",
+    "Treat copy_requirements.headline_architecture.source and .variant as the binding headline frame for this ad. Do not switch to another headline frame, hook shape, or hypothesis structure just because it appears in the ban list, examples, persona text, or prior outputs.",
+    "Read copy_requirements.support_line_architecture.template and .examples — the support line must follow that sentence architecture. It must add the missing reason/proof/mechanism behind the headline, not default to a generic feature-list pattern.",
+    "Treat copy_requirements.support_line_architecture.variant as the binding support-line frame for this ad. Do not mirror or complete a headline shape that was not selected in the current copy_requirements.",
+    "If the headline is a question, the support line must not read like an FAQ or Q&A response. Do not open or structure support around Because, Yes, No, It can, You can, Many do, or The answer is; write a standalone proof/mechanism line that still reads as ad copy without the question.",
+    "Read copy_requirements.support_line_strategy.active — it tells you the support line's meaning job for the selected hypothesis/variant. Use support_line_strategy for meaning and support_line_architecture for sentence shape.",
+    "The already_used_ads_DO_NOT_REUSE list is a BAN LIST for deduplication only. Do not copy, imitate, adapt, or reference its headlines, support lines, skeletons, or angles. Treat it as forbidden output, not as examples."
   ],
   "system_prompt_format_rules": {
-    "HERO": [
-      "Meaning: The product is the main character.",
-      "Logic: persona problem -> product as clear solution -> practical benefit.",
-      "Job of the ad: Make the customer think: This is what I need.",
-      "Copy style: Direct, confident, product-first.",
-      "Required copy fields: headline, subheadline, cta",
-      "Max product truths: 3",
-      "Avoid: Do not make it sound like a generic brand poster. Think of a specific customer story or angle."
-    ],
-    "UGC": [
-      "Meaning: The ad should feel like it comes from a real customer or creator.",
-      "Logic: real-life moment -> relatable struggle -> product feels followable.",
-      "Job of the ad: Make the customer think: Someone like me has this exact problem.",
-      "Copy style: Casual, lived-in, conversational.",
-      "Required copy fields: headline, subheadline, cta",
-      "Max product truths: 2",
-      "Avoid: Do not invent fake names, exact results, or fake personal stories."
+    "BA": [
+      "For BA format only: never prefix copy with BEFORE:/AFTER: labels or Hindi equivalents.",
+      "For BA format only: write explicit split contrast copy. Use 2 or 4 bullets total; bullet 1/2 are left-side struggle state and bullet 3/4 are right-side fix or progress state. If using 2 bullets, bullet 1 is struggle and bullet 2 is fix."
     ],
     "TEST": [
-      "Meaning: The ad uses customer experience, proof, or result pattern as the main hook.",
-      "Job of the ad: Make the customer think: This has worked for people like me.",
-      "Copy style: Specific, believable, proof-led.",
-      "Required copy fields: headline, trust_line, cta",
-      "Max product truths: 1 proof + 1 reason",
-      "Avoid: Do not invent names, exact numbers, medical conditions, or direct quotes unless provided."
+      "For TEST format only: headline must read like a first-person review line suitable for a quote card, not generic highly-rated phrasing.",
+      "For TEST format only: we do not have real customer testimonials in the source material. Create a made-up but believable representative review line grounded only in product-doc claims, persona pain/desire, and safe outcomes. Do not imply it is a real named customer quote.",
+      "For TEST format only: attribution must be role/source-based without personal names and must not imply verification, certification, or a real collected testimonial. Use labels like representative user experience, routine feedback snapshot, or persona-based review note.",
+      "For TEST format only: avoid superficial praise such as 'amazing product', 'best ever', 'life-changing', or unbelievable before/after claims. The review should sound specific, modest, and plausible: routine fit, reduced cravings, easier adherence, homemade food, guided steps, or visible 15-day progress where supported by the product doc."
     ],
     "FEAT": [
-      "Meaning: Explain one important feature and why it matters.",
-      "Logic: feature -> why it matters -> customer benefit.",
-      "Job of the ad: Make the customer think: Now I understand how this helps.",
-      "Copy style: Clear, simple, educational, benefit-linked.",
-      "Required copy fields: headline, bullets (array of 3-4), cta",
-      "Max product truths: 1 main + 1 support",
-      "Avoid: Do not list features without explaining why they matter."
+      "For FEAT format only: make each bullet a different product feature."
     ],
-    "BA": [
-      "Meaning: The ad shows the shift from the customer's current struggle to a better state after following the product.",
-      "Job of the ad: Make the customer clearly see the transformation.",
-      "Copy style: Contrast-led, simple, believable.",
-      "Required copy fields: headline, bullets (array of 4: 2 left-side struggle, 2 right-side shift), cta",
-      "Max product truths: 2",
-      "Avoid: Do not promise guaranteed transformation or unrealistic visual results."
+    "HERO": [
+      "For HERO format only: follow the headline_architecture template and examples in copy_requirements. Use the assigned support_line_architecture template for the support line. Do not default to a feature-list skeleton."
+    ],
+    "UGC": [
+      "For UGC format only: follow the headline_architecture template and examples in copy_requirements. Use creator-like clarity for the support line, and follow the assigned support_line_architecture template."
     ]
   },
   "prompt_tail": {
     "support_target_map": {
-      "BA": "before-after shift",
-      "FEAT": "feature benefit",
+      "BA": "right-side shift",
+      "FEAT": "feature stack",
       "TEST": "trust line"
     },
-    "default_support_target": "subheadline",
+    "default_support_target": "support line",
     "lines": [
-      "Final output: Return valid JSON matching the response skeleton below. Each ad object must include a 'concept_angle' field identifying which concept angle was used. No extra keys, no disclaimers, no explanation."
-    ]
-  },
-  "response_skeleton": {
-    "_description": "Exact JSON skeleton the LLM must fill.",
-    "default": {
-      "default_aspect_ratio": "4:5",
-      "ads": [
-        {
-          "format": "{format}",
-          "persona": {
-            "persona_number": "<number>",
-            "persona_name": "<name>"
-          },
-          "copy": {
-            "EN": {
-              "headline": "<headline>",
-              "cta": "<cta>"
-            }
-          }
-        }
-      ]
-    },
-    "HERO": {
-      "copy": {
-        "EN": {
-          "headline": "<headline, signals benefit for this persona>",
-          "subheadline": "<subheadline explaining how the product helps this persona>",
-          "cta": "<your CTA>"
-        }
-      }
-    },
-    "UGC": {
-      "copy": {
-        "EN": {
-          "headline": "<headline, conversational and persona-specific>",
-          "subheadline": "<subheadline in creator voice>",
-          "cta": "<your CTA>"
-        }
-      }
-    },
-    "TEST": {
-      "copy": {
-        "EN": {
-          "headline": "<proof-led headline, believable customer experience>",
-          "trust_line": "<trust line reinforcing the result or credibility>",
-          "cta": "<your CTA>"
-        }
-      }
-    },
-    "FEAT": {
-      "copy": {
-        "EN": {
-          "headline": "<feature-connected headline>",
-          "bullets": [
-            "<bullet 1 linking feature to customer benefit>",
-            "<bullet 2>",
-            "<bullet 3>",
-            "<bullet 4>"
-          ],
-          "cta": "<your CTA>"
-        }
-      }
-    },
-    "BA": {
-      "copy": {
-        "EN": {
-          "headline": "<before-after contrast headline>",
-          "bullets": [
-            "<bullet 1: left-side struggle 1>",
-            "<bullet 2: left-side struggle 2>",
-            "<bullet 3: right-side shift 1>",
-            "<bullet 4: right-side shift 2>"
-          ],
-          "cta": "<your CTA>"
-        }
-      }
-    }
-  },
-  "concept_angle_definitions": {
-    "_description": "Concept angle rules dynamically injected.",
-    "all_rules": [
-      "Concept angle rules:",
-      "",
-      "1. Auto: Choose the best concept angle based on persona and format.",
-      "2. Pain point: Lead with the customer's struggle.",
-      "3. Desired outcome: Lead with the result or state the customer wants.",
-      "4. Social proof: Lead with customer proof, scale, testimonials, or result pattern.",
-      "5. Authority: Lead with credibility, expertise, or backing.",
-      "6. Story: Lead with a relatable customer moment or mini-narrative.",
-      "7. Curiosity: Lead with an interesting question or insight. Avoid clickbait.",
-      "8. Comparison: Lead with contrast against common failed methods.",
-      "9. Offer: Lead with the product, deal, guarantee, or buying proposition.",
-      "",
-      "Concept angle usage rules:",
-      "1. Use only one concept angle per batch.",
-      "2. The concept angle controls what the ad leads with.",
-      "3. The format controls how the ad is expressed.",
-      "4. The persona controls what must feel specific.",
-      "5. Do not make the copy sound like it is following a labeled framework."
+      "Return only valid JSON. No markdown. No extra text.",
+      "Return one ad only. You may return either a single ad object or an object with default_aspect_ratio and a one-item ads array.",
+      "Use the already-loaded product master doc as the source of truth.",
+      "Treat already_used_ads_DO_NOT_REUSE as a ban list for headline, {support_target}, skeleton, and persuasion angle.",
+      "PRE-WRITE CHECKLIST before drafting the headline: identify the one concrete persona tension (date, garment, people, body/life moment); confirm the planned headline contains at least one persona_specificity_layer.tension_vocabulary anchor when provided; confirm the planned headline skeleton does not match skeleton_ban; confirm the weight-loss signal is in the headline itself; if the headline could run for a completely different weight-loss brand with zero changes, rewrite it.",
+      "Follow copy_requirements.concept_variation, headline_architecture, support_line_architecture, and support_line_strategy together; if guidance conflicts, preserve the controlled hypothesis and make the line sound natural.",
+      "The current copy_requirements are the only active execution rules. Do not infer or reuse a different hypothesis, hook structure, sentence frame, or support pattern from already_used_ads_DO_NOT_REUSE or previous ads.",
+      "If hook_structure_override is present, the EN headline must visibly match it. For contrast_loop, use a clear but natural contrast word such as but, yet, still, without, before/after, or even with.",
+      "Final editor pass before JSON: rewrite the headline into a finished human ad sentence or natural ad question, usually 4-9 words, one central idea only, with clear weight-loss meaning inside the headline. Move mechanism/proof/timing details into support line or bullets.",
+      "Reject vague or incomplete headlines. Do not write lines like 'I finally made it', 'I finally lost some', 'Cravings spike but you still lose', or 'You quit again but this is guided' unless the missing object is made explicit as weight loss, fat loss, kg loss, a diet plan, hunger, cravings, or the specific routine.",
+      "The headline must be semantically complete: the reader should understand who/what is acting, what is happening, and how it relates to weight loss without needing the support line to decode it.",
+      "Support line must be short ad copy, not a blogpost or FAQ answer: one compact sentence, ideally 12-22 words, maximum 24 words for HERO/UGC. Do not use multiple sentences. Do not start support with yes/no answer phrasing like 'Yes:' or 'No:', or conversational answer phrasing like 'Because', 'It can', or 'You can'.",
+      "Use supporting copy to make the headline believable and complete: simple routine, 5-minute ease, doctor-formulated proof, 70,000+ users, 15-day progress, cravings/fullness, digestion support, or less sacrifice.",
+      "Support line must add new payload after the headline and prove the exact headline relationship. If it could sit under any headline, rewrite it with the matching persona friction, mechanism, proof, or result detail from the master doc.",
+      "Reject your own first draft if the headline reads like a generic AI slogan, a keyword list, or a paraphrase of supporting copy.",
+      "Do not return framework labels, rationale, or explanations."
     ]
   },
   "strict_schema_note": {
-    "intro": "STRICT_SCHEMA: Return JSON only. Do not include disclaimers or extra keys. The response for each ad must include a 'concept_angle' field.",
-    "persona_fields_en": "persona must be an object with only number and name.",
-    "language_extension": "For ALL mode: copy must include EN (English), HI (Hindi), and HINGLISH (Roman Hindi mixed with English) blocks.",
+    "intro": "STRICT_SCHEMA: Return JSON only. Do not include copy_requirements, disclaimers, or extra keys.",
+    "persona_fields_en": "persona must be an object with number, name, pain_en, desire_en, friction_en, proof_needed_en, tone_cue_en, pain_hi, desire_hi, friction_hi, proof_needed_hi, tone_cue_hi.",
+    "language_extension": "When constraints.language includes HINGLISH, also include pain_hinglish, desire_hinglish, friction_hinglish, proof_needed_hinglish, tone_cue_hinglish in persona.",
     "format_closure_template": "For {fmt} format, copy.EN, copy.HI, and copy.HINGLISH (when requested) must contain only: {copy_fields}.",
     "field_map": {
-      "HERO": "headline, subheadline, cta",
-      "UGC": "headline, subheadline, cta",
-      "BA": "headline, bullets, cta",
-      "FEAT": "headline, bullets, cta",
-      "TEST": "headline, trust_line, cta"
+      "HERO": "headline, support_line, cta",
+      "UGC": "headline, support_line, cta",
+      "BA": "headline, bullets (list), cta",
+      "FEAT": "headline, bullets (list), cta",
+      "TEST": "headline, attribution, trust_line, cta"
     },
     "default_fields": "headline, cta"
+  },
+  "copy_requirements": {
+    "must_mention": "The headline itself must clearly signal weight loss directly or through an unmistakable proxy such as kg loss, fat loss, slimming, eating less, craving control for weight loss, or visible weight-loss progress. Support lines can add mechanism/proof, but cannot be the only place that makes the ad about weight loss.",
+    "variation_rule": "Do not reuse the same headline skeleton, support-line skeleton, or persuasion angle as other ads in the same format for this batch.",
+    "hierarchy_rule": "Use the assigned concept_structure flow (four_us, pas, bab, fab, pab) across headline and support line, not inside the headline alone. Headline = short hook/meaning; support = missing proof/mechanism/context. Do not output framework labels. Derive actual headline/support from product master doc content.",
+    "format_specific": {
+      "HERO": "Keep headline as one clean, finished ad sentence with clear weight-loss meaning. Support line must follow the assigned support_line_architecture template and complete the headline with proof, mechanism, or practical ease.",
+      "UGC": "Creator-like tone is allowed, but keep headline/support grounded in master-doc facts and compliance.",
+      "BA": "Split copy: left bullets are struggle state; right bullets are progress/routine shift.",
+      "TEST": "Quote-like representative headline; attribution + trust line must be role/source-based, non-personal, and must not imply a real verified testimonial.",
+      "FEAT": "Bullets must be distinct product features (LLM decides which features from master doc)."
+    },
+    "default_format_rule": "Respect format-specific structure; no lane enforcement."
+  },
+  "product_doc_bootstrap_prompt": "Read the attached product master doc completely. For every following ad-copy request in this same OpenCode session, use that doc as the single source of product truth for benefits, proof, mechanism, differentiators, exclusions, and priority hierarchy. Do not rewrite, summarize, modify, or ignore the doc. The following messages will provide only ad format/persona/concept/schema instructions. Return only valid JSON: {\"status\":\"product_doc_loaded\"}.",
+  "format_copy_keywords": {
+    "_description": "Keywords used to filter which playbook rules are copy-relevant. Rules matching ANY keyword per format are included in the LLM payload.",
+    "HERO": [
+      "copy",
+      "headline",
+      "support",
+      "cta",
+      "text budget",
+      "minimum",
+      "persona"
+    ],
+    "BA": [
+      "copy",
+      "headline",
+      "bullet",
+      "cta",
+      "text budget",
+      "minimum",
+      "persona",
+      "before",
+      "after",
+      "outcome"
+    ],
+    "TEST": [
+      "copy",
+      "headline",
+      "quote",
+      "attribution",
+      "trust",
+      "cta",
+      "text budget",
+      "minimum",
+      "persona"
+    ],
+    "FEAT": [
+      "copy",
+      "headline",
+      "bullet",
+      "feature",
+      "cta",
+      "text budget",
+      "minimum",
+      "persona"
+    ],
+    "UGC": [
+      "copy",
+      "headline",
+      "support",
+      "cta",
+      "creator",
+      "text budget",
+      "minimum",
+      "persona"
+    ]
+  },
+  "format_visual_keywords": {
+    "_description": "Keywords that identify visual rules. Rules matching ANY keyword are excluded from the copy payload sent to the LLM.",
+    "blocklist": [
+      "split-screen",
+      "side:",
+      "tone",
+      "energy",
+      "product fidelity",
+      "redraw",
+      "packaging",
+      "visual",
+      "background",
+      "environment",
+      "context-shift",
+      "time-of-day",
+      "choice-architecture",
+      "posture",
+      "frame",
+      "divider",
+      "image"
+    ]
+  },
+  "format_defaults": {
+    "_description": "Default concept_structure per format (used when no hypothesis overrides it).",
+    "structure_by_fmt": {
+      "HERO": "pab",
+      "BA": "bab",
+      "TEST": "pas",
+      "FEAT": "fab",
+      "UGC": "pas"
+    },
+    "default_concept_angle": "desired_outcome"
+  },
+  "persona_mapping": {
+    "_description": "Maps persona_seeds.json fields → LLM payload fields. Each entry defines how a seed field is transformed into a payload field.",
+    "seed_to_payload": {
+      "pain": {
+        "field": "pain_points",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "desire": {
+        "field": "core_message",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "friction": {
+        "field": "objections",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "proof": {
+        "field": "trust_anchors",
+        "wrap_list": true,
+        "prefix": null
+      },
+      "tone": {
+        "field": "english_ready",
+        "wrap_list": true,
+        "prefix": "Tone cue: "
+      }
+    },
+    "persona_fallbacks": {
+      "pain": "Daily routine feels heavy and hard to sustain.",
+      "desire": "A practical routine that feels easy to follow.",
+      "friction": "Past plans felt too strict and difficult to maintain.",
+      "proof": "Needs clear structure and believable support.",
+      "tone": "practical and confidence-building"
+    },
+    "static_fields": {
+      "trigger_scenarios": [],
+      "language_bank": [],
+      "grounded_mechanism_map": [],
+      "how_kit_solves": []
+    },
+    "hindi_ready_default": "टोन संकेत: सरल, भरोसेमंड, व्यावहारिक"
+  },
+  "cta_variants": {
+    "_description": "CTA text options per language per format. Used by enforce_unique_ctas to assign unique CTAs.",
+    "EN": {
+      "HERO": [
+        "Start Today",
+        "See The 15-Day Plan",
+        "Begin The Kit",
+        "See The Routine",
+        "Check Your Fit",
+        "View The Steps",
+        "Try The 15-Day Plan",
+        "See How It Works",
+        "Check The Food Rules",
+        "View Coach Support",
+        "Start The Routine",
+        "See The Kit Steps",
+        "Check Eligibility",
+        "See The System",
+        "View The Plan",
+        "Start With Guidance",
+        "See If It Suits You",
+        "Check The Routine",
+        "View The 15-Day Routine",
+        "Start The 15-Day Routine",
+        "See The Guided Plan",
+        "Check The Plan",
+        "View The Weight-Loss Steps",
+        "See The Home-Food Plan",
+        "Start The Kit Routine",
+        "Check The Coach Plan",
+        "View The Daily Steps",
+        "See Your Next Step",
+        "Check If You’re Eligible",
+        "Chat With a Coach"
+      ],
+      "BA": [
+        "See The Shift",
+        "Start The Reset",
+        "View The Change"
+      ],
+      "TEST": [
+        "See The Proof",
+        "Read The Routine",
+        "Start With Proof"
+      ],
+      "FEAT": [
+        "View Kit Steps",
+        "See The Protocol",
+        "Check The Steps"
+      ],
+      "UGC": [
+        "See My Routine",
+        "Watch The Routine",
+        "Try The Steps"
+      ]
+    },
+    "HI": {
+      "HERO": [
+        "आज शुरू करें",
+        "15 दिन का प्लान देखें",
+        "किट शुरू करें"
+      ],
+      "BA": [
+        "बदलाव देखें",
+        "रीसेट शुरू करें",
+        "फर्क देखें"
+      ],
+      "TEST": [
+        "प्रमाण देखें",
+        "दिनचर्या पढ़ें",
+        "भरोसे से शुरू करें"
+      ],
+      "FEAT": [
+        "किट कदम देखें",
+        "प्रोटोकॉल देखें",
+        "कदम देखें"
+      ],
+      "UGC": [
+        "मेरी दिनचर्या देखें",
+        "दिनचर्या देखें",
+        "कदम अपनाएं"
+      ]
+    }
+  },
+  "testimonial_headline_guidance": {
+    "_description": "Regex patterns and fallback strings for ensure_testimonial_headline. One entry per language.",
+    "EN": {
+      "first_person_pattern": "\\b(i|i'm|i've|i'd|my|me)\\b",
+      "weight_pattern": "\\b(weight|obesity|excess\\s*weight|kg|kilo)\\b",
+      "suffix": "It finally fit my weight-loss routine.",
+      "desire_template": "\"I finally found {desire_phrase} for my weight-loss goal.\"",
+      "fallback": "\"I finally found a routine I can follow for weight loss every day.\"",
+      "desire_field": "desire_en"
+    },
+    "HI": {
+      "first_person_pattern": "(मैं|मेरी|मेरा|मुझे|मैंने)",
+      "weight_pattern": "(वजन|मोटापा|किलो|kg)",
+      "suffix": "यह मेरे वजन घटाने के लिए काम आया।",
+      "desire_template": "\"मुझे आखिर {desire_phrase} वाला रूटीन मिला जो वजन घटाने में मदद करता है।\"",
+      "fallback": "\"मुझे आखिर ऐसा रूटीन मिला जिसे मैं रोज निभा सकूं और वजन घटा सकूं।\"",
+      "desire_field": "desire_hi"
+    }
+  },
+  "testimonial_attribution_variants": {
+    "_description": "Attribution text variants per language for ensure_testimonial_attribution. Picked deterministically via hash.",
+    "EN": [
+      "Representative routine feedback",
+      "15-day adherence feedback snapshot",
+      "Persona-based obesity-care review note",
+      "Representative weight-loss routine review",
+      "Structured-plan feedback example",
+      "Representative user experience note"
+    ],
+    "HI": [
+      "प्रतिनिधि रूटीन फीडबैक",
+      "15-दिन adherence फीडबैक स्नैपशॉट",
+      "पर्सोना-आधारित obesity-care रिव्यू नोट",
+      "प्रतिनिधि वजन-घटाने रूटीन रिव्यू",
+      "स्ट्रक्चर्ड-प्लान फीडबैक उदाहरण",
+      "प्रतिनिधि यूजर अनुभव नोट"
+    ]
+  },
+  "feature_templates": {
+    "_description": "Feature support lines per feature key. Used in build_template_copy for BA format bullets and HERO/UGC support lines.",
+    "structured_system": {
+      "EN": "Structured system for consistent weight-loss progress.",
+      "HI": "लगातार वजन-सपोर्ट के लिए व्यवस्थित सिस्टम।"
+    },
+    "cravings_down": {
+      "EN": "Helps reduce cravings for better daily weight management.",
+      "HI": "बेहतर दैनिक वजन-प्रबंधन के लिए लालसा कम करने में सहायक।"
+    },
+    "guided_weight_loss": {
+      "EN": "Guided morning and night steps for visible results.",
+      "HI": "दिखने वाले परिणामों के लिए निर्देशित सुबह-रात के कदम।"
+    },
+    "natural_ingredients": {
+      "EN": "Natural Ayurvedic formulation without side effects.",
+      "HI": "बिना दुष्प्रभाव के प्राकृतिक आयुर्वेदिक फॉर्मूलेशन।"
+    },
+    "easy_routine": {
+      "EN": "Simple routine that fits into daily life easily.",
+      "HI": "रोज़मर्रा की ज़िंदगी में आसानी से फिट होने वाली सरल दिनचर्या।"
+    },
+    "_default": {
+      "EN": "Structured system for consistent progress.",
+      "HI": "लगातार प्रगति के लिए व्यवस्थित सिस्टम।"
+    }
+  },
+  "template_copy_cta_map": {
+    "_description": "Single CTA per format for template copy (build_template_copy). Not the same as cta_variants (which are used by enforce_unique_ctas).",
+    "HERO": {
+      "EN": "Start Today",
+      "HI": "आज शुरू करें"
+    },
+    "BA": {
+      "EN": "See The Shift",
+      "HI": "बदलाव देखें"
+    },
+    "TEST": {
+      "EN": "See The Proof",
+      "HI": "प्रमाण देखें"
+    },
+    "FEAT": {
+      "EN": "View Kit Steps",
+      "HI": "किट कदम देखें"
+    },
+    "UGC": {
+      "EN": "See My Routine",
+      "HI": "मेरी दिनचर्या देखें"
+    },
+    "_default": {
+      "EN": "Start Today",
+      "HI": "आज शुरू करें"
+    }
+  },
+  "template_copy_format_overrides": {
+    "_description": "Format-specific overrides in build_template_copy. BA/FEAT/UGC override the generated template headline. UGC overrides support line. FEAT has hardcoded bullets. TEST has headline + attribution + trust_line.",
+    "BA": {
+      "headline": {
+        "EN": "A clear kit routine beats random dieting.",
+        "HI": "साफ किट दिनचर्या अनियमित डाइटिंग से बेहतर है।"
+      }
+    },
+    "FEAT": {
+      "headline": {
+        "EN": "Three kit steps support 15-day weight loss.",
+        "HI": "तीन किट कदम 15 दिन के वजन-सपोर्ट में मदद करते हैं।"
+      },
+      "bullets": {
+        "EN": [
+          "Morning OK Liquid helps reduce hunger and random snacking for weight loss.",
+          "Night Tablet + Powder support digestion and lighter mornings in obesity routine.",
+          "Built for visible 15-day weight-loss support without crash-diet pressure."
+        ],
+        "HI": [
+          "सुबह का OK Liquid वजन घटाने के लिए भूख और अचानक खाने की आदत कम करने में सहायक है।",
+          "रात का Tablet + Powder मोटापा-नियंत्रण दिनचर्या में पाचन-सपोर्ट देता है।",
+          "कठोर डाईट दबाव के बिना 15 दिन के वजन-सपोर्ट के लिए बनाया गया।"
+        ]
+      }
+    },
+    "UGC": {
+      "headline": {
+        "EN": "Late-night cravings can feel easier to control.",
+        "HI": "रात की लालसा नियंत्रित करना आसान लग सकता है।"
+      },
+      "support_override": {
+        "EN": "A simple first step helps keep late-night weight-loss control practical.",
+        "HI": "एक सरल पहला कदम रात के वजन-नियंत्रण को व्यावहारिक रखता है।"
+      }
+    },
+    "TEST": {
+      "headline": {
+        "EN": "I trusted the 15-day kit because the steps felt clear for weight loss.",
+        "HI": "मैंने 15 दिन की किट पर भरोसा किया क्योंकि वजन-घटाने के कदम साफ लगे।"
+      },
+      "attribution": {
+        "EN": "Doctor-formulated Ayurvedic obesity and weight-loss protocol",
+        "HI": "डॉक्टर-फॉर्मुलेटेड आयुर्वेदिक मोटापा और वजन-घटाने का प्रोटोकॉल"
+      },
+      "trust_line": {
+        "EN": "Structured morning-night steps for visible weight-loss progress and obesity control.",
+        "HI": "सुबह-रात के स्पष्ट कदमों से वजन घटाने और मोटापा नियंत्रण का भरोसेमंड सपोर्ट।"
+      }
+    }
+  },
+  "template_copy_en_fallbacks": {
+    "_description": "English fallback values for build_template_copy when persona fields are empty.",
+    "tone": "Practical, empathetic, and confidence-building"
+  },
+  "template_copy_hi_fallbacks": {
+    "_description": "Hindi fallback values for build_template_copy when persona fields are empty.",
+    "pain": "रोज की वजन-घटाने की दिनचर्या टूटना आसान है।",
+    "desire": "ऐसा आसान सिस्टम चाहिए जो रोज निभ सके।",
+    "friction": "पहले के प्लान बहुत सख्त और मुश्किल थे।",
+    "proof": "साफ कदम, भरोसेमंड सपोर्ट और व्यावहारिक प्रमाण चाहिए।",
+    "tone": "सरल, भरोसेमंड, और व्यावहारिक"
+  },
+  "template_copy_headline_sentence": {
+    "_description": "Template string for _template_copy (used by template_headline). {primary_key}, {secondary_key}, {pain} are filled at runtime.",
+    "EN": "A clear {primary_key} system for {secondary_key} that helps manage {pain}.",
+    "HI": "{primary_key} का {secondary_key} सिस्टम जो {pain} को संभालने में मदद करता है।"
+  },
+  "template_copy_support_sentence": {
+    "_description": "Template string for template_support in build_template_copy. {primary_key}, {secondary_key} are filled at runtime.",
+    "EN": "Simple steps rooted in {primary_key} and {secondary_key}.",
+    "HI": "सरल कदम, जो {primary_key} और {secondary_key} पर आधारित हैं।"
   }
 }

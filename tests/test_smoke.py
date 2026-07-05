@@ -895,6 +895,43 @@ def test_org_system() -> int:
     failed += ok(result2.get("sent") is False, "send_invite_email no provider: sent=false")
     failed += ok(result2.get("provider") == "none", "send_invite_email no provider: provider=none")
 
+    # 27. /invite/{token} route serves invite.html
+    resp = client.get("/invite/test-token-here")
+    failed += ok(resp.status_code == 200, "/invite/{token} returns 200")
+    failed += ok("text/html" in resp.headers.get("content-type", ""), "/invite/{token} returns HTML")
+
+    # 28. GET /api/config/effective without auth returns 401
+    resp = client.get("/api/config/effective")
+    failed += ok(resp.status_code == 401, "GET /api/config/effective without auth returns 401")
+
+    # 29. GET /api/config/effective with org_id param without auth returns 401
+    resp = client.get("/api/config/effective?org_id=org_test")
+    failed += ok(resp.status_code == 401, "GET /api/config/effective?org_id= without auth returns 401")
+
+    # 30. invite accept individual_member_config copies org config (not blank)
+    from dashboard.backend.services.user_config import _extract_flat_from_new_schema
+    test_org_doc = {
+        "config_id": "cfg_test_org",
+        "owner_type": "org",
+        "owner_id": "org_test",
+        "files": {
+            "product_master_doc": {"content": "org product doc", "content_type": "text/plain"},
+            "starting_prompt": {"content": "org starting prompt", "content_type": "text/plain"},
+            "copy_prompt_templates": {"content": '{"org": true}', "content_type": "application/json"},
+            "persona_seeds": {"content": '["org"]', "content_type": "application/json"},
+            "copy_architecture": {"content": '{"org": true}', "content_type": "application/json"},
+            "background_variant": {"content": '{"org": true}', "content_type": "application/json"},
+            "prompt_assembler_templates": {"content": '{"org": true}', "content_type": "application/json"},
+            "conversion_916_prompt": {"content": "org conversion", "content_type": "text/plain"},
+        },
+    }
+    extracted = _extract_flat_from_new_schema(test_org_doc)
+    failed += ok(extracted["product_master_doc"] == "org product doc", "extract_flat preserves product_master_doc")
+    failed += ok(extracted["starting_prompt"] == "org starting prompt", "extract_flat preserves starting_prompt")
+    failed += ok(all(extracted[k] for k in extracted), "No blank values in extracted org config")
+
+    # 31. (reserved for future DB-dependent test)
+
     if db_available():
         # 16. Org creation with public email domain (requires mocking user with public email)
         # Simulate via actual flow with a test user
