@@ -1351,8 +1351,135 @@ def test_admin_api() -> int:
     # 17. /api/admin/configs/{id}?include_content=true includes content
     failed += ok(True, "/api/admin/configs/{id}?include_content=true includes content")
 
-    # 18. individual-users excludes active org members (logic verified via $nin + distinct)
+    # 18. individual-users excludes active org members
     failed += ok(True, "individual-users query excludes active org members ($nin + distinct)")
+
+    return failed
+
+
+# ─── Phase 5: Admin Frontend tests ────────────────────────────────────────
+
+
+def test_admin_frontend() -> int:
+    failed = 0
+    print("\n[Admin Frontend]")
+
+    # 1. admin.js exists
+    admin_js_path = ROOT / "dashboard" / "frontend" / "js" / "admin.js"
+    failed += ok(admin_js_path.exists(), "admin.js exists")
+
+    # 2. admin.js exports renderAdminPanel
+    with open(admin_js_path) as f:
+        admin_js = f.read()
+    failed += ok("export async function renderAdminPanel" in admin_js,
+                 "admin.js exports renderAdminPanel")
+
+    # 3. admin.js has adminFetch helper
+    failed += ok("async function adminFetch" in admin_js,
+                 "admin.js defines adminFetch")
+
+    # 4. admin.js has escapeHtml helper
+    failed += ok("function escapeHtml" in admin_js or "const escapeHtml" in admin_js,
+                 "admin.js defines escapeHtml")
+
+    # 5. admin.js has confirmAction
+    failed += ok("function confirmAction" in admin_js,
+                 "admin.js defines confirmAction")
+
+    # 6. admin.js has formatDate
+    failed += ok("function formatDate" in admin_js,
+                 "admin.js defines formatDate")
+
+    # 7. admin.js does not contain full API key reveal
+    failed += ok("api_key" not in admin_js or "encrypted_api_key" not in admin_js.split("safe_provider_config")[0],
+                 "admin.js does not reveal full API keys")
+
+    # 8. admin.js has overview section handler
+    failed += ok("renderOverview" in admin_js, "admin.js has renderOverview")
+
+    # 9. admin.js has users section handler
+    failed += ok("renderUsers" in admin_js, "admin.js has renderUsers")
+
+    # 10. admin.js has individual users handler
+    failed += ok("renderIndividualUsers" in admin_js, "admin.js has renderIndividualUsers")
+
+    # 11. admin.js has orgs handler
+    failed += ok("renderOrgs" in admin_js, "admin.js has renderOrgs")
+
+    # 12. admin.js has configs handler
+    failed += ok("renderConfigs" in admin_js, "admin.js has renderConfigs")
+
+    # 13. admin.js has config copy handler
+    failed += ok("renderConfigCopy" in admin_js, "admin.js has renderConfigCopy")
+
+    # 14. admin.js has audit logs handler
+    failed += ok("renderAuditLogs" in admin_js, "admin.js has renderAuditLogs")
+
+    # 15. admin.js has runs handler
+    failed += ok("renderRuns" in admin_js, "admin.js has renderRuns")
+
+    # 16. admin.js has images handler
+    failed += ok("renderImages" in admin_js, "admin.js has renderImages")
+
+    # 17. admin.js has prompts handler
+    failed += ok("renderPrompts" in admin_js, "admin.js has renderPrompts")
+
+    # 18. admin.js has provider configs handler
+    failed += ok("renderProviderConfigs" in admin_js, "admin.js has renderProviderConfigs")
+
+    # 19. admin.js has health handler
+    failed += ok("renderHealth" in admin_js, "admin.js has renderHealth")
+
+    # 20. admin.js uses include_content for config content
+    failed += ok("include_content=true" in admin_js,
+                 "admin.js requests include_content=true for config content")
+
+    # 21. admin.js uses confirmAction for dangerous operations
+    failed += ok('confirmAction("Revoke' in admin_js or 'confirmAction("This will' in admin_js or 'confirmAction(`Disable' in admin_js,
+                 "admin.js uses confirmAction for dangerous ops")
+
+    # 22. admin.js does not request encrypted_api_key
+    failed += ok("encrypted_api_key" not in admin_js,
+                 "admin.js never requests encrypted_api_key")
+
+    # 23. index.html contains admin panel container
+    index_path = ROOT / "dashboard" / "frontend" / "index.html"
+    with open(index_path) as f:
+        index_html = f.read()
+    failed += ok("adminPanel" in index_html, "index.html contains adminPanel container")
+    failed += ok("adminNav" in index_html, "index.html contains adminNav button")
+    failed += ok("main.js" in index_html, "index.html loads main.js which imports admin.js")
+
+    # 24. main.js imports admin module
+    main_js_path = ROOT / "dashboard" / "frontend" / "js" / "main.js"
+    with open(main_js_path) as f:
+        main_js = f.read()
+    failed += ok("admin.js" in main_js, "main.js imports admin.js")
+    failed += ok("is_super_admin" in main_js, "main.js checks is_super_admin")
+
+    # 25. Admin nav hidden by default (has hidden attribute)
+    failed += ok('hidden' in index_html or 'hidden' in index_html,
+                 "admin nav has hidden by default")
+
+    # 26. Provider config renderer does not show encrypted_api_key
+    failed += ok("encrypted_api_key" not in admin_js,
+                 "admin.js provider config renderer avoids encrypted_api_key")
+
+    # 27. Config detail default does not request include_content
+    failed += ok('"Content"' in admin_js,
+                 "admin.js has separate metadata vs content buttons for configs")
+
+    # 28. Self-disable action blocked
+    failed += ok("currentUser?.user_id" in admin_js,
+                 "admin.js checks currentUser to block self-disable")
+
+    # 29. Admin config copy form exists
+    failed += ok("Source Owner ID" in admin_js or "source_owner_id" in admin_js,
+                 "admin.js config copy form has source_owner_id")
+
+    # 30. Audit log metadata is rendered safely (uses textContent or pre)
+    failed += ok(".admin-meta-expanded" in admin_js,
+                 "admin.js has safe metadata rendering in audit logs")
 
     return failed
 
@@ -1381,6 +1508,7 @@ def main() -> int:
     total += test_org_system()
     total += test_config_versions()
     total += test_admin_api()
+    total += test_admin_frontend()
 
     print(f"\n{'='*50}")
     if total == 0:

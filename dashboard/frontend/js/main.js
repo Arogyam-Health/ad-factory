@@ -633,6 +633,37 @@ initAuth().then(() => {
   initAgentStatus();
   import("./org.js").then(mod => mod.renderOrgPanel());
   import("./config.js").then(mod => mod.renderConfigPanel());
+  import("./auth.js").then(mod => {
+    const user = mod.getAuthUser();
+    const adminNav = document.getElementById("adminNav");
+    const adminPanel = document.getElementById("adminPanel");
+    if (user && user.is_super_admin) {
+      if (adminNav) { adminNav.hidden = false; adminNav.style.display = ""; }
+      if (adminPanel) adminPanel.hidden = false;
+    }
+  });
+});
+
+document.getElementById("adminNav")?.addEventListener("click", () => {
+  const panel = document.getElementById("adminPanel");
+  if (!panel) return;
+  const orgPanel = document.getElementById("orgPanel");
+  const configPanel = document.getElementById("configPanel");
+  const visible = panel.hidden;
+  panel.hidden = !visible;
+  if (!visible) {
+    if (orgPanel) orgPanel.style.display = "none";
+    if (configPanel) configPanel.style.display = "none";
+    return;
+  }
+  if (orgPanel) orgPanel.style.display = "";
+  if (configPanel) configPanel.style.display = "";
+});
+
+window.addEventListener("hashchange", () => {
+  if (window.location.hash.startsWith("#admin/")) {
+    import("./admin.js").then(mod => mod.renderAdminPanel());
+  }
 });
 
 Promise.all([initDefaults(), loadAndRenderRuns()]).catch((err) => setStatus(String(err)));
