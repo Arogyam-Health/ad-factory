@@ -7682,6 +7682,10 @@ app.include_router(org_router)
 app.include_router(invite_router)
 app.include_router(config_router)
 
+# ── Admin routes ─────────────────────────────────────────────────────────────
+from dashboard.backend.admin.admin_routes import router as admin_router
+app.include_router(admin_router)
+
 # ── Public generic config endpoints ─────────────────────────────────────────
 
 

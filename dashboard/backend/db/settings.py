@@ -59,6 +59,9 @@ class Settings:
     cloudinary_api_secret: str = field(default_factory=lambda: os.getenv(
         "CLOUDINARY_API_SECRET", ""
     ))
+    super_admin_emails: str = field(default_factory=lambda: os.getenv(
+        "SUPER_ADMIN_EMAILS", ""
+    ))
 
     @property
     def is_production(self) -> bool:

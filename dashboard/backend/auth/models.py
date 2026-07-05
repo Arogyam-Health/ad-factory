@@ -24,6 +24,7 @@ class UserDocument(BaseModel):
     avatar_url: str = ""
     is_active: bool = True
     is_admin: bool = False
+    is_super_admin: bool = False
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
 

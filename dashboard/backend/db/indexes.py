@@ -14,6 +14,8 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([("email", ASCENDING)], unique=True, sparse=True),
         IndexModel([("google_id", ASCENDING)], unique=True, sparse=True),
         IndexModel([(FIELD_CREATED_AT, DESCENDING)]),
+        IndexModel([("is_super_admin", ASCENDING)], sparse=True),
+        IndexModel([("is_active", ASCENDING)]),
     ],
     COLL_AUTH_IDENTITIES: [
         IndexModel([("provider", ASCENDING), ("provider_user_id", ASCENDING)], unique=True),

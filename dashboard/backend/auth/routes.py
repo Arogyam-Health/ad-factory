@@ -5,6 +5,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
+from dashboard.backend.admin.admin_auth import bootstrap_super_admin
+from dashboard.backend.db.client import get_sync_db
+from dashboard.backend.db.collections import COLL_USERS
 from dashboard.backend.auth.service import (
     create_session,
     create_user_from_google,
@@ -24,12 +27,15 @@ router = APIRouter()
 
 @router.get("/api/auth/me")
 def auth_me(user: dict[str, Any] = Depends(require_user_dependency)) -> dict[str, Any]:
+    if user.get("is_active") is False:
+        raise HTTPException(status_code=401, detail="Account is disabled")
     return {
         "user_id": user["user_id"],
         "email": user.get("email", ""),
         "display_name": user.get("display_name", ""),
         "avatar_url": user.get("avatar_url", ""),
         "is_admin": user.get("is_admin", False),
+        "is_super_admin": user.get("is_super_admin", False),
     }
 
 
@@ -73,6 +79,8 @@ def auth_google_callback(code: str = Query(...)):
     else:
         user = create_user_from_google(google_id, email, display_name, avatar_url)
         user_id = user["user_id"]
+
+    bootstrap_super_admin(get_sync_db()[COLL_USERS].find_one({"user_id": user_id}) or {})
 
     session_token = create_session(user_id)
     response = RedirectResponse(url=settings.frontend_origin)
