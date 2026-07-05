@@ -14,7 +14,7 @@ from dashboard.backend.db.collections import (
 )
 from fastapi import HTTPException
 
-from dashboard.backend.services.user_config import get_user_config
+# Lazy imports inside function bodies to avoid circular imports with user_config.py
 
 # ───────────────────────────────────────────────────────────────────────────────────────────────
 # ORG MODEL DEFINITIONS - Essential for Phase 1 foundation
@@ -34,7 +34,7 @@ PUBLIC_EMAIL_DOMAINS = {
 
 ORG_MODES = ("shared_org_config", "individual_member_config")
 
-ORG_ROLES = ("owner", "config_admin", "member")
+ORG_ROLES = ("owner", "config_admin", "creator")
 
 # ───────────────────────────────────────────────────────────────────────────────────────────────
 # CORE ORG FUNCTIONS - Basic Phase 1 implementation
@@ -64,35 +64,47 @@ def get_org_by_id(org_id: str) -> Optional[dict[str, Any]]:
     """Retrieve organization by ID."""
     if not org_id:
         return None
-    return get_sync_db()[COLL_ORGS].find_one({"org_id": org_id, "is_active": True})
+    try:
+        return get_sync_db()[COLL_ORGS].find_one({"org_id": org_id, "is_active": True})
+    except Exception:
+        return None
 
 
 def get_org_by_domain(domain: str) -> Optional[dict[str, Any]]:
     """Retrieve organization by domain (lowercase)."""
     if not domain:
         return None
-    return get_sync_db()[COLL_ORGS].find_one({"domain": domain.lower(), "is_active": True})
+    try:
+        return get_sync_db()[COLL_ORGS].find_one({"domain": domain.lower(), "is_active": True})
+    except Exception:
+        return None
 
 
 def get_user_org_membership(user_id: str, org_id: str) -> Optional[dict[str, Any]]:
     """Get user's active membership in a specific organization."""
     if not user_id or not org_id:
         return None
-    return get_sync_db()[COLL_ORG_MEMBERS].find_one({
-        "user_id": user_id,
-        "org_id": org_id,
-        "status": "active",
-    })
+    try:
+        return get_sync_db()[COLL_ORG_MEMBERS].find_one({
+            "user_id": user_id,
+            "org_id": org_id,
+            "status": "active",
+        })
+    except Exception:
+        return None
 
 
 def get_user_org_memberships(user_id: str) -> list[dict[str, Any]]:
     """Get all active org memberships for a user."""
     if not user_id:
         return []
-    return list(get_sync_db()[COLL_ORG_MEMBERS].find({
-        "user_id": user_id,
-        "status": "active",
-    }))
+    try:
+        return list(get_sync_db()[COLL_ORG_MEMBERS].find({
+            "user_id": user_id,
+            "status": "active",
+        }))
+    except Exception:
+        return []
 
 
 def get_user_default_org(user_id: str) -> Optional[dict[str, Any]]:
@@ -115,10 +127,13 @@ def get_org_memberships(org_id: str) -> list[dict[str, Any]]:
     """Get all active memberships for an organization."""
     if not org_id:
         return []
-    return list(get_sync_db()[COLL_ORG_MEMBERS].find({
-        "org_id": org_id,
-        "status": "active",
-    }))
+    try:
+        return list(get_sync_db()[COLL_ORG_MEMBERS].find({
+            "org_id": org_id,
+            "status": "active",
+        }))
+    except Exception:
+        return []
 
 
 def has_custom_config(user_id: str, org_id: Optional[str] = None) -> bool:
@@ -201,15 +216,15 @@ _ORG_ROLE_PERMISSIONS = {
         "can_view_org_images": True,
         "can_view_org_audit": False,
     },
-    "member": {
+    "creator": {
         "can_manage_org": False,
         "can_invite_members": False,
         "can_remove_members": False,
         "can_change_roles": False,
         "can_edit_org_config": False,
         "can_generate_ads": True,
-        "can_view_org_runs": True,
-        "can_view_org_images": True,
+        "can_view_org_runs": False,
+        "can_view_org_images": False,
         "can_view_org_audit": False,
     },
 }
@@ -218,6 +233,40 @@ _ORG_ROLE_PERMISSIONS = {
 def get_role_permissions(role: str) -> dict[str, Any]:
     """Get permissions for a given role."""
     return _ORG_ROLE_PERMISSIONS.get(role, {}).copy()
+
+
+def can_user_edit_org_config(user_id: str, org_id: str) -> bool:
+    """Check if user has permission to edit org config."""
+    try:
+        membership = get_user_org_membership(user_id, org_id)
+        if not membership:
+            return False
+        return membership.get("role") in ("owner", "config_admin")
+    except Exception:
+        return False
+
+
+def require_org_member(user_id: str, org_id: str) -> dict[str, Any]:
+    """Return membership or raise 403 if user is not an active member."""
+    membership = get_user_org_membership(user_id, org_id)
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this organization",
+        )
+    return membership
+
+
+def require_org_role(user_id: str, org_id: str, allowed_roles: tuple[str, ...]) -> dict[str, Any]:
+    """Return membership or raise 403 if user lacks required role."""
+    membership = require_org_member(user_id, org_id)
+    role = membership.get("role", "")
+    if role not in allowed_roles:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Requires one of these roles: {', '.join(allowed_roles)}",
+        )
+    return membership
 
 # ───────────────────────────────────────────────────────────────────────────────────────────────
 # PUBLIC API EXPORTS
@@ -238,6 +287,9 @@ __all__ = [
     "write_audit_event",
     # Role permissions
     "get_role_permissions",
+    "can_user_edit_org_config",
+    "require_org_member",
+    "require_org_role",
 ]
 
 # Re-export commonly needed functions for convenience

@@ -78,6 +78,26 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([("updated_at", DESCENDING)]),
         IndexModel([(FIELD_USER_ID, ASCENDING)], sparse=True),
     ],
+    COLL_ORGS: [
+        IndexModel([("org_id", ASCENDING)], unique=True),
+        IndexModel([("domain", ASCENDING)], unique=True, partialFilterExpression={"is_active": True}),
+        IndexModel([("owner_user_id", ASCENDING)]),
+        IndexModel([("is_active", ASCENDING)]),
+    ],
+    COLL_ORG_MEMBERS: [
+        IndexModel([("membership_id", ASCENDING)], unique=True, sparse=True),
+        IndexModel([("org_id", ASCENDING), ("user_id", ASCENDING)], unique=True, partialFilterExpression={"status": "active"}),
+        IndexModel([("user_id", ASCENDING)]),
+        IndexModel([("org_id", ASCENDING)]),
+        IndexModel([("role", ASCENDING)]),
+    ],
+    COLL_AUDIT_LOGS: [
+        IndexModel([("event_id", ASCENDING)], unique=True, sparse=True),
+        IndexModel([("actor_user_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("org_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("target_type", ASCENDING), ("target_id", ASCENDING)]),
+        IndexModel([("event_type", ASCENDING), ("created_at", DESCENDING)]),
+    ],
 }
 
 

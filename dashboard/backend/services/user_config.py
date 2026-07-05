@@ -262,6 +262,67 @@ def resolve_effective_config_for_user(user_id: str) -> dict[str, Any]:
     return merged
 
 
+def resolve_effective_config(
+    user_id: str,
+    org_id: str | None = None,
+) -> dict[str, Any]:
+    """Resolve effective config for a user, optionally within an org context.
+
+    - If org_id is provided: verifies membership, then returns org config
+      (shared mode) or user personal config (individual mode), merged with generic.
+    - If no org_id: finds user's default org and follows its mode.
+    - Falls back to user personal + generic.
+    """
+    from dashboard.backend.services.org_helper import (
+        get_user_org_membership,
+        get_user_default_org as _get_default_org,
+        get_org_by_id as _get_org,
+    )
+
+    generic = get_generic_config()
+
+    def _merge(override_config: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(generic)
+        for k in CONFIG_KEYS:
+            val = override_config.get(k, "")
+            if val:
+                merged[k] = val
+        return merged
+
+    target_org_id = org_id
+
+    try:
+        if target_org_id is None:
+            default_org = _get_default_org(user_id)
+            if default_org is not None:
+                target_org_id = default_org.get("org_id")
+
+        if target_org_id is not None:
+            membership = get_user_org_membership(user_id, target_org_id)
+            if membership is not None:
+                org = _get_org(target_org_id)
+                if org is not None:
+                    config_mode = org.get("config_mode", "shared_org_config")
+                    if config_mode == "shared_org_config":
+                        doc = get_config_doc("org", target_org_id)
+                        if doc:
+                            org_files = _extract_flat_from_new_schema(doc)
+                            return _merge(org_files)
+                        return generic
+                    elif config_mode == "individual_member_config":
+                        doc = get_config_doc("user", user_id)
+                        if doc:
+                            user_files = _extract_flat_from_new_schema(doc)
+                            return _merge(user_files)
+                        return generic
+    except Exception:
+        # MongoDB unavailable — fall through to user personal + generic
+        pass
+
+    # Fallback: user personal config merged with generic
+    return resolve_effective_config_for_user(user_id)
+
+
 # ── Backward-compatible wrappers ─────────────────────────────────────────────
 
 

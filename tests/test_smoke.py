@@ -698,6 +698,135 @@ def test_config_system() -> int:
     return failed
 
 
+# ─── Organization system tests ──────────────────────────────────────────────
+
+
+def test_org_system() -> int:
+    failed = 0
+    print("\n[Organization system]")
+
+    # 1. Module imports and key functions exist
+    from dashboard.backend.services.org_helper import (
+        can_user_edit_org_config,
+        require_org_member,
+        require_org_role,
+        get_role_permissions,
+        generate_org_id,
+        is_public_email_domain,
+        extract_domain_from_email,
+        ORG_ROLES,
+    )
+    failed += ok(callable(can_user_edit_org_config), "can_user_edit_org_config is callable")
+    failed += ok(callable(require_org_member), "require_org_member is callable")
+    failed += ok(callable(require_org_role), "require_org_role is callable")
+
+    # 2. ORG_ROLES has correct roles
+    failed += ok("owner" in ORG_ROLES, "ORG_ROLES includes owner")
+    failed += ok("config_admin" in ORG_ROLES, "ORG_ROLES includes config_admin")
+    failed += ok("creator" in ORG_ROLES, "ORG_ROLES includes creator")
+    failed += ok("member" not in ORG_ROLES, "ORG_ROLES does not include member")
+
+    # 3. Role permissions
+    owner_perms = get_role_permissions("owner")
+    failed += ok(owner_perms.get("can_manage_org") is True, "Owner can manage org")
+    failed += ok(owner_perms.get("can_edit_org_config") is True, "Owner can edit config")
+
+    config_admin_perms = get_role_permissions("config_admin")
+    failed += ok(config_admin_perms.get("can_manage_org") is False, "Config admin cannot manage org")
+    failed += ok(config_admin_perms.get("can_edit_org_config") is True, "Config admin can edit config")
+
+    creator_perms = get_role_permissions("creator")
+    failed += ok(creator_perms.get("can_edit_org_config") is False, "Creator cannot edit config")
+    failed += ok(creator_perms.get("can_generate_ads") is True, "Creator can generate ads")
+    failed += ok(creator_perms.get("can_view_org_runs") is False, "Creator cannot view org runs")
+    failed += ok(creator_perms.get("can_view_org_images") is False, "Creator cannot view org images")
+    failed += ok(creator_perms.get("can_view_org_audit") is False, "Creator cannot view audit")
+
+    # 4. Unknown role returns empty permissions
+    unknown_perms = get_role_permissions("nonexistent")
+    failed += ok(unknown_perms == {}, "Unknown role returns empty dict")
+
+    # 5. Public email domain blocking
+    failed += ok(is_public_email_domain("test@gmail.com"), "gmail.com is public")
+    failed += ok(is_public_email_domain("test@yahoo.com"), "yahoo.com is public")
+    failed += ok(is_public_email_domain("test@outlook.com"), "outlook.com is public")
+    failed += ok(not is_public_email_domain("test@company.com"), "company.com is not public")
+    failed += ok(not is_public_email_domain("test@arogyamhealth.in"), "arogyamhealth.in is not public")
+
+    # 6. Email domain extraction
+    failed += ok(extract_domain_from_email("test@company.com") == "company.com", "Extracts domain correctly")
+    failed += ok(extract_domain_from_email("no-at-sign") == "", "Returns empty for invalid email")
+    failed += ok(extract_domain_from_email("") == "", "Returns empty for empty email")
+
+    # 7. org_id generation
+    oid = generate_org_id()
+    failed += ok(oid.startswith("org_"), "org_id starts with org_")
+    failed += ok(len(oid) > 10, "org_id has reasonable length")
+
+    # 8. resolve_effective_config exists and is callable
+    from dashboard.backend.services.user_config import resolve_effective_config
+    failed += ok(callable(resolve_effective_config), "resolve_effective_config is callable")
+
+    # 9. resolve_effective_config with no org returns user config
+    test_user = generate_user_id()
+    config = resolve_effective_config(test_user)
+    from dashboard.backend.services.user_config import get_generic_config
+    generic = get_generic_config()
+    failed += ok(config == generic, "resolve_effective_config without org returns generic")
+    failed += ok(len(config) == 8, "resolve_effective_config returns 8 keys")
+
+    # 10. can_user_edit_org_config returns False for non-member
+    fake_user = generate_user_id()
+    fake_org = generate_org_id()
+    result = can_user_edit_org_config(fake_user, fake_org)
+    failed += ok(result is False, "can_user_edit_org_config returns False for non-member")
+
+    # 11. require_org_member raises 403 for non-member
+    from fastapi import HTTPException
+    try:
+        require_org_member(fake_user, fake_org)
+        failed += ok(False, "require_org_member should raise for non-member")
+    except HTTPException as e:
+        failed += ok(e.status_code == 403, "require_org_member raises 403 for non-member")
+
+    # 12. require_org_role raises 403 for non-member
+    try:
+        require_org_role(fake_user, fake_org, ("owner",))
+        failed += ok(False, "require_org_role should raise for non-member")
+    except HTTPException as e:
+        failed += ok(e.status_code == 403, "require_org_role raises 403 for non-member")
+
+    # 13. GET /api/orgs/me without session returns 401
+    resp = client.get("/api/orgs/me")
+    failed += ok(resp.status_code == 401, "GET /api/orgs/me without auth returns 401")
+
+    # 14. POST /api/orgs without session returns 401
+    resp = client.post("/api/orgs", json={"name": "Test Org"})
+    failed += ok(resp.status_code == 401, "POST /api/orgs without auth returns 401")
+
+    # 15. GET /api/orgs/{id} without session returns 401
+    resp = client.get(f"/api/orgs/{generate_org_id()}")
+    failed += ok(resp.status_code == 401, "GET /api/orgs/{id} without auth returns 401")
+
+    if db_available():
+        # 16. Org creation with public email domain (requires mocking user with public email)
+        # Simulate via actual flow with a test user
+        from dashboard.backend.auth.service import create_session
+        from dashboard.backend.auth.models import generate_user_id as gen_uid
+
+        test_uid = gen_uid()
+        tok = create_session(test_uid)
+
+        # We can't easily test the full flow without a real user in DB,
+        # so we test the helper functions directly above.
+        print("  SKIP full HTTP org flow tests (requires real user in MongoDB)")
+
+    else:
+        print("  SKIP DB-dependent org tests (MongoDB not available)")
+
+    return failed
+
+
 # ─── main ──────────────────────────────────────────────────────────────────
 
 
@@ -719,6 +848,7 @@ def main() -> int:
     total += test_storage_backend()
     total += test_cloudinary_upload()
     total += test_config_system()
+    total += test_org_system()
 
     print(f"\n{'='*50}")
     if total == 0:
