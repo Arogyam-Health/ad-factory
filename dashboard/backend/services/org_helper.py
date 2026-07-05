@@ -45,6 +45,11 @@ def generate_org_id() -> str:
     return f"org_{uuid.uuid4().hex}"
 
 
+def generate_membership_id() -> str:
+    """Generate a unique membership ID with mem_ prefix."""
+    return f"mem_{uuid.uuid4().hex}"
+
+
 def extract_domain_from_email(email: str) -> str:
     """Extract domain from email address (lowercase)."""
     if "@" not in email:
@@ -275,6 +280,7 @@ def require_org_role(user_id: str, org_id: str, allowed_roles: tuple[str, ...]) 
 __all__ = [
     # Core org helpers
     "generate_org_id",
+    "generate_membership_id",
     "extract_domain_from_email",
     "is_public_email_domain",
     "get_org_by_id",

@@ -13,6 +13,7 @@ from dashboard.backend.services.org_helper import (
     get_user_org_membership,
     get_user_org_memberships,
     generate_org_id,
+    generate_membership_id,
     extract_domain_from_email,
     is_public_email_domain,
     get_org_by_id,
@@ -104,6 +105,7 @@ def create_org(
         )
 
     org_id = generate_org_id()
+    membership_id = generate_membership_id()
     now = time.time()
     db = get_sync_db()
 
@@ -120,6 +122,7 @@ def create_org(
     db[COLL_ORGS].insert_one(org)
 
     membership = {
+        "membership_id": membership_id,
         "org_id": org_id,
         "user_id": user_id,
         "email": email,
@@ -144,18 +147,16 @@ def create_org(
         source="org_create_copy",
     )
 
-    org_doc = get_sync_db()[COLL_ORGS].find_one({"org_id": org_id})
-    if org_doc:
-        config_doc = get_sync_db()[COLL_USER_CONFIGS].find_one({
-            "owner_type": "org",
-            "owner_id": org_id,
-            "is_active": True,
-        })
-        if config_doc:
-            get_sync_db()[COLL_ORGS].update_one(
-                {"org_id": org_id},
-                {"$set": {"default_config_id": config_doc["config_id"], "updated_at": time.time()}},
-            )
+    config_doc = get_sync_db()[COLL_USER_CONFIGS].find_one({
+        "owner_type": "org",
+        "owner_id": org_id,
+        "is_active": True,
+    })
+    if config_doc:
+        get_sync_db()[COLL_ORGS].update_one(
+            {"org_id": org_id},
+            {"$set": {"default_config_id": config_doc["config_id"], "updated_at": time.time()}},
+        )
 
     write_audit_event(
         event_type="org_created",
@@ -167,8 +168,10 @@ def create_org(
         metadata={"name": name, "domain": domain},
     )
 
+    updated_org = get_sync_db()[COLL_ORGS].find_one({"org_id": org_id})
+
     return {
-        "org": org,
+        "org": updated_org or org,
         "membership": membership,
     }
 

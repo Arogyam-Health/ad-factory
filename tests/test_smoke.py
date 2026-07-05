@@ -712,6 +712,7 @@ def test_org_system() -> int:
         require_org_role,
         get_role_permissions,
         generate_org_id,
+        generate_membership_id,
         is_public_email_domain,
         extract_domain_from_email,
         ORG_ROLES,
@@ -758,10 +759,14 @@ def test_org_system() -> int:
     failed += ok(extract_domain_from_email("no-at-sign") == "", "Returns empty for invalid email")
     failed += ok(extract_domain_from_email("") == "", "Returns empty for empty email")
 
-    # 7. org_id generation
+    # 7. org_id and membership_id generation
     oid = generate_org_id()
     failed += ok(oid.startswith("org_"), "org_id starts with org_")
     failed += ok(len(oid) > 10, "org_id has reasonable length")
+
+    mid = generate_membership_id()
+    failed += ok(mid.startswith("mem_"), "membership_id starts with mem_")
+    failed += ok(len(mid) > 10, "membership_id has reasonable length")
 
     # 8. resolve_effective_config exists and is callable
     from dashboard.backend.services.user_config import resolve_effective_config
@@ -774,6 +779,12 @@ def test_org_system() -> int:
     generic = get_generic_config()
     failed += ok(config == generic, "resolve_effective_config without org returns generic")
     failed += ok(len(config) == 8, "resolve_effective_config returns 8 keys")
+
+    # 10. get_user_config is personal-only (not org-aware)
+    from dashboard.backend.services.user_config import get_user_config
+    personal_config = get_user_config(test_user)
+    failed += ok(personal_config == generic, "get_user_config is personal-only, returns generic for new user")
+    failed += ok(personal_config == config, "get_user_config matches resolve_effective_config without org")
 
     # 10. can_user_edit_org_config returns False for non-member
     fake_user = generate_user_id()

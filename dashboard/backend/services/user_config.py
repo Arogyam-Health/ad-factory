@@ -324,10 +324,20 @@ def resolve_effective_config(
 
 
 # ── Backward-compatible wrappers ─────────────────────────────────────────────
+#
+# Decision: get_user_config remains PERSONAL-ONLY (resolve_effective_config_for_user)
+# and does NOT check default org config. This preserves the personal config editor
+# (PUT/DELETE /api/user/config) which reads/writes personal config only.
+#
+# Org-aware resolution is available via resolve_effective_config(user_id, org_id)
+# for callers that need it. A GET /api/config/effective endpoint will be added
+# in Phase 2 to expose org-aware config to the frontend.
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 def get_user_config(user_id: str) -> dict[str, Any]:
-    """Backward-compatible: returns flat config dict."""
+    """Backward-compatible: returns personal config merged with generic.
+    Does NOT resolve default org config (see resolve_effective_config for that)."""
     return resolve_effective_config_for_user(user_id)
 
 
