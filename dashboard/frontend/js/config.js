@@ -471,10 +471,34 @@ async function rollbackVersion(configId, versionId) {
   }
 }
 
-// ── Legacy support: renderConfigPanel for index.html (hidden) ──────
+// ── Legacy support: renderConfigPanel for index.html ────────────────
 
 export async function renderConfigPanel() {
   const panel = document.getElementById("configPanel");
   if (!panel) return;
-  panel.innerHTML = `<div class="card"><p class="hint">Config has moved to <a href="/config.html" style="color:var(--primary)">/config.html</a></p></div>`;
+
+  try {
+    const data = await fetchJSON("/api/config/effective");
+    const config = data.config || {};
+    const source = data.source || "generic";
+    const canEdit = data.can_edit !== false;
+
+    panel.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <h3 style="margin:0;font-size:0.95rem;font-weight:600">Config Files <span style="font-size:0.72rem;color:var(--muted);font-weight:400">(${esc(source)})</span></h3>
+          <a href="/config.html" style="font-size:0.78rem;color:var(--primary);text-decoration:none;font-weight:500">Open Full Editor &rarr;</a>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.5rem">
+          ${CONFIG_KEYS.map(k => `
+            <div style="padding:0.5rem 0.75rem;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:0.8rem">
+              <div style="font-weight:600;color:var(--ink);margin-bottom:0.2rem">${esc(KEY_LABELS[k] || k)}</div>
+              <div style="color:var(--muted);font-size:0.72rem;max-height:2.4em;overflow:hidden;text-overflow:ellipsis">${esc((config[k] || "").slice(0, 60) || "empty")}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>`;
+  } catch {
+    panel.innerHTML = `<div class="card"><p class="hint">Failed to load config. <a href="/config.html" style="color:var(--primary)">Open Config Editor</a></p></div>`;
+  }
 }

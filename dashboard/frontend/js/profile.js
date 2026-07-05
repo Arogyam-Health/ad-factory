@@ -370,14 +370,10 @@ function finishRender(panel, container, user) {
   panel.appendChild(container);
 
   document.getElementById("profileOpenConfig")?.addEventListener("click", () => {
-    const configPanel = document.getElementById("configPanel");
-    if (configPanel) {
-      configPanel.classList.toggle("hidden");
-      configPanel.scrollIntoView({ behavior: "smooth" });
-    }
+    window.location.href = "/config.html";
   });
   document.getElementById("profileOpenAdmin")?.addEventListener("click", () => {
-    window.location.hash = "admin/overview";
+    window.location.href = "/admin.html";
   });
 }
 
