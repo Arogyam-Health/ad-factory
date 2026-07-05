@@ -332,10 +332,10 @@
     </nav>
   </footer>
 
-  <script type="module" src="/js/config.js"></script>
   <script type="module">
     import { initTheme } from "/js/theme.js";
     import { checkAuth } from "/js/auth.js";
+    import { initConfigPage } from "/js/config.js";
 
     initTheme();
 
@@ -354,12 +354,14 @@
         logout.style.display = "";
         login.style.display  = "none";
         if (user.is_super_admin && adminLink) adminLink.style.display = "";
+        initConfigPage();
       } else {
         initial.textContent = "?";
         name.textContent    = "Guest";
         name.classList.remove("loading");
         login.style.display  = "";
         logout.style.display = "none";
+        initConfigPage();
       }
 
       logout.addEventListener("click", async () => {

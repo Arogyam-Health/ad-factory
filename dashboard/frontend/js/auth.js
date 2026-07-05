@@ -20,6 +20,7 @@ export async function checkAuth() {
       user_id: data.user_id || "",
       email: data.email || "",
       display_name: data.display_name || "",
+      is_super_admin: data.is_super_admin || false,
     };
   } catch {
     authState = { authenticated: false, user_id: "", email: "", display_name: "" };

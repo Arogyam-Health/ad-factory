@@ -50,7 +50,7 @@ function status(msg, type = "") {
 
 // ── Main render ───────────────────────────────────────────────────
 
-async function initConfigPage() {
+export async function initConfigPage() {
   const user = getAuthUser();
   if (!user || !user.authenticated) {
     document.getElementById("cfgEditors").innerHTML = `
@@ -477,10 +477,4 @@ export async function renderConfigPanel() {
   const panel = document.getElementById("configPanel");
   if (!panel) return;
   panel.innerHTML = `<div class="card"><p class="hint">Config has moved to <a href="/config.html" style="color:var(--primary)">/config.html</a></p></div>`;
-}
-
-// ── Init on page load ──────────────────────────────────────────────
-
-if (document.getElementById("cfgEditors")) {
-  initConfigPage();
 }

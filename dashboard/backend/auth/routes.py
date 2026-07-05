@@ -112,4 +112,5 @@ def auth_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
         "user_id": user["user_id"],
         "email": user.get("email", ""),
         "display_name": user.get("display_name", ""),
+        "is_super_admin": user.get("is_super_admin", False),
     }
