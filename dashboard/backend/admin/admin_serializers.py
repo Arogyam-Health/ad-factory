@@ -99,3 +99,24 @@ def safe_provider_config(doc: dict[str, Any]) -> dict[str, Any]:
         "masked_key": masked,
         "updated_at": doc.get("updated_at", 0),
     }
+
+
+def safe_run(doc: dict[str, Any]) -> dict[str, Any]:
+    """Return safe view of a run doc with all sensitive fields redacted."""
+    result = redact_sensitive(copy.deepcopy(doc))
+    result.pop("_id", None)
+    return result
+
+
+def safe_image(doc: dict[str, Any]) -> dict[str, Any]:
+    """Return safe view of an image doc with all sensitive fields redacted."""
+    result = redact_sensitive(copy.deepcopy(doc))
+    result.pop("_id", None)
+    return result
+
+
+def safe_prompt(doc: dict[str, Any]) -> dict[str, Any]:
+    """Return safe view of a prompt doc with all sensitive fields redacted."""
+    result = redact_sensitive(copy.deepcopy(doc))
+    result.pop("_id", None)
+    return result

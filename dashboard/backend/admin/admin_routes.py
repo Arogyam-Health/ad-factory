@@ -12,6 +12,9 @@ from dashboard.backend.admin.admin_serializers import (
     safe_session,
     safe_audit_log,
     safe_provider_config,
+    safe_run,
+    safe_image,
+    safe_prompt,
     redact_sensitive,
 )
 from dashboard.backend.db.client import get_sync_db, ping
@@ -597,8 +600,7 @@ def admin_list_runs(
     if status:
         q["status"] = status
     result = _paginate(COLL_RUNS, q, page, per_page, sort=[("created_at", -1)])
-    for item in result["items"]:
-        item.pop("_id", None)
+    result["items"] = [safe_run(item) for item in result["items"]]
     return result
 
 
@@ -616,8 +618,7 @@ def admin_list_images(
     if user_id:
         q["user_id"] = user_id
     result = _paginate(COLL_IMAGES, q, page, per_page, sort=[("created_at", -1)])
-    for item in result["items"]:
-        item.pop("_id", None)
+    result["items"] = [safe_image(item) for item in result["items"]]
     return result
 
 
@@ -635,8 +636,7 @@ def admin_list_prompts(
     if user_id:
         q["user_id"] = user_id
     result = _paginate(COLL_PROMPTS, q, page, per_page, sort=[("created_at", -1)])
-    for item in result["items"]:
-        item.pop("_id", None)
+    result["items"] = [safe_prompt(item) for item in result["items"]]
     return result
 
 

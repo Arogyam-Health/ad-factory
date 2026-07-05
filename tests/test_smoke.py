@@ -1547,7 +1547,7 @@ def test_admin_readiness_phase6() -> int:
     print("\n[Admin Readiness / Phase 6]")
 
     # Import redact_sensitive
-    from dashboard.backend.admin.admin_serializers import redact_sensitive, safe_provider_config
+    from dashboard.backend.admin.admin_serializers import redact_sensitive, safe_provider_config, safe_run, safe_image, safe_prompt
 
     # 1. redact_sensitive recursive
     test_data = {
@@ -1684,6 +1684,63 @@ def test_admin_readiness_phase6() -> int:
     with open(ROOT / "dashboard" / "backend" / "admin" / "admin_routes.py") as f:
         routes_py = f.read()
     failed += ok('cfg.pop("files", None)' in routes_py, "config export strips files content")
+
+    # 14. safe_run redacts sensitive fields
+    run_doc = {
+        "run_id": "run_1", "user_id": "usr_a", "status": "completed",
+        "api_key": "sk-test", "token": "tok_secret", "prompt": "hello",
+        "result": {"data": "ok"}, "created_at": 1000,
+    }
+    safe = safe_run(run_doc)
+    failed += ok(safe.get("api_key") == "[REDACTED]", "safe_run redacts api_key")
+    failed += ok(safe.get("token") == "[REDACTED]", "safe_run redacts token")
+    failed += ok(safe.get("run_id") == "run_1", "safe_run keeps run_id")
+    failed += ok(safe.get("user_id") == "usr_a", "safe_run keeps user_id")
+    failed += ok(safe.get("status") == "completed", "safe_run keeps status")
+    failed += ok(safe.get("result") == {"data": "ok"}, "safe_run keeps operational nested data")
+    failed += ok("_id" not in safe, "safe_run removes _id")
+    failed += ok("raw_token" not in str(safe), "safe_run avoids raw_token exposure")
+    failed += ok("secret" not in str(safe), "safe_run avoids secret exposure")
+
+    # 15. safe_image redacts sensitive metadata
+    img_doc = {
+        "image_id": "img_1", "user_id": "usr_b", "status": "ready",
+        "url": "https://cdn.example.com/img.png",
+        "metadata": {"secret": "abc123", "model": "dalle3"},
+        "encrypted_api_key": "cipher:xyz", "created_at": 2000,
+    }
+    safe_img = safe_image(img_doc)
+    failed += ok(safe_img.get("image_id") == "img_1", "safe_image keeps image_id")
+    failed += ok(safe_img.get("url") == "https://cdn.example.com/img.png", "safe_image keeps url")
+    failed += ok(safe_img["metadata"].get("secret") == "[REDACTED]", "safe_image redacts secret in metadata")
+    failed += ok(safe_img["metadata"].get("model") == "dalle3", "safe_image keeps model in metadata")
+    failed += ok(safe_img.get("encrypted_api_key") == "[REDACTED]", "safe_image redacts encrypted_api_key")
+    failed += ok("_id" not in safe_img, "safe_image removes _id")
+
+    # 16. safe_prompt redacts sensitive fields
+    prompt_doc = {
+        "prompt_id": "p_1", "user_id": "usr_c", "content": "Generate an ad",
+        "model": "gpt-4", "provider": "opencode",
+        "api_key": "sk-leaked", "token_hash": "abc123hash",
+        "client_secret": "hidden", "created_at": 3000,
+    }
+    safe_p = safe_prompt(prompt_doc)
+    failed += ok(safe_p.get("prompt_id") == "p_1", "safe_prompt keeps prompt_id")
+    failed += ok(safe_p.get("content") == "Generate an ad", "safe_prompt keeps content")
+    failed += ok(safe_p.get("model") == "gpt-4", "safe_prompt keeps model")
+    failed += ok(safe_p.get("api_key") == "[REDACTED]", "safe_prompt redacts api_key")
+    failed += ok(safe_p.get("token_hash") == "[REDACTED]", "safe_prompt redacts token_hash")
+    failed += ok(safe_p.get("client_secret") == "[REDACTED]", "safe_prompt redacts client_secret")
+    failed += ok("_id" not in safe_p, "safe_prompt removes _id")
+
+    # 17. Routes use safe_run
+    failed += ok("safe_run(item)" in routes_py, "/api/admin/runs uses safe_run")
+
+    # 18. Routes use safe_image
+    failed += ok("safe_image(item)" in routes_py, "/api/admin/images uses safe_image")
+
+    # 19. Routes use safe_prompt
+    failed += ok("safe_prompt(item)" in routes_py, "/api/admin/prompts uses safe_prompt")
 
     return failed
 
