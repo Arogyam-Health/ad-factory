@@ -24,10 +24,3 @@
     "headline_anchor_rule": "[Headline rule]"
   }
 ]
-
-Instructions:
-- Add 10-30 personas representing your target audience segments.
-- Each persona must have a unique core_pattern, common_indian_moments, and relevant_product_role.
-- primary_tags should reference product truth keys from your product_master_doc.
-- The persona_name should be descriptive (e.g. "Busy Professional", "Night Snacker", "Stress Eater").
-- Use common_indian_moments to ground the persona in real Indian daily life.
