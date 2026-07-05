@@ -108,6 +108,23 @@ def list_images(user_id: str, run_id: str) -> list[dict[str, Any]]:
     )
 
 
+MAX_TRACE_RUNS = 5
+
+
+def _enforce_trace_retention(user_id: str) -> None:
+    """Delete traces from runs older than the most recent MAX_TRACE_RUNS per user."""
+    coll = get_sync_db()[COLL_LLM_TRACES]
+    pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$group": {"_id": "$run_id", "latest": {"$max": "$created_at"}}},
+        {"$sort": {"latest": -1}},
+        {"$skip": MAX_TRACE_RUNS},
+    ]
+    old_run_ids = [doc["_id"] for doc in coll.aggregate(pipeline)]
+    if old_run_ids:
+        coll.delete_many({"user_id": user_id, "run_id": {"$in": old_run_ids}})
+
+
 def save_llm_trace(user_id: str, trace_data: dict[str, Any]) -> dict[str, Any]:
     now = time.time()
     doc = {
@@ -124,6 +141,7 @@ def save_llm_trace(user_id: str, trace_data: dict[str, Any]) -> dict[str, Any]:
         "created_at": now,
     }
     get_sync_db()[COLL_LLM_TRACES].insert_one(doc)
+    _enforce_trace_retention(user_id)
     return doc
 
 

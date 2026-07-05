@@ -4293,7 +4293,7 @@ app.add_middleware(
 # ── Auth middleware (protects old routes without modifying them) ────────────
 from dashboard.backend.auth.service import get_current_user_from_cookie
 
-PUBLIC_API_PREFIXES = ("/api/auth/",)
+PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config/")
 
 
 @app.middleware("http")
@@ -7544,53 +7544,37 @@ def api_download_batches(batch_names: list[str]):
     return StreamingResponse(buf, media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="{label}.zip"'})
 
-def api_llm_traces(limit: int = 50, offset: int = 0, run_id_filter: str | None = None) -> dict[str, Any]:
-    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
-    files = sorted(LLM_TRACES_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
-    all_traces: list[tuple[str, dict]] = []
-    for f in files:
-        try:
-            trace = json.loads(f.read_text(encoding="utf-8"))
-            if run_id_filter and trace.get("run_id") != run_id_filter:
-                continue
-            trace["_file"] = f.name
-            all_traces.append(trace)
-        except (json.JSONDecodeError, OSError):
-            continue
-    total = len(all_traces)
-    page = all_traces[offset:offset + limit]
-    return {"traces": page, "total": total, "offset": offset, "limit": limit}
+def api_llm_traces(user_id: str, limit: int = 50, offset: int = 0, run_id_filter: str | None = None) -> dict[str, Any]:
+    from dashboard.backend.services.run_storage import list_llm_traces
+    query = {"user_id": user_id}
+    if run_id_filter:
+        query["run_id"] = run_id_filter
+    coll = get_sync_db()[COLL_LLM_TRACES]
+    total = coll.count_documents(query)
+    traces = list(
+        coll.find(query, {"_id": 1, "run_id": 1, "batch": 1, "provider": 1, "model": 1, "prompt": 1, "response": 1, "duration_ms": 1, "status": 1, "created_at": 1})
+        .sort("created_at", -1)
+        .skip(offset)
+        .limit(limit)
+    )
+    for t in traces:
+        t["_id"] = str(t["_id"])
+    return {"traces": traces, "total": total, "offset": offset, "limit": limit}
 
 
-def api_delete_llm_traces(run_id_filter: str | None = None, trace_files: list[str] | None = None) -> dict[str, Any]:
-    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
-    files = sorted(LLM_TRACES_DIR.glob("*.json"), key=lambda f: f.st_mtime)
-    deleted = 0
-    for f in files:
-        if trace_files:
-            if f.name not in trace_files:
-                continue
-        elif run_id_filter:
-            try:
-                trace = json.loads(f.read_text(encoding="utf-8"))
-                if trace.get("run_id") != run_id_filter:
-                    continue
-            except (json.JSONDecodeError, OSError):
-                continue
-        f.unlink()
-        deleted += 1
-    return {"deleted": deleted, "filter": run_id_filter, "trace_files": trace_files}
+def api_delete_llm_traces(user_id: str, run_id_filter: str | None = None) -> dict[str, Any]:
+    query: dict[str, Any] = {"user_id": user_id}
+    if run_id_filter:
+        query["run_id"] = run_id_filter
+    result = get_sync_db()[COLL_LLM_TRACES].delete_many(query)
+    return {"deleted": result.deleted_count, "filter": run_id_filter}
 
 
-def api_delete_llm_traces_by_files(files: list[str]) -> dict[str, Any]:
-    LLM_TRACES_DIR.mkdir(parents=True, exist_ok=True)
-    deleted = 0
-    for fname in files:
-        f = LLM_TRACES_DIR / fname
-        if f.exists() and f.suffix == ".json":
-            f.unlink()
-            deleted += 1
-    return {"deleted": deleted, "files": files}
+def api_delete_llm_traces_by_files(user_id: str, trace_ids: list[str]) -> dict[str, Any]:
+    from bson import ObjectId
+    query: dict[str, Any] = {"user_id": user_id, "_id": {"$in": [ObjectId(tid) for tid in trace_ids]}}
+    result = get_sync_db()[COLL_LLM_TRACES].delete_many(query)
+    return {"deleted": result.deleted_count, "trace_ids": trace_ids}
 
 
 # ── DB-backed prompt / image list endpoints ──────────────────────────────
@@ -7647,6 +7631,24 @@ def get_run_images(run_id: str, request: Request, limit: int = 200, offset: int 
     return api_run_images(user["user_id"], run_id, limit=limit, offset=offset)
 
 
+@app.get("/api/llm-traces")
+def get_llm_traces(request: Request, limit: int = 50, offset: int = 0, run_id: str | None = None) -> dict[str, Any]:
+    user = _get_user_from_request(request)
+    return api_llm_traces(user["user_id"], limit=limit, offset=offset, run_id_filter=run_id)
+
+
+@app.delete("/api/llm-traces")
+def delete_llm_traces(request: Request, run_id: str | None = None) -> dict[str, Any]:
+    user = _get_user_from_request(request)
+    return api_delete_llm_traces(user["user_id"], run_id_filter=run_id)
+
+
+@app.delete("/api/llm-traces/batch")
+def delete_llm_traces_batch(request: Request, trace_ids: list[str] = []) -> dict[str, Any]:
+    user = _get_user_from_request(request)
+    return api_delete_llm_traces_by_files(user["user_id"], trace_ids)
+
+
 # ── Modular routes ───────────────────────────────────────────────────────────
 from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, chrome
 
@@ -7671,6 +7673,23 @@ app.include_router(provider_router)
 app.include_router(blob_router)
 app.include_router(user_config_router)
 app.include_router(agent_router)
+
+
+@app.get("/api/generic-config")
+def get_generic_config_public() -> dict[str, Any]:
+    """Public endpoint: returns the 8 generic config files for non-logged-in users."""
+    from dashboard.backend.services.user_config import get_generic_config
+    return get_generic_config()
+
+
+@app.get("/api/generic-config/{key}")
+def get_generic_config_key_public(key: str) -> dict[str, Any]:
+    """Public endpoint: returns a single generic config file by key."""
+    from dashboard.backend.services.user_config import get_generic_config, CONFIG_KEYS
+    if key not in CONFIG_KEYS:
+        raise HTTPException(status_code=404, detail=f"Unknown config key: {key}")
+    cfg = get_generic_config()
+    return {"key": key, "value": cfg.get(key, "")}
 
 # ── Authenticated file download endpoints (production-safe) ────────────────
 from fastapi.responses import FileResponse
