@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_ORG_MEMBERS
+from dashboard.backend.db.collections import COLL_USER_CONFIGS
 from dashboard.backend.services.config_permissions import (
     can_view_config,
     can_edit_config,

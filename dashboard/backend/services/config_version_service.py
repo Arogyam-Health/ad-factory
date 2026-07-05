@@ -112,11 +112,7 @@ def create_config_version_before_update(
         "created_at": time.time(),
     }
 
-    try:
-        get_sync_db()[COLL_CONFIG_VERSIONS].insert_one(version_doc)
-    except Exception:
-        return None
-
+    get_sync_db()[COLL_CONFIG_VERSIONS].insert_one(version_doc)
     return version_doc
 
 

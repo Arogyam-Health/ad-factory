@@ -170,39 +170,39 @@ def create_or_update_config(
         "is_active": True,
     })
 
-    file_entries = {}
+    update_entries = {}
+    files_obj = {}
     for k in CONFIG_KEYS:
         if k in files:
             content = files[k]
-            file_entries[f"files.{k}"] = {
+            entry = {
                 "content": content,
                 "content_type": _CONTENT_TYPES.get(k, "text/plain"),
                 "updated_at": now,
             }
+            update_entries[f"files.{k}"] = entry
+            files_obj[k] = entry
 
-    if not file_entries:
+    if not update_entries:
         if existing:
             return _extract_flat_from_new_schema(existing)
         return get_generic_config()
 
     if existing and create_version:
-        try:
-            from dashboard.backend.services.config_version_service import create_config_version_before_update
-            create_config_version_before_update(
-                config_doc=existing,
-                new_files=files,
-                changed_by_user_id=actor_user_id,
-                changed_by_email=actor_email,
-                change_reason=change_reason,
-                org_id=org_id,
-            )
-        except Exception:
-            pass
+        from dashboard.backend.services.config_version_service import create_config_version_before_update
+        create_config_version_before_update(
+            config_doc=existing,
+            new_files=files,
+            changed_by_user_id=actor_user_id,
+            changed_by_email=actor_email,
+            change_reason=change_reason,
+            org_id=org_id,
+        )
 
     if existing:
         update_doc = {
             "$set": {
-                **file_entries,
+                **update_entries,
                 "updated_by_user_id": actor_user_id,
                 "updated_at": now,
                 "config_mode": config_mode,
@@ -222,7 +222,7 @@ def create_or_update_config(
             "is_active": True,
             "created_at": now,
             "updated_at": now,
-            **file_entries,
+            "files": files_obj,
         }
         coll.insert_one(new_doc)
 

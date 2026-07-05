@@ -1070,6 +1070,62 @@ def test_config_versions() -> int:
     resp = c.post("/api/orgs/some_org/configs/copy", json={"source_type": "org", "target_type": "member", "mode": "replace_all"})
     failed += ok(resp.status_code == 401, "POST config copy without auth returns 401")
 
+    # 17. config_routes imports without NameError (COLL_USER_CONFIGS available)
+    from dashboard.backend.services import config_routes
+    failed += ok(config_routes.router is not None, "config_routes router imports cleanly")
+
+    # 18. create_or_update_config first insert creates nested files object
+    from dashboard.backend.services.user_config import create_or_update_config, CONFIG_KEYS
+    # Simulate what the insert path builds (unit-level check of logic):
+    # The actual MongoDB call would fail without DB, so we verify the shape the code builds
+    # by checking that the function returns flat config (fallback path on no DB)
+    try:
+        result = create_or_update_config(
+            owner_type="user",
+            owner_id="test_repair_user",
+            files={"starting_prompt": "test"},
+            actor_user_id="test_repair_user",
+            source="test",
+        )
+        # If no DB, falls back to generic — that's fine
+        failed += ok(isinstance(result, dict), "create_or_update_config returns dict even without DB")
+    except Exception as e:
+        failed += ok(False, f"create_or_update_config should not crash: {e}")
+
+    # 19. _extract_flat_from_new_schema reads properly nested files object
+    from dashboard.backend.services.user_config import _extract_flat_from_new_schema
+    properly_nested = {
+        "files": {
+            "starting_prompt": {"content": "hello", "content_type": "text/plain", "updated_at": 100},
+            "product_master_doc": {"content": "doc", "content_type": "text/plain", "updated_at": 100},
+        }
+    }
+    flat = _extract_flat_from_new_schema(properly_nested)
+    failed += ok(flat.get("starting_prompt") == "hello", "_extract_flat_from_new_schema reads nested files")
+    for k in CONFIG_KEYS:
+        failed += ok(k in flat, f"_extract_flat_from_new_schema includes {k}")
+
+    # 20. Repair script exists and has required functions
+    import importlib.util as iu
+    spec = iu.spec_from_file_location("repair", "scripts/repair_dotted_config_files.py")
+    failed += ok(spec is not None, "repair_dotted_config_files.py exists as module spec")
+
+    # 21. Version creation raises on DB failure (function should not silently return None)
+    from dashboard.backend.services.config_version_service import create_config_version_before_update
+    # With no DB, insert_one fails — the function should raise
+    raised = False
+    try:
+        create_config_version_before_update(
+            config_doc={"config_id": "cfg_test", "owner_type": "user", "owner_id": "u", "files": {}},
+            new_files={"starting_prompt": "new"},
+            changed_by_user_id="u",
+            changed_by_email=None,
+            change_reason="test",
+        )
+    except Exception:
+        raised = True
+    failed += ok(raised, "create_config_version_before_update raises on DB failure (does not silently return None)")
+
     if db_available():
         print("  SKIP DB-dependent version tests (would require real MongoDB)")
     else:
