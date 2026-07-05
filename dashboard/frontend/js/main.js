@@ -636,10 +636,17 @@ initAuth().then(() => {
   import("./auth.js").then(mod => {
     const user = mod.getAuthUser();
     const adminNav = document.getElementById("adminNav");
-    const adminPanel = document.getElementById("adminPanel");
     if (user && user.is_super_admin) {
       if (adminNav) { adminNav.hidden = false; adminNav.style.display = ""; }
+    }
+    if (window.location.hash.startsWith("#admin/")) {
+      const adminPanel = document.getElementById("adminPanel");
+      const orgPanel = document.getElementById("orgPanel");
+      const configPanel = document.getElementById("configPanel");
       if (adminPanel) adminPanel.hidden = false;
+      if (orgPanel) orgPanel.style.display = "none";
+      if (configPanel) configPanel.style.display = "none";
+      import("./admin.js").then(mod => mod.renderAdminPanel());
     }
   });
 });
@@ -647,22 +654,39 @@ initAuth().then(() => {
 document.getElementById("adminNav")?.addEventListener("click", () => {
   const panel = document.getElementById("adminPanel");
   if (!panel) return;
-  const orgPanel = document.getElementById("orgPanel");
-  const configPanel = document.getElementById("configPanel");
-  const visible = panel.hidden;
-  panel.hidden = !visible;
-  if (!visible) {
-    if (orgPanel) orgPanel.style.display = "none";
-    if (configPanel) configPanel.style.display = "none";
-    return;
+  if (panel.hidden) {
+    if (!window.location.hash.startsWith("#admin/")) {
+      window.location.hash = "admin/overview";
+    }
+  } else {
+    panel.hidden = true;
+    const orgPanel = document.getElementById("orgPanel");
+    const configPanel = document.getElementById("configPanel");
+    if (orgPanel) orgPanel.style.display = "";
+    if (configPanel) configPanel.style.display = "";
   }
-  if (orgPanel) orgPanel.style.display = "";
-  if (configPanel) configPanel.style.display = "";
 });
 
 window.addEventListener("hashchange", () => {
   if (window.location.hash.startsWith("#admin/")) {
-    import("./admin.js").then(mod => mod.renderAdminPanel());
+    const panel = document.getElementById("adminPanel");
+    if (panel) {
+      panel.hidden = false;
+      const orgPanel = document.getElementById("orgPanel");
+      const configPanel = document.getElementById("configPanel");
+      if (orgPanel) orgPanel.style.display = "none";
+      if (configPanel) configPanel.style.display = "none";
+      import("./admin.js").then(mod => mod.renderAdminPanel());
+    }
+  } else {
+    const panel = document.getElementById("adminPanel");
+    if (panel && !panel.hidden) {
+      panel.hidden = true;
+      const orgPanel = document.getElementById("orgPanel");
+      const configPanel = document.getElementById("configPanel");
+      if (orgPanel) orgPanel.style.display = "";
+      if (configPanel) configPanel.style.display = "";
+    }
   }
 });
 

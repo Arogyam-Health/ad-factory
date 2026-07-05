@@ -224,7 +224,9 @@ async function renderUsers(container, page = 1, search = "") {
     header.appendChild(refreshBtn(() => renderUsers(container, page, search)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Email", "Name", "Active", "Super Admin", "Created", "Actions"],
       data.items,
       (tr, u) => {
@@ -322,7 +324,9 @@ async function showUserDetail(userId) {
     `;
 
     if (sessions.sessions.length) {
-      showTable(content, ["Session ID", "Created", "Expires", "Expired"], sessions.sessions, (tr, s) => {
+      const sessWrap = document.createElement("div");
+      content.appendChild(sessWrap);
+      showTable(sessWrap, ["Session ID", "Created", "Expires", "Expired"], sessions.sessions, (tr, s) => {
         tr.innerHTML = `<td>${escapeHtml(s.session_id.slice(0, 12))}...</td><td>${formatDate(s.created_at)}</td><td>${formatDate(s.expires_at)}</td><td>${s.is_expired ? "✓" : ""}</td>`;
       });
     } else {
@@ -382,7 +386,9 @@ async function renderIndividualUsers(container, page = 1, search = "") {
     header.appendChild(refreshBtn(() => renderIndividualUsers(container, page, search)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Email", "Name", "Active", "Super Admin", "Created", "Actions"],
       data.items,
       (tr, u) => {
@@ -459,7 +465,9 @@ async function renderOrgs(container, page = 1, search = "") {
     header.appendChild(refreshBtn(() => renderOrgs(container, page, search)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Name", "Domain", "Active", "Config Mode", "Created", "Actions"],
       data.items,
       (tr, o) => {
@@ -523,7 +531,9 @@ async function showOrgDetail(orgId) {
       <h4>Members (${org.members.length})</h4>
     `;
     if (org.members.length) {
-      showTable(content, ["User ID", "Email", "Role", "Status", "Joined"], org.members, (tr, m) => {
+      const memWrap = document.createElement("div");
+      content.appendChild(memWrap);
+      showTable(memWrap, ["User ID", "Email", "Role", "Status", "Joined"], org.members, (tr, m) => {
         tr.innerHTML = `<td>${escapeHtml(m.user_id || "")}</td><td>${escapeHtml(m.email || "")}</td><td>${escapeHtml(m.role)}</td><td>${escapeHtml(m.status)}</td><td>${formatDate(m.joined_at)}</td>`;
       });
     } else {
@@ -537,7 +547,9 @@ async function showOrgDetail(orgId) {
     ih.textContent = `Invites (${org.invites.length})`;
     content.appendChild(ih);
     if (org.invites.length) {
-      showTable(content, ["Email", "Role", "Status", "Created"], org.invites, (tr, i) => {
+      const invWrap = document.createElement("div");
+      content.appendChild(invWrap);
+      showTable(invWrap, ["Email", "Role", "Status", "Created"], org.invites, (tr, i) => {
         tr.innerHTML = `<td>${escapeHtml(i.email)}</td><td>${escapeHtml(i.role)}</td><td>${escapeHtml(i.status)}</td><td>${formatDate(i.created_at)}</td>`;
       });
     } else {
@@ -624,7 +636,9 @@ async function renderConfigs(container, page = 1, ownerType = "") {
     header.appendChild(refreshBtn(() => renderConfigs(container, page, ownerType)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Config ID", "Owner Type", "Owner ID", "Scope", "Active", "Updated", "Actions"],
       data.items,
       (tr, c) => {
@@ -745,7 +759,9 @@ async function showConfigDetail(configId, includeContent) {
     vh.textContent = `Versions (${cfg.versions.length})`;
     content.appendChild(vh);
     if (cfg.versions.length) {
-      showTable(content, ["Version ID", "Changed By", "Reason", "Changed Keys", "Created"], cfg.versions, (tr, v) => {
+      const verWrap = document.createElement("div");
+      content.appendChild(verWrap);
+      showTable(verWrap, ["Version ID", "Changed By", "Reason", "Changed Keys", "Created"], cfg.versions, (tr, v) => {
         tr.innerHTML = `<td>${escapeHtml(v.version_id || "").slice(0, 12)}...</td><td>${escapeHtml(v.changed_by_email || "")}</td><td>${escapeHtml(v.change_reason || "")}</td><td>${escapeHtml((v.changed_keys || []).join(", "))}</td><td>${formatDate(v.created_at)}</td>`;
       });
     } else {
@@ -849,7 +865,9 @@ async function renderAuditLogs(container, page = 1, filters = {}) {
       });
     });
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Time", "Event Type", "Actor Email", "Actor", "Org ID", "Target Type", "Target ID", "Metadata"],
       data.items,
       (tr, e) => {
@@ -905,7 +923,9 @@ async function renderRuns(container, page = 1, filters = {}) {
     header.appendChild(refreshBtn(() => renderRuns(container, page, filters)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Run ID", "User ID", "Status", "Created", "Summary"],
       data.items,
       (tr, r) => {
@@ -957,7 +977,9 @@ async function renderImages(container, page = 1, filters = {}) {
     header.appendChild(refreshBtn(() => renderImages(container, page, filters)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Image ID", "Thumbnail", "Run ID", "User ID", "Created", "Actions"],
       data.items,
       (tr, img) => {
@@ -996,7 +1018,9 @@ async function renderPrompts(container, page = 1, filters = {}) {
     header.appendChild(refreshBtn(() => renderPrompts(container, page, filters)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Prompt ID", "User ID", "Run ID", "Model", "Created", "Summary"],
       data.items,
       (tr, p) => {
@@ -1040,7 +1064,9 @@ async function renderProviderConfigs(container, page = 1, provider = "") {
     header.appendChild(refreshBtn(() => renderProviderConfigs(container, page, provider)));
     container.appendChild(header);
 
-    showTable(container,
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
       ["Provider", "Owner Type", "Owner ID", "Configured", "Masked Key", "Updated"],
       data.items,
       (tr, pc) => {
@@ -1152,7 +1178,6 @@ export async function renderAdminPanel() {
     btn.textContent = item.label;
     btn.addEventListener("click", () => {
       window.location.hash = "admin/" + item.id;
-      renderAdminPanel();
     });
     sidebar.appendChild(btn);
   });

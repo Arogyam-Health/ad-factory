@@ -1481,6 +1481,57 @@ def test_admin_frontend() -> int:
     failed += ok(".admin-meta-expanded" in admin_js,
                  "admin.js has safe metadata rendering in audit logs")
 
+    # 31. showTable no longer clears parent container (all calls use dedicated wrappers)
+    failed += ok("showTable(container," not in admin_js.replace("function showTable","__func__"),
+                 "admin.js showTable never called with bare container (all use tableWrap)")
+
+    # 32. showTable no longer called with bare content (overlay detail wrappers)
+    failed += ok("showTable(content," not in admin_js,
+                 "admin.js showTable never called with bare content (uses sessWrap/memWrap/etc)")
+
+    # 33. Sidebar click sets hash only, does not call renderAdminPanel directly
+    failed += ok('window.location.hash = "admin/' in admin_js,
+                 "admin.js sidebar click sets hash (delegates render to hashchange)")
+    failed += ok("location.hash = " in admin_js.replace("window.",""),
+                 "admin.js sidebar does not call renderAdminPanel directly")
+    # Verify renderAdminPanel is NOT called inside the click callback
+    click_match = "window.location.hash = \"admin/\" + item.id;\n      renderAdminPanel"
+    failed += ok(click_match not in admin_js,
+                 "admin.js sidebar click does not call renderAdminPanel directly")
+
+    # Now test main.js navigation behavior
+    with open(main_js_path) as f:
+        main_js = f.read()
+
+    # 34. Init does not show admin panel automatically on load (only shows nav)
+    init_block = main_js.split("initAuth().then")[1] if "initAuth().then" in main_js else ""
+    failed += ok("adminPanel.hidden = false" in init_block and "window.location.hash" in init_block,
+                 "init shows admin panel only when hash condition is met, not unconditionally")
+
+    # 35. Init shows admin panel when #admin/ hash is present on load
+    failed += ok('window.location.hash.startsWith("#admin/")' in main_js,
+                 "main.js checks hash on load for admin panel")
+
+    # 36. Admin nav click sets hash to admin/overview when opening
+    failed += ok('window.location.hash = "admin/overview"' in main_js,
+                 "admin nav click sets hash to admin/overview")
+
+    # 37. Admin nav click hides org/config panels when opening (hashchange handler does it)
+    failed += ok("orgPanel.style.display = \"none\"" in main_js,
+                 "hashchange hides org panel when opening admin")
+
+    # 38. Closing admin (non-admin hash) restores org/config panels
+    failed += ok("orgPanel.style.display = \"\"" in main_js,
+                 "leaving admin restores org panel display")
+
+    # 39. hashchange handler hides admin panel when navigating away from admin
+    failed += ok("panel.hidden = true" in main_js,
+                 "hashchange hides admin panel on non-admin hash")
+
+    # 40. hashchange handler shows admin panel and hides org/config on admin hash
+    failed += ok("panel.hidden = false" in main_js,
+                 "hashchange shows admin panel on admin hash")
+
     return failed
 
 
