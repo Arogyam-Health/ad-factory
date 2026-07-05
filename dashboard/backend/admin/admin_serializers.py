@@ -1,6 +1,30 @@
 from __future__ import annotations
 
+import copy
 from typing import Any
+
+SENSITIVE_KEYS = frozenset({
+    "api_key", "encrypted_api_key", "token", "token_hash",
+    "raw_token", "secret", "password", "client_secret",
+    "authorization", "cookie", "session",
+})
+
+
+def redact_sensitive(value: Any, depth: int = 0) -> Any:
+    """Recursively redact values whose keys match SENSITIVE_KEYS."""
+    if depth > 20:
+        return value
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for k, v in value.items():
+            if isinstance(k, str) and k.lower() in SENSITIVE_KEYS:
+                result[k] = "[REDACTED]"
+            else:
+                result[k] = redact_sensitive(v, depth + 1)
+        return result
+    if isinstance(value, list):
+        return [redact_sensitive(item, depth + 1) for item in value]
+    return value
 
 
 def safe_user(user: dict[str, Any]) -> dict[str, Any]:
@@ -53,7 +77,7 @@ def safe_audit_log(event: dict[str, Any]) -> dict[str, Any]:
         "target_type": event.get("target_type", ""),
         "target_id": event.get("target_id", ""),
         "org_id": event.get("org_id"),
-        "metadata": event.get("metadata", {}),
+        "metadata": redact_sensitive(event.get("metadata", {})),
         "created_at": event.get("created_at", 0),
     }
 

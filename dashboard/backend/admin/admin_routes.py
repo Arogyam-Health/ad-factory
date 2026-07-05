@@ -12,6 +12,7 @@ from dashboard.backend.admin.admin_serializers import (
     safe_session,
     safe_audit_log,
     safe_provider_config,
+    redact_sensitive,
 )
 from dashboard.backend.db.client import get_sync_db, ping
 from dashboard.backend.db.collections import (
@@ -674,4 +675,454 @@ def admin_health(
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "disconnected",
+    }
+
+
+# ── Readiness ─────────────────────────────────────────────────────────────────
+
+
+CHECK_ENV_KEYS = frozenset({
+    "MONGODB_URI", "APP_SECRET_KEY", "ENCRYPTION_KEY",
+    "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI",
+    "FRONTEND_ORIGIN", "SUPER_ADMIN_EMAILS",
+})
+
+
+@router.get("/api/admin/readiness")
+def admin_readiness(
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+    db = get_sync_db()
+
+    # 1. mongodb
+    try:
+        db_ok = ping()
+        checks.append({
+            "key": "mongodb",
+            "status": "ok" if db_ok else "error",
+            "message": "MongoDB connected" if db_ok else "MongoDB unreachable",
+        })
+    except Exception as exc:
+        checks.append({"key": "mongodb", "status": "error", "message": str(exc)})
+
+    # 2. required_env
+    import os
+    missing: list[str] = []
+    for k in sorted(CHECK_ENV_KEYS):
+        if not os.environ.get(k, "").strip():
+            missing.append(k)
+    if missing:
+        checks.append({
+            "key": "required_env",
+            "status": "error",
+            "message": f"Missing env vars: {', '.join(missing)}",
+        })
+    else:
+        checks.append({
+            "key": "required_env",
+            "status": "ok",
+            "message": "All required env vars present",
+        })
+
+    # 3. google_oauth
+    redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI", "")
+    frontend_origin = os.environ.get("FRONTEND_ORIGIN", "")
+    expected_redirect = f"{frontend_origin}/api/auth/google/callback" if frontend_origin else ""
+    if redirect_uri and expected_redirect and redirect_uri != expected_redirect:
+        checks.append({
+            "key": "google_oauth",
+            "status": "warning",
+            "message": f"GOOGLE_REDIRECT_URI ({redirect_uri}) does not match FRONTEND_ORIGIN + /api/auth/google/callback ({expected_redirect})",
+        })
+    elif redirect_uri and not expected_redirect:
+        checks.append({
+            "key": "google_oauth",
+            "status": "warning",
+            "message": "GOOGLE_REDIRECT_URI set but FRONTEND_ORIGIN is empty, cannot validate",
+        })
+    else:
+        checks.append({
+            "key": "google_oauth",
+            "status": "ok" if redirect_uri else "error",
+            "message": "Google OAuth configured" if redirect_uri else "GOOGLE_REDIRECT_URI not set",
+        })
+
+    # 4. frontend_origin
+    cors_origins = os.environ.get("CORS_ORIGINS", "")
+    if not frontend_origin:
+        checks.append({
+            "key": "frontend_origin",
+            "status": "error",
+            "message": "FRONTEND_ORIGIN not set",
+        })
+    elif cors_origins and frontend_origin not in cors_origins:
+        checks.append({
+            "key": "frontend_origin",
+            "status": "warning",
+            "message": f"FRONTEND_ORIGIN ({frontend_origin}) not found in CORS_ORIGINS ({cors_origins})",
+        })
+    else:
+        checks.append({
+            "key": "frontend_origin",
+            "status": "ok",
+            "message": f"FRONTEND_ORIGIN set{f' and in CORS_ORIGINS' if cors_origins else ''}",
+        })
+
+    # 5. super_admins
+    sa_emails_env = os.environ.get("SUPER_ADMIN_EMAILS", "").strip()
+    sa_in_db = db[COLL_USERS].count_documents({"is_super_admin": True}) if db_ok else 0
+    if not sa_emails_env:
+        checks.append({
+            "key": "super_admins",
+            "status": "error",
+            "message": "SUPER_ADMIN_EMAILS env var is empty",
+        })
+    elif sa_in_db == 0:
+        checks.append({
+            "key": "super_admins",
+            "status": "warning",
+            "message": f"SUPER_ADMIN_EMAILS has entries but no user with is_super_admin=true found (may need login)",
+        })
+    else:
+        checks.append({
+            "key": "super_admins",
+            "status": "ok",
+            "message": f"{sa_in_db} super admin(s) configured",
+        })
+
+    # 6. indexes
+    try:
+        from dashboard.backend.db.indexes import ensure_indexes
+        ensure_indexes()
+        checks.append({
+            "key": "indexes",
+            "status": "ok",
+            "message": "Indexes verified/ensured",
+        })
+    except Exception as exc:
+        checks.append({
+            "key": "indexes",
+            "status": "warning",
+            "message": f"Could not verify indexes: {exc}",
+        })
+
+    # 7. storage
+    storage_provider = os.environ.get("STORAGE_PROVIDER", "").lower()
+    if storage_provider == "cloudinary":
+        st_checks: list[str] = []
+        if not os.environ.get("CLOUDINARY_CLOUD_NAME", ""):
+            st_checks.append("CLOUDINARY_CLOUD_NAME")
+        if not os.environ.get("CLOUDINARY_API_KEY", ""):
+            st_checks.append("CLOUDINARY_API_KEY")
+        if not os.environ.get("CLOUDINARY_API_SECRET", ""):
+            st_checks.append("CLOUDINARY_API_SECRET")
+        if st_checks:
+            checks.append({
+                "key": "storage",
+                "status": "error",
+                "message": f"Cloudinary configured but missing: {', '.join(st_checks)}",
+            })
+        else:
+            checks.append({
+                "key": "storage",
+                "status": "ok",
+                "message": "Cloudinary configured",
+            })
+    else:
+        checks.append({
+            "key": "storage",
+            "status": "ok",
+            "message": f"Storage provider: {storage_provider or 'local'}",
+        })
+
+    # 8. config_integrity
+    if db_ok:
+        try:
+            missing_files = db[COLL_USER_CONFIGS].count_documents({
+                "is_active": True,
+                "files": {"$exists": False},
+            })
+            dotted_keys = db[COLL_USER_CONFIGS].count_documents({
+                "is_active": True,
+                "files.product_master_doc": {"$exists": False},
+                "$or": [
+                    {"product_master_doc": {"$exists": True}},
+                ],
+            })
+            warnings: list[str] = []
+            if missing_files:
+                warnings.append(f"{missing_files} config(s) without files object")
+            if dotted_keys:
+                warnings.append(f"{dotted_keys} config(s) with dotted top-level keys")
+            if warnings:
+                checks.append({
+                    "key": "config_integrity",
+                    "status": "warning",
+                    "message": "; ".join(warnings),
+                })
+            else:
+                checks.append({
+                    "key": "config_integrity",
+                    "status": "ok",
+                    "message": "No malformed config docs found",
+                })
+        except Exception as exc:
+            checks.append({
+                "key": "config_integrity",
+                "status": "warning",
+                "message": f"Could not check config integrity: {exc}",
+            })
+    else:
+        checks.append({
+            "key": "config_integrity",
+            "status": "warning",
+            "message": "Skipped (DB unavailable)",
+        })
+
+    # 9. invite_security
+    if db_ok:
+        try:
+            missing_hash = db[COLL_ORG_INVITES].count_documents({
+                "$or": [
+                    {"token_hash": {"$exists": False}},
+                    {"token_hash": None},
+                    {"token_hash": ""},
+                ],
+            })
+            raw_token = db[COLL_ORG_INVITES].count_documents({
+                "$or": [
+                    {"token": {"$exists": True}},
+                    {"raw_token": {"$exists": True}},
+                ],
+            })
+            inv_warnings: list[str] = []
+            if missing_hash:
+                inv_warnings.append(f"{missing_hash} invite(s) missing token_hash")
+            if raw_token:
+                inv_warnings.append(f"{raw_token} invite(s) contain raw token field")
+            if inv_warnings:
+                checks.append({
+                    "key": "invite_security",
+                    "status": "error" if raw_token else "warning",
+                    "message": "; ".join(inv_warnings),
+                })
+            else:
+                checks.append({
+                    "key": "invite_security",
+                    "status": "ok",
+                    "message": "No invite security issues",
+                })
+        except Exception as exc:
+            checks.append({
+                "key": "invite_security",
+                "status": "warning",
+                "message": f"Could not check invite security: {exc}",
+            })
+    else:
+        checks.append({
+            "key": "invite_security",
+            "status": "warning",
+            "message": "Skipped (DB unavailable)",
+        })
+
+    # 10. provider_config_security
+    if db_ok:
+        try:
+            plaintext_api_keys = db[COLL_PROVIDER_CONFIGS].count_documents({
+                "api_key": {"$exists": True, "$ne": None, "$ne": ""},
+            })
+            if plaintext_api_keys:
+                checks.append({
+                    "key": "provider_config_security",
+                    "status": "warning",
+                    "message": f"{plaintext_api_keys} provider config(s) have plaintext api_key (should use encrypted_api_key)",
+                })
+            else:
+                checks.append({
+                    "key": "provider_config_security",
+                    "status": "ok",
+                    "message": "No plaintext api_key fields found in provider configs",
+                })
+        except Exception as exc:
+            checks.append({
+                "key": "provider_config_security",
+                "status": "warning",
+                "message": f"Could not check provider config security: {exc}",
+            })
+    else:
+        checks.append({
+            "key": "provider_config_security",
+            "status": "warning",
+            "message": "Skipped (DB unavailable)",
+        })
+
+    # 11. disabled_users
+    if db_ok:
+        try:
+            disabled = db[COLL_USERS].count_documents({"is_active": False})
+            checks.append({
+                "key": "disabled_users",
+                "status": "ok",
+                "message": f"{disabled} disabled user(s)",
+            })
+        except Exception as exc:
+            checks.append({
+                "key": "disabled_users",
+                "status": "warning",
+                "message": f"Could not count disabled users: {exc}",
+            })
+    else:
+        checks.append({
+            "key": "disabled_users",
+            "status": "warning",
+            "message": "Skipped (DB unavailable)",
+        })
+
+    # 12. admin_routes
+    admin_paths = [
+        "/api/admin/overview", "/api/admin/readiness", "/api/admin/users",
+        "/api/admin/orgs", "/api/admin/configs", "/api/admin/audit-logs",
+        "/api/admin/stats", "/api/admin/health",
+    ]
+    try:
+        for r in router.routes:
+            if hasattr(r, "path") and r.path in admin_paths:
+                admin_paths.remove(r.path)
+        if admin_paths:
+            checks.append({
+                "key": "admin_routes",
+                "status": "warning",
+                "message": f"Routes not found in router: {', '.join(admin_paths)}",
+            })
+        else:
+            checks.append({
+                "key": "admin_routes",
+                "status": "ok",
+                "message": "All admin routes registered",
+            })
+    except Exception as exc:
+        checks.append({
+            "key": "admin_routes",
+            "status": "warning",
+            "message": f"Could not verify admin routes: {exc}",
+        })
+
+    ok_count = sum(1 for c in checks if c["status"] == "ok")
+    warn_count = sum(1 for c in checks if c["status"] == "warning")
+    err_count = sum(1 for c in checks if c["status"] == "error")
+    overall = "error" if err_count else ("warning" if warn_count else "ok")
+
+    return {
+        "status": overall,
+        "checks": checks,
+        "summary": {"ok": ok_count, "warning": warn_count, "error": err_count},
+    }
+
+
+# ── Safe Exports ──────────────────────────────────────────────────────────────
+
+
+@router.get("/api/admin/exports/users")
+def admin_export_users(
+    status: str = Query("all"),
+    limit: int = Query(1000, ge=1, le=5000),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    db = get_sync_db()
+    q: dict[str, Any] = {}
+    if status == "active":
+        q["is_active"] = {"$ne": False}
+    elif status == "disabled":
+        q["is_active"] = False
+    items = list(
+        db[COLL_USERS].find(q).sort("created_at", -1).limit(limit)
+    )
+    return {
+        "exported_at": time.time(),
+        "type": "users",
+        "count": len(items),
+        "items": [safe_user(u) for u in items],
+    }
+
+
+@router.get("/api/admin/exports/orgs")
+def admin_export_orgs(
+    limit: int = Query(1000, ge=1, le=5000),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    db = get_sync_db()
+    items = list(
+        db[COLL_ORGS].find({}).sort("created_at", -1).limit(limit)
+    )
+    result_items: list[dict[str, Any]] = []
+    for org in items:
+        org.pop("_id", None)
+        member_count = db[COLL_ORG_MEMBERS].count_documents({"org_id": org.get("org_id", "")})
+        invite_count = db[COLL_ORG_INVITES].count_documents({"org_id": org.get("org_id", "")})
+        org["member_count"] = member_count
+        org["pending_invite_count"] = invite_count
+        result_items.append(org)
+    return {
+        "exported_at": time.time(),
+        "type": "orgs",
+        "count": len(result_items),
+        "items": result_items,
+    }
+
+
+@router.get("/api/admin/exports/configs")
+def admin_export_configs(
+    limit: int = Query(1000, ge=1, le=5000),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    db = get_sync_db()
+    items = list(
+        db[COLL_USER_CONFIGS].find({}).sort("updated_at", -1).limit(limit)
+    )
+    result_items: list[dict[str, Any]] = []
+    for cfg in items:
+        cfg.pop("_id", None)
+        cfg.pop("files", None)
+        version_count = db[COLL_CONFIG_VERSIONS].count_documents({"config_id": cfg.get("config_id", "")})
+        cfg["version_count"] = version_count
+        result_items.append(cfg)
+    return {
+        "exported_at": time.time(),
+        "type": "configs",
+        "count": len(result_items),
+        "items": result_items,
+    }
+
+
+@router.get("/api/admin/exports/audit-logs")
+def admin_export_audit_logs(
+    limit: int = Query(1000, ge=1, le=10000),
+    event_type: str | None = Query(None),
+    org_id: str | None = Query(None),
+    actor_user_id: str | None = Query(None),
+    target_type: str | None = Query(None),
+    target_id: str | None = Query(None),
+    _admin: dict[str, Any] = Depends(require_super_admin_dependency),
+) -> dict[str, Any]:
+    db = get_sync_db()
+    q: dict[str, Any] = {}
+    if event_type:
+        q["event_type"] = event_type
+    if org_id:
+        q["org_id"] = org_id
+    if actor_user_id:
+        q["actor_user_id"] = actor_user_id
+    if target_type:
+        q["target_type"] = target_type
+    if target_id:
+        q["target_id"] = target_id
+    items = list(
+        db[COLL_AUDIT_LOGS].find(q).sort("created_at", -1).limit(limit)
+    )
+    return {
+        "exported_at": time.time(),
+        "type": "audit-logs",
+        "count": len(items),
+        "items": [safe_audit_log(e) for e in items],
     }

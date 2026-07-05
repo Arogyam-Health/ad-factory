@@ -111,6 +111,11 @@ function confirmAction(msg) {
   return confirm(msg);
 }
 
+function confirmTyped(msg, expected) {
+  const typed = prompt(msg);
+  return typed !== null && typed.trim() === expected;
+}
+
 async function hashRoute() {
   const hash = window.location.hash.replace("#admin/", "").split("?")[0] || "overview";
   if (hash !== currentSection) {
@@ -222,6 +227,13 @@ async function renderUsers(container, page = 1, search = "") {
     header.appendChild(searchInput);
     header.appendChild(searchBtn);
     header.appendChild(refreshBtn(() => renderUsers(container, page, search)));
+    const exportUsersBtn = document.createElement("a");
+    exportUsersBtn.className = "ghost-btn";
+    exportUsersBtn.textContent = "Export JSON";
+    exportUsersBtn.href = "/api/admin/exports/users";
+    exportUsersBtn.target = "_blank";
+    exportUsersBtn.rel = "noopener";
+    header.appendChild(exportUsersBtn);
     container.appendChild(header);
 
     const tableWrap = document.createElement("div");
@@ -267,8 +279,8 @@ async function renderUsers(container, page = 1, search = "") {
           saBtn.className = "ghost-btn";
           saBtn.textContent = u.is_super_admin ? "Revoke SA" : "Grant SA";
           saBtn.addEventListener("click", async () => {
-            if (u.is_super_admin && !confirmAction(`Revoke super admin for ${u.email}?`)) return;
-            if (!u.is_super_admin && !confirmAction(`Grant super admin to ${u.email}?`)) return;
+            if (u.is_super_admin && !confirmTyped(`Revoke super admin for ${u.email}? Type REVOKE to confirm.`, "REVOKE")) return;
+            if (!u.is_super_admin && !confirmTyped(`Grant super admin to ${u.email}? Type GRANT to confirm.`, "GRANT")) return;
             try {
               await adminFetch("/api/admin/users/" + encodeURIComponent(u.user_id), {
                 method: "PATCH",
@@ -463,6 +475,13 @@ async function renderOrgs(container, page = 1, search = "") {
     header.appendChild(searchInput);
     header.appendChild(searchBtn);
     header.appendChild(refreshBtn(() => renderOrgs(container, page, search)));
+    const exportOrgsBtn = document.createElement("a");
+    exportOrgsBtn.className = "ghost-btn";
+    exportOrgsBtn.textContent = "Export JSON";
+    exportOrgsBtn.href = "/api/admin/exports/orgs";
+    exportOrgsBtn.target = "_blank";
+    exportOrgsBtn.rel = "noopener";
+    header.appendChild(exportOrgsBtn);
     container.appendChild(header);
 
     const tableWrap = document.createElement("div");
@@ -601,6 +620,7 @@ function showOrgEdit(org) {
       is_active: document.getElementById("editOrgActive").value === "true",
       config_mode: document.getElementById("editOrgConfigMode").value,
     };
+    if (!payload.is_active && !confirmTyped("Disable this organization? Type DISABLE to confirm.", "DISABLE")) return;
     if (!payload.name) return;
     try {
       await adminFetch("/api/admin/orgs/" + encodeURIComponent(org.org_id), {
@@ -634,6 +654,13 @@ async function renderConfigs(container, page = 1, ownerType = "") {
     filter.addEventListener("change", () => renderConfigs(container, 1, filter.value));
     header.appendChild(filter);
     header.appendChild(refreshBtn(() => renderConfigs(container, page, ownerType)));
+    const exportCfgBtn = document.createElement("a");
+    exportCfgBtn.className = "ghost-btn";
+    exportCfgBtn.textContent = "Export JSON";
+    exportCfgBtn.href = "/api/admin/exports/configs";
+    exportCfgBtn.target = "_blank";
+    exportCfgBtn.rel = "noopener";
+    header.appendChild(exportCfgBtn);
     container.appendChild(header);
 
     const tableWrap = document.createElement("div");
@@ -803,7 +830,7 @@ function renderConfigCopy(container) {
 
   document.getElementById("runConfigCopy").addEventListener("click", async () => {
     const mode = document.getElementById("copyMode").value;
-    if (mode === "replace_all" && !confirmAction("This will overwrite target config. Continue?")) return;
+    if (mode === "replace_all" && !confirmTyped("This will overwrite target config. Type REPLACE to confirm.", "REPLACE")) return;
 
     const payload = {
       source_owner_type: document.getElementById("copySourceType").value,
@@ -855,6 +882,13 @@ async function renderAuditLogs(container, page = 1, filters = {}) {
     `;
     header.appendChild(filterDiv);
     header.appendChild(refreshBtn(() => renderAuditLogs(container, page, filters)));
+    const exportAuditBtn = document.createElement("a");
+    exportAuditBtn.className = "ghost-btn";
+    exportAuditBtn.textContent = "Export JSON";
+    exportAuditBtn.href = "/api/admin/exports/audit-logs";
+    exportAuditBtn.target = "_blank";
+    exportAuditBtn.rel = "noopener";
+    header.appendChild(exportAuditBtn);
     container.appendChild(header);
 
     document.getElementById("auditFilterBtn")?.addEventListener("click", () => {
@@ -1132,6 +1166,118 @@ async function renderHealth(container) {
   }
 }
 
+// ─── Section 13: Readiness ─────────────────────────────────────────────
+
+async function renderReadiness(container) {
+  showLoading(container, "Running readiness checks...");
+  try {
+    const data = await adminFetch("/api/admin/readiness");
+    container.innerHTML = "";
+    const header = document.createElement("div");
+    header.className = "admin-section-header";
+    const overallBadge = data.status === "ok" ? "✓ Operational" : data.status === "warning" ? "⚠ Warning" : "✗ Error";
+    const overallColor = data.status === "ok" ? "var(--accent-green)" : data.status === "warning" ? "var(--accent-yellow, #cc9900)" : "var(--accent-coral)";
+    header.innerHTML = `<h3>Readiness</h3><span style="color:${overallColor};font-weight:600;margin-left:0.5rem;">${escapeHtml(overallBadge)}</span>`;
+    header.appendChild(refreshBtn(() => renderReadiness(container)));
+    container.appendChild(header);
+
+    const summary = data.summary || {};
+    const summaryCards = document.createElement("div");
+    summaryCards.className = "admin-stat-cards";
+    const sGroup = document.createElement("div");
+    sGroup.className = "admin-stat-group";
+    sGroup.innerHTML = `<h4>Summary</h4>
+      <div class="admin-stat-card"><span class="admin-stat-value">${summary.ok || 0}</span><span class="admin-stat-label">Passed</span></div>
+      <div class="admin-stat-card"><span class="admin-stat-value">${summary.warning || 0}</span><span class="admin-stat-label" style="color:var(--accent-yellow,#cc9900);">Warnings</span></div>
+      <div class="admin-stat-card"><span class="admin-stat-value">${summary.error || 0}</span><span class="admin-stat-label" style="color:var(--accent-coral);">Errors</span></div>`;
+    summaryCards.appendChild(sGroup);
+    container.appendChild(summaryCards);
+
+    const checks = data.checks || [];
+    const tableWrap = document.createElement("div");
+    container.appendChild(tableWrap);
+    showTable(tableWrap,
+      ["Check", "Status", "Message"],
+      checks,
+      (tr, c) => {
+        const statusColor = c.status === "ok" ? "var(--accent-green)" : c.status === "warning" ? "var(--accent-yellow,#cc9900)" : "var(--accent-coral)";
+        const statusIcon = c.status === "ok" ? "✓" : c.status === "warning" ? "⚠" : "✗";
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(c.key)}</strong></td>
+          <td style="color:${statusColor};font-weight:600;">${statusIcon} ${escapeHtml(c.status)}</td>
+          <td>${escapeHtml(c.message || "")}</td>
+        `;
+      }
+    );
+  } catch (err) {
+    showError(container, err);
+  }
+}
+
+// ─── Section 14: Runbook ────────────────────────────────────────────────
+
+function renderRunbook(container) {
+  container.innerHTML = `
+    <h3>Admin Runbook</h3>
+    <div style="max-width:700px;">
+    <h4>Admin Dashboard Basics</h4>
+    <ul>
+      <li><strong>Overview</strong> — Platform-wide stats: users, orgs, runs, system health.</li>
+      <li><strong>Users</strong> — List, search, disable/enable, grant/revoke super admin, revoke sessions.</li>
+      <li><strong>Individual Users</strong> — Users with no active org membership.</li>
+      <li><strong>Organizations</strong> — View, edit name/config mode, disable orgs.</li>
+      <li><strong>Configs</strong> — Browse all configs (user + org), view metadata, view content, copy.</li>
+      <li><strong>Audit Logs</strong> — Filterable event log. Metadata is safe-redacted.</li>
+      <li><strong>Provider Configs</strong> — See which providers are configured. Keys are masked.</li>
+      <li><strong>Readiness</strong> — Deployment health checks: DB, env vars, OAuth, config integrity, security.</li>
+    </ul>
+
+    <h4>User Operations</h4>
+    <ul>
+      <li><strong>Disable user</strong> — Prevents login; sessions remain but user gets 403 on protected endpoints. <em>Always prefer disable over delete.</em></li>
+      <li><strong>Enable user</strong> — Restores access.</li>
+      <li><strong>Grant super admin</strong> — Requires typing <code>GRANT</code> to confirm. Sets is_super_admin + is_platform_admin.</li>
+      <li><strong>Revoke super admin</strong> — Requires typing <code>REVOKE</code> to confirm. Cannot revoke your own super admin.</li>
+      <li><strong>Revoke sessions</strong> — Deletes all sessions for that user; they must re-login.</li>
+    </ul>
+
+    <h4>Org Operations</h4>
+    <ul>
+      <li><strong>Disable org</strong> — Requires typing <code>DISABLE</code> to confirm. Sets is_active=false.</li>
+      <li><strong>Enable org</strong> — Re-activate.</li>
+      <li><strong>Config mode</strong>: <code>shared_org_config</code> = one config for whole org; <code>individual_member_config</code> = each member has their own config (copied from org default on invite).</li>
+    </ul>
+
+    <h4>Config Operations</h4>
+    <ul>
+      <li><strong>View metadata</strong> — Shows config_id, owner, timestamps. No file content.</li>
+      <li><strong>View content</strong> — Explicit action to see config files. Shows sensitive business logic.</li>
+      <li><strong>Copy config</strong> — Source → target. <code>replace_all</code> overwrites (requires typing <code>REPLACE</code>). <code>merge_missing</code> only adds missing keys.</li>
+      <li><strong>Version history</strong> — Auto-created before every update. Rollback available in version detail.</li>
+    </ul>
+
+    <h4>Safety Rules</h4>
+    <ul>
+      <li>Never share config content outside the admin team.</li>
+      <li>Never reveal provider API keys (masked by default).</li>
+      <li>Never grant super admin casually; use the typed confirmation.</li>
+      <li>Disable user instead of deleting (delete is not implemented for safety).</li>
+      <li>Review audit logs after admin actions.</li>
+      <li>Use Readiness panel before/after deployments.</li>
+    </ul>
+
+    <h4>Troubleshooting</h4>
+    <ul>
+      <li><strong>Admin nav missing</strong> — Check SUPER_ADMIN_EMAILS env var; re-login after setting.</li>
+      <li><strong>Google login fails</strong> — Verify GOOGLE_REDIRECT_URI matches FRONTEND_ORIGIN + /api/auth/google/callback.</li>
+      <li><strong>Configs missing</strong> — Check readiness config_integrity for malformed docs.</li>
+      <li><strong>Provider key issues</strong> — Check provider configs section (masked). Re-save keys via user dashboard.</li>
+      <li><strong>500 errors in admin</strong> — Check Render logs. Run readiness checks. Verify MongoDB connectivity.</li>
+    </ul>
+    </div>
+  `;
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────
 
 export async function renderAdminPanel() {
@@ -1170,6 +1316,8 @@ export async function renderAdminPanel() {
     { id: "prompts", label: "Prompts" },
     { id: "providers", label: "Provider Configs" },
     { id: "health", label: "Health" },
+    { id: "readiness", label: "Readiness" },
+    { id: "runbook", label: "Runbook" },
   ];
 
   navItems.forEach((item) => {
@@ -1222,6 +1370,12 @@ export async function renderAdminPanel() {
       break;
     case "health":
       await renderHealth(content);
+      break;
+    case "readiness":
+      await renderReadiness(content);
+      break;
+    case "runbook":
+      renderRunbook(content);
       break;
     default:
       content.innerHTML = `<p class="hint">Unknown section.</p>`;

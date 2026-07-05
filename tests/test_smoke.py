@@ -1539,6 +1539,161 @@ def test_admin_frontend() -> int:
     return failed
 
 
+# ─── Phase 6: Readiness, Exports, Safety ──────────────────────────────────
+
+
+def test_admin_readiness_phase6() -> int:
+    failed = 0
+    print("\n[Admin Readiness / Phase 6]")
+
+    # Import redact_sensitive
+    from dashboard.backend.admin.admin_serializers import redact_sensitive, safe_provider_config
+
+    # 1. redact_sensitive recursive
+    test_data = {
+        "normal": "hello",
+        "api_key": "sk-1234",
+        "deep": {
+            "token_hash": "abc123",
+            "safe_field": "world",
+            "nested": {
+                "secret": "do-not-show",
+                "ok": "visible",
+            },
+        },
+    }
+    redacted = redact_sensitive(test_data)
+    failed += ok(redacted.get("api_key") == "[REDACTED]", "redact_sensitive redacts api_key")
+    failed += ok(redacted.get("normal") == "hello", "redact_sensitive preserves normal fields")
+    failed += ok(redacted["deep"].get("token_hash") == "[REDACTED]", "redact_sensitive redacts nested token_hash")
+    failed += ok(redacted["deep"].get("safe_field") == "world", "redact_sensitive preserves nested safe fields")
+    failed += ok(redacted["deep"]["nested"].get("secret") == "[REDACTED]", "redact_sensitive redacts deeply nested secret")
+    failed += ok(redacted["deep"]["nested"].get("ok") == "visible", "redact_sensitive preserves deeply nested safe")
+
+    # 2. redact_sensitive handles non-dict
+    failed += ok(redact_sensitive("string") == "string", "redact_sensitive passes through string")
+    failed += ok(redact_sensitive(42) == 42, "redact_sensitive passes through int")
+    failed += ok(redact_sensitive(None) is None, "redact_sensitive passes through None")
+    failed += ok(redact_sensitive(["a", {"api_key": "secret"}])[1]["api_key"] == "[REDACTED]",
+                 "redact_sensitive redacts in list")
+
+    # 3. safe_provider_config still masks
+    pc = safe_provider_config({
+        "provider": "opencode",
+        "owner_type": "user",
+        "owner_id": "usr_test",
+        "api_key": "sk-visible",
+        "encrypted_api_key": "cipher:xxx",
+        "updated_at": 1000,
+    })
+    failed += ok("api_key" not in pc, "safe_provider_config does not expose api_key")
+    failed += ok("encrypted_api_key" not in pc, "safe_provider_config does not expose encrypted_api_key")
+
+    # 4. safe_audit_log redacts metadata
+    from dashboard.backend.admin.admin_serializers import safe_audit_log
+    audit = safe_audit_log({
+        "event_id": "evt_1",
+        "event_type": "test",
+        "actor_user_id": "usr_a",
+        "actor_email": "a@b.com",
+        "target_type": "user",
+        "target_id": "usr_b",
+        "org_id": None,
+        "metadata": {"api_key": "sk-leaked", "reason": "test"},
+        "created_at": 1000,
+    })
+    failed += ok(audit["metadata"].get("api_key") == "[REDACTED]", "safe_audit_log redacts api_key in metadata")
+    failed += ok(audit["metadata"].get("reason") == "test", "safe_audit_log preserves non-sensitive metadata")
+    failed += ok("token_hash" not in str(audit), "safe_audit_log avoids token_hash exposure")
+
+    # 5. Readiness endpoint requires auth (route check via app import + mock)
+    failed += ok("/api/admin/readiness" in str(router_admin_paths()),
+                 "readiness endpoint registered in admin router")
+
+    # 6. Export endpoints require auth
+    failed += ok("/api/admin/exports/users" in str(router_admin_paths()),
+                 "export users endpoint registered")
+    failed += ok("/api/admin/exports/orgs" in str(router_admin_paths()),
+                 "export orgs endpoint registered")
+    failed += ok("/api/admin/exports/configs" in str(router_admin_paths()),
+                 "export configs endpoint registered")
+    failed += ok("/api/admin/exports/audit-logs" in str(router_admin_paths()),
+                 "export audit-logs endpoint registered")
+
+    # 7. Readiness endpoint returns 401 without auth (skip if app startup fails due to DNS)
+    try:
+        with TestClient(app) as client:
+            resp = client.get("/api/admin/readiness")
+            failed += ok(resp.status_code == 401, "GET /api/admin/readiness without auth returns 401")
+
+            resp_u = client.get("/api/admin/exports/users")
+            failed += ok(resp_u.status_code == 401, "GET /api/admin/exports/users without auth returns 401")
+
+            resp_o = client.get("/api/admin/exports/orgs")
+            failed += ok(resp_o.status_code == 401, "GET /api/admin/exports/orgs without auth returns 401")
+
+            resp_c = client.get("/api/admin/exports/configs")
+            failed += ok(resp_c.status_code == 401, "GET /api/admin/exports/configs without auth returns 401")
+
+            resp_a = client.get("/api/admin/exports/audit-logs")
+            failed += ok(resp_a.status_code == 401, "GET /api/admin/exports/audit-logs without auth returns 401")
+    except Exception:
+        print("  SKIP TestClient tests (app startup failure)")
+
+    # 8. Frontend: admin.js includes Readiness and Runbook
+    admin_js_path = ROOT / "dashboard" / "frontend" / "js" / "admin.js"
+    with open(admin_js_path) as f:
+        aj = f.read()
+    failed += ok("renderReadiness" in aj, "admin.js includes renderReadiness")
+    failed += ok("renderRunbook" in aj, "admin.js includes renderRunbook")
+    failed += ok("/api/admin/readiness" in aj, "admin.js calls /api/admin/readiness")
+    failed += ok("readiness" in aj.lower(), "admin.js nav includes Readiness")
+    failed += ok("Runbook" in aj, "admin.js nav includes Runbook")
+
+    # 9. Export buttons in admin.js
+    failed += ok("/api/admin/exports/users" in aj, "admin.js has users export endpoint")
+    failed += ok("/api/admin/exports/orgs" in aj, "admin.js has orgs export endpoint")
+    failed += ok("/api/admin/exports/configs" in aj, "admin.js has configs export endpoint")
+    failed += ok("/api/admin/exports/audit-logs" in aj, "admin.js has audit-logs export endpoint")
+
+    # 10. Typed confirmations
+    failed += ok("confirmTyped" in aj, "admin.js has confirmTyped helper")
+    failed += ok('confirmTyped(`Grant' in aj or 'confirmTyped("Grant' in aj,
+                 "admin.js uses typed confirmation for GRANT")
+    failed += ok("REVOKE" in aj, "admin.js uses typed confirmation for REVOKE")
+    failed += ok("REPLACE" in aj, "admin.js uses typed confirmation for REPLACE")
+    failed += ok("DISABLE" in aj, "admin.js uses typed confirmation for DISABLE")
+
+    # 11. No secrets exposed in admin.js
+    failed += ok("Reveal API key" not in aj, "admin.js does not contain 'Reveal API key'")
+    failed += ok("encrypted_api_key" not in aj, "admin.js does not render encrypted_api_key")
+    failed += ok("token_hash" not in aj, "admin.js does not render token_hash")
+
+    # 12. Route script exists and has required routes
+    script_path = ROOT / "scripts" / "check_admin_routes.py"
+    failed += ok(script_path.exists(), "scripts/check_admin_routes.py exists")
+    with open(script_path) as f:
+        script = f.read()
+    failed += ok("/api/admin/readiness" in script, "script checks /api/admin/readiness")
+    failed += ok("--base-url" in script, "script supports --base-url")
+    failed += ok("500" in script, "script treats 500 as failure")
+    failed += ok("--cookie" in script, "script supports --cookie")
+
+    # 13. Config export excludes files content
+    # Verify admin_routes.py strips files from export
+    with open(ROOT / "dashboard" / "backend" / "admin" / "admin_routes.py") as f:
+        routes_py = f.read()
+    failed += ok('cfg.pop("files", None)' in routes_py, "config export strips files content")
+
+    return failed
+
+
+def router_admin_paths():
+    """Return list of admin route paths for static verification."""
+    from dashboard.backend.admin.admin_routes import router
+    return [getattr(r, "path", "") for r in router.routes if hasattr(r, "path")]
+
+
 # ─── main ──────────────────────────────────────────────────────────────────
 
 
@@ -1564,6 +1719,7 @@ def main() -> int:
     total += test_config_versions()
     total += test_admin_api()
     total += test_admin_frontend()
+    total += test_admin_readiness_phase6()
 
     print(f"\n{'='*50}")
     if total == 0:
