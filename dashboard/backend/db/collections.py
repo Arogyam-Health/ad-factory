@@ -17,6 +17,13 @@ COLL_BROWSER_SESSIONS = "browser_sessions"
 COLL_FILE_MAP = "file_map"
 COLL_USER_CONFIGS = "user_configs"
 
+# Organization collections
+COLL_ORGS = "orgs"
+COLL_ORG_MEMBERS = "org_members"
+COLL_ORG_INVITES = "org_invites"
+COLL_AUDIT_LOGS = "audit_logs"
+COLL_CONFIG_VERSIONS = "config_versions"
+
 
 FIELD_USER_ID = "user_id"
 FIELD_RUN_ID = "run_id"

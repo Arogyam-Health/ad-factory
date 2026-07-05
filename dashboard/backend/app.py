@@ -7674,8 +7674,7 @@ app.include_router(blob_router)
 app.include_router(user_config_router)
 app.include_router(agent_router)
 
-
-@app.get("/api/generic-config")
+# ── Organization routes ─────────────────────────────────────────────────────\nfrom dashboard.backend.services.org_routes import router as org_router\napp.include_router(org_router)\n\n# You can now use: GET /api/orgs/me, POST /api/orgs, GET /api/orgs/{org_id}, etc.\n\n# ── Authenticated file download endpoints (production-safe) ───────────────────────────────
 def get_generic_config_public() -> dict[str, Any]:
     """Public endpoint: returns the 8 generic config files for non-logged-in users."""
     from dashboard.backend.services.user_config import get_generic_config
