@@ -14,6 +14,8 @@ CONFIG_KEYS = [
     "persona_seeds",
     "copy_architecture",
     "background_variant",
+    "prompt_assembler_templates",
+    "conversion_916_prompt",
 ]
 
 
@@ -284,6 +286,8 @@ def get_generic_config() -> dict[str, Any]:
     persona_seeds_path = root / "persona_seeds.json"
     copy_arch_path = root / "dashboard" / "backend" / "copy_architecture.json"
     background_variant_path = root / "background_variant.json"
+    prompt_assembler_path = root / "scripts" / "prompt_assembler_templates.json"
+    conversion_916_path = root / "input" / "prompt_916_from_45.txt"
 
     def _read(p: Path) -> str:
         try:
@@ -298,4 +302,6 @@ def get_generic_config() -> dict[str, Any]:
         "persona_seeds": _read(persona_seeds_path) or "[]",
         "copy_architecture": _read(copy_arch_path) or "{}",
         "background_variant": _read(background_variant_path) or "{}",
+        "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
+        "conversion_916_prompt": _read(conversion_916_path),
     }

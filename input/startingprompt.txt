@@ -1,72 +1,57 @@
-OBESITY KILLER KIT - GLOBAL PRODUCT RULES
+[PRODUCT NAME] - GLOBAL PRODUCT RULES
+
+Instructions:
+- Replace all bracketed placeholders with your actual product details.
+- These rules control how your product appears in generated ad images.
+- Be as specific as possible — the image generator follows these rules literally.
 
 A0. OUTPUT COUNT - ABSOLUTE RULE
 - Generate exactly one final image for each prompt. Do not create two options, variations, comparisons, grids, or ask which one is better.
 - Do not show alternatives. Do not present a choice. Output one finished ad image only.
 
 A1. PRODUCT LOCK - ABSOLUTE RULE
-- Use the provided Obesity Killer product packshot images pixel-for-pixel as visual truth.
+- Use the provided [YOUR PRODUCT] packshot images pixel-for-pixel as visual truth.
 - Do not redraw, recreate, regenerate, relabel, recolor, blur, "fix", or reinterpret any product or packaging.
-- Do not change Hindi or English label text, logos printed on packaging, illustrations, colors, proportions, or label layouts.
+- Do not change label text, logos printed on packaging, illustrations, colors, proportions, or label layouts.
 - If any label text is unclear, preserve the uploaded image exactly as-is. Do not guess or rewrite it.
 - Only permitted product-image operations: placement, scaling, subtle drop shadows, and mild warm lighting correction.
 
 A2. EXACT LABEL TEXT
-- Every character on every product must be razor-sharp and faithful to the uploaded references.
-- Kit Box top strip: "Panacea for weight loss and obesity related conditions"
-- Kit Box logo block: "Dr. ARUN TYAGI'S" in red + "OBESITY KILLER KIT" in black
-- Kit Box badge: "ISO 9001:2008 Certified"
-- Dried Amla bottle: "Dried Amla"; keep the amla fruit illustration sharp and unmodified.
-- OK Tablets bottle: "OK TABLETS"
-- OKP bottle: "OKP"; keep the light pattern on label exactly as provided.
-- OK Liquid sachet: "OK LIQUID"; keep the lotus mark above text sharp and unmodified.
+[List every product in your kit/product line and the exact text that appears on each.]
+- [Product 1]: "[Exact label text]"
+- [Product 2]: "[Exact label text]"
+- [Product 3]: "[Exact label text]"
 - Never blur, approximate, paraphrase, rewrite, change casing, change spacing, or grammatically alter packaging text.
 
 A3. PRODUCT DIMENSIONS AND COUNT
-- OK Kit Box: cuboid, 20.3 x 10.1 x 14.8 cm.
-- OK Powder Bottle: cylinder, diameter 5 cm, height 10 cm.
-- OK Tablet Bottle: cylinder, diameter 3 cm, height 5 cm.
-- Dried Amla Bottle: cylinder, diameter 3 cm, height 5 cm.
-- OK Liquid Sachet: vertical rectangle, width 10 cm, height 15.3 cm.
-- Every output must contain exactly these five distinct products: Kit Box, Dried Amla bottle, OK Tablets bottle, OKP bottle, and OK Liquid sachet.
-- Size products in correct relative proportion. Kit Box is the largest anchor/backdrop; bottles are notably smaller; sachet is more taller than wider.
-- Never duplicate OKP. Never omit Dried Amla. If two OKP bottles appear, Dried Amla is missing, or only four distinct products appear, reject and regenerate.
+[List each product with physical dimensions and relative proportions.]
+- [Product 1]: [shape], [dimensions].
+- [Product 2]: [shape], [dimensions].
+- Every output must contain exactly [N] distinct products: [list all products].
+- Size products in correct relative proportion. [Describe which is largest, which is smallest.]
 
 A4. COLOR AND LIGHTING
-- Primary palette: #FFFBED, #FEEFD6, #FCDBAC, #F79040, #E66410, #973015, #421808.
-- Avoid neon, random accent colors, harsh gradients, orange edge glows, or decorative vignette frames.
+- Primary palette: [list your brand hex colors]
+- Avoid neon, random accent colors, harsh gradients, or decorative vignette frames.
 - Use warm, soft, directional light from top-left.
 - Keep clean highlights on product labels and caps.
-- Use subtle realistic shadows only; avoid harsh shadows, flat lighting, studio flash, or ring-light glow.
+- Use subtle realistic shadows only; avoid harsh shadows, flat lighting, or ring-light glow.
 
 A5. TYPOGRAPHY AND COPY
-- Use Poppins only for on-image ad copy.
-- Use maximum two weights: Medium/Regular and Bold. Avoid thin/light weights.
+- Use [your font] only for on-image ad copy.
+- Use maximum two weights: [weight 1] and [weight 2].
 - Do not use decorative fonts, serif fonts, outlines, glows, or drop shadows on ad copy text.
 
 A6. MASTER FORBIDDEN LIST
 - Do not create AI-stylized versions of the products.
 - Do not use sale badges, burst graphics, stickers, emoji, or visual clutter.
-- Do not show body transformations or weight-loss visuals.
-- Do not use laptop, keyboard, mouse, monitor, or workstation-heavy props unless explicitly requested.
+- Do not show body transformations or before/after visuals unless explicitly requested.
 - Do not add disclaimer copy on-image unless explicitly requested.
 - Do not add any standalone brand logo to the ad. Only logos already printed on the product packaging should appear.
 
 A7. QUALITY CHECK
-- All 5 products are present, correctly proportioned, fully visible, and completely unmodified.
+- All [N] products are present, correctly proportioned, fully visible, and completely unmodified.
 - Product labels are sharp, accurate, and faithful to the uploaded images.
 - Layout is calm, balanced, premium, and not overcrowded.
 - No forbidden elements are present.
-- If product count, product identity, label accuracy, or requested background fails, silently regenerate until the output passes. Only the final image output is acceptable.
-
-Important !! Dont fuck  PRODUCT DIMENSIONS AND COUNT , the box should not neither too big in height nor too small , in the box , dont put any extra space below the apple.
-Important take a note of these : 
-        For the box:
-            The main product box must be landscape-oriented rectangle, significantly wider than it is tall (roughly 3:1 width-to-height ratio). It should appear as a long flat box standing upright on its back edge, not a cube or square box.
-
-        For the sachet:
-            The OK Liquid sachet on the left must be a tall, narrow foil pouch — portrait orientation with height clearly greater than width (approx 2:1 height-to-width ratio). It should stand upright like a flat rectangular packet, not spread wide.
-
-        For overall proportions:
-            Maintain consistent scale between all products as if photographed together on a flat surface. The OKP bottle on the right is the tallest item. The box behind is wide but lower than the bottle height. The sachet is about 80% the height of the OKP bottle.
-
+- If product count, product identity, label accuracy, or requested background fails, silently regenerate until the output passes.
