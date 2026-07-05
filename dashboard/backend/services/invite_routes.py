@@ -513,7 +513,7 @@ def change_member_role(
     updated_member = get_sync_db()[COLL_ORG_MEMBERS].find_one({"_id": target_member["_id"]})
     permissions = get_role_permissions(new_role)
 
-    return {"membership": updated_member, "permissions": permissions}
+    return {"membership": _json_safe(updated_member), "permissions": permissions}
 
 
 @router.delete("/api/orgs/{org_id}/members/{target_user_id}")

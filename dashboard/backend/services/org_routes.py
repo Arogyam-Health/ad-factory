@@ -35,6 +35,18 @@ from dashboard.backend.services.user_config import (
 router = APIRouter()
 
 
+def _json_safe(d: dict | None) -> dict | None:
+    """Strip MongoDB _id fields so FastAPI can serialize the dict."""
+    if d is None:
+        return None
+    return {k: v for k, v in d.items() if k != "_id"}
+
+
+def _json_safe_list(items: list[dict]) -> list[dict]:
+    """Strip MongoDB _id from a list of dicts."""
+    return [_json_safe(d) for d in items]
+
+
 def _get_active_user_org(org_id: str, user_id: str) -> dict[str, Any]:
     """Get org and verify user is active member."""
     org = get_org_by_id(org_id)
@@ -61,14 +73,14 @@ def get_my_orgs(
         if not org:
             continue
         permissions = get_role_permissions(membership.get("role", "creator"))
-        orgs.append({**org, "permissions": permissions})
+        orgs.append({**_json_safe(org), "permissions": permissions})
         if default_org is None:
-            default_org = {**org, "permissions": permissions}
+            default_org = {**_json_safe(org), "permissions": permissions}
 
     return {
         "orgs": orgs,
-        "default_org": default_org,
-        "memberships": memberships,
+        "default_org": _json_safe(default_org),
+        "memberships": _json_safe_list(memberships),
     }
 
 
@@ -162,8 +174,8 @@ def create_org(
     updated_org = get_sync_db()[COLL_ORGS].find_one({"org_id": org_id})
 
     return {
-        "org": updated_org or org,
-        "membership": membership,
+        "org": _json_safe(updated_org or org),
+        "membership": _json_safe(membership),
     }
 
 
@@ -181,8 +193,8 @@ def get_org(
     permissions = get_role_permissions(membership.get("role", "creator"))
 
     return {
-        "org": org,
-        "membership": membership,
+        "org": _json_safe(org),
+        "membership": _json_safe(membership),
         "permissions": permissions,
     }
 
@@ -310,7 +322,7 @@ def get_org_config(
 
     return {
         "config": config,
-        "org": org,
+        "org": _json_safe(org),
         "mode": org["config_mode"],
         "can_edit": can_edit,
         "source": source,
@@ -378,7 +390,7 @@ def update_org_config(
 
     return {
         "config": merged,
-        "org": org,
+        "org": _json_safe(org),
         "source": "org_config_update",
         "config_id": config_id,
         "can_edit": can_edit,
