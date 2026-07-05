@@ -27,6 +27,8 @@ FILES = {
     "persona_seeds": ROOT / "persona_seeds.json",
     "copy_architecture": ROOT / "dashboard" / "backend" / "copy_architecture.json",
     "background_variant": ROOT / "background_variant.json",
+    "prompt_assembler_templates": ROOT / "scripts" / "prompt_assembler_templates.json",
+    "conversion_916_prompt": ROOT / "input" / "prompt_916_from_45.txt",
 }
 
 
