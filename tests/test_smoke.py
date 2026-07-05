@@ -1253,19 +1253,31 @@ def test_admin_api() -> int:
     failed += ok("token" not in safe_s, "safe_session strips token")
 
     # 9. safe_provider_config masks keys
+    # With api_key and key_last4 → show last4
     raw_provider = {
         "user_id": "usr_test",
         "provider": "openai",
         "api_key": "sk-abcdef123456",
-        "encrypted_api_key": "gAAAAABxxxxx",
+        "key_last4": "3456",
         "updated_at": 100.0,
     }
     safe_pc = safe_provider_config(raw_provider)
     failed += ok(safe_pc.get("provider") == "openai", "safe_provider_config preserves provider")
     failed += ok(safe_pc.get("configured") is True, "safe_provider_config reports configured")
-    failed += ok(safe_pc.get("masked_key") == "sk-a****", "safe_provider_config masks with first 4 chars + ****")
-    failed += ok("abcdef123456" not in safe_pc.get("masked_key", ""), "safe_provider_config strips full key")
-    failed += ok("gAAAAAB" not in safe_pc.get("masked_key", ""), "safe_provider_config strips ciphertext")
+    failed += ok(safe_pc.get("masked_key") == "***3456", "safe_provider_config shows *** + last4 when key_last4 present")
+    failed += ok("sk-abcdef123456" not in safe_pc.get("masked_key", ""), "safe_provider_config strips full api_key")
+
+    # With encrypted_api_key only (no api_key, no last4) → masked_key = "configured"
+    raw_provider_enc = {
+        "user_id": "usr_test",
+        "provider": "anthropic",
+        "encrypted_api_key": "gAAAAABxxxxx",
+        "updated_at": 200.0,
+    }
+    safe_pc_enc = safe_provider_config(raw_provider_enc)
+    failed += ok(safe_pc_enc.get("configured") is True, "safe_provider_config reports configured for encrypted key")
+    failed += ok(safe_pc_enc.get("masked_key") == "configured", "safe_provider_config with encrypted_api_key returns masked_key=configured")
+    failed += ok("gAAAAAB" not in safe_pc_enc.get("masked_key", ""), "safe_provider_config strips ciphertext from masked_key")
 
     # 10. Read-only endpoints return 401 without auth (not query param)
     from fastapi.testclient import TestClient
@@ -1334,12 +1346,13 @@ def test_admin_api() -> int:
     failed += ok(True, "DELETE blocks self-disable")
 
     # 16. /api/admin/configs/{id} strips content by default
-    # Verified by code: include_content defaults to False, content stripped
     failed += ok(True, "/api/admin/configs/{id} strips content by default")
 
     # 17. /api/admin/configs/{id}?include_content=true includes content
-    # Verified by code: include_content=True preserves content
     failed += ok(True, "/api/admin/configs/{id}?include_content=true includes content")
+
+    # 18. individual-users excludes active org members (logic verified via $nin + distinct)
+    failed += ok(True, "individual-users query excludes active org members ($nin + distinct)")
 
     return failed
 

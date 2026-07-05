@@ -61,10 +61,11 @@ def safe_audit_log(event: dict[str, Any]) -> dict[str, Any]:
 def safe_provider_config(doc: dict[str, Any]) -> dict[str, Any]:
     """Return safe view of a provider config (no decrypted keys, no ciphertext, no hashes)."""
     masked = ""
-    raw_key = doc.get("api_key") or doc.get("encrypted_api_key") or ""
-    if raw_key:
-        visible = raw_key[:4] if len(raw_key) >= 4 else raw_key
-        masked = visible + "****"
+    last4 = doc.get("key_last4") or doc.get("api_key_last4") or ""
+    if last4:
+        masked = "***" + last4
+    elif doc.get("api_key") or doc.get("encrypted_api_key"):
+        masked = "configured"
     return {
         "user_id": doc.get("user_id", ""),
         "provider": doc.get("provider", ""),

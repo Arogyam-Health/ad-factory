@@ -130,7 +130,9 @@ def admin_individual_users(
     search: str | None = Query(None),
     _admin: dict[str, Any] = Depends(require_super_admin_dependency),
 ) -> dict[str, Any]:
-    q: dict[str, Any] = {"is_super_admin": {"$ne": True}}
+    db = get_sync_db()
+    active_member_user_ids = db[COLL_ORG_MEMBERS].distinct("user_id", {"status": "active"})
+    q: dict[str, Any] = {"user_id": {"$nin": active_member_user_ids}}
     if search:
         q["$or"] = [
             {"email": {"$regex": search, "$options": "i"}},
