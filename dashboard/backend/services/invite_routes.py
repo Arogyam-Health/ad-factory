@@ -40,6 +40,13 @@ from dashboard.backend.services.user_config import (
 router = APIRouter()
 
 
+def _json_safe(d: dict | None) -> dict | None:
+    """Strip MongoDB _id fields so FastAPI can serialize the dict."""
+    if d is None:
+        return None
+    return {k: v for k, v in d.items() if k != "_id"}
+
+
 def _get_active_org(org_id: str) -> dict[str, Any]:
     org = get_org_by_id(org_id)
     if not org:
@@ -586,8 +593,8 @@ def get_effective_config(
                 "source": "org_shared",
                 "owner_type": "org",
                 "owner_id": org_id,
-                "org": org,
-                "membership": membership,
+                "org": _json_safe(org),
+                "membership": _json_safe(membership),
                 "mode": config_mode,
                 "can_edit": can_edit,
                 "can_view_versions": can_edit,
@@ -604,8 +611,8 @@ def get_effective_config(
                 "source": "user_personal",
                 "owner_type": "user",
                 "owner_id": user_id,
-                "org": org,
-                "membership": membership,
+                "org": _json_safe(org),
+                "membership": _json_safe(membership),
                 "mode": config_mode,
                 "can_edit": can_edit,
                 "can_view_versions": can_edit,
@@ -636,8 +643,8 @@ def get_effective_config(
                 "source": "org_shared",
                 "owner_type": "org",
                 "owner_id": resolved_org_id,
-                "org": org,
-                "membership": membership,
+                "org": _json_safe(org),
+                "membership": _json_safe(membership),
                 "mode": config_mode,
                 "can_edit": can_edit,
                 "can_view_versions": can_edit,
@@ -654,8 +661,8 @@ def get_effective_config(
                 "source": "user_personal",
                 "owner_type": "user",
                 "owner_id": user_id,
-                "org": org,
-                "membership": membership,
+                "org": _json_safe(org),
+                "membership": _json_safe(membership),
                 "mode": config_mode,
                 "can_edit": can_edit,
                 "can_view_versions": can_edit,
