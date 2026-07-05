@@ -155,6 +155,10 @@ def create_or_update_config(
     config_scope: str = "personal",
     config_mode: str = "inherit_generic",
     source: str = "manual",
+    actor_email: str | None = None,
+    change_reason: str = "manual_edit",
+    org_id: str | None = None,
+    create_version: bool = True,
 ) -> dict[str, Any]:
     """Create or update a config doc in owner schema."""
     now = time.time()
@@ -170,11 +174,6 @@ def create_or_update_config(
     for k in CONFIG_KEYS:
         if k in files:
             content = files[k]
-            prev_updated = 0
-            if existing:
-                prev_file = existing.get("files", {}).get(k, {})
-                if isinstance(prev_file, dict):
-                    prev_updated = prev_file.get("updated_at", 0)
             file_entries[f"files.{k}"] = {
                 "content": content,
                 "content_type": _CONTENT_TYPES.get(k, "text/plain"),
@@ -182,10 +181,23 @@ def create_or_update_config(
             }
 
     if not file_entries:
-        # Nothing to update — return existing or generic
         if existing:
             return _extract_flat_from_new_schema(existing)
         return get_generic_config()
+
+    if existing and create_version:
+        try:
+            from dashboard.backend.services.config_version_service import create_config_version_before_update
+            create_config_version_before_update(
+                config_doc=existing,
+                new_files=files,
+                changed_by_user_id=actor_user_id,
+                changed_by_email=actor_email,
+                change_reason=change_reason,
+                org_id=org_id,
+            )
+        except Exception:
+            pass
 
     if existing:
         update_doc = {

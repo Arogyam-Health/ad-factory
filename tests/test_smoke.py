@@ -951,6 +951,133 @@ def test_org_system() -> int:
     return failed
 
 
+# ─── Phase 3: Config version history and permissions tests ───────────────────
+
+
+def test_config_versions() -> int:
+    failed = 0
+    print("\n[Config version system]")
+
+    # 1. generate_version_id starts with ver_
+    from dashboard.backend.services.config_version_service import (
+        generate_version_id,
+        canonical_hash,
+        calculate_changed_keys,
+        extract_files_for_hash,
+    )
+    vid = generate_version_id()
+    failed += ok(vid.startswith("ver_"), "generate_version_id starts with ver_")
+    failed += ok(len(vid) > 10, "generate_version_id has reasonable length")
+
+    # 2. canonical_hash deterministic
+    obj = {"a": 1, "b": 2}
+    h1 = canonical_hash(obj)
+    h2 = canonical_hash(obj)
+    failed += ok(h1 == h2, "canonical_hash deterministic")
+    failed += ok(isinstance(h1, str) and len(h1) == 64, "canonical_hash is sha256 hex")
+
+    # 3. hash changes when content changes
+    h3 = canonical_hash({"a": 1, "b": 3})
+    failed += ok(h3 != h1, "canonical_hash changes when content changes")
+
+    # 4. changed_keys detects changed config key
+    before = {"starting_prompt": {"content": "old prompt"}, "product_master_doc": {"content": "same doc"}}
+    after = {"starting_prompt": {"content": "new prompt"}, "product_master_doc": {"content": "same doc"}}
+    keys = calculate_changed_keys(before, after)
+    failed += ok("starting_prompt" in keys, "changed_keys detects starting_prompt change")
+    failed += ok("product_master_doc" not in keys, "changed_keys ignores unchanged key")
+    failed += ok(len(keys) == 1, "changed_keys returns exactly 1 changed key")
+
+    # 5. no version created when config content unchanged
+    same_keys = calculate_changed_keys(before, before)
+    failed += ok(len(same_keys) == 0, "no changed keys when content identical")
+
+    # 6. extract_files_for_hash returns only relevant fields
+    sample_doc = {
+        "files": {
+            "starting_prompt": {"content": "hello", "content_type": "text/plain", "updated_at": 100},
+            "background_variant": {"content": "{}", "content_type": "application/json"},
+        },
+        "_id": "some_mongo_id",
+    }
+    extracted = extract_files_for_hash(sample_doc)
+    for k in ("starting_prompt", "background_variant"):
+        failed += ok(k in extracted, f"extract_files_for_hash includes {k}")
+        failed += ok(isinstance(extracted[k], dict), f"extract_files_for_hash[{k}] is dict")
+    # All CONFIG_KEYS present
+    from dashboard.backend.services.user_config import CONFIG_KEYS
+    for k in CONFIG_KEYS:
+        failed += ok(k in extracted, f"extract_files_for_hash has {k}")
+    # No _id in extracted
+    failed += ok("_id" not in extracted, "extract_files_for_hash excludes _id")
+
+    # 7. Rollback function module exists
+    from dashboard.backend.services.config_version_service import rollback_config_to_version, copy_config
+    failed += ok(callable(rollback_config_to_version), "rollback_config_to_version is callable")
+    failed += ok(callable(copy_config), "copy_config is callable")
+
+    # 8. Permissions module
+    from dashboard.backend.services.config_permissions import (
+        can_view_config,
+        can_edit_config,
+        can_copy_config,
+        can_rollback_config,
+        can_view_versions,
+    )
+    failed += ok(callable(can_view_config), "can_view_config is callable")
+    failed += ok(callable(can_edit_config), "can_edit_config is callable")
+    failed += ok(callable(can_copy_config), "can_copy_config is callable")
+    failed += ok(callable(can_rollback_config), "can_rollback_config is callable")
+    failed += ok(callable(can_view_versions), "can_view_versions is callable")
+
+    # 9. Config routes module imports
+    from dashboard.backend.services.config_routes import router
+    failed += ok(router is not None, "config_routes router exists")
+
+    # 10. Non-DB permissions sanity: own personal config
+    personal_doc = {"owner_type": "user", "owner_id": "usr_me"}
+    failed += ok(can_view_config("usr_me", personal_doc), "can_view_config on own personal")
+    failed += ok(not can_view_config("usr_other", personal_doc), "cannot view another's personal")
+    failed += ok(can_edit_config("usr_me", personal_doc), "can_edit_config on own personal")
+    failed += ok(can_rollback_config("usr_me", personal_doc), "can_rollback own personal")
+    failed += ok(can_view_versions("usr_me", personal_doc), "can_view_versions own personal")
+
+    # 11. Permissions for org config without context (no membership, should be False)
+    org_doc = {"owner_type": "org", "owner_id": "org_test"}
+    failed += ok(not can_view_config("usr_anyone", org_doc), "cannot view org config without membership")
+    failed += ok(not can_edit_config("usr_anyone", org_doc), "cannot edit org config without membership")
+
+    # 12. GET /api/config/effective includes new permission fields (no auth)
+    from fastapi.testclient import TestClient
+    from dashboard.backend.app import app as _app
+    c = TestClient(_app)
+    resp = c.get("/api/config/effective")
+    failed += ok(resp.status_code == 401, "GET /api/config/effective without auth returns 401")
+
+    # 13. GET /api/config/{id}/versions without auth returns 401
+    resp = c.get("/api/config/some_cfg_id/versions")
+    failed += ok(resp.status_code == 401, "GET config versions without auth returns 401")
+
+    # 14. GET /api/config/{id}/versions/{vid} without auth returns 401
+    resp = c.get("/api/config/some_cfg_id/versions/some_ver_id")
+    failed += ok(resp.status_code == 401, "GET config version detail without auth returns 401")
+
+    # 15. POST /api/config/{id}/rollback/{vid} without auth returns 401
+    resp = c.post("/api/config/some_cfg_id/rollback/some_ver_id", json={"reason": "test"})
+    failed += ok(resp.status_code == 401, "POST rollback without auth returns 401")
+
+    # 16. POST /api/orgs/{id}/configs/copy without auth returns 401
+    resp = c.post("/api/orgs/some_org/configs/copy", json={"source_type": "org", "target_type": "member", "mode": "replace_all"})
+    failed += ok(resp.status_code == 401, "POST config copy without auth returns 401")
+
+    if db_available():
+        print("  SKIP DB-dependent version tests (would require real MongoDB)")
+    else:
+        print("  SKIP DB-dependent version tests (MongoDB not available)")
+
+    return failed
+
+
 # ─── main ──────────────────────────────────────────────────────────────────
 
 
@@ -973,6 +1100,7 @@ def main() -> int:
     total += test_cloudinary_upload()
     total += test_config_system()
     total += test_org_system()
+    total += test_config_versions()
 
     print(f"\n{'='*50}")
     if total == 0:

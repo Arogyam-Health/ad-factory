@@ -354,6 +354,9 @@ def update_org_config(
         actor_user_id=user_id,
         config_scope="organization",
         source="org_config_update",
+        actor_email=email,
+        change_reason="manual_edit",
+        org_id=org_id,
     )
 
     write_audit_event(
@@ -366,6 +369,10 @@ def update_org_config(
         metadata={"config_keys": list(config.keys())},
     )
 
+    from dashboard.backend.services.user_config import get_config_doc as _get_cfg_doc
+    config_doc = _get_cfg_doc("org", org_id)
+    config_id = config_doc.get("config_id") if config_doc else None
+
     generic = get_generic_config()
     merged = dict(generic)
     for k in CONFIG_KEYS:
@@ -373,8 +380,18 @@ def update_org_config(
         if val:
             merged[k] = val
 
+    permissions = get_role_permissions(
+        get_user_org_membership(user_id, org_id).get("role", "creator")
+        if get_user_org_membership(user_id, org_id) else "creator"
+    )
+
     return {
         "config": merged,
         "org": org,
         "source": "org_config_update",
+        "config_id": config_id,
+        "can_edit": can_edit,
+        "can_view_versions": permissions.get("can_manage_org", False) or can_edit,
+        "can_rollback": can_edit,
+        "can_copy": can_edit and permissions.get("can_manage_org", False) is not False,
     }

@@ -109,6 +109,14 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([("target_type", ASCENDING), ("target_id", ASCENDING)]),
         IndexModel([("event_type", ASCENDING), ("created_at", DESCENDING)]),
     ],
+    COLL_CONFIG_VERSIONS: [
+        IndexModel([("version_id", ASCENDING)], unique=True, sparse=True),
+        IndexModel([("config_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("org_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("changed_by_user_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("change_reason", ASCENDING), ("created_at", DESCENDING)]),
+    ],
 }
 
 

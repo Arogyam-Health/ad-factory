@@ -581,6 +581,7 @@ def get_effective_config(
             config = resolve_effective_config(user_id, org_id)
             from dashboard.backend.services.user_config import get_config_doc
             doc = get_config_doc("org", org_id)
+            config_id = doc.get("config_id") if doc else None
             return {
                 "config": config,
                 "source": "org_shared",
@@ -590,12 +591,16 @@ def get_effective_config(
                 "membership": membership,
                 "mode": config_mode,
                 "can_edit": can_edit,
-                "config_id": doc.get("config_id") if doc else None,
+                "can_view_versions": can_edit,
+                "can_rollback": can_edit,
+                "can_copy": role == "owner" or can_edit,
+                "config_id": config_id,
             }
         else:
             config = resolve_effective_config(user_id, org_id)
             from dashboard.backend.services.user_config import get_config_doc
             doc = get_config_doc("user", user_id)
+            config_id = doc.get("config_id") if doc else None
             return {
                 "config": config,
                 "source": "user_personal",
@@ -605,7 +610,10 @@ def get_effective_config(
                 "membership": membership,
                 "mode": config_mode,
                 "can_edit": can_edit,
-                "config_id": doc.get("config_id") if doc else None,
+                "can_view_versions": can_edit,
+                "can_rollback": can_edit,
+                "can_copy": role in ("owner", "config_admin"),
+                "config_id": config_id,
             }
 
     # No org_id provided — check default org first
@@ -624,6 +632,7 @@ def get_effective_config(
         if config_mode == "shared_org_config":
             config = resolve_effective_config(user_id, resolved_org_id)
             doc = get_config_doc("org", resolved_org_id)
+            config_id = doc.get("config_id") if doc else None
             return {
                 "config": config,
                 "source": "org_shared",
@@ -633,11 +642,15 @@ def get_effective_config(
                 "membership": membership,
                 "mode": config_mode,
                 "can_edit": can_edit,
-                "config_id": doc.get("config_id") if doc else None,
+                "can_view_versions": can_edit,
+                "can_rollback": can_edit,
+                "can_copy": role in ("owner", "config_admin"),
+                "config_id": config_id,
             }
         else:
             config = resolve_effective_config(user_id, resolved_org_id)
             doc = get_config_doc("user", user_id) if user_has_config(user_id) else None
+            config_id = doc.get("config_id") if doc else None
             return {
                 "config": config,
                 "source": "user_personal",
@@ -647,13 +660,17 @@ def get_effective_config(
                 "membership": membership,
                 "mode": config_mode,
                 "can_edit": can_edit,
-                "config_id": doc.get("config_id") if doc else None,
+                "can_view_versions": can_edit,
+                "can_rollback": can_edit,
+                "can_copy": role in ("owner", "config_admin"),
+                "config_id": config_id,
             }
 
     # No org at all — return personal/generic
     config = resolve_effective_config(user_id)
     has_custom = user_has_config(user_id)
     doc = get_config_doc("user", user_id) if has_custom else None
+    config_id = doc.get("config_id") if doc else None
 
     return {
         "config": config,
@@ -664,5 +681,8 @@ def get_effective_config(
         "membership": None,
         "mode": "personal",
         "can_edit": True,
-        "config_id": doc.get("config_id") if doc else None,
+        "can_view_versions": True,
+        "can_rollback": True,
+        "can_copy": False,
+        "config_id": config_id,
     }

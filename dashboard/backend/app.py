@@ -7677,8 +7677,10 @@ app.include_router(agent_router)
 # ── Organization routes ─────────────────────────────────────────────────────
 from dashboard.backend.services.org_routes import router as org_router
 from dashboard.backend.services.invite_routes import router as invite_router
+from dashboard.backend.services.config_routes import router as config_router
 app.include_router(org_router)
 app.include_router(invite_router)
+app.include_router(config_router)
 
 # ── Public generic config endpoints ─────────────────────────────────────────
 
