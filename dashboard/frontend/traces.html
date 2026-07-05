@@ -238,14 +238,6 @@
       });
     });
 
-    // Theme toggle
-    document.getElementById("themeToggle").addEventListener("click", () => {
-      const cur  = document.body.getAttribute("data-theme");
-      const next = cur === "dark" ? "light" : "dark";
-      document.body.setAttribute("data-theme", next);
-      localStorage.setItem("dashboard_theme", next);
-    });
-
     const LIMIT = 50;
     let offset = 0;
     let runIdFilter = "";

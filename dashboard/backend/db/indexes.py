@@ -122,9 +122,54 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
 }
 
 
+def _fix_indexes(db) -> dict[str, int]:
+    """Drop and recreate indexes whose options changed between code versions.
+
+    create_indexes() only adds new indexes and never touches existing ones.
+    If a deployed index was created with stale options (e.g. unique=True
+    when the code now says unique=False), we must drop it and recreate.
+    """
+    FIXUPS: list[tuple[str, str, IndexModel]] = [
+        # user_configs.user_id_1: was unique in early versions; must be sparse-only.
+        (COLL_USER_CONFIGS, "user_id_1",
+         IndexModel([(FIELD_USER_ID, ASCENDING)], sparse=True)),
+    ]
+
+    results: dict[str, int] = {}
+    for coll_name, idx_name, desired_idx in FIXUPS:
+        try:
+            existing = {idx["name"]: idx for idx in db[coll_name].list_indexes()}
+        except OperationFailure:
+            continue
+        if idx_name not in existing:
+            continue
+        existing_opts = existing[idx_name]
+        desired_opts = desired_idx.document
+        # Check for options that matter: unique, sparse, partialFilterExpression
+        changed = False
+        for key in ("unique", "sparse", "partialFilterExpression"):
+            if existing_opts.get(key) != desired_opts.get(key):
+                changed = True
+                break
+        if changed:
+            try:
+                db[coll_name].drop_index(idx_name)
+                db[coll_name].create_indexes([desired_idx])
+                results[f"{coll_name}.{idx_name}"] = 1
+            except OperationFailure:
+                results[f"{coll_name}.{idx_name}"] = -1
+        else:
+            results[f"{coll_name}.{idx_name}"] = 0
+    return results
+
+
 def create_indexes() -> dict[str, int]:
     db = get_sync_db()
     results: dict[str, int] = {}
+
+    # Fix stale indexes first
+    results.update(_fix_indexes(db))
+
     for coll_name, indexes in INDEX_SPECS.items():
         try:
             existing = db[coll_name].list_indexes()

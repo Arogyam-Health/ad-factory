@@ -4,6 +4,8 @@ import time
 import uuid
 from typing import Any, Optional
 
+from pymongo.errors import DuplicateKeyError
+
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_USER_CONFIGS
 
@@ -224,7 +226,20 @@ def create_or_update_config(
             "updated_at": now,
             "files": files_obj,
         }
-        coll.insert_one(new_doc)
+        try:
+            coll.insert_one(new_doc)
+        except DuplicateKeyError:
+            # Stale unique index (user_id_1) rejects org configs that lack
+            # a user_id field.  Retry via upsert so the doc is persisted.
+            coll.update_one(
+                {
+                    "owner_type": owner_type,
+                    "owner_id": owner_id,
+                    "is_active": True,
+                },
+                {"$set": {**new_doc}},
+                upsert=True,
+            )
 
     updated_doc = coll.find_one({
         "owner_type": owner_type,

@@ -579,7 +579,6 @@ def get_effective_config(
         config_mode = org.get("config_mode", "shared_org_config")
         if config_mode == "shared_org_config":
             config = resolve_effective_config(user_id, org_id)
-            from dashboard.backend.services.user_config import get_config_doc
             doc = get_config_doc("org", org_id)
             config_id = doc.get("config_id") if doc else None
             return {
@@ -598,7 +597,6 @@ def get_effective_config(
             }
         else:
             config = resolve_effective_config(user_id, org_id)
-            from dashboard.backend.services.user_config import get_config_doc
             doc = get_config_doc("user", user_id)
             config_id = doc.get("config_id") if doc else None
             return {

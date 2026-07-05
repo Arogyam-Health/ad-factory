@@ -98,13 +98,6 @@
 
     initTheme();
 
-    document.getElementById("themeToggle").addEventListener("click", () => {
-      const cur = document.body.getAttribute("data-theme");
-      const next = cur === "dark" ? "light" : "dark";
-      document.body.setAttribute("data-theme", next);
-      localStorage.setItem("dashboard_theme", next);
-    });
-
     function esc(s) {
       const d = document.createElement("div");
       d.textContent = String(s ?? "");

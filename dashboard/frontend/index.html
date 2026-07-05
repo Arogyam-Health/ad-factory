@@ -321,15 +321,7 @@
   <script type="module">
     import { initTheme } from "/js/theme.js";
     import { checkAuth } from "/js/auth.js";
-    // Apply theme early
     initTheme();
-    // Wire theme toggle button
-    document.getElementById("themeToggle").addEventListener("click", () => {
-      const cur = document.body.getAttribute("data-theme");
-      const next = cur === "dark" ? "light" : "dark";
-      document.body.setAttribute("data-theme", next);
-      localStorage.setItem("dashboard_theme", next);
-    });
     // Auth chip in navbar
     checkAuth().then(user => {
       const initial = document.getElementById("authInitial");

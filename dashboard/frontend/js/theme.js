@@ -1,11 +1,11 @@
-const themeToggleEl = document.getElementById("themeToggle");
+const SUN = "&#9728;";
+const MOON = "&#9790;";
 
 export function applyTheme(theme) {
   document.body.setAttribute("data-theme", theme);
   localStorage.setItem("dashboard_theme", theme);
-  if (themeToggleEl) {
-    themeToggleEl.textContent = theme === "dark" ? "Light mode" : "Dark mode";
-  }
+  const btn = document.getElementById("themeToggle");
+  if (btn) btn.innerHTML = theme === "dark" ? MOON : SUN;
 }
 
 export function initTheme() {
@@ -18,9 +18,13 @@ export function initTheme() {
   applyTheme(prefersDark ? "dark" : "light");
 }
 
+export function toggleTheme() {
+  const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  applyTheme(current === "dark" ? "light" : "dark");
+}
+
+// Wire up the toggle button if present (single handler, no duplicates)
+const themeToggleEl = document.getElementById("themeToggle");
 if (themeToggleEl) {
-  themeToggleEl.addEventListener("click", () => {
-    const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
-    applyTheme(current === "dark" ? "light" : "dark");
-  });
+  themeToggleEl.addEventListener("click", toggleTheme);
 }
