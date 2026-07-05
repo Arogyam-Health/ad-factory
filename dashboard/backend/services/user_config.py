@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
@@ -18,43 +19,295 @@ CONFIG_KEYS = [
     "conversion_916_prompt",
 ]
 
+# content_type per key
+_CONTENT_TYPES = {
+    "product_master_doc": "text/plain",
+    "starting_prompt": "text/plain",
+    "copy_prompt_templates": "application/json",
+    "persona_seeds": "application/json",
+    "copy_architecture": "application/json",
+    "background_variant": "application/json",
+    "prompt_assembler_templates": "application/json",
+    "conversion_916_prompt": "text/plain",
+}
 
-def _get_doc(user_id: str) -> Optional[dict[str, Any]]:
+# Default empty values by expected type
+_EMPTY_BY_KEY = {
+    "product_master_doc": "",
+    "starting_prompt": "",
+    "copy_prompt_templates": "{}",
+    "persona_seeds": "[]",
+    "copy_architecture": "{}",
+    "background_variant": "{}",
+    "prompt_assembler_templates": "{}",
+    "conversion_916_prompt": "",
+}
+
+
+def _generate_config_id() -> str:
+    return f"cfg_{uuid.uuid4().hex}"
+
+
+# ── Generic config (filesystem fallback) ─────────────────────────────────────
+
+
+def get_generic_config() -> dict[str, Any]:
+    """Read actual filesystem config files as global defaults."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent.parent.parent
+
+    product_master_path = root / "input" / "docs" / "product master doc.txt"
+    starting_prompt_path = root / "input" / "startingprompt.txt"
+    copy_templates_path = root / "dashboard" / "backend" / "copy_prompt_templates.json"
+    persona_seeds_path = root / "persona_seeds.json"
+    copy_arch_path = root / "dashboard" / "backend" / "copy_architecture.json"
+    background_variant_path = root / "background_variant.json"
+    prompt_assembler_path = root / "scripts" / "prompt_assembler_templates.json"
+    conversion_916_path = root / "input" / "prompt_916_from_45.txt"
+
+    def _read(p: Path) -> str:
+        try:
+            return p.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+
+    return {
+        "product_master_doc": _read(product_master_path),
+        "starting_prompt": _read(starting_prompt_path),
+        "copy_prompt_templates": _read(copy_templates_path) or "{}",
+        "persona_seeds": _read(persona_seeds_path) or "[]",
+        "copy_architecture": _read(copy_arch_path) or "{}",
+        "background_variant": _read(background_variant_path) or "{}",
+        "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
+        "conversion_916_prompt": _read(conversion_916_path),
+    }
+
+
+# ── Core config service functions ────────────────────────────────────────────
+
+
+def get_config_doc(owner_type: str, owner_id: str) -> Optional[dict[str, Any]]:
+    """Look up active config by owner_type + owner_id."""
+    return get_sync_db()[COLL_USER_CONFIGS].find_one({
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "is_active": True,
+    })
+
+
+def _get_config_doc_legacy(user_id: str) -> Optional[dict[str, Any]]:
+    """Look up config by old-style user_id field (for migration compatibility)."""
     return get_sync_db()[COLL_USER_CONFIGS].find_one({"user_id": user_id})
 
 
-def get_user_config(user_id: str) -> dict[str, Any]:
-    doc = _get_doc(user_id)
-    if doc is None:
-        return get_generic_config()
-    return {k: doc.get(k, "") for k in CONFIG_KEYS}
+def _normalize_doc_to_new_schema(doc: dict[str, Any]) -> dict[str, Any]:
+    """Convert old-style doc (flat user_id + top-level keys) to new owner schema in-memory.
+    Does NOT write to DB — used only for read compatibility during migration."""
+    if "owner_type" in doc:
+        return doc  # already new schema
 
-
-def set_user_config(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
-    update = {}
+    user_id = doc.get("user_id", "")
+    files = {}
     for k in CONFIG_KEYS:
-        if k in config:
-            update[k] = config[k]
-    if not update:
-        return get_user_config(user_id)
-    update["updated_at"] = time.time()
-    get_sync_db()[COLL_USER_CONFIGS].update_one(
-        {"user_id": user_id},
-        {"$set": update},
-        upsert=True,
+        val = doc.get(k, _EMPTY_BY_KEY.get(k, ""))
+        files[k] = {
+            "content": val,
+            "content_type": _CONTENT_TYPES.get(k, "text/plain"),
+            "updated_at": doc.get("updated_at", 0),
+        }
+
+    return {
+        "config_id": doc.get("config_id", _generate_config_id()),
+        "owner_type": "user",
+        "owner_id": user_id,
+        "config_scope": "personal",
+        "config_mode": "inherit_generic",
+        "files": files,
+        "created_by_user_id": user_id,
+        "updated_by_user_id": user_id,
+        "source": "migration",
+        "is_active": True,
+        "created_at": doc.get("created_at", doc.get("updated_at", 0)),
+        "updated_at": doc.get("updated_at", 0),
+        "_legacy_user_id": user_id,
+    }
+
+
+def _extract_flat_from_new_schema(doc: dict[str, Any]) -> dict[str, Any]:
+    """Extract flat {key: content} from new owner schema doc."""
+    files = doc.get("files", {})
+    result = {}
+    for k in CONFIG_KEYS:
+        file_entry = files.get(k, {})
+        if isinstance(file_entry, dict):
+            result[k] = file_entry.get("content", _EMPTY_BY_KEY.get(k, ""))
+        else:
+            # Fallback: top-level key (old schema leaked in)
+            result[k] = file_entry if isinstance(file_entry, str) else _EMPTY_BY_KEY.get(k, "")
+    return result
+
+
+def create_or_update_config(
+    owner_type: str,
+    owner_id: str,
+    files: dict[str, Any],
+    actor_user_id: str,
+    config_scope: str = "personal",
+    config_mode: str = "inherit_generic",
+    source: str = "manual",
+) -> dict[str, Any]:
+    """Create or update a config doc in owner schema."""
+    now = time.time()
+    coll = get_sync_db()[COLL_USER_CONFIGS]
+
+    existing = coll.find_one({
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "is_active": True,
+    })
+
+    file_entries = {}
+    for k in CONFIG_KEYS:
+        if k in files:
+            content = files[k]
+            prev_updated = 0
+            if existing:
+                prev_file = existing.get("files", {}).get(k, {})
+                if isinstance(prev_file, dict):
+                    prev_updated = prev_file.get("updated_at", 0)
+            file_entries[f"files.{k}"] = {
+                "content": content,
+                "content_type": _CONTENT_TYPES.get(k, "text/plain"),
+                "updated_at": now,
+            }
+
+    if not file_entries:
+        # Nothing to update — return existing or generic
+        if existing:
+            return _extract_flat_from_new_schema(existing)
+        return get_generic_config()
+
+    if existing:
+        update_doc = {
+            "$set": {
+                **file_entries,
+                "updated_by_user_id": actor_user_id,
+                "updated_at": now,
+                "config_mode": config_mode,
+            }
+        }
+        coll.update_one({"_id": existing["_id"]}, update_doc)
+    else:
+        new_doc = {
+            "config_id": _generate_config_id(),
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "config_scope": config_scope,
+            "config_mode": config_mode,
+            "created_by_user_id": actor_user_id,
+            "updated_by_user_id": actor_user_id,
+            "source": source,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+            **file_entries,
+        }
+        coll.insert_one(new_doc)
+
+    updated_doc = coll.find_one({
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "is_active": True,
+    })
+    if updated_doc:
+        return _extract_flat_from_new_schema(updated_doc)
+    return get_generic_config()
+
+
+def resolve_effective_config_for_user(user_id: str) -> dict[str, Any]:
+    """Resolve the effective flat config for a user.
+
+    Phase 0: checks user's personal config, merges over generic.
+    Missing keys fall back to generic.
+    """
+    generic = get_generic_config()
+
+    doc = get_config_doc("user", user_id)
+
+    # Fallback: check legacy-style doc during migration
+    if doc is None:
+        legacy_doc = _get_config_doc_legacy(user_id)
+        if legacy_doc is not None:
+            doc = _normalize_doc_to_new_schema(legacy_doc)
+
+    if doc is None:
+        return generic
+
+    user_files = _extract_flat_from_new_schema(doc)
+
+    # Merge: user files over generic, fill missing from generic
+    merged = dict(generic)
+    for k in CONFIG_KEYS:
+        val = user_files.get(k, "")
+        if val:  # non-empty overrides generic
+            merged[k] = val
+
+    return merged
+
+
+# ── Backward-compatible wrappers ─────────────────────────────────────────────
+
+
+def get_user_config(user_id: str) -> dict[str, Any]:
+    """Backward-compatible: returns flat config dict."""
+    return resolve_effective_config_for_user(user_id)
+
+
+def set_user_config(user_id: str, config: dict[str, Any], actor_user_id: str | None = None) -> dict[str, Any]:
+    """Backward-compatible: writes config and returns resolved flat config."""
+    actor = actor_user_id or user_id
+    return create_or_update_config(
+        owner_type="user",
+        owner_id=user_id,
+        files=config,
+        actor_user_id=actor,
+        config_scope="personal",
+        config_mode="full",
+        source="manual",
     )
-    return get_user_config(user_id)
 
 
-def delete_user_config(user_id: str) -> None:
-    get_sync_db()[COLL_USER_CONFIGS].delete_one({"user_id": user_id})
+def delete_user_config(user_id: str, hard_delete: bool = False) -> None:
+    """Soft-delete (preferred) or hard-delete user config."""
+    coll = get_sync_db()[COLL_USER_CONFIGS]
+    if hard_delete:
+        coll.delete_one({
+            "owner_type": "user",
+            "owner_id": user_id,
+            "is_active": True,
+        })
+    else:
+        coll.update_one(
+            {"owner_type": "user", "owner_id": user_id, "is_active": True},
+            {"$set": {"is_active": False, "updated_at": time.time()}},
+        )
 
 
 def has_custom_config(user_id: str) -> bool:
-    return _get_doc(user_id) is not None
+    """Check if user has an active config (new or legacy schema)."""
+    doc = get_config_doc("user", user_id)
+    if doc is not None:
+        return True
+    # Check legacy
+    legacy_doc = _get_config_doc_legacy(user_id)
+    return legacy_doc is not None
+
+
+# ── Vinay seed (kept for backward compatibility, NOT called from GET routes) ──
 
 
 def push_vinaysaini_config() -> None:
+    """Seed Vinay's Obesity Killer config. NOT called automatically."""
     from dashboard.backend.auth.service import find_user_by_email
     user = find_user_by_email("vinaysaini@arogyamhealth.in")
     if user is None:
@@ -273,35 +526,3 @@ Important take a note of these :
         "copy_prompt_templates": copy_templates,
         "persona_seeds": persona_seeds,
     })
-
-
-def get_generic_config() -> dict[str, Any]:
-    """Read actual filesystem config files as global defaults."""
-    from pathlib import Path
-    root = Path(__file__).resolve().parent.parent.parent.parent
-
-    product_master_path = root / "input" / "docs" / "product master doc.txt"
-    starting_prompt_path = root / "input" / "startingprompt.txt"
-    copy_templates_path = root / "dashboard" / "backend" / "copy_prompt_templates.json"
-    persona_seeds_path = root / "persona_seeds.json"
-    copy_arch_path = root / "dashboard" / "backend" / "copy_architecture.json"
-    background_variant_path = root / "background_variant.json"
-    prompt_assembler_path = root / "scripts" / "prompt_assembler_templates.json"
-    conversion_916_path = root / "input" / "prompt_916_from_45.txt"
-
-    def _read(p: Path) -> str:
-        try:
-            return p.read_text(encoding="utf-8")
-        except Exception:
-            return ""
-
-    return {
-        "product_master_doc": _read(product_master_path),
-        "starting_prompt": _read(starting_prompt_path),
-        "copy_prompt_templates": _read(copy_templates_path) or "{}",
-        "persona_seeds": _read(persona_seeds_path) or "[]",
-        "copy_architecture": _read(copy_arch_path) or "{}",
-        "background_variant": _read(background_variant_path) or "{}",
-        "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
-        "conversion_916_prompt": _read(conversion_916_path),
-    }

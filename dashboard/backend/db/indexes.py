@@ -71,7 +71,12 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_BATCH, ASCENDING)]),
     ],
     COLL_USER_CONFIGS: [
-        IndexModel([(FIELD_USER_ID, ASCENDING)], unique=True),
+        IndexModel([("config_id", ASCENDING)], unique=True, sparse=True),
+        IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING), ("is_active", ASCENDING)]),
+        IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING), ("is_active", ASCENDING)], unique=True, partialFilterExpression={"is_active": True}),
+        IndexModel([("created_by_user_id", ASCENDING)]),
+        IndexModel([("updated_at", DESCENDING)]),
+        IndexModel([(FIELD_USER_ID, ASCENDING)], sparse=True),
     ],
 }
 

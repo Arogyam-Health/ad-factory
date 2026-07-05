@@ -563,6 +563,140 @@ def test_provider_config_isolation() -> int:
     return failed
 
 
+# ─── Config system tests ────────────────────────────────────────────────────
+
+
+def test_config_system() -> int:
+    failed = 0
+    print("\n[Config system]")
+
+    from dashboard.backend.services.user_config import (
+        CONFIG_KEYS,
+        get_generic_config,
+        get_user_config,
+        set_user_config,
+        delete_user_config,
+        has_custom_config,
+        get_config_doc,
+        _extract_flat_from_new_schema,
+        _normalize_doc_to_new_schema,
+        _EMPTY_BY_KEY,
+    )
+
+    # 1. CONFIG_KEYS has exactly the 8 keys
+    expected_keys = [
+        "product_master_doc", "starting_prompt", "copy_prompt_templates",
+        "persona_seeds", "copy_architecture", "background_variant",
+        "prompt_assembler_templates", "conversion_916_prompt",
+    ]
+    failed += ok(sorted(CONFIG_KEYS) == sorted(expected_keys), "CONFIG_KEYS has exactly 8 expected keys")
+
+    # 2. get_generic_config returns all 8 keys
+    generic = get_generic_config()
+    failed += ok(sorted(generic.keys()) == sorted(expected_keys), "get_generic_config returns all 8 keys")
+    failed += ok(all(isinstance(generic[k], str) for k in CONFIG_KEYS), "All generic config values are strings")
+
+    # 3. get_user_config returns generic when no custom config exists
+    test_user = generate_user_id()
+    config = get_user_config(test_user)
+    failed += ok(config == generic, "get_user_config returns generic when no custom config")
+
+    # 4. set_user_config writes new owner schema
+    if db_available():
+        custom_config = {"product_master_doc": "Custom product doc for test", "starting_prompt": "Custom starting prompt"}
+        result = set_user_config(test_user, custom_config)
+        failed += ok(result["product_master_doc"] == "Custom product doc for test", "set_user_config stores product_master_doc")
+        failed += ok(result["starting_prompt"] == "Custom starting prompt", "set_user_config stores starting_prompt")
+        # Other keys should fall back to generic
+        failed += ok(result["copy_prompt_templates"] == generic["copy_prompt_templates"], "Missing keys fall back to generic")
+
+        # 5. set_user_config returns merged effective config
+        failed += ok(len(result) == 8, "set_user_config returns all 8 keys (merged)")
+
+        # 6. Missing custom keys fallback to generic
+        partial_config = {"copy_architecture": '{"test": true}'}
+        result2 = set_user_config(test_user, partial_config)
+        failed += ok(result2["copy_architecture"] == '{"test": true}', "Updated key present")
+        failed += ok(result2["product_master_doc"] == "Custom product doc for test", "Previously set key preserved")
+        failed += ok(result2["copy_prompt_templates"] == generic["copy_prompt_templates"], "Unset key still falls back to generic")
+
+        # 7. has_custom_config works with new schema
+        failed += ok(has_custom_config(test_user), "has_custom_config returns True after set")
+        test_user_no_config = generate_user_id()
+        failed += ok(not has_custom_config(test_user_no_config), "has_custom_config returns False for new user")
+
+        # Verify owner schema in DB
+        doc = get_config_doc("user", test_user)
+        failed += ok(doc is not None, "get_config_doc finds active config")
+        if doc:
+            failed += ok(doc["owner_type"] == "user", "owner_type is 'user'")
+            failed += ok(doc["owner_id"] == test_user, "owner_id matches user_id")
+            failed += ok(doc["config_scope"] == "personal", "config_scope is 'personal'")
+            failed += ok(doc["config_mode"] == "full", "config_mode is 'full'")
+            failed += ok(doc["source"] == "manual", "source is 'manual'")
+            failed += ok(doc["is_active"] is True, "is_active is True")
+            failed += ok("files" in doc, "doc has 'files' field")
+            if "files" in doc:
+                failed += ok("product_master_doc" in doc["files"], "files has product_master_doc")
+                failed += ok("content" in doc["files"]["product_master_doc"], "files.product_master_doc has content")
+                failed += ok(doc["files"]["product_master_doc"]["content"] == "Custom product doc for test", "files.product_master_doc.content matches")
+
+        # 8. DELETE /api/user/config soft-deletes config
+        delete_user_config(test_user)
+        failed += ok(not has_custom_config(test_user), "has_custom_config returns False after soft-delete")
+        # Verify doc is soft-deleted (is_active=False)
+        deleted_doc = get_config_doc("user", test_user)
+        failed += ok(deleted_doc is None, "get_config_doc returns None after soft-delete")
+        # Verify legacy-style check also returns False
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_USER_CONFIGS
+        raw_doc = get_sync_db()[COLL_USER_CONFIGS].find_one({"owner_type": "user", "owner_id": test_user, "is_active": False})
+        failed += ok(raw_doc is not None, "Soft-deleted doc exists with is_active=False")
+
+        # 9. Old-style user_configs doc can be migrated
+        old_style_doc = {
+            "user_id": "usr_old_style_test",
+            "product_master_doc": "old product doc",
+            "starting_prompt": "old starting prompt",
+            "updated_at": 12345.0,
+        }
+        normalized = _normalize_doc_to_new_schema(old_style_doc)
+        failed += ok(normalized["owner_type"] == "user", "Migration: owner_type is 'user'")
+        failed += ok(normalized["owner_id"] == "usr_old_style_test", "Migration: owner_id matches old user_id")
+        failed += ok(normalized["source"] == "migration", "Migration: source is 'migration'")
+        failed += ok(normalized["config_scope"] == "personal", "Migration: config_scope is 'personal'")
+        failed += ok("files" in normalized, "Migration: files field present")
+        if "files" in normalized:
+            failed += ok(normalized["files"]["product_master_doc"]["content"] == "old product doc", "Migration: content preserved")
+            failed += ok(normalized["files"]["product_master_doc"]["content_type"] == "text/plain", "Migration: content_type set")
+
+        # Extract flat from new schema
+        flat = _extract_flat_from_new_schema(normalized)
+        failed += ok(flat["product_master_doc"] == "old product doc", "Extract flat works")
+        failed += ok(flat["starting_prompt"] == "old starting prompt", "Extract flat preserves all keys")
+
+    else:
+        print("  SKIP DB-dependent config tests (MongoDB not available)")
+
+    # 10. Public /api/generic-config returns generic only
+    resp = client.get("/api/generic-config")
+    failed += ok(resp.status_code == 200, "GET /api/generic-config returns 200")
+    data = resp.json()
+    failed += ok(sorted(data.keys()) == sorted(expected_keys), "/api/generic-config returns all 8 keys")
+    failed += ok(data.get("copy_prompt_templates", "") != "", "/api/generic-config has non-empty copy_prompt_templates")
+
+    # 11. Public /api/generic-config/{key} works for valid keys and 404s for invalid key
+    resp = client.get("/api/generic-config/product_master_doc")
+    failed += ok(resp.status_code == 200, "GET /api/generic-config/product_master_doc returns 200")
+    data = resp.json()
+    failed += ok(data.get("key") == "product_master_doc", "Response has correct key")
+
+    resp = client.get("/api/generic-config/nonexistent_key")
+    failed += ok(resp.status_code == 404, "GET /api/generic-config/nonexistent_key returns 404")
+
+    return failed
+
+
 # ─── main ──────────────────────────────────────────────────────────────────
 
 
@@ -583,6 +717,7 @@ def main() -> int:
     total += test_file_mapping()
     total += test_storage_backend()
     total += test_cloudinary_upload()
+    total += test_config_system()
 
     print(f"\n{'='*50}")
     if total == 0:
