@@ -69,6 +69,25 @@ export async function loadDefaults() {
   state.isPersonasLoading = true;
   try {
     state.defaultData = await fetchJSON("/api/defaults");
+
+    // Overlay user's custom persona seeds from MongoDB config
+    try {
+      const cfg = await fetchJSON("/api/config/effective");
+      const rawSeeds = cfg?.config?.persona_seeds;
+      if (rawSeeds) {
+        const seeds = typeof rawSeeds === "string" ? JSON.parse(rawSeeds) : rawSeeds;
+        if (Array.isArray(seeds) && seeds.length) {
+          const userPersonas = seeds.map(e => ({
+            number: parseInt(e.persona_number || e.number, 10),
+            name: String(e.persona_name || e.name || `Persona ${e.persona_number || e.number}`),
+          })).filter(p => p.number);
+          if (userPersonas.length) {
+            state.defaultData.personas = userPersonas;
+          }
+        }
+      }
+    } catch {}
+
     initPersonaState(state.defaultData?.personas || []);
     return state.defaultData;
   } finally {

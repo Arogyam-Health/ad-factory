@@ -201,7 +201,7 @@ def write_audit_event(
 _ORG_ROLE_PERMISSIONS = {
     "owner": {
         "can_manage_org": True,
-        "can_invite_members": False,
+        "can_invite_members": True,
         "can_remove_members": True,
         "can_change_roles": True,
         "can_edit_org_config": True,
@@ -212,7 +212,7 @@ _ORG_ROLE_PERMISSIONS = {
     },
     "config_admin": {
         "can_manage_org": False,
-        "can_invite_members": False,
+        "can_invite_members": True,
         "can_remove_members": False,
         "can_change_roles": False,
         "can_edit_org_config": True,
