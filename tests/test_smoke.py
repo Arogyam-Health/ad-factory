@@ -717,6 +717,13 @@ def test_org_system() -> int:
         extract_domain_from_email,
         ORG_ROLES,
     )
+    from dashboard.backend.services.invite_service import (
+        generate_invite_id as gen_inv_id,
+        generate_invite_token,
+        hash_invite_token,
+        build_invite_url,
+        ALLOWED_INVITE_ROLES,
+    )
     failed += ok(callable(can_user_edit_org_config), "can_user_edit_org_config is callable")
     failed += ok(callable(require_org_member), "require_org_member is callable")
     failed += ok(callable(require_org_role), "require_org_role is callable")
@@ -818,6 +825,75 @@ def test_org_system() -> int:
     # 15. GET /api/orgs/{id} without session returns 401
     resp = client.get(f"/api/orgs/{generate_org_id()}")
     failed += ok(resp.status_code == 401, "GET /api/orgs/{id} without auth returns 401")
+
+    # ── Invite system tests ─────────────────────────────────────────────
+
+    # 16. invite module functions exist
+    invite_id = gen_inv_id()
+    failed += ok(invite_id.startswith("inv_"), "invite_id starts with inv_")
+    failed += ok(len(invite_id) > 10, "invite_id has reasonable length")
+
+    token = generate_invite_token()
+    failed += ok(len(token) >= 40, "invite_token is at least 40 chars")
+
+    h1 = hash_invite_token(token)
+    h2 = hash_invite_token(token)
+    failed += ok(h1 == h2, "hash_invite_token is deterministic")
+    failed += ok(len(h1) == 64, "hash_invite_token produces 64-char hex")
+
+    url = build_invite_url(token)
+    failed += ok(token in url, "build_invite_url includes token")
+    failed += ok(url.startswith("http"), "build_invite_url starts with http")
+
+    # 17. ALLOWED_INVITE_ROLES
+    failed += ok("creator" in ALLOWED_INVITE_ROLES, "ALLOWED_INVITE_ROLES includes creator")
+    failed += ok("config_admin" in ALLOWED_INVITE_ROLES, "ALLOWED_INVITE_ROLES includes config_admin")
+    failed += ok("owner" not in ALLOWED_INVITE_ROLES, "ALLOWED_INVITE_ROLES does not include owner")
+
+    # ── Invite route tests (auth required) ──────────────────────────────
+
+    # 18. POST /api/orgs/{id}/invites without session returns 401
+    resp = client.post(f"/api/orgs/{generate_org_id()}/invites", json={"email": "test@example.com", "role": "creator"})
+    failed += ok(resp.status_code == 401, "POST invite without auth returns 401")
+
+    # 19. GET /api/orgs/{id}/invites without session returns 401
+    resp = client.get(f"/api/orgs/{generate_org_id()}/invites")
+    failed += ok(resp.status_code == 401, "GET invites without auth returns 401")
+
+    # 20. DELETE /api/orgs/{id}/invites/{inv_id} without session returns 401
+    resp = client.delete(f"/api/orgs/{generate_org_id()}/invites/{invite_id}")
+    failed += ok(resp.status_code == 401, "DELETE invite without auth returns 401")
+
+    # 21. GET /api/invites/{token} public endpoint
+    resp = client.get(f"/api/invites/{token}")
+    failed += ok(resp.status_code == 404, "GET /api/invites/{token} returns 404 for unknown token")
+
+    # 22. POST /api/invites/{token}/accept without session returns 401
+    resp = client.post(f"/api/invites/{token}/accept")
+    failed += ok(resp.status_code == 401, "POST accept invite without auth returns 401")
+
+    # ── Effective config endpoint ───────────────────────────────────────
+
+    # 23. GET /api/config/effective without session returns 401
+    resp = client.get("/api/config/effective")
+    failed += ok(resp.status_code == 401, "GET /api/config/effective without auth returns 401")
+
+    # 24. resolve_effective_config and get_config_doc exist
+    from dashboard.backend.services.user_config import get_config_doc
+    failed += ok(callable(get_config_doc), "get_config_doc is callable")
+
+    # ── Email service ───────────────────────────────────────────────────
+    from dashboard.backend.services.email_service import try_send_email, send_invite_email
+
+    # 25. try_send_email with no provider returns sent=false, provider=none
+    result = try_send_email("test@example.com", "Test", "Body", "Body")
+    failed += ok(result.get("sent") is False, "try_send_email no provider: sent=false")
+    failed += ok(result.get("provider") == "none", "try_send_email no provider: provider=none")
+
+    # 26. send_invite_email with no provider returns sent=false
+    result2 = send_invite_email("test@example.com", "Tester", "TestOrg", "creator", "http://example.com/invite/token")
+    failed += ok(result2.get("sent") is False, "send_invite_email no provider: sent=false")
+    failed += ok(result2.get("provider") == "none", "send_invite_email no provider: provider=none")
 
     if db_available():
         # 16. Org creation with public email domain (requires mocking user with public email)

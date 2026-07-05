@@ -631,7 +631,7 @@ import { initAgentStatus } from "./agents.js";
 
 initAuth().then(() => {
   initAgentStatus();
-
+  import("./org.js").then(mod => mod.renderOrgPanel());
 });
 
 Promise.all([initDefaults(), loadAndRenderRuns()]).catch((err) => setStatus(String(err)));

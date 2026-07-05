@@ -4293,7 +4293,7 @@ app.add_middleware(
 # ── Auth middleware (protects old routes without modifying them) ────────────
 from dashboard.backend.auth.service import get_current_user_from_cookie
 
-PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config")
+PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config", "/api/invites/")
 
 
 @app.middleware("http")
@@ -7676,7 +7676,9 @@ app.include_router(agent_router)
 
 # ── Organization routes ─────────────────────────────────────────────────────
 from dashboard.backend.services.org_routes import router as org_router
+from dashboard.backend.services.invite_routes import router as invite_router
 app.include_router(org_router)
+app.include_router(invite_router)
 
 # ── Public generic config endpoints ─────────────────────────────────────────
 
@@ -7950,4 +7952,18 @@ def download_input_file(path: str, request: Request) -> FileResponse:
     if not target.is_file():
         raise HTTPException(status_code=400, detail="Path is not a file")
     return FileResponse(target, filename=target.name)
+
+
+# Serve invite page at /invite/{token} (SPA client-side routing)
+from fastapi.responses import FileResponse as FR
+INVITE_HTML = Path(ROOT / "dashboard" / "frontend" / "invite.html")
+
+
+@app.get("/invite/{token:path}")
+def serve_invite_page(token: str) -> FR:
+    if INVITE_HTML.exists():
+        return FR(INVITE_HTML)
+    raise HTTPException(status_code=404, detail="Not found")
+
+
 app.mount("/", StaticFiles(directory=str(ROOT / "dashboard" / "frontend"), html=True), name="frontend")

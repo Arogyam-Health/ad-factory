@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Accept Invite — Ad Factory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+    .invite-card { max-width: 480px; width: 100%; padding: 40px; text-align: center; }
+    .invite-card h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    .invite-card .org-name { font-size: 1.2rem; font-weight: 600; color: var(--primary); margin: 12px 0; }
+    .invite-card .role-badge { display: inline-block; padding: 4px 16px; border-radius: 20px; background: var(--primary-muted); color: var(--ink); font-size: 0.85rem; font-weight: 500; }
+    .invite-card .invite-email { color: var(--muted); font-size: 0.9rem; margin: 8px 0; }
+    .invite-card .expiry-note { color: var(--muted); font-size: 0.8rem; margin: 16px 0; }
+    .invite-card .login-prompt { margin: 24px 0; }
+    .invite-card .error-msg { color: var(--accent-coral); margin: 16px 0; }
+    .invite-card .success-msg { color: var(--good-ink); margin: 16px 0; }
+    .loading { opacity: 0.5; }
+  </style>
+</head>
+<body>
+  <div class="card invite-card" id="inviteCard">
+    <h1>Organization Invite</h1>
+    <div id="inviteContent">
+      <p class="loading">Loading invite details...</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { checkAuth, isAuthenticated, getAuthUser } from "/js/auth.js";
+    import { fetchJSON } from "/js/api.js";
+
+    const content = document.getElementById("inviteContent");
+    const pathParts = window.location.pathname.split("/");
+    const token = pathParts[pathParts.length - 1];
+
+    async function render() {
+      if (!token) {
+        content.innerHTML = `<p class="error-msg">Invalid invite link.</p>`;
+        return;
+      }
+
+      try {
+        const data = await fetchJSON(`/api/invites/${token}`);
+
+        if (!data.valid) {
+          content.innerHTML = `<p class="error-msg">${escapeHtml(data.message || "Invite is no longer valid.")}</p>`;
+          return;
+        }
+
+        const inv = data.invite;
+        await checkAuth();
+        const auth = isAuthenticated();
+        const user = getAuthUser();
+
+        content.innerHTML = `
+          <p class="invite-email">You've been invited to join</p>
+          <p class="org-name">${escapeHtml(inv.org_name)}</p>
+          <p><span class="role-badge">${escapeHtml(inv.role)}</span></p>
+          <p class="invite-email">as ${escapeHtml(inv.email)}</p>
+          <p class="expiry-note">This invite expires on ${inv.expires_at ? new Date(inv.expires_at * 1000).toLocaleDateString() : "?"}</p>
+          <p class="expiry-note">Organization: ${escapeHtml(inv.org_domain)}</p>
+
+          ${auth ? `
+            <div id="acceptSection">
+              <button id="acceptInviteBtn" class="ghost-btn" type="button" style="font-size:1rem;padding:12px 40px">Accept Invite</button>
+              <div id="acceptResult"></div>
+            </div>
+          ` : `
+            <div class="login-prompt">
+              <p>Login with Google to accept this invite.</p>
+              <a href="/api/auth/google/login" class="ghost-btn" style="display:inline-block;margin-top:12px;padding:12px 40px">Login with Google</a>
+            </div>
+          `}
+        `;
+
+        const acceptBtn = document.getElementById("acceptInviteBtn");
+        if (acceptBtn) {
+          acceptBtn.addEventListener("click", async () => {
+            acceptBtn.disabled = true;
+            const resultDiv = document.getElementById("acceptResult");
+            try {
+              const res = await fetchJSON(`/api/invites/${token}/accept`, { method: "POST" });
+              resultDiv.innerHTML = `<p class="success-msg">You've joined ${escapeHtml(res.org?.name || "the organization")}! <a href="/">Go to Dashboard</a></p>`;
+            } catch (err) {
+              resultDiv.innerHTML = `<p class="error-msg">${escapeHtml(String(err))}</p>`;
+              acceptBtn.disabled = false;
+            }
+          });
+        }
+      } catch (err) {
+        const msg = String(err);
+        if (msg.includes("404")) {
+          content.innerHTML = `<p class="error-msg">Invite not found or invalid.</p>`;
+        } else {
+          content.innerHTML = `<p class="error-msg">${escapeHtml(msg)}</p>`;
+        }
+      }
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    render();
+  </script>
+</body>
+</html>
