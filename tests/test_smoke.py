@@ -24,8 +24,9 @@ os.environ["ENCRYPTION_KEY"] = "test-encryption-key-32-char-minimum!!"
 os.environ["GOOGLE_CLIENT_ID"] = "test-client-id"
 os.environ["GOOGLE_CLIENT_SECRET"] = "test-client-secret"
 os.environ["CORS_ORIGINS"] = "http://localhost:4090"
-os.environ["MONGODB_URI"] = "mongodb://localhost:27017/ad-factory-test"
+os.environ["MONGODB_URI"] = "mongodb+srv://test:test@cluster0.example.com/ad-factory-test?retryWrites=true&w=majority"
 os.environ["MONGODB_DB_NAME"] = "ad_factory_test"
+os.environ["GOOGLE_REDIRECT_URI"] = "https://example.com/api/auth/google/callback"
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))

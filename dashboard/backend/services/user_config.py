@@ -232,11 +232,18 @@ def resolve_effective_config_for_user(user_id: str) -> dict[str, Any]:
     """
     generic = get_generic_config()
 
-    doc = get_config_doc("user", user_id)
+    try:
+        doc = get_config_doc("user", user_id)
+    except Exception:
+        # MongoDB unavailable — return generic
+        return generic
 
     # Fallback: check legacy-style doc during migration
     if doc is None:
-        legacy_doc = _get_config_doc_legacy(user_id)
+        try:
+            legacy_doc = _get_config_doc_legacy(user_id)
+        except Exception:
+            legacy_doc = None
         if legacy_doc is not None:
             doc = _normalize_doc_to_new_schema(legacy_doc)
 
@@ -279,28 +286,34 @@ def set_user_config(user_id: str, config: dict[str, Any], actor_user_id: str | N
 
 def delete_user_config(user_id: str, hard_delete: bool = False) -> None:
     """Soft-delete (preferred) or hard-delete user config."""
-    coll = get_sync_db()[COLL_USER_CONFIGS]
-    if hard_delete:
-        coll.delete_one({
-            "owner_type": "user",
-            "owner_id": user_id,
-            "is_active": True,
-        })
-    else:
-        coll.update_one(
-            {"owner_type": "user", "owner_id": user_id, "is_active": True},
-            {"$set": {"is_active": False, "updated_at": time.time()}},
-        )
+    try:
+        coll = get_sync_db()[COLL_USER_CONFIGS]
+        if hard_delete:
+            coll.delete_one({
+                "owner_type": "user",
+                "owner_id": user_id,
+                "is_active": True,
+            })
+        else:
+            coll.update_one(
+                {"owner_type": "user", "owner_id": user_id, "is_active": True},
+                {"$set": {"is_active": False, "updated_at": time.time()}},
+            )
+    except Exception:
+        pass
 
 
 def has_custom_config(user_id: str) -> bool:
     """Check if user has an active config (new or legacy schema)."""
-    doc = get_config_doc("user", user_id)
-    if doc is not None:
-        return True
-    # Check legacy
-    legacy_doc = _get_config_doc_legacy(user_id)
-    return legacy_doc is not None
+    try:
+        doc = get_config_doc("user", user_id)
+        if doc is not None:
+            return True
+        # Check legacy
+        legacy_doc = _get_config_doc_legacy(user_id)
+        return legacy_doc is not None
+    except Exception:
+        return False
 
 
 # ── Vinay seed (kept for backward compatibility, NOT called from GET routes) ──

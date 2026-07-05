@@ -4293,7 +4293,7 @@ app.add_middleware(
 # ── Auth middleware (protects old routes without modifying them) ────────────
 from dashboard.backend.auth.service import get_current_user_from_cookie
 
-PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config/")
+PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config")
 
 
 @app.middleware("http")
