@@ -812,6 +812,18 @@ def _load_copy_architecture() -> dict[str, Any]:
 COPY_ARCH = _load_copy_architecture()
 
 
+def _resolve_copy_architecture() -> dict[str, Any]:
+    user_arch_raw = _resolve_user_config("copy_architecture")
+    if user_arch_raw:
+        try:
+            parsed = json.loads(user_arch_raw) if isinstance(user_arch_raw, str) else user_arch_raw
+            if isinstance(parsed, dict) and parsed:
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return COPY_ARCH
+
+
 def _load_copy_prompts() -> dict[str, Any]:
     path = COPY_PROMPTS_PATH
     if not path.exists():
@@ -850,7 +862,7 @@ def _build_hypothesis_variables() -> dict[str, dict[str, Any]]:
             "description": "Test which messaging angle drives better results: pain vs. outcome vs. proof vs. authority vs. curiosity vs. comparison vs. offer vs. story.",
         },
     }
-    arch = COPY_ARCH.get("headline_architectures", {})
+    arch = _resolve_copy_architecture().get("headline_architectures", {})
     for hyp_type, meta in arch_types.items():
         options = [{"id": vid, "label": _hypothesis_variant_label(vid)} for vid in arch.get(hyp_type, {})]
         hv[hyp_type] = {**meta, "options": options}
@@ -912,7 +924,7 @@ def _compact_creative_entry(entry_id: str, entry: dict[str, Any]) -> dict[str, A
 
 def _framework_item(group: str, item_id: str) -> dict[str, str]:
     arch_group = _headline_architecture_group(group)
-    items = COPY_ARCH.get("headline_architectures", {}).get(arch_group, {})
+    items = _resolve_copy_architecture().get("headline_architectures", {}).get(arch_group, {})
     if not isinstance(items, dict) or not items:
         return {"id": item_id, "direction": ""}
     entry = items.get(item_id)
@@ -924,17 +936,17 @@ def _framework_item(group: str, item_id: str) -> dict[str, str]:
 
 def _hypothesis_guidance(hyp_type: str, variant: str) -> str:
     headline_group = _headline_architecture_group(hyp_type)
-    headline_entry = COPY_ARCH.get("headline_architectures", {}).get(headline_group, {}).get(variant)
+    headline_entry = _resolve_copy_architecture().get("headline_architectures", {}).get(headline_group, {}).get(variant)
     if isinstance(headline_entry, dict):
         return _entry_direction(headline_entry)
-    aux_entry = COPY_ARCH.get("non_headline_hypotheses", {}).get(hyp_type, {}).get(variant)
+    aux_entry = _resolve_copy_architecture().get("non_headline_hypotheses", {}).get(hyp_type, {}).get(variant)
     if isinstance(aux_entry, dict):
         return _entry_direction(aux_entry)
     return ""
 
 
 def _select_headline_architecture(persona_number: int, fmt: str) -> dict[str, Any]:
-    arch = COPY_ARCH.get("headline_architectures", {})
+    arch = _resolve_copy_architecture().get("headline_architectures", {})
     hook_arch = arch.get("hook_structure", {})
     hook_keys = list(hook_arch.keys())
     if hook_keys:
@@ -4975,7 +4987,7 @@ def _extract_prompt_row_metadata(run_id: str, copy_batch: dict[str, Any], prompt
                         hypothesis_variant = str(hyp.get("variant") or "")
                     break
 
-    arch = COPY_ARCH
+    arch = _resolve_copy_architecture()
     concept_angle_def = _get_architecture_definition(arch, "concept_angle", concept_angle)
 
     return {

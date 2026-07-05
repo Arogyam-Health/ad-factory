@@ -10,7 +10,6 @@ from dashboard.backend.services.user_config import (
     set_user_config,
     delete_user_config,
     has_custom_config,
-    push_vinaysaini_config,
 )
 
 router = APIRouter()
@@ -20,7 +19,6 @@ router = APIRouter()
 def read_config(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    push_vinaysaini_config()
     config = get_user_config(user["user_id"])
     return {
         "config": config,

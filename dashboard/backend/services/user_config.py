@@ -12,6 +12,8 @@ CONFIG_KEYS = [
     "starting_prompt",
     "copy_prompt_templates",
     "persona_seeds",
+    "copy_architecture",
+    "background_variant",
 ]
 
 
@@ -272,153 +274,28 @@ Important take a note of these :
 
 
 def get_generic_config() -> dict[str, Any]:
+    """Read actual filesystem config files as global defaults."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent.parent.parent
+
+    product_master_path = root / "input" / "docs" / "product master doc.txt"
+    starting_prompt_path = root / "input" / "startingprompt.txt"
+    copy_templates_path = root / "dashboard" / "backend" / "copy_prompt_templates.json"
+    persona_seeds_path = root / "persona_seeds.json"
+    copy_arch_path = root / "dashboard" / "backend" / "copy_architecture.json"
+    background_variant_path = root / "background_variant.json"
+
+    def _read(p: Path) -> str:
+        try:
+            return p.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+
     return {
-        "product_master_doc": GENERIC_PRODUCT_MASTER_DOC,
-        "starting_prompt": GENERIC_STARTING_PROMPT,
-        "copy_prompt_templates": "{}",
-        "persona_seeds": "[]",
+        "product_master_doc": _read(product_master_path),
+        "starting_prompt": _read(starting_prompt_path),
+        "copy_prompt_templates": _read(copy_templates_path) or "{}",
+        "persona_seeds": _read(persona_seeds_path) or "[]",
+        "copy_architecture": _read(copy_arch_path) or "{}",
+        "background_variant": _read(background_variant_path) or "{}",
     }
-
-
-GENERIC_PRODUCT_MASTER_DOC = """Single Source of Truth: Product Foundation Document
-PRODUCT TRUTH LIBRARY
-
-Instructions:
-- Replace each placeholder below with your actual product truth.
-- Each truth needs: Category, Product Truth, Use When, Avoid Saying.
-- Add or remove truths as needed for your product.
-- The Brand design section at the bottom should reflect your brand colors and typography.
-
-1. [TRUTH_KEY_1]
-Category: [Category, e.g. Structure, Mechanism, Authority, Social Proof, Support, Ease, Positioning, Relevance, Result, Behaviour, Guardrail]
-Product Truth: [Describe a verifiable product truth — what the product actually does, provides, or is backed by.]
-Use When: [Which persona or ad context should use this truth.]
-Avoid Saying: [What claims or phrases to avoid for this truth.]
-
-2. [TRUTH_KEY_2]
-Category: [Category]
-Product Truth: [Your product truth here.]
-Use When: [When to use it.]
-Avoid Saying: [What to avoid.]
-
-3. [TRUTH_KEY_3]
-Category: [Category]
-Product Truth: [Your product truth here.]
-Use When: [When to use it.]
-Avoid Saying: [What to avoid.]
-
-4. [TRUTH_KEY_4]
-Category: [Category]
-Product Truth: [Your product truth here.]
-Use When: [When to use it.]
-Avoid Saying: [What to avoid.]
-
-5. [TRUTH_KEY_5]
-Category: [Category]
-Product Truth: [Your product truth here.]
-Use When: [When to use it.]
-Avoid Saying: [What to avoid.]
-
-[Add more truths as needed — aim for 10-20 truths covering Structure, Mechanism, Authority, Social Proof, Support, Ease, Positioning, Relevance, Result, Behaviour, Guardrail, and Food Guidance categories.]
-
-Brand design system
-Typography:
-- Headline: [Your headline font, e.g. Poppins Bold]
-- Body: [Your body font, e.g. Poppins Regular]
-
-Palette:
-- #[Color 1]
-- #[Color 2]
-- #[Color 3]
-- #[Color 4]"""
-
-
-GENERIC_STARTING_PROMPT = """[PRODUCT NAME] - GLOBAL PRODUCT RULES
-
-Instructions:
-- Replace all bracketed placeholders with your actual product details.
-- These rules control how your product appears in generated ad images.
-- Be as specific as possible — the image generator follows these rules literally.
-
-A0. OUTPUT COUNT - ABSOLUTE RULE
-- Generate exactly one final image for each prompt. Do not create two options, variations, comparisons, grids, or ask which one is better.
-- Do not show alternatives. Do not present a choice. Output one finished ad image only.
-
-A1. PRODUCT LOCK - ABSOLUTE RULE
-- Use the provided [YOUR PRODUCT] packshot images pixel-for-pixel as visual truth.
-- Do not redraw, recreate, regenerate, relabel, recolor, blur, "fix", or reinterpret any product or packaging.
-- Do not change label text, logos printed on packaging, illustrations, colors, proportions, or label layouts.
-- Only permitted product-image operations: placement, scaling, subtle drop shadows, and mild warm lighting correction.
-
-A2. EXACT LABEL TEXT
-[List every product in your kit/product line and the exact text that appears on each.]
-- [Product 1]: "[Exact label text]"
-- [Product 2]: "[Exact label text]"
-- [Product 3]: "[Exact label text]"
-- Never blur, approximate, paraphrase, rewrite, change casing, change spacing, or grammatically alter packaging text.
-
-A3. PRODUCT DIMENSIONS AND COUNT
-[List each product with physical dimensions and relative proportions.]
-- [Product 1]: [shape], [dimensions].
-- [Product 2]: [shape], [dimensions].
-- Every output must contain exactly [N] distinct products: [list all products].
-- Size products in correct relative proportion. [Describe which is largest, which is smallest.]
-
-A4. COLOR AND LIGHTING
-- Primary palette: [list your brand hex colors]
-- Avoid neon, random accent colors, harsh gradients, or decorative vignette frames.
-- Use warm, soft, directional light from top-left.
-- Keep clean highlights on product labels and caps.
-
-A5. TYPOGRAPHY AND COPY
-- Use [your font] only for on-image ad copy.
-- Use maximum two weights: [weight 1] and [weight 2].
-
-A6. MASTER FORBIDDEN LIST
-- Do not create AI-stylized versions of the products.
-- Do not use sale badges, burst graphics, stickers, emoji, or visual clutter.
-- Do not show body transformations or before/after visuals unless explicitly requested.
-- Do not add disclaimer copy on-image unless explicitly requested.
-- Do not add any standalone brand logo to the ad. Only logos already printed on the product packaging should appear.
-
-A7. QUALITY CHECK
-- All [N] products are present, correctly proportioned, fully visible, and completely unmodified.
-- Product labels are sharp, accurate, and faithful to the uploaded images.
-- Layout is calm, balanced, premium, and not overcrowded.
-- No forbidden elements are present.
-- If product count, product identity, label accuracy, or requested background fails, silently regenerate until the output passes."""
-
-
-GENERIC_PERSONA_SEEDS = """[
-  {
-    "persona_number": 1,
-    "persona_name": "[Persona Name, e.g. Always Hungry]",
-    "core_pattern": "[What is broadly true about this persona's weight-loss struggle]",
-    "primary_tags": ["[tag_key_1]", "[tag_key_2]"],
-    "common_indian_moments": "[Specific Indian daily-life moments where this persona's struggle shows up]",
-    "failed_attempts": "[What they usually tried before]",
-    "why_it_failed": "[Why those methods did not work for them]",
-    "relevant_ok_kit_role": "[How your product helps this specific persona — be concrete]",
-    "guardrail": "[What should not be claimed for this persona]",
-    "headline_anchor_rule": "[Rule for headline: must imply X + weight loss]"
-  },
-  {
-    "persona_number": 2,
-    "persona_name": "[Another Persona]",
-    "core_pattern": "[Core struggle pattern]",
-    "primary_tags": ["[tag_key]"],
-    "common_indian_moments": "[Indian daily-life moments]",
-    "failed_attempts": "[What they tried]",
-    "why_it_failed": "[Why it failed]",
-    "relevant_ok_kit_role": "[How your product helps]",
-    "guardrail": "[Claims to avoid]",
-    "headline_anchor_rule": "[Headline rule]"
-  }
-]
-
-Instructions:
-- Add 10-30 personas representing your target audience segments.
-- Each persona must have a unique core_pattern, common_indian_moments, and relevant_ok_kit_role.
-- primary_tags should reference product truth keys from your product_master_doc.
-- The persona_name should be descriptive (e.g. "Busy Professional", "PCOD Struggler", "Night Snacker").
-- Use common_indian_moments to ground the persona in real Indian daily life."""

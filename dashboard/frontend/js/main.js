@@ -627,11 +627,11 @@ showRunsSkeletons();
 
 import { initAuth } from "./auth.js";
 import { initAgentStatus } from "./agents.js";
-import { loadUserConfig } from "./user-config.js";
+
 
 initAuth().then(() => {
   initAgentStatus();
-  loadUserConfig();
+
 });
 
 Promise.all([initDefaults(), loadAndRenderRuns()]).catch((err) => setStatus(String(err)));
