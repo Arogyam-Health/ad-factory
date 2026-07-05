@@ -285,22 +285,22 @@ def set_user_config(user_id: str, config: dict[str, Any], actor_user_id: str | N
 
 
 def delete_user_config(user_id: str, hard_delete: bool = False) -> None:
-    """Soft-delete (preferred) or hard-delete user config."""
-    try:
-        coll = get_sync_db()[COLL_USER_CONFIGS]
-        if hard_delete:
-            coll.delete_one({
-                "owner_type": "user",
-                "owner_id": user_id,
-                "is_active": True,
-            })
-        else:
-            coll.update_one(
-                {"owner_type": "user", "owner_id": user_id, "is_active": True},
-                {"$set": {"is_active": False, "updated_at": time.time()}},
-            )
-    except Exception:
-        pass
+    """Soft-delete (preferred) or hard-delete user config.
+
+    Raises on MongoDB failure — callers must handle.
+    """
+    coll = get_sync_db()[COLL_USER_CONFIGS]
+    if hard_delete:
+        coll.delete_one({
+            "owner_type": "user",
+            "owner_id": user_id,
+            "is_active": True,
+        })
+    else:
+        coll.update_one(
+            {"owner_type": "user", "owner_id": user_id, "is_active": True},
+            {"$set": {"is_active": False, "updated_at": time.time()}},
+        )
 
 
 def has_custom_config(user_id: str) -> bool:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.services.user_config import (
@@ -32,7 +32,10 @@ def save_config(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
     config = payload.get("config", payload)
-    updated = set_user_config(user["user_id"], config)
+    try:
+        updated = set_user_config(user["user_id"], config)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {exc}")
     return {"status": "ok", "config": updated}
 
 
@@ -40,5 +43,8 @@ def save_config(
 def clear_config(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, str]:
-    delete_user_config(user["user_id"])
+    try:
+        delete_user_config(user["user_id"])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to delete config: {exc}")
     return {"status": "deleted"}
