@@ -13,12 +13,15 @@
   <div class="page">
     <div id="authBar" class="auth-bar auth-hidden">
       <span class="auth-user-info"><span class="auth-user-name muted">Loading...</span></span>
+      <button id="profileBadgeBtn" class="ghost-btn profile-badge-btn hidden" type="button">&#128100; Profile</button>
     </div>
 
-    <div id="adminPanel" class="admin-panel" hidden></div>
-    <div id="orgPanel" class="org-panel"></div>
+    <div id="profilePanel" class="profile-panel hidden"></div>
+    <div id="orgPanel" class="org-panel hidden"></div>
     <div id="configPanel" class="config-panel"></div>
+    <div id="adminPanel" class="admin-panel" hidden></div>
     <nav id="topNav" class="top-nav">
+      <button id="profileNavBtn" class="ghost-btn" type="button">Profile</button>
       <button id="adminNav" class="ghost-btn admin-nav-btn" hidden data-admin-section="overview">Admin</button>
     </nav>
 

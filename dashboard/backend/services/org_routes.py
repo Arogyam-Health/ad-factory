@@ -17,6 +17,7 @@ from dashboard.backend.services.org_helper import (
     extract_domain_from_email,
     is_public_email_domain,
     get_org_by_id,
+    get_org_by_domain,
     get_org_memberships,
     write_audit_event,
     get_role_permissions,

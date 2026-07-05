@@ -631,24 +631,56 @@ import { initAgentStatus } from "./agents.js";
 
 initAuth().then(() => {
   initAgentStatus();
-  import("./org.js").then(mod => mod.renderOrgPanel());
   import("./config.js").then(mod => mod.renderConfigPanel());
   import("./auth.js").then(mod => {
     const user = mod.getAuthUser();
     const adminNav = document.getElementById("adminNav");
+    const profileBadgeBtn = document.getElementById("profileBadgeBtn");
     if (user && user.is_super_admin) {
       if (adminNav) { adminNav.hidden = false; adminNav.style.display = ""; }
     }
+    if (user && user.authenticated) {
+      if (profileBadgeBtn) { profileBadgeBtn.hidden = false; profileBadgeBtn.style.display = ""; }
+    }
     if (window.location.hash.startsWith("#admin/")) {
       const adminPanel = document.getElementById("adminPanel");
-      const orgPanel = document.getElementById("orgPanel");
+      const profilePanel = document.getElementById("profilePanel");
       const configPanel = document.getElementById("configPanel");
       if (adminPanel) adminPanel.hidden = false;
-      if (orgPanel) orgPanel.style.display = "none";
+      if (profilePanel) profilePanel.classList.add("hidden");
       if (configPanel) configPanel.style.display = "none";
       import("./admin.js").then(mod => mod.renderAdminPanel());
     }
   });
+});
+
+function togglePanel(panelId) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const isHidden = panel.classList.contains("hidden");
+  // Hide all toggleable panels first
+  ["profilePanel", "orgPanel", "configPanel"].forEach(id => {
+    const p = document.getElementById(id);
+    if (p && id !== panelId) p.classList.add("hidden");
+  });
+  if (panelId === "adminPanel") return; // admin uses its own toggle
+  panel.classList.toggle("hidden");
+}
+
+document.getElementById("profileNavBtn")?.addEventListener("click", () => {
+  togglePanel("profilePanel");
+  const profilePanel = document.getElementById("profilePanel");
+  if (profilePanel && !profilePanel.classList.contains("hidden")) {
+    import("./profile.js").then(mod => mod.renderProfilePanel());
+  }
+});
+
+document.getElementById("profileBadgeBtn")?.addEventListener("click", () => {
+  togglePanel("profilePanel");
+  const profilePanel = document.getElementById("profilePanel");
+  if (profilePanel && !profilePanel.classList.contains("hidden")) {
+    import("./profile.js").then(mod => mod.renderProfilePanel());
+  }
 });
 
 document.getElementById("adminNav")?.addEventListener("click", () => {
@@ -660,9 +692,9 @@ document.getElementById("adminNav")?.addEventListener("click", () => {
     }
   } else {
     panel.hidden = true;
-    const orgPanel = document.getElementById("orgPanel");
+    const profilePanel = document.getElementById("profilePanel");
     const configPanel = document.getElementById("configPanel");
-    if (orgPanel) orgPanel.style.display = "";
+    if (profilePanel) profilePanel.classList.add("hidden");
     if (configPanel) configPanel.style.display = "";
     history.pushState("", document.title, window.location.pathname + window.location.search);
   }
@@ -673,9 +705,9 @@ window.addEventListener("hashchange", () => {
     const panel = document.getElementById("adminPanel");
     if (panel) {
       panel.hidden = false;
-      const orgPanel = document.getElementById("orgPanel");
+      const profilePanel = document.getElementById("profilePanel");
       const configPanel = document.getElementById("configPanel");
-      if (orgPanel) orgPanel.style.display = "none";
+      if (profilePanel) profilePanel.classList.add("hidden");
       if (configPanel) configPanel.style.display = "none";
       import("./admin.js").then(mod => mod.renderAdminPanel());
     }
@@ -683,9 +715,9 @@ window.addEventListener("hashchange", () => {
     const panel = document.getElementById("adminPanel");
     if (panel && !panel.hidden) {
       panel.hidden = true;
-      const orgPanel = document.getElementById("orgPanel");
+      const profilePanel = document.getElementById("profilePanel");
       const configPanel = document.getElementById("configPanel");
-      if (orgPanel) orgPanel.style.display = "";
+      if (profilePanel) profilePanel.classList.add("hidden");
       if (configPanel) configPanel.style.display = "";
     }
   }

@@ -1516,13 +1516,13 @@ def test_admin_frontend() -> int:
     failed += ok('window.location.hash = "admin/overview"' in main_js,
                  "admin nav click sets hash to admin/overview")
 
-    # 37. Admin nav click hides org/config panels when opening (hashchange handler does it)
-    failed += ok("orgPanel.style.display = \"none\"" in main_js,
-                 "hashchange hides org panel when opening admin")
+    # 37. hashchange hides toggleable panels when opening admin
+    failed += ok("configPanel.style.display = \"none\"" in main_js and "profilePanel.classList.add" in main_js,
+                 "hashchange hides profile+config panels when opening admin")
 
-    # 38. Closing admin (non-admin hash) restores org/config panels
-    failed += ok("orgPanel.style.display = \"\"" in main_js,
-                 "leaving admin restores org panel display")
+    # 38. Leaving admin restores toggleable panels
+    failed += ok("configPanel.style.display = \"\"" in main_js,
+                 "leaving admin restores panel display")
 
     # 39. hashchange handler hides admin panel when navigating away from admin
     failed += ok("panel.hidden = true" in main_js,
