@@ -1532,6 +1532,10 @@ def test_admin_frontend() -> int:
     failed += ok("panel.hidden = false" in main_js,
                  "hashchange shows admin panel on admin hash")
 
+    # 41. Admin nav close clears hash so reopening works (history.pushState clears URL)
+    failed += ok("history.pushState" in main_js and "location.pathname" in main_js,
+                 "admin nav close clears hash via history.pushState for reopen")
+
     return failed
 
 

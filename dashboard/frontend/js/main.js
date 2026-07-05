@@ -664,6 +664,7 @@ document.getElementById("adminNav")?.addEventListener("click", () => {
     const configPanel = document.getElementById("configPanel");
     if (orgPanel) orgPanel.style.display = "";
     if (configPanel) configPanel.style.display = "";
+    history.pushState("", document.title, window.location.pathname + window.location.search);
   }
 });
 
