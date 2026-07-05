@@ -3,14 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LLM Traces</title>
+
+  <!-- Primary SEO -->
+  <title>LLM Traces — Ad Factory</title>
+  <meta name="description" content="Inspect LLM call traces for Ad Factory runs — request payloads, response usage, status codes, durations, and model details." />
+  <meta name="robots" content="noindex, nofollow" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="LLM Traces — Ad Factory" />
+  <meta property="og:description" content="Debug and inspect LLM call history for ad generation runs." />
+  <meta property="og:site_name" content="Ad Factory" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
   <style>
-    body { padding: 24px; max-width: 1200px; margin: 0 auto; }
-    #themeToggle { position: static; }
+    .traces-body-wrap { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1.5rem 4rem; }
+    .page-header { margin-bottom: 0.5rem; }
 
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
     .page-header h1 { margin: 0; font-family: var(--font-head); font-size: 1.5rem; font-weight: 600; }
@@ -114,12 +124,37 @@
 </head>
 <body>
 
+  <!-- ── Navbar ──────────────────────────────────────────────────────── -->
+  <header class="app-header" role="banner">
+    <a href="/" class="app-header-logo" aria-label="Ad Factory home">
+      <div class="app-header-logo-mark" aria-hidden="true">AF</div>
+      <span class="app-header-brand">Ad <span>Factory</span></span>
+    </a>
+    <nav class="app-nav" aria-label="Main navigation">
+      <a href="/" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#9881;</span> Studio</a>
+      <a href="/organizations.html" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#128101;</span> Teams</a>
+      <a href="/traces.html" class="app-nav-link active" aria-current="page"><span class="app-nav-icon" aria-hidden="true">&#128202;</span> LLM Traces</a>
+      <a href="/profile.html" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#128100;</span> Profile</a>
+      <a href="/admin.html" class="app-nav-link" data-admin id="adminNavLink" style="display:none"><span class="app-nav-icon" aria-hidden="true">&#128736;</span> Admin</a>
+    </nav>
+    <div class="app-header-right">
+      <button id="themeToggle" class="app-theme-btn" type="button" aria-label="Toggle theme">&#9728;</button>
+      <div class="app-user-chip">
+        <div class="app-avatar"><span id="authInitial">…</span></div>
+        <span class="app-user-name loading" id="authNavName">Loading</span>
+      </div>
+      <button id="logoutBtn" class="app-logout-btn" type="button" style="display:none">Sign out</button>
+      <a href="/api/auth/google/login" class="app-login-btn" id="loginBtn" style="display:none">Sign in</a>
+    </div>
+  </header>
+
+  <div class="traces-body-wrap">
+
   <div class="page-header">
     <div>
       <h1>LLM Traces</h1>
-      <div class="breadcrumb"><a href="/">Dashboard</a> &rsaquo; LLM Traces</div>
+      <div class="breadcrumb"><a href="/">Studio</a> &rsaquo; LLM Traces</div>
     </div>
-    <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
   </div>
 
   <div class="toolbar" id="toolbar">
@@ -156,9 +191,58 @@
 
   <div class="toast" id="toast"></div>
 
+  </div><!-- /.traces-body-wrap -->
+
+  <footer class="app-footer" role="contentinfo">
+    <span class="app-footer-brand">Ad Factory &mdash; AI Creative Platform</span>
+    <nav class="app-footer-links" aria-label="Footer links">
+      <a href="/">Studio</a>
+      <a href="/organizations.html">Teams</a>
+      <a href="/traces.html">LLM Traces</a>
+      <a href="/profile.html">Profile</a>
+    </nav>
+  </footer>
+
   <script type="module">
     import { initTheme } from "/js/theme.js";
+    import { checkAuth } from "/js/auth.js";
     initTheme();
+
+    // Navbar auth chip
+    checkAuth().then(user => {
+      const initial   = document.getElementById("authInitial");
+      const name      = document.getElementById("authNavName");
+      const logout    = document.getElementById("logoutBtn");
+      const login     = document.getElementById("loginBtn");
+      const adminLink = document.getElementById("adminNavLink");
+      if (user.authenticated) {
+        const dn = user.display_name || user.email || "User";
+        initial.textContent = dn.charAt(0).toUpperCase();
+        name.textContent    = dn.split(" ")[0];
+        name.classList.remove("loading");
+        logout.style.display = "";
+        login.style.display  = "none";
+        if (user.is_super_admin && adminLink) adminLink.style.display = "";
+      } else {
+        initial.textContent = "?";
+        name.textContent    = "Guest";
+        name.classList.remove("loading");
+        login.style.display  = "";
+        logout.style.display = "none";
+      }
+      logout.addEventListener("click", async () => {
+        try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
+        window.location.href = "/";
+      });
+    });
+
+    // Theme toggle
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      const cur  = document.body.getAttribute("data-theme");
+      const next = cur === "dark" ? "light" : "dark";
+      document.body.setAttribute("data-theme", next);
+      localStorage.setItem("dashboard_theme", next);
+    });
 
     const LIMIT = 50;
     let offset = 0;

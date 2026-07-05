@@ -3,44 +3,116 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Ad Dashboard</title>
+
+  <!-- Primary SEO -->
+  <title>Ad Factory — AI Ad Creative Studio</title>
+  <meta name="description" content="Generate 40+ high-converting ad creatives across 5 formats in seconds. Token-optimized creative pipeline with persona targeting, A/B hypothesis testing, and Cloudinary delivery." />
+  <meta name="keywords" content="AI ad generator, ad creatives, ad factory, creative pipeline, persona-driven ads, Gemini, dynamic creatives, growth marketing" />
+  <meta name="author" content="Ad Factory" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Ad Factory — AI Ad Creative Studio" />
+  <meta property="og:description" content="Token-optimized creative pipeline. 40+ ad creatives across 5 formats. Persona targeting, hypothesis testing, Cloudinary delivery." />
+  <meta property="og:url" content="/" />
+  <meta property="og:site_name" content="Ad Factory" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Ad Factory — AI Ad Creative Studio" />
+  <meta name="twitter:description" content="Generate 40+ high-converting ad creatives in seconds with AI-powered persona targeting." />
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Ad Factory",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "All",
+    "description": "AI-powered ad creative generation platform. Transform product briefs into 40+ creatives across 5 formats using persona targeting and hypothesis testing.",
+    "url": "/",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="page">
-    <div id="authBar" class="auth-bar auth-hidden">
-      <span class="auth-user-info"><span class="auth-user-name muted">Loading...</span></span>
-      <button id="profileBadgeBtn" class="ghost-btn profile-badge-btn hidden" type="button">&#128100; Profile</button>
-    </div>
 
-    <div id="profilePanel" class="profile-panel hidden"></div>
-    <div id="orgPanel" class="org-panel hidden"></div>
-    <div id="configPanel" class="config-panel"></div>
-    <div id="adminPanel" class="admin-panel" hidden></div>
-    <nav id="topNav" class="top-nav">
-      <button id="profileNavBtn" class="ghost-btn" type="button">Profile</button>
-      <button id="adminNav" class="ghost-btn admin-nav-btn" hidden data-admin-section="overview">Admin</button>
+  <!-- ── Global Navbar ─────────────────────────────────────────────── -->
+  <header class="app-header" role="banner">
+    <a href="/" class="app-header-logo" aria-label="Ad Factory home">
+      <div class="app-header-logo-mark" aria-hidden="true">AF</div>
+      <span class="app-header-brand">Ad <span>Factory</span></span>
+    </a>
+
+    <nav class="app-nav" aria-label="Main navigation">
+      <a href="/" class="app-nav-link active" aria-current="page">
+        <span class="app-nav-icon" aria-hidden="true">&#9881;</span> Studio
+      </a>
+      <a href="/organizations.html" class="app-nav-link">
+        <span class="app-nav-icon" aria-hidden="true">&#128101;</span> Teams
+      </a>
+      <a href="/traces.html" class="app-nav-link">
+        <span class="app-nav-icon" aria-hidden="true">&#128202;</span> LLM Traces
+      </a>
+      <a href="/profile.html" class="app-nav-link">
+        <span class="app-nav-icon" aria-hidden="true">&#128100;</span> Profile
+      </a>
+      <a href="/admin.html" class="app-nav-link" data-admin id="adminNavLink" style="display:none">
+        <span class="app-nav-icon" aria-hidden="true">&#128736;</span> Admin
+      </a>
     </nav>
 
-    <header class="hero">
+    <div class="app-header-right">
+      <button id="themeToggle" class="app-theme-btn" type="button" aria-label="Toggle theme" title="Toggle theme">&#9728;</button>
+      <div id="authChip" class="app-user-chip" aria-live="polite">
+        <div class="app-avatar"><span id="authInitial">…</span></div>
+        <span class="app-user-name loading" id="authName">Loading</span>
+      </div>
+      <button id="logoutBtn" class="app-logout-btn" type="button" style="display:none">Sign out</button>
+      <a href="/api/auth/google/login" class="app-login-btn" id="loginBtn" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Sign in
+      </a>
+    </div>
+  </header>
+
+  <!-- Legacy containers — kept for backward-compat (smoke tests, JS modules) -->
+  <div id="authBar" class="auth-bar auth-hidden" style="display:none" aria-hidden="true"></div>
+  <div id="profilePanel" class="profile-panel hidden" aria-hidden="true"></div>
+  <div id="orgPanel" class="org-panel hidden" aria-hidden="true"></div>
+  <div id="configPanel" class="config-panel"></div>
+  <div id="adminPanel" class="admin-panel" hidden aria-hidden="true"></div>
+  <!-- Legacy nav (hidden) — keeps JS references intact -->
+  <nav id="topNav" class="top-nav" style="display:none" aria-hidden="true">
+    <button id="profileNavBtn" class="ghost-btn" type="button">Profile</button>
+    <button id="profileBadgeBtn" class="ghost-btn profile-badge-btn hidden" type="button">Profile</button>
+    <button id="adminNav" class="ghost-btn admin-nav-btn" hidden data-admin-section="overview">Admin</button>
+  </nav>
+
+  <div class="page">
+    <header class="hero" role="complementary">
       <div class="hero-copy">
-        <p class="eyebrow">Local-first creative pipeline</p>
-        <h1>Ad Generation Dashboard</h1>
-        <p>Token-optimized creative ops with sharper controls, richer visual system, and cleaner execution flow.</p>
+        <p class="eyebrow">AI Creative Pipeline</p>
+        <h1>Ad Generation Studio</h1>
+        <p>Token-optimised creative ops — persona targeting, hypothesis testing, Cloudinary delivery.</p>
       </div>
       <div class="hero-actions">
-        <span id="agentStatus" class="agent-status"><span class="agent-status-dot offline"></span><span class="agent-status-label">Checking...</span></span>
-        <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
+        <span id="agentStatus" class="agent-status" aria-live="polite"><span class="agent-status-dot offline" aria-hidden="true"></span><span class="agent-status-label">Checking...</span></span>
       </div>
     </header>
 
     <div class="layout-columns">
       <div class="column column-left">
-        <section class="card card-personas">
-          <h2>1) Persona + Formats</h2>
+        <section class="card card-personas" aria-labelledby="personaHeading">
+          <h2 id="personaHeading">1) Persona + Formats</h2>
           <label>Language</label>
           <div id="languageModes" class="chips"></div>
           <div id="personaList" class="grid"></div>
@@ -49,8 +121,8 @@
           <div id="formatPatterns" class="format-patterns"></div>
         </section>
 
-        <section class="card card-input-prompts">
-          <h2>2) Input Prompts</h2>
+        <section class="card card-input-prompts" aria-labelledby="promptsHeading">
+          <h2 id="promptsHeading">2) Input Prompts</h2>
           <div class="input-prompts-grid">
             <div class="input-prompt-card" data-prompt-type="starting_prompt">
               <strong>Starting Prompt</strong>
@@ -63,8 +135,8 @@
           </div>
         </section>
 
-        <section class="card card-images">
-          <h2>3) Input Images (Gemini Upload Set)</h2>
+        <section class="card card-images" aria-labelledby="imagesHeading">
+          <h2 id="imagesHeading">3) Input Images (Gemini Upload Set)</h2>
           <label>Add images to <code>input/images</code></label>
           <input id="inputImageFiles" type="file" multiple accept="image/*" />
           <label><input id="clearInputImages" type="checkbox" /> Clear previously stored images before adding these</label>
@@ -72,8 +144,8 @@
           <div id="inputImageGallery" class="input-image-gallery"></div>
         </section>
 
-        <section class="card card-files">
-          <h2>4) Config Files</h2>
+        <section class="card card-files" aria-labelledby="filesHeading">
+          <h2 id="filesHeading">4) Config Files</h2>
           <div class="input-prompts-grid">
             <div class="input-prompt-card" data-file-path="persona_seeds.json">
               <strong>Persona Seeds</strong>
@@ -100,8 +172,8 @@
       </div>
 
       <div class="column column-right">
-        <section class="card card-hypothesis">
-          <h2>5) Hypothesis Testing</h2>
+        <section class="card card-hypothesis" aria-labelledby="hypothesisHeading">
+          <h2 id="hypothesisHeading">5) Hypothesis Testing</h2>
           <p class="hint">Select a variable to A/B test. The pipeline will generate controlled variants where only this variable changes.</p>
           <label>Hypothesis Variable</label>
           <select id="hypothesisType"></select>
@@ -112,8 +184,8 @@
           <div id="hypothesisSummary" class="hint"></div>
         </section>
 
-        <section class="card card-execution">
-          <h2>6) Execution</h2>
+        <section class="card card-execution" aria-labelledby="executionHeading">
+          <h2 id="executionHeading">6) Execution</h2>
           <label>LLM Provider</label>
           <select id="llmProvider">
             <option value="opencode">OpenCode (OpenAI-compatible)</option>
@@ -174,14 +246,13 @@
 
           <button id="runBtn">Run Pipeline</button>
           <button id="cancelRunBtn" class="ghost-btn" type="button" style="display:none">Cancel</button>
-          <pre id="status" class="status"></pre>
+          <pre id="status" class="status" aria-live="polite"></pre>
         </section>
 
-        <section class="card card-uploads">
-          <h2>7) Optional File Uploads</h2>
+        <section class="card card-uploads" aria-labelledby="uploadsHeading">
+          <h2 id="uploadsHeading">7) Optional File Uploads</h2>
           <div class="uploads">
             <label>Product Master Doc <input id="productFile" type="file" /></label>
-             
           </div>
           <div id="productDocInfo" class="product-doc-info"></div>
           <div id="productDocEditor" class="product-doc-editor hidden">
@@ -196,13 +267,11 @@
           </div>
           <div id="defaultsInfo" class="hint"></div>
         </section>
-
-
       </div>
     </div>
 
-    <section class="card card-runs">
-      <h2>8) Latest Runs</h2>
+    <section class="card card-runs" aria-labelledby="runsHeading">
+      <h2 id="runsHeading">8) Latest Runs</h2>
       <div class="runs-toolbar">
         <button id="refreshRuns" class="ghost-btn" type="button">Refresh</button>
         <div class="batch-dropdown">
@@ -212,27 +281,78 @@
         <button id="batchGen45" class="ghost-btn" type="button">Generate 4:5</button>
         <button id="batchGenBoth" class="ghost-btn" type="button">Generate 4:5+9:16</button>
         <button id="batchGen916" class="ghost-btn" type="button">Generate 9:16</button>
-        <button id="stopGeneration" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">⏹ Stop Gen</button>
+        <button id="stopGeneration" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">&#9209; Stop Gen</button>
         <button id="batchDownload" class="ghost-btn" type="button" title="Download all generated images for this run as ZIP">Download Batch</button>
-        <button id="openTraces" class="ghost-btn" type="button">📋 LLM Traces</button>
-        <button id="launchChrome" class="ghost-btn" type="button">🚀 Launch Visible Chrome</button>
-        <button id="killChrome" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">⛔ Kill Chrome</button>
+        <a href="/traces.html" class="ghost-btn" style="display:inline-flex;align-items:center;gap:0.3rem;text-decoration:none" target="_blank">&#128202; LLM Traces</a>
+        <button id="openTraces" class="ghost-btn" type="button" style="display:none">LLM Traces</button>
+        <button id="launchChrome" class="ghost-btn" type="button">&#128640; Launch Visible Chrome</button>
+        <button id="killChrome" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">&#9940; Kill Chrome</button>
         <label id="headlessToggle" class="toggle-label" title="Toggle headless mode for Gemini image generation">
           <input type="checkbox" id="headlessMode" />
           <span>Headless</span>
         </label>
-        <button id="runPrev" class="carousel-btn" type="button">◀</button>
+        <button id="runPrev" class="carousel-btn" type="button">&#9664;</button>
         <span id="runIndex" class="run-index">0 / 0</span>
-        <button id="runNext" class="carousel-btn" type="button">▶</button>
+        <button id="runNext" class="carousel-btn" type="button">&#9654;</button>
       </div>
       <div id="runs" class="runs-carousel"></div>
       <div class="log-terminal-wrap">
         <div class="log-terminal-header">Activity Log</div>
-        <pre id="logStatus" class="status log-status"></pre>
+        <pre id="logStatus" class="status log-status" aria-live="polite"></pre>
       </div>
     </section>
   </div>
 
-  <script type="module" src="/js/main.js?v=2"></script>
+  <footer class="app-footer" role="contentinfo">
+    <span class="app-footer-brand">Ad Factory &mdash; AI Creative Platform</span>
+    <nav class="app-footer-links" aria-label="Footer links">
+      <a href="/">Studio</a>
+      <a href="/organizations.html">Teams</a>
+      <a href="/traces.html">LLM Traces</a>
+      <a href="/profile.html">Profile</a>
+    </nav>
+  </footer>
+
+  <script type="module" src="/js/main.js?v=3"></script>
+  <script type="module">
+    import { initTheme } from "/js/theme.js";
+    import { checkAuth } from "/js/auth.js";
+    // Apply theme early
+    initTheme();
+    // Wire theme toggle button
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      const cur = document.body.getAttribute("data-theme");
+      const next = cur === "dark" ? "light" : "dark";
+      document.body.setAttribute("data-theme", next);
+      localStorage.setItem("dashboard_theme", next);
+    });
+    // Auth chip in navbar
+    checkAuth().then(user => {
+      const initial = document.getElementById("authInitial");
+      const name = document.getElementById("authName");
+      const logout = document.getElementById("logoutBtn");
+      const login = document.getElementById("loginBtn");
+      const adminLink = document.getElementById("adminNavLink");
+      if (user.authenticated) {
+        const displayName = user.display_name || user.email || "User";
+        initial.textContent = displayName.charAt(0).toUpperCase();
+        name.textContent = displayName.split(" ")[0];
+        name.classList.remove("loading");
+        logout.style.display = "";
+        login.style.display = "none";
+        if (user.is_super_admin && adminLink) adminLink.style.display = "";
+      } else {
+        initial.textContent = "?";
+        name.textContent = "Guest";
+        name.classList.remove("loading");
+        login.style.display = "";
+        logout.style.display = "none";
+      }
+      logout.addEventListener("click", async () => {
+        try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
+        window.location.reload();
+      });
+    });
+  </script>
 </body>
 </html>

@@ -668,36 +668,15 @@ function togglePanel(panelId) {
 }
 
 document.getElementById("profileNavBtn")?.addEventListener("click", () => {
-  togglePanel("profilePanel");
-  const profilePanel = document.getElementById("profilePanel");
-  if (profilePanel && !profilePanel.classList.contains("hidden")) {
-    import("./profile.js").then(mod => mod.renderProfilePanel());
-  }
+  window.location.href = "/profile.html";
 });
 
 document.getElementById("profileBadgeBtn")?.addEventListener("click", () => {
-  togglePanel("profilePanel");
-  const profilePanel = document.getElementById("profilePanel");
-  if (profilePanel && !profilePanel.classList.contains("hidden")) {
-    import("./profile.js").then(mod => mod.renderProfilePanel());
-  }
+  window.location.href = "/profile.html";
 });
 
 document.getElementById("adminNav")?.addEventListener("click", () => {
-  const panel = document.getElementById("adminPanel");
-  if (!panel) return;
-  if (panel.hidden) {
-    if (!window.location.hash.startsWith("#admin/")) {
-      window.location.hash = "admin/overview";
-    }
-  } else {
-    panel.hidden = true;
-    const profilePanel = document.getElementById("profilePanel");
-    const configPanel = document.getElementById("configPanel");
-    if (profilePanel) profilePanel.classList.add("hidden");
-    if (configPanel) configPanel.style.display = "";
-    history.pushState("", document.title, window.location.pathname + window.location.search);
-  }
+  window.location.href = "/admin.html#admin/overview";
 });
 
 window.addEventListener("hashchange", () => {

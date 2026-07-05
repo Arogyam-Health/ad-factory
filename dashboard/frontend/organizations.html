@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Primary SEO -->
+  <title>Teams &amp; Organizations — Ad Factory</title>
+  <meta name="description" content="Manage your Ad Factory teams — create organizations, invite members, configure roles, and control shared workspace permissions." />
+  <meta name="robots" content="noindex, nofollow" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Teams &amp; Organizations — Ad Factory" />
+  <meta property="og:description" content="Create organizations, invite members, and manage workspace permissions." />
+  <meta property="og:site_name" content="Ad Factory" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+  <!-- ── Navbar ──────────────────────────────────────────────────────── -->
+  <header class="app-header" role="banner">
+    <a href="/" class="app-header-logo" aria-label="Ad Factory home">
+      <div class="app-header-logo-mark" aria-hidden="true">AF</div>
+      <span class="app-header-brand">Ad <span>Factory</span></span>
+    </a>
+    <nav class="app-nav" aria-label="Main navigation">
+      <a href="/" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#9881;</span> Studio</a>
+      <a href="/organizations.html" class="app-nav-link active" aria-current="page"><span class="app-nav-icon" aria-hidden="true">&#128101;</span> Teams</a>
+      <a href="/traces.html" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#128202;</span> LLM Traces</a>
+      <a href="/profile.html" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#128100;</span> Profile</a>
+      <a href="/admin.html" class="app-nav-link" data-admin id="adminNavLink" style="display:none"><span class="app-nav-icon" aria-hidden="true">&#128736;</span> Admin</a>
+    </nav>
+    <div class="app-header-right">
+      <button id="themeToggle" class="app-theme-btn" type="button" aria-label="Toggle theme">&#9728;</button>
+      <div class="app-user-chip">
+        <div class="app-avatar"><span id="authInitial">…</span></div>
+        <span class="app-user-name loading" id="authName">Loading</span>
+      </div>
+      <button id="logoutBtn" class="app-logout-btn" type="button" style="display:none">Sign out</button>
+      <a href="/api/auth/google/login" class="app-login-btn" id="loginBtn" style="display:none">Sign in</a>
+    </div>
+  </header>
+
+  <!-- ── Page Content ───────────────────────────────────────────────── -->
+  <main class="sub-page-wide" aria-label="Teams and organizations">
+
+    <div class="page-hero">
+      <p class="page-hero-eyebrow">Workspace</p>
+      <h1>Teams &amp; Organizations</h1>
+      <p>Create shared workspaces, invite collaborators, and control who can do what.</p>
+    </div>
+
+    <!-- Stats row -->
+    <div class="sp-stat-grid" id="orgStats" style="display:none">
+      <div class="sp-stat-card">
+        <div class="sp-stat-label">Organizations</div>
+        <div class="sp-stat-value" id="statOrgCount">—</div>
+      </div>
+      <div class="sp-stat-card">
+        <div class="sp-stat-label">Total Members</div>
+        <div class="sp-stat-value" id="statMemberCount">—</div>
+      </div>
+      <div class="sp-stat-card">
+        <div class="sp-stat-label">Pending Invites</div>
+        <div class="sp-stat-value" id="statInviteCount">—</div>
+      </div>
+      <div class="sp-stat-card">
+        <div class="sp-stat-label">Config Mode</div>
+        <div class="sp-stat-value" id="statConfigMode" style="font-size:1rem">—</div>
+      </div>
+    </div>
+
+    <!-- Main orgs area -->
+    <div id="orgsRoot"></div>
+
+  </main>
+
+  <footer class="app-footer" role="contentinfo">
+    <span class="app-footer-brand">Ad Factory &mdash; AI Creative Platform</span>
+    <nav class="app-footer-links" aria-label="Footer links">
+      <a href="/">Studio</a>
+      <a href="/organizations.html">Teams</a>
+      <a href="/traces.html">LLM Traces</a>
+      <a href="/profile.html">Profile</a>
+    </nav>
+  </footer>
+
+  <script type="module">
+    import { initTheme } from "/js/theme.js";
+    import { checkAuth } from "/js/auth.js";
+    import { fetchJSON, clearCache } from "/js/api.js";
+
+    initTheme();
+
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      const cur = document.body.getAttribute("data-theme");
+      const next = cur === "dark" ? "light" : "dark";
+      document.body.setAttribute("data-theme", next);
+      localStorage.setItem("dashboard_theme", next);
+    });
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = String(s ?? "");
+      return d.innerHTML;
+    }
+
+    function fmtDate(ts) {
+      if (!ts) return "—";
+      return new Date(ts * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    }
+
+    // ── Auth ──────────────────────────────────────────────────────────
+    let currentUser = null;
+
+    checkAuth().then(user => {
+      currentUser = user;
+      const initial   = document.getElementById("authInitial");
+      const name      = document.getElementById("authName");
+      const logout    = document.getElementById("logoutBtn");
+      const login     = document.getElementById("loginBtn");
+      const adminLink = document.getElementById("adminNavLink");
+
+      if (user.authenticated) {
+        const dn = user.display_name || user.email || "User";
+        initial.textContent = dn.charAt(0).toUpperCase();
+        name.textContent    = dn.split(" ")[0];
+        name.classList.remove("loading");
+        logout.style.display = "";
+        login.style.display  = "none";
+        if (user.is_super_admin && adminLink) adminLink.style.display = "";
+        loadOrgs();
+      } else {
+        initial.textContent = "?";
+        name.textContent    = "Guest";
+        name.classList.remove("loading");
+        login.style.display  = "";
+        logout.style.display = "none";
+        renderNotLoggedIn();
+      }
+
+      logout.addEventListener("click", async () => {
+        try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
+        window.location.href = "/";
+      });
+    });
+
+    // ── Render helpers ────────────────────────────────────────────────
+
+    function renderNotLoggedIn() {
+      document.getElementById("orgsRoot").innerHTML = `
+        <div class="sp-empty">
+          <span class="sp-empty-icon">&#128274;</span>
+          <div class="sp-empty-title">Sign in to manage teams</div>
+          <div class="sp-empty-desc">You need to be logged in to create or join organizations.</div>
+          <br/><a href="/api/auth/google/login" class="app-login-btn" style="display:inline-flex;margin:auto">Sign in with Google</a>
+        </div>`;
+    }
+
+    async function loadOrgs() {
+      const root = document.getElementById("orgsRoot");
+      root.innerHTML = `<div class="sp-card"><div class="sp-skeleton sp-skeleton-line wide"></div><div class="sp-skeleton sp-skeleton-line medium"></div></div>`;
+
+      try {
+        const data = await fetchJSON("/api/orgs/me");
+        renderOrgsPage(data);
+      } catch {
+        root.innerHTML = `<div class="sp-notice sp-notice-warn"><span class="sp-notice-icon">&#9888;</span> Failed to load organization data. <a href="javascript:location.reload()">Retry</a></div>`;
+      }
+    }
+
+    function renderOrgsPage(data) {
+      const root = document.getElementById("orgsRoot");
+      root.innerHTML = "";
+
+      const orgs        = data.orgs || [];
+      const defaultOrg  = data.default_org;
+      const memberships = data.memberships || [];
+
+      // Stats
+      document.getElementById("orgStats").style.display = "";
+      document.getElementById("statOrgCount").textContent = orgs.length;
+
+      const totalMembers = memberships.length;
+      document.getElementById("statMemberCount").textContent = totalMembers;
+      document.getElementById("statInviteCount").textContent = "…";
+      document.getElementById("statConfigMode").textContent =
+        defaultOrg?.config_mode === "shared_org_config" ? "Shared" : orgs.length ? "Individual" : "—";
+
+      if (!orgs.length) {
+        root.appendChild(renderCreateOrgSection());
+        return;
+      }
+
+      // List of orgs
+      const section = document.createElement("div");
+      section.className = "sp-section";
+      section.innerHTML = `
+        <div class="sp-section-header">
+          <h2 class="sp-section-title">Your Organizations</h2>
+          <span class="sp-section-badge">${orgs.length} org${orgs.length !== 1 ? "s" : ""}</span>
+        </div>`;
+
+      orgs.forEach(org => {
+        const m = memberships.find(x => x.org_id === org.org_id);
+        const role = m?.role || "creator";
+        section.appendChild(renderOrgCard(org, role, data));
+      });
+
+      root.appendChild(section);
+
+      // Create new org option at bottom
+      const createWrap = document.createElement("div");
+      createWrap.className = "sp-section";
+      createWrap.innerHTML = `
+        <div class="sp-section-header"><h2 class="sp-section-title">Create Another Organization</h2></div>`;
+      createWrap.appendChild(buildCreateForm());
+      root.appendChild(createWrap);
+    }
+
+    function renderCreateOrgSection() {
+      const section = document.createElement("div");
+      section.className = "sp-section";
+
+      const user  = currentUser;
+      const email = user?.email || "";
+      const isPublic = /@(gmail|yahoo|outlook|hotmail|live|icloud|proton(\.me|mail)|rediffmail)\./.test(email);
+
+      if (isPublic) {
+        section.innerHTML = `
+          <div class="sp-notice sp-notice-info">
+            <span class="sp-notice-icon">&#8505;</span>
+            Organizations require a business email address. You're signed in with a personal email.
+          </div>
+          <div class="sp-empty">
+            <span class="sp-empty-icon">&#127963;</span>
+            <div class="sp-empty-title">No organizations yet</div>
+            <div class="sp-empty-desc">Sign in with your work email to create an organization and invite your team.</div>
+          </div>`;
+      } else {
+        section.innerHTML = `
+          <div class="sp-empty" style="padding-bottom:1.5rem">
+            <span class="sp-empty-icon">&#127963;</span>
+            <div class="sp-empty-title">No organizations yet</div>
+            <div class="sp-empty-desc">Create your first organization to share configs and collaborate with your team.</div>
+          </div>`;
+        section.appendChild(buildCreateForm());
+      }
+      return section;
+    }
+
+    function buildCreateForm() {
+      const wrap = document.createElement("div");
+      wrap.className = "sp-card";
+      wrap.innerHTML = `
+        <h3 style="margin:0 0 1rem;font-family:var(--font-head);font-size:0.95rem;font-weight:600">New Organization</h3>
+        <div class="inline-row" style="max-width:480px">
+          <input id="newOrgName" type="text" placeholder="e.g. Acme Growth Team" style="flex:1;padding:0.55rem 0.85rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);color:var(--ink);font-size:0.88rem;font-family:var(--font-body);outline:none;transition:border-color 0.15s" />
+          <button id="createOrgBtn" type="button" style="padding:0.55rem 1.1rem;border-radius:var(--radius-sm);border:1px solid var(--primary);background:var(--primary);color:#fff;font-size:0.88rem;font-weight:600;font-family:var(--font-body);cursor:pointer;transition:opacity 0.15s;white-space:nowrap">Create</button>
+        </div>
+        <div id="createOrgMsg" style="margin-top:0.6rem;font-size:0.82rem"></div>
+      `;
+
+      wrap.querySelector("#newOrgName").addEventListener("focus", e => { e.target.style.borderColor = "var(--primary)"; });
+      wrap.querySelector("#newOrgName").addEventListener("blur", e => { e.target.style.borderColor = "var(--line)"; });
+
+      wrap.querySelector("#createOrgBtn").addEventListener("click", async () => {
+        const inp  = wrap.querySelector("#newOrgName");
+        const msg  = wrap.querySelector("#createOrgMsg");
+        const name = inp.value.trim();
+        if (!name) { msg.innerHTML = `<span style="color:var(--accent-coral)">Enter an organization name.</span>`; return; }
+        const btn = wrap.querySelector("#createOrgBtn");
+        btn.disabled = true;
+        btn.style.opacity = "0.6";
+        try {
+          await fetchJSON("/api/orgs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+          clearCache("/api/orgs");
+          msg.innerHTML = `<span style="color:var(--accent-green)">&#10003; Organization created!</span>`;
+          setTimeout(loadOrgs, 800);
+        } catch (err) {
+          msg.innerHTML = `<span style="color:var(--accent-coral)">${esc(String(err))}</span>`;
+        } finally {
+          btn.disabled = false;
+          btn.style.opacity = "1";
+        }
+      });
+      return wrap;
+    }
+
+    function renderOrgCard(org, role, data) {
+      const card = document.createElement("div");
+      card.className = "sp-card";
+      card.style.marginBottom = "1rem";
+
+      const modeLabel = org.config_mode === "shared_org_config" ? "Shared Config" : "Individual Config";
+      const isOwner   = role === "owner";
+
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap">
+          <div>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem">
+              <h3 style="margin:0;font-family:var(--font-head);font-size:1.05rem;font-weight:700">${esc(org.name || "Unnamed")}</h3>
+              ${isOwner ? `<span class="role-badge role-owner">Owner</span>` : `<span class="role-badge role-${esc(role)}">${esc(role)}</span>`}
+              <span class="profile-mode-badge">${esc(modeLabel)}</span>
+            </div>
+            <div style="font-size:0.8rem;color:var(--muted)">
+              ${org.domain ? `<span>&#127757; ${esc(org.domain)}</span> &nbsp;` : ""}
+              <span>ID: <code style="font-size:0.72rem;background:var(--surface-2);padding:1px 6px;border-radius:4px">${esc(org.org_id)}</code></span>
+            </div>
+          </div>
+          <a href="/" class="ghost-btn" style="font-size:0.82rem;text-decoration:none;display:inline-flex;align-items:center;gap:0.3rem">&#9881; Open Studio</a>
+        </div>
+
+        <!-- Members tab area -->
+        <div id="org-detail-${esc(org.org_id)}">
+          <div class="sp-skeleton sp-skeleton-line wide" style="margin-bottom:6px"></div>
+          <div class="sp-skeleton sp-skeleton-line medium"></div>
+        </div>
+      `;
+
+      // Load members & invites
+      loadOrgDetail(org, role, data);
+
+      return card;
+    }
+
+    async function loadOrgDetail(org, role, data) {
+      const container = document.getElementById(`org-detail-${org.org_id}`);
+      if (!container) return;
+
+      const perms = org.permissions || {};
+      let members = [], invites = [], inviteCount = 0;
+
+      try {
+        members = await fetchJSON(`/api/orgs/${org.org_id}/members`).catch(() => []);
+        if (perms.can_invite_members) {
+          const invData = await fetchJSON(`/api/orgs/${org.org_id}/invites`).catch(() => ({ invites: [] }));
+          invites = invData.invites || [];
+          inviteCount = invites.filter(i => i.status === "pending").length;
+        }
+      } catch {}
+
+      // Update stats
+      document.getElementById("statMemberCount").textContent = members.length;
+      document.getElementById("statInviteCount").textContent = inviteCount;
+
+      container.innerHTML = "";
+
+      // Permissions summary
+      const permLabels = [];
+      if (perms.can_edit_org_config) permLabels.push("Edit config");
+      if (perms.can_manage_org)      permLabels.push("Manage org");
+      if (perms.can_invite_members)  permLabels.push("Invite members");
+      if (!permLabels.length)        permLabels.push("Generate ads");
+
+      const permDiv = document.createElement("div");
+      permDiv.style.cssText = "margin-bottom:1rem;padding:0.65rem 1rem;background:var(--surface-2);border-radius:var(--radius-sm);font-size:0.8rem;color:var(--muted)";
+      permDiv.innerHTML = `Your permissions: <strong style="color:var(--ink)">${permLabels.join(" · ")}</strong>`;
+      container.appendChild(permDiv);
+
+      // Invite form (if allowed)
+      if (perms.can_invite_members) {
+        container.appendChild(buildInviteForm(org.org_id, invites));
+      }
+
+      // Members table
+      if (members.length) {
+        container.appendChild(buildMembersTable(org.org_id, members, role));
+      }
+    }
+
+    function buildInviteForm(orgId, invites) {
+      const wrap = document.createElement("div");
+      wrap.style.marginBottom = "1.25rem";
+
+      const pending = invites.filter(i => i.status === "pending");
+
+      wrap.innerHTML = `
+        <h4 style="margin:0 0 0.6rem;font-size:0.88rem;font-weight:600">Invite Member</h4>
+        <div class="inline-row" style="max-width:520px">
+          <input id="invEmail-${orgId}" type="email" placeholder="colleague@company.com"
+            style="flex:2;padding:0.5rem 0.75rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);color:var(--ink);font-size:0.85rem;font-family:var(--font-body);outline:none;transition:border-color 0.15s"/>
+          <select id="invRole-${orgId}" style="flex:1;padding:0.5rem 0.6rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);color:var(--ink);font-size:0.85rem;font-family:var(--font-body);outline:none">
+            <option value="creator">Creator</option>
+            <option value="config_admin">Config Admin</option>
+          </select>
+          <button id="invSend-${orgId}" type="button"
+            style="padding:0.5rem 1rem;border-radius:var(--radius-sm);border:1px solid var(--primary);background:var(--primary);color:#fff;font-size:0.85rem;font-weight:600;font-family:var(--font-body);cursor:pointer;white-space:nowrap">
+            Send Invite
+          </button>
+        </div>
+        <div id="invResult-${orgId}" style="margin-top:0.5rem;font-size:0.82rem"></div>
+
+        ${pending.length ? `
+          <div style="margin-top:1rem">
+            <h4 style="margin:0 0 0.5rem;font-size:0.82rem;font-weight:600;color:var(--muted)">Pending (${pending.length})</h4>
+            <table class="invites-table">
+              <thead><tr><th>Email</th><th>Role</th><th>Expires</th><th></th></tr></thead>
+              <tbody>
+                ${pending.map(inv => `
+                  <tr>
+                    <td>${esc(inv.email)}</td>
+                    <td><span class="role-badge role-${esc(inv.role)}">${esc(inv.role)}</span></td>
+                    <td>${fmtDate(inv.expires_at)}</td>
+                    <td><button class="ghost-btn inv-revoke" data-inv="${esc(inv.invite_id)}" data-org="${esc(orgId)}"
+                      style="font-size:0.75rem;color:var(--accent-coral);padding:2px 8px">Revoke</button></td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>
+          </div>` : ""}
+      `;
+
+      // Wire send
+      wrap.querySelector(`#invSend-${orgId}`).addEventListener("click", async () => {
+        const email  = wrap.querySelector(`#invEmail-${orgId}`).value.trim();
+        const role   = wrap.querySelector(`#invRole-${orgId}`).value;
+        const result = wrap.querySelector(`#invResult-${orgId}`);
+        const btn    = wrap.querySelector(`#invSend-${orgId}`);
+        if (!email) { result.innerHTML = `<span style="color:var(--accent-coral)">Enter an email.</span>`; return; }
+        btn.disabled = true;
+        try {
+          const data = await fetchJSON(`/api/orgs/${orgId}/invites`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, role }),
+          });
+          result.innerHTML = `
+            <span style="color:var(--accent-green)">&#10003; Invite sent to ${esc(email)}</span>
+            ${data.invite_url ? `&nbsp;<a href="${esc(data.invite_url)}" target="_blank" style="font-size:0.78rem;color:var(--primary)">Copy link</a>` : ""}
+          `;
+          clearCache(`/api/orgs/${orgId}/invites`);
+          wrap.querySelector(`#invEmail-${orgId}`).value = "";
+          setTimeout(loadOrgs, 1200);
+        } catch (err) {
+          result.innerHTML = `<span style="color:var(--accent-coral)">${esc(String(err))}</span>`;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      // Wire revokes
+      wrap.querySelectorAll(".inv-revoke").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const invId = btn.dataset.inv;
+          const oid   = btn.dataset.org;
+          btn.disabled = true;
+          try {
+            await fetchJSON(`/api/orgs/${oid}/invites/${invId}`, { method: "DELETE" });
+            clearCache(`/api/orgs/${oid}/invites`);
+            loadOrgs();
+          } catch { btn.disabled = false; }
+        });
+      });
+
+      return wrap;
+    }
+
+    function buildMembersTable(orgId, members, currentRole) {
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem">
+          <h4 style="margin:0;font-size:0.88rem;font-weight:600">Members <span style="color:var(--muted);font-weight:400">(${members.length})</span></h4>
+        </div>
+        <table class="members-table">
+          <thead>
+            <tr>
+              <th>Member</th>
+              <th>Role</th>
+              <th>Joined</th>
+              <th>Permissions</th>
+              ${currentRole === "owner" ? "<th></th>" : ""}
+            </tr>
+          </thead>
+          <tbody>
+            ${members.map(m => `
+              <tr>
+                <td>
+                  <div style="font-weight:500;font-size:0.85rem">${esc(m.email)}</div>
+                  <div style="font-size:0.72rem;color:var(--muted)">ID: ${esc(m.user_id)}</div>
+                </td>
+                <td><span class="role-badge role-${esc(m.role)}">${esc(m.role)}</span></td>
+                <td style="color:var(--muted);font-size:0.8rem">${fmtDate(m.joined_at)}</td>
+                <td class="perm-summary">${memberPermSummary(m.permissions)}</td>
+                ${currentRole === "owner" && m.role !== "owner" ? `
+                  <td class="member-actions">
+                    <select class="mem-role-sel" data-org="${esc(orgId)}" data-uid="${esc(m.user_id)}" data-cur="${esc(m.role)}">
+                      <option value="creator" ${m.role === "creator" ? "selected" : ""}>Creator</option>
+                      <option value="config_admin" ${m.role === "config_admin" ? "selected" : ""}>Config Admin</option>
+                    </select>
+                    <button class="ghost-btn mem-remove" data-org="${esc(orgId)}" data-uid="${esc(m.user_id)}" data-email="${esc(m.email)}"
+                      style="color:var(--accent-coral);font-size:0.75rem;padding:3px 8px">Remove</button>
+                  </td>` : currentRole === "owner" ? "<td></td>" : ""}
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      `;
+
+      // Wire role changes
+      wrap.querySelectorAll(".mem-role-sel").forEach(sel => {
+        sel.addEventListener("change", async () => {
+          const uid = sel.dataset.uid;
+          const oid = sel.dataset.org;
+          const newRole = sel.value;
+          sel.disabled = true;
+          try {
+            await fetchJSON(`/api/orgs/${oid}/members/${uid}/role`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ role: newRole }),
+            });
+            clearCache(`/api/orgs/${oid}/members`);
+            loadOrgs();
+          } catch { sel.value = sel.dataset.cur; sel.disabled = false; }
+        });
+      });
+
+      // Wire removes
+      wrap.querySelectorAll(".mem-remove").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const uid   = btn.dataset.uid;
+          const oid   = btn.dataset.org;
+          const email = btn.dataset.email;
+          if (!confirm(`Remove ${email} from organization?`)) return;
+          btn.disabled = true;
+          try {
+            await fetchJSON(`/api/orgs/${oid}/members/${uid}`, { method: "DELETE" });
+            clearCache(`/api/orgs/${oid}/members`);
+            loadOrgs();
+          } catch { btn.disabled = false; }
+        });
+      });
+
+      return wrap;
+    }
+
+    function memberPermSummary(perms) {
+      if (!perms) return "—";
+      const labels = [];
+      if (perms.can_edit_org_config) labels.push("Edit config");
+      if (perms.can_manage_org)      labels.push("Manage");
+      if (perms.can_invite_members)  labels.push("Invite");
+      return labels.join(", ") || "Generate ads";
+    }
+  </script>
+</body>
+</html>
