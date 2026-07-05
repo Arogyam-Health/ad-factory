@@ -7545,7 +7545,8 @@ def api_download_batches(batch_names: list[str]):
                              headers={"Content-Disposition": f'attachment; filename="{label}.zip"'})
 
 def api_llm_traces(user_id: str, limit: int = 50, offset: int = 0, run_id_filter: str | None = None) -> dict[str, Any]:
-    from dashboard.backend.services.run_storage import list_llm_traces
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_LLM_TRACES
     query = {"user_id": user_id}
     if run_id_filter:
         query["run_id"] = run_id_filter
@@ -7563,6 +7564,8 @@ def api_llm_traces(user_id: str, limit: int = 50, offset: int = 0, run_id_filter
 
 
 def api_delete_llm_traces(user_id: str, run_id_filter: str | None = None) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_LLM_TRACES
     query: dict[str, Any] = {"user_id": user_id}
     if run_id_filter:
         query["run_id"] = run_id_filter
@@ -7572,6 +7575,8 @@ def api_delete_llm_traces(user_id: str, run_id_filter: str | None = None) -> dic
 
 def api_delete_llm_traces_by_files(user_id: str, trace_ids: list[str]) -> dict[str, Any]:
     from bson import ObjectId
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_LLM_TRACES
     query: dict[str, Any] = {"user_id": user_id, "_id": {"$in": [ObjectId(tid) for tid in trace_ids]}}
     result = get_sync_db()[COLL_LLM_TRACES].delete_many(query)
     return {"deleted": result.deleted_count, "trace_ids": trace_ids}

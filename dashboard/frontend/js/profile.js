@@ -56,19 +56,15 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
   orgsSection.className = "profile-section";
 
   if (!orgData || !orgData.orgs || !orgData.orgs.length) {
-    const email = user.email || "";
-    const isPublic = /@(gmail|yahoo|outlook|hotmail|live|icloud|proton(\.me|mail)|rediffmail)\./.test(email);
     orgsSection.innerHTML = `
       <div class="profile-section-header"><h3>Organizations</h3></div>
-      ${isPublic ? `<p class="hint">Use a business email to create an organization.</p>` : `
-        <div class="profile-org-create">
-          <label for="profileOrgName">Organization Name</label>
-          <div class="inline-row">
-            <input id="profileOrgName" type="text" placeholder="e.g. Acme Corp" />
-            <button id="profileCreateOrgBtn" class="ghost-btn" type="button">Create</button>
-          </div>
+      <div class="profile-org-create">
+        <label for="profileOrgName">Organization Name</label>
+        <div class="inline-row">
+          <input id="profileOrgName" type="text" placeholder="e.g. Acme Corp" />
+          <button id="profileCreateOrgBtn" class="ghost-btn" type="button">Create</button>
         </div>
-      `}
+      </div>
     `;
     container.appendChild(orgsSection);
     attachCreateOrgHandler();

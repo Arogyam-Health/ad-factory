@@ -85,25 +85,15 @@ def create_org(
     user_id = user["user_id"]
     email = user.get("email", "")
 
-    if is_public_email_domain(email):
-        raise HTTPException(
-            status_code=400,
-            detail="Public email domains cannot create domain-based organizations. Use a business/domain email.",
-        )
+    domain = extract_domain_from_email(email) if not is_public_email_domain(email) else None
 
-    domain = extract_domain_from_email(email)
-    if not domain:
-        raise HTTPException(
-            status_code=400,
-            detail="Unable to extract domain from email",
-        )
-
-    existing_org = get_org_by_domain(domain)
-    if existing_org:
-        raise HTTPException(
-            status_code=400,
-            detail=f"An organization already exists for domain '{domain}'.",
-        )
+    if domain:
+        existing_org = get_org_by_domain(domain)
+        if existing_org:
+            raise HTTPException(
+                status_code=400,
+                detail=f"An organization already exists for domain '{domain}'.",
+            )
 
     org_id = generate_org_id()
     membership_id = generate_membership_id()

@@ -29,6 +29,7 @@
     </a>
     <nav class="app-nav" aria-label="Main navigation">
       <a href="/" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#9881;</span> Studio</a>
+      <a href="/config.html" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#9998;</span> Config</a>
       <a href="/organizations.html" class="app-nav-link active" aria-current="page"><span class="app-nav-icon" aria-hidden="true">&#128101;</span> Teams</a>
       <a href="/traces.html" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#128202;</span> LLM Traces</a>
       <a href="/profile.html" class="app-nav-link"><span class="app-nav-icon" aria-hidden="true">&#128100;</span> Profile</a>
@@ -83,6 +84,7 @@
     <span class="app-footer-brand">Ad Factory &mdash; AI Creative Platform</span>
     <nav class="app-footer-links" aria-label="Footer links">
       <a href="/">Studio</a>
+      <a href="/config.html">Config</a>
       <a href="/organizations.html">Teams</a>
       <a href="/traces.html">LLM Traces</a>
       <a href="/profile.html">Profile</a>
@@ -227,29 +229,13 @@
       section.className = "sp-section";
 
       const user  = currentUser;
-      const email = user?.email || "";
-      const isPublic = /@(gmail|yahoo|outlook|hotmail|live|icloud|proton(\.me|mail)|rediffmail)\./.test(email);
-
-      if (isPublic) {
-        section.innerHTML = `
-          <div class="sp-notice sp-notice-info">
-            <span class="sp-notice-icon">&#8505;</span>
-            Organizations require a business email address. You're signed in with a personal email.
-          </div>
-          <div class="sp-empty">
-            <span class="sp-empty-icon">&#127963;</span>
-            <div class="sp-empty-title">No organizations yet</div>
-            <div class="sp-empty-desc">Sign in with your work email to create an organization and invite your team.</div>
-          </div>`;
-      } else {
-        section.innerHTML = `
-          <div class="sp-empty" style="padding-bottom:1.5rem">
-            <span class="sp-empty-icon">&#127963;</span>
-            <div class="sp-empty-title">No organizations yet</div>
-            <div class="sp-empty-desc">Create your first organization to share configs and collaborate with your team.</div>
-          </div>`;
-        section.appendChild(buildCreateForm());
-      }
+      section.innerHTML = `
+        <div class="sp-empty" style="padding-bottom:1.5rem">
+          <span class="sp-empty-icon">&#127963;</span>
+          <div class="sp-empty-title">No organizations yet</div>
+          <div class="sp-empty-desc">Create your first organization to share configs and collaborate with your team.</div>
+        </div>`;
+      section.appendChild(buildCreateForm());
       return section;
     }
 

@@ -44,22 +44,16 @@ export async function renderOrgPanel() {
 }
 
 function renderCreateOrg(panel) {
-  const user = getAuthUser();
-  const email = user.email || "";
-  const isPublic = /@(gmail|yahoo|outlook|hotmail|live|icloud|proton(\.me|mail)|rediffmail)\./.test(email);
-
   panel.innerHTML = `
     <section class="card">
       <h2>Organization</h2>
-      ${isPublic ? `<p class="hint">Use a business email to create an organization.</p>` : `
-        <div class="org-create-form">
-          <label for="orgNameInput">Organization Name</label>
-          <div class="inline-row">
-            <input id="orgNameInput" type="text" placeholder="e.g. Arogyam Health" />
-            <button id="createOrgBtn" class="ghost-btn" type="button">Create Organization</button>
-          </div>
+      <div class="org-create-form">
+        <label for="orgNameInput">Organization Name</label>
+        <div class="inline-row">
+          <input id="orgNameInput" type="text" placeholder="e.g. Acme Corp" />
+          <button id="createOrgBtn" class="ghost-btn" type="button">Create Organization</button>
         </div>
-      `}
+      </div>
     </section>
   `;
 

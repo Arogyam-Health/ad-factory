@@ -56,6 +56,9 @@
       <a href="/" class="app-nav-link active" aria-current="page">
         <span class="app-nav-icon" aria-hidden="true">&#9881;</span> Studio
       </a>
+      <a href="/config.html" class="app-nav-link">
+        <span class="app-nav-icon" aria-hidden="true">&#9998;</span> Config
+      </a>
       <a href="/organizations.html" class="app-nav-link">
         <span class="app-nav-icon" aria-hidden="true">&#128101;</span> Teams
       </a>
@@ -88,7 +91,7 @@
   <div id="authBar" class="auth-bar auth-hidden" style="display:none" aria-hidden="true"></div>
   <div id="profilePanel" class="profile-panel hidden" aria-hidden="true"></div>
   <div id="orgPanel" class="org-panel hidden" aria-hidden="true"></div>
-  <div id="configPanel" class="config-panel"></div>
+  <div id="configPanel" class="config-panel hidden" aria-hidden="true"></div>
   <div id="adminPanel" class="admin-panel" hidden aria-hidden="true"></div>
   <!-- Legacy nav (hidden) — keeps JS references intact -->
   <nav id="topNav" class="top-nav" style="display:none" aria-hidden="true">
@@ -307,13 +310,14 @@
     <span class="app-footer-brand">Ad Factory &mdash; AI Creative Platform</span>
     <nav class="app-footer-links" aria-label="Footer links">
       <a href="/">Studio</a>
+      <a href="/config.html">Config</a>
       <a href="/organizations.html">Teams</a>
       <a href="/traces.html">LLM Traces</a>
       <a href="/profile.html">Profile</a>
     </nav>
   </footer>
 
-  <script type="module" src="/js/main.js?v=3"></script>
+  <script type="module" src="/js/main.js?v=4"></script>
   <script type="module">
     import { initTheme } from "/js/theme.js";
     import { checkAuth } from "/js/auth.js";

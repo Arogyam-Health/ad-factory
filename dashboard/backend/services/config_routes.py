@@ -20,6 +20,9 @@ from dashboard.backend.services.config_version_service import (
     get_config_version as _get_config_version,
     rollback_config_to_version as _rollback_config,
     copy_config as _copy_config,
+    create_config_version_before_update,
+    extract_files_for_hash,
+    calculate_changed_keys,
 )
 from dashboard.backend.services.org_helper import (
     get_org_by_id,
@@ -265,4 +268,130 @@ def copy_org_config(
         "source_type": source_type,
         "target_type": target_type,
         "mode": mode,
+    }
+
+
+@router.post("/api/config/{config_id}/save-version")
+def manual_save_version(
+    config_id: str,
+    payload: dict[str, Any],
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict:
+    """Manually save a version snapshot of the current config (no auto-save)."""
+    user_id = user["user_id"]
+    user_email = user.get("email", "")
+
+    doc = _require_config_access(config_id, user_id)
+
+    if not can_edit_config(user_id, doc, doc.get("owner_id")):
+        raise HTTPException(status_code=403, detail="You do not have permission to save versions")
+
+    reason = payload.get("reason", "").strip() or "manual_save"
+    changed_keys = payload.get("changed_keys", [])
+
+    before_files = extract_files_for_hash(doc)
+    snapshot = {"files": {k: doc.get("files", {}).get(k, {}) for k in CONFIG_KEYS}}
+
+    before_hash = ""
+    import hashlib, json
+    raw = json.dumps(before_files, sort_keys=True, separators=(",", ":"))
+    before_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    from dashboard.backend.services.config_version_service import generate_version_id
+    version_doc = {
+        "version_id": generate_version_id(),
+        "config_id": config_id,
+        "owner_type": doc.get("owner_type", ""),
+        "owner_id": doc.get("owner_id", ""),
+        "org_id": doc.get("org_id") if doc.get("owner_type") == "org" else None,
+        "changed_by_user_id": user_id,
+        "changed_by_email": user_email,
+        "change_reason": reason,
+        "changed_keys": changed_keys,
+        "before_hash": before_hash,
+        "after_hash": before_hash,
+        "snapshot": snapshot,
+        "created_at": __import__("time").time(),
+    }
+
+    get_sync_db()[COLL_CONFIG_VERSIONS].insert_one(version_doc)
+
+    write_audit_event(
+        event_type="config_version_saved",
+        actor_user_id=user_id,
+        actor_email=user_email,
+        target_type="config",
+        target_id=config_id,
+        org_id=version_doc.get("org_id"),
+        metadata={"config_id": config_id, "reason": reason, "changed_keys": changed_keys},
+    )
+
+    return {"status": "saved", "version_id": version_doc["version_id"]}
+
+
+@router.post("/api/config/{config_id}/merge-to-org")
+def merge_config_to_org(
+    config_id: str,
+    payload: dict[str, Any],
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict:
+    """Merge individual user's config into the org's shared config."""
+    user_id = user["user_id"]
+    user_email = user.get("email", "")
+
+    doc = _require_config_access(config_id, user_id)
+
+    if doc.get("owner_type") != "user":
+        raise HTTPException(status_code=400, detail="Can only merge personal configs to org")
+
+    org_id = payload.get("org_id", "").strip()
+    if not org_id:
+        raise HTTPException(status_code=400, detail="org_id is required")
+
+    org = get_org_by_id(org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    require_org_member(user_id, org_id)
+
+    if not can_copy_config(user_id, org_id):
+        raise HTTPException(status_code=403, detail="You do not have permission to merge configs")
+
+    reason = payload.get("reason", "").strip() or "merge_individual_to_org"
+
+    try:
+        result = _copy_config(
+            source_owner_type="user",
+            source_owner_id=user_id,
+            target_owner_type="org",
+            target_owner_id=org_id,
+            actor_user_id=user_id,
+            actor_email=user_email,
+            mode="replace_all",
+            reason=reason,
+            org_id=org_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    write_audit_event(
+        event_type="config_merged_to_org",
+        actor_user_id=user_id,
+        actor_email=user_email,
+        target_type="config",
+        target_id=config_id,
+        org_id=org_id,
+        metadata={
+            "config_id": config_id,
+            "source_owner_id": user_id,
+            "target_org_id": org_id,
+            "reason": reason,
+        },
+    )
+
+    return {
+        "status": "merged",
+        "org_id": org_id,
+        "config": result,
+        "reason": reason,
     }
