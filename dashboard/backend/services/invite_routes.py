@@ -165,7 +165,7 @@ def create_org_invite(
     )
 
     # Never return token_hash, but always return invite_url so frontend can show it
-    return {
+    resp = {
         "invite": {
             "invite_id": invite["invite_id"],
             "org_id": org_id,
@@ -178,8 +178,10 @@ def create_org_invite(
         "invite_url": invite_url,
         "email_sent": email_result.get("sent", False),
         "email_provider": email_result.get("provider", "none"),
-        "invite_url": invite_url,
     }
+    if email_result.get("error"):
+        resp["email_error"] = email_result["error"]
+    return resp
 
 
 @router.get("/api/orgs/{org_id}/invites")

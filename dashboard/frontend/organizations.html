@@ -476,12 +476,42 @@
             body: JSON.stringify({ email, role }),
           });
           const emailSent = data.email_sent;
+          const emailProvider = data.email_provider || "none";
+          const emailError = data.email_error || "";
           const inviteUrl = data.invite_url || "";
           if (emailSent) {
             result.innerHTML = `
-              <span style="color:var(--accent-green)">&#10003; Invite sent to ${esc(email)}</span>
+              <span style="color:var(--accent-green)">&#10003; Invite sent to ${esc(email)} via ${esc(emailProvider)}</span>
             `;
+          } else if (emailProvider !== "none") {
+            // SMTP/Resend was configured but failed
+            result.innerHTML = `
+              <div style="background:#fff3f0;border:1px solid #ffd0c8;border-radius:var(--radius-sm);padding:0.75rem 1rem;margin-top:0.25rem">
+                <div style="font-weight:600;margin-bottom:0.3rem;color:#c0392b">&#9888; Email failed to send (${esc(emailProvider)})</div>
+                ${emailError ? `<div style="font-size:0.78rem;color:#8b4513;margin-bottom:0.5rem;font-family:monospace;word-break:break-all">${esc(emailError)}</div>` : ""}
+                <div style="font-weight:500;margin-bottom:0.3rem;color:var(--ink)">Share this link manually:</div>
+                <div style="display:flex;gap:0.5rem;align-items:center">
+                  <input type="text" readonly value="${esc(inviteUrl)}" style="flex:1;padding:0.4rem 0.6rem;font-size:0.78rem;font-family:monospace;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink)" id="inviteUrl-${orgId}" />
+                  <button class="ghost-btn invite-copy-btn" data-url="${esc(inviteUrl)}" data-target="inviteUrl-${orgId}" style="font-size:0.78rem;white-space:nowrap;padding:0.4rem 0.7rem">Copy Link</button>
+                </div>
+                <div style="font-size:0.75rem;color:var(--muted);margin-top:0.4rem">The invitee must sign up or log in with <strong>${esc(email)}</strong> to join.</div>
+              </div>
+            `;
+            result.querySelector(".invite-copy-btn")?.addEventListener("click", (e) => {
+              const btn = e.currentTarget;
+              const url = btn.dataset.url;
+              navigator.clipboard.writeText(url).then(() => {
+                btn.textContent = "Copied!";
+                setTimeout(() => { btn.textContent = "Copy Link"; }, 2000);
+              }).catch(() => {
+                const inp = document.getElementById(btn.dataset.target);
+                if (inp) { inp.select(); document.execCommand("copy"); }
+                btn.textContent = "Copied!";
+                setTimeout(() => { btn.textContent = "Copy Link"; }, 2000);
+              });
+            });
           } else {
+            // No email provider configured at all
             result.innerHTML = `
               <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:0.75rem 1rem;margin-top:0.25rem">
                 <div style="font-weight:600;margin-bottom:0.4rem;color:var(--ink)">&#9993; Email not configured — share this link manually</div>
@@ -508,7 +538,10 @@
           }
           clearCache(`/api/orgs/${orgId}/invites`);
           wrap.querySelector(`#invEmail-${orgId}`).value = "";
-          setTimeout(loadOrgs, 1200);
+          // Only reload orgs if email was sent successfully; otherwise keep the URL visible
+          if (emailSent) {
+            setTimeout(loadOrgs, 1200);
+          }
         } catch (err) {
           result.innerHTML = `<span style="color:var(--accent-coral)">${esc(String(err))}</span>`;
         } finally {

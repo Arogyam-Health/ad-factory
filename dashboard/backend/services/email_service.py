@@ -58,11 +58,15 @@ def try_send_email(
     if not email_from:
         email_from = "noreply@adfactory.app"
 
+    import sys
     if resend_key:
+        print(f"[EMAIL] Using Resend provider, from={email_from}", file=sys.stderr)
         return _send_via_resend(resend_key, email_from, to_email, subject, html_body, text_body)
     elif smtp_host:
+        print(f"[EMAIL] Using SMTP provider, host={smtp_host}, from={email_from}", file=sys.stderr)
         return _send_via_smtp(smtp_host, email_from, to_email, subject, html_body, text_body)
     else:
+        print(f"[EMAIL] No provider configured (RESEND_API_KEY and SMTP_HOST both empty)", file=sys.stderr)
         return {"sent": False, "provider": "none", "error": None}
 
 
@@ -74,6 +78,8 @@ def _send_via_resend(
     html_body: str,
     text_body: str,
 ) -> dict[str, Any]:
+    import sys
+    print(f"[RESEND] Attempting send: from={email_from} to={to_email}", file=sys.stderr)
     try:
         import httpx
         resp = httpx.post(
@@ -92,10 +98,13 @@ def _send_via_resend(
             timeout=15,
         )
         if resp.is_success:
+            print(f"[RESEND] Send succeeded: to={to_email}", file=sys.stderr)
             return {"sent": True, "provider": "resend", "error": None}
         else:
+            print(f"[RESEND] Send FAILED: HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
             return {"sent": False, "provider": "resend", "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
     except Exception as e:
+        print(f"[RESEND] Send FAILED: {type(e).__name__}: {e}", file=sys.stderr)
         return {"sent": False, "provider": "resend", "error": str(e)}
 
 
@@ -107,11 +116,14 @@ def _send_via_smtp(
     html_body: str,
     text_body: str,
 ) -> dict[str, Any]:
-    try:
-        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-        smtp_user = os.environ.get("SMTP_USER", "").strip()
-        smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
+    import sys
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
 
+    print(f"[SMTP] Attempting send: host={smtp_host}:{smtp_port} from={email_from} to={to_email} user={smtp_user}", file=sys.stderr)
+
+    try:
         msg = MIMEText(html_body, "html")
         msg["Subject"] = subject
         msg["From"] = email_from
@@ -123,9 +135,11 @@ def _send_via_smtp(
                 server.login(smtp_user, smtp_password)
             server.send_message(msg)
 
+        print(f"[SMTP] Send succeeded: to={to_email}", file=sys.stderr)
         return {"sent": True, "provider": "smtp", "error": None}
     except Exception as e:
-        return {"sent": False, "provider": "smtp", "error": str(e)}
+        print(f"[SMTP] Send FAILED: {type(e).__name__}: {e}", file=sys.stderr)
+        return {"sent": False, "provider": "smtp", "error": f"{type(e).__name__}: {e}"}
 
 
 def send_invite_email(
