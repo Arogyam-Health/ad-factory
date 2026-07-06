@@ -7637,9 +7637,46 @@ def get_run_images(run_id: str, request: Request, limit: int = 200, offset: int 
 
 
 @app.get("/api/llm-traces")
-def get_llm_traces(request: Request, limit: int = 50, offset: int = 0, run_id: str | None = None) -> dict[str, Any]:
+def get_llm_traces(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    run_id: str | None = None,
+    target_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Get LLM traces. Supports:
+    - Default: user's own traces
+    - target_user_id: org owners can view member traces, super admins can view anyone's
+    """
     user = _get_user_from_request(request)
-    return api_llm_traces(user["user_id"], limit=limit, offset=offset, run_id_filter=run_id)
+    requester_id = user["user_id"]
+
+    # If targeting another user's traces, check permissions
+    if target_user_id and target_user_id != requester_id:
+        is_super = user.get("is_super_admin", False)
+        if not is_super:
+            # Check if requester is org owner/config_admin with this member
+            from dashboard.backend.services.org_helper import (
+                get_user_org_memberships,
+                get_user_org_membership,
+                get_role_permissions,
+            )
+            requester_memberships = get_user_org_memberships(requester_id)
+            allowed = False
+            for mem in requester_memberships:
+                org_id = mem.get("org_id", "")
+                perms = get_role_permissions(mem.get("role", "creator"))
+                if perms.get("can_manage_org") or perms.get("can_invite_members"):
+                    # Check if target_user is in the same org
+                    target_mem = get_user_org_membership(target_user_id, org_id)
+                    if target_mem:
+                        allowed = True
+                        break
+            if not allowed:
+                raise HTTPException(status_code=403, detail="Not authorized to view this user's traces")
+        return api_llm_traces(target_user_id, limit=limit, offset=offset, run_id_filter=run_id)
+
+    return api_llm_traces(requester_id, limit=limit, offset=offset, run_id_filter=run_id)
 
 
 @app.delete("/api/llm-traces")

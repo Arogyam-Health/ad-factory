@@ -92,14 +92,6 @@ def create_org_invite(
             detail=f"Role must be one of: {', '.join(ALLOWED_INVITE_ROLES)}",
         )
 
-    # Cross-domain check
-    target_domain = extract_domain_from_email(target_email)
-    if target_email and target_domain != org.get("domain", ""):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invite email domain must match org domain '{org['domain']}'.",
-        )
-
     # Check if already an active member
     existing = find_active_membership(org_id, target_email)
     if existing:

@@ -169,7 +169,7 @@ async function initDefaults() {
       } catch {}
     }
     state.modelsByProvider = opencode.models_by_provider || {};
-    document.getElementById("opencodeApiUrl").value = opencode.api_url || "http://127.0.0.1:4090";
+    document.getElementById("opencodeApiUrl").value = opencode.api_url || "";
 
     const defaultModel = opencode.default_model || "";
     const defaultProvider = (opencode.providers || Object.keys(state.modelsByProvider))[0] || "";
@@ -318,7 +318,7 @@ document.getElementById("deleteAllCredentialsBtn")?.addEventListener("click", as
     document.getElementById("googleApiKey").placeholder = "AIza...";
     document.getElementById("opencodeApiKey").value = "";
     document.getElementById("opencodeApiKey").placeholder = "sk-...";
-    document.getElementById("opencodeApiUrl").value = "http://127.0.0.1:4090";
+    document.getElementById("opencodeApiUrl").value = "";
     setStatus("All API credentials deleted");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });

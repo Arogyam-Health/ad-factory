@@ -58,16 +58,12 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
   if (!orgData || !orgData.orgs || !orgData.orgs.length) {
     orgsSection.innerHTML = `
       <div class="profile-section-header"><h3>Organizations</h3></div>
-      <div class="profile-org-create">
-        <label for="profileOrgName">Organization Name</label>
-        <div class="inline-row">
-          <input id="profileOrgName" type="text" placeholder="e.g. Acme Corp" />
-          <button id="profileCreateOrgBtn" class="ghost-btn" type="button">Create</button>
-        </div>
+      <div style="padding:1.5rem;text-align:center;color:var(--muted)">
+        <p style="margin:0 0 0.75rem;font-size:0.88rem">You don't belong to any organizations yet.</p>
+        <a href="/organizations.html" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.5rem 1rem;border-radius:var(--radius-sm);border:1px solid var(--primary);background:var(--primary);color:#fff;font-size:0.85rem;font-weight:600;text-decoration:none">Create or Join Organization</a>
       </div>
     `;
     container.appendChild(orgsSection);
-    attachCreateOrgHandler();
     finishRender(panel, container, user);
     return;
   }
@@ -113,25 +109,86 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
   }
 
   // ── Provider Configs ───────────────────────────────────────────────
-  if (providerConfigs.length) {
-    const pcSection = document.createElement("div");
-    pcSection.className = "profile-section";
-    pcSection.innerHTML = `<div class="profile-section-header"><h3>Provider Configs</h3></div>`;
-    const pcList = document.createElement("div");
-    pcList.className = "profile-pc-list";
-    for (const pc of providerConfigs) {
-      const card = document.createElement("div");
-      card.className = "profile-pc-card";
-      const configured = pc.config?.api_key ? "Configured" : "Not configured";
-      card.innerHTML = `
-        <strong>${escapeHtml(pc.provider || "Unknown")}</strong>
-        <span class="${pc.config?.api_key ? "profile-pc-ok" : "profile-pc-missing"}">${configured}</span>
-      `;
-      pcList.appendChild(card);
+  const PROVIDER_NAMES = {
+    opencode: "OpenCode",
+    google_gemini: "Google Gemini",
+  };
+  const PROVIDER_FIELDS = {
+    opencode: [
+      { key: "api_url", label: "Base URL", is_secret: false },
+      { key: "api_key", label: "API Key", is_secret: true },
+      { key: "default_model", label: "Default Model", is_secret: false },
+    ],
+    google_gemini: [
+      { key: "api_key", label: "API Key", is_secret: true },
+      { key: "default_model", label: "Default Model", is_secret: false },
+    ],
+  };
+
+  const pcSection = document.createElement("div");
+  pcSection.className = "profile-section";
+  pcSection.innerHTML = `<div class="profile-section-header"><h3>API Keys &amp; Provider Configs</h3></div>`;
+  const pcList = document.createElement("div");
+  pcList.className = "profile-pc-list";
+
+  for (const pc of providerConfigs) {
+    const provider = pc.provider || "unknown";
+    const providerName = PROVIDER_NAMES[provider] || provider;
+    const fields = PROVIDER_FIELDS[provider] || [];
+    const config = pc.config || {};
+
+    const card = document.createElement("div");
+    card.className = "profile-pc-card";
+    card.style.cssText = "padding:1rem 1.25rem";
+
+    let fieldsHtml = "";
+    for (const field of fields) {
+      const val = config[field.key];
+      const hasVal = !!val;
+      const displayVal = field.is_secret
+        ? (hasVal ? val : "Not set")
+        : (val || "Not set");
+      const statusColor = hasVal ? "var(--accent-green)" : "var(--muted)";
+
+      fieldsHtml += `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--line);font-size:0.82rem;gap:0.5rem">
+          <span style="color:var(--muted);min-width:90px">${escapeHtml(field.label)}</span>
+          <span style="color:${statusColor};flex:1;text-align:right;word-break:break-all;font-family:${field.is_secret ? 'var(--font-mono)' : 'var(--font-body)'};font-size:0.78rem">${escapeHtml(displayVal)}</span>
+        </div>`;
     }
-    pcSection.appendChild(pcList);
-    container.appendChild(pcSection);
+
+    const hasAnyKey = fields.some(f => f.is_secret && config[f.key]);
+
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem">
+        <strong style="font-size:0.92rem">${escapeHtml(providerName)}</strong>
+        <span style="font-size:0.75rem;padding:2px 8px;border-radius:4px;background:${hasAnyKey ? 'color-mix(in srgb, var(--accent-green) 15%, transparent)' : 'color-mix(in srgb, var(--muted) 10%, transparent)'};color:${hasAnyKey ? 'var(--accent-green)' : 'var(--muted)'}">${hasAnyKey ? 'Configured' : 'Not configured'}</span>
+      </div>
+      ${fieldsHtml}
+      <div style="margin-top:0.6rem;display:flex;gap:0.4rem;justify-content:flex-end">
+        <button class="ghost-btn pc-delete-btn" data-provider="${escapeHtml(provider)}" type="button" style="font-size:0.75rem;color:var(--accent-coral)">Delete All</button>
+      </div>
+    `;
+    pcList.appendChild(card);
   }
+
+  pcSection.appendChild(pcList);
+  container.appendChild(pcSection);
+
+  // Wire delete buttons
+  pcSection.querySelectorAll(".pc-delete-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const prov = btn.dataset.provider;
+      if (!confirm(`Delete all saved credentials for ${PROVIDER_NAMES[prov] || prov}?`)) return;
+      btn.disabled = true;
+      try {
+        await fetchJSON(`/api/user/provider-config/${encodeURIComponent(prov)}`, { method: "DELETE" });
+        await renderProfilePanel();
+      } catch (err) {
+        setStatus(`Delete failed: ${String(err)}`);
+      }
+    });
+  });
 
   finishRender(panel, container, user);
 }
@@ -239,26 +296,6 @@ function permissionSummary(perms) {
   if (perms.can_manage_org) labels.push("manage");
   if (perms.can_invite_members) labels.push("invite");
   return labels.join(", ") || "generate ads";
-}
-
-function attachCreateOrgHandler() {
-  const btn = document.getElementById("profileCreateOrgBtn");
-  if (!btn) return;
-  btn.addEventListener("click", async () => {
-    const name = document.getElementById("profileOrgName")?.value.trim();
-    if (!name) { setStatus("Enter an organization name."); return; }
-    btn.disabled = true;
-    try {
-      await fetchJSON("/api/orgs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-      setStatus("Organization created!");
-      clearCache("/api/orgs");
-      await renderProfilePanel();
-    } catch (err) {
-      setStatus(`Failed: ${String(err)}`);
-    } finally {
-      btn.disabled = false;
-    }
-  });
 }
 
 function attachInviteHandlers(orgId) {
