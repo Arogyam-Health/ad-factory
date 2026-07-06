@@ -599,18 +599,33 @@ document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((car
 
 document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
   card.addEventListener("click", () => {
+    const configKey = card.dataset.configKey;
     const filePath = card.dataset.filePath;
     const title = card.querySelector("strong").textContent;
-    fetch(`/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        showPromptFullscreen(title, data.content || "", {
-          fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`,
-          saveUrl: "/api/prompt-file-content",
-          saveBody: (text) => ({ prompt_path: filePath, content: text }),
-        });
-      })
-      .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
+
+    if (configKey === "product_master_doc") {
+      fetch("/api/product-doc")
+        .then((r) => r.json())
+        .then((data) => {
+          showPromptFullscreen(title, data.content || "", {
+            fetchUrl: "/api/product-doc",
+            saveUrl: "/api/product-doc",
+            saveBody: (text) => ({ content: text }),
+          });
+        })
+        .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
+    } else {
+      fetch(`/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          showPromptFullscreen(title, data.content || "", {
+            fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`,
+            saveUrl: "/api/prompt-file-content",
+            saveBody: (text) => ({ prompt_path: filePath, content: text }),
+          });
+        })
+        .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
+    }
   });
 });
 
