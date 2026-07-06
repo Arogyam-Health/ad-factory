@@ -117,7 +117,10 @@ def _send_via_smtp(
     text_body: str,
 ) -> dict[str, Any]:
     import sys
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    try:
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    except (ValueError, TypeError):
+        smtp_port = 587
     smtp_user = os.environ.get("SMTP_USER", "").strip()
     smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
 
