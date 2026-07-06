@@ -149,6 +149,10 @@
 
         <section class="card card-files" aria-labelledby="filesHeading">
           <h2 id="filesHeading">4) Config Files</h2>
+          <div id="studioSourceSelector" style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+            <span style="font-size:0.78rem;color:var(--muted);font-weight:500">Source:</span>
+            <div id="studioSourceButtons" style="display:flex;gap:0.35rem;flex-wrap:wrap"></div>
+          </div>
           <div class="input-prompts-grid">
             <div class="input-prompt-card" data-file-path="persona_seeds.json">
               <strong>Persona Seeds</strong>
@@ -174,20 +178,6 @@
               <strong>Product Master Doc</strong>
               <span>Product info, claims, ingredient details, use-case definitions</span>
             </div>
-          </div>
-          <div id="productDocUploadRow" style="margin-top:0.75rem">
-            <label style="font-size:0.82rem;color:var(--muted)">Upload replacement: <input id="productFile" type="file" style="font-size:0.8rem" /></label>
-          </div>
-          <div id="productDocInfo" class="product-doc-info"></div>
-          <div id="productDocEditor" class="product-doc-editor hidden">
-            <div class="product-doc-editor-top">
-              <strong>Edit Product Doc</strong>
-              <div class="product-doc-editor-actions">
-                <button id="saveProductDoc" class="ghost-btn" type="button">Save</button>
-                <button id="closeProductDoc" class="ghost-btn" type="button">Close</button>
-              </div>
-            </div>
-            <textarea id="productDocText" spellcheck="false"></textarea>
           </div>
           <div id="defaultsInfo" class="hint"></div>
         </section>

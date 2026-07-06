@@ -97,50 +97,6 @@ function renderInputImages(images = []) {
   });
 }
 
-function renderProductDocInfo(productDoc) {
-  const el = document.getElementById("productDocInfo");
-  if (!el) return;
-  const doc = productDoc || {};
-  const size = Number(doc.size_bytes || 0);
-  el.innerHTML = `
-    <div class="product-doc-card">
-      <strong>Product doc in use</strong>
-      <span>${doc.name || "product master doc.txt"}</span>
-      <code>${doc.path || "input/docs/product master doc.txt"}</code>
-      <small>${doc.exists ? `${(size / 1024).toFixed(1)} KB` : "Missing"}</small>
-      <div class="product-doc-actions">
-        <button id="openProductDoc" class="ghost-btn" type="button">Open</button>
-        <a class="ghost-btn product-doc-download" href="/${doc.path || "input/docs/product master doc.txt"}" download>Download</a>
-      </div>
-    </div>
-  `;
-  document.getElementById("openTraces")?.addEventListener("click", () => window.open("/traces.html", "_blank"));
-
-  document.getElementById("openProductDoc")?.addEventListener("click", () => {
-    fetchJSON("/api/product-doc").then((doc) => {
-      showPromptFullscreen(
-        doc.name || "Product Master Doc",
-        doc.content || "",
-        {
-          fetchUrl: "/api/product-doc",
-          saveUrl: "/api/product-doc",
-          saveBody: (text) => ({ content: text }),
-        }
-      );
-    }).catch((err) => setStatus(`Failed to load product doc: ${String(err)}`));
-  });
-}
-
-async function openProductDocEditor() {
-  const editor = document.getElementById("productDocEditor");
-  const textarea = document.getElementById("productDocText");
-  if (!editor || !textarea) return;
-  const doc = await fetchJSON("/api/product-doc");
-  textarea.value = doc.content || "";
-  editor.classList.remove("hidden");
-  textarea.focus();
-}
-
 function renderModelOptions(provider, preferredModel = "") {
   const models = state.modelsByProvider[provider] || [];
   const selected = preferredModel && models.includes(preferredModel) ? preferredModel : (models[0] || "");
@@ -157,7 +113,6 @@ async function initDefaults() {
     renderFormatPatterns();
     renderHypothesisUI();
     renderInputImages(data.input_images || []);
-    renderProductDocInfo(data.product_doc);
 
     const imageCount = (data.input_images || []).length;
     defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}, input/images=${imageCount} file(s)`;
@@ -189,6 +144,9 @@ async function initDefaults() {
   } catch (err) {
     setStatus(`Failed to load defaults: ${String(err)}`);
   }
+
+  // Load org sources for Studio source selector
+  await initStudioSourceSelector();
 }
 
 function populateGoogleModels(models, selectedModel) {
@@ -250,6 +208,85 @@ async function deleteAllCredentials() {
       await fetchJSON(`/api/user/provider-config/${encodeURIComponent(p)}`, { method: "DELETE" });
     } catch {}
   }
+}
+
+// ── Studio Config Source Selector ───────────────────────────────────────────
+let studioCurrentOrgId = null;  // null = personal
+
+async function initStudioSourceSelector() {
+  const container = document.getElementById("studioSourceButtons");
+  if (!container) return;
+  let sources = [];
+  try {
+    const srcData = await fetchJSON("/api/config/sources");
+    sources = srcData.sources || [];
+  } catch {
+    sources = [{ type: "personal", label: "My Config" }];
+  }
+  container.innerHTML = "";
+  // Personal button
+  const personalBtn = document.createElement("button");
+  personalBtn.type = "button";
+  personalBtn.className = "ghost-btn studio-source-btn active";
+  personalBtn.dataset.source = "personal";
+  personalBtn.textContent = "My Config";
+  personalBtn.style.cssText = "font-size:0.78rem;padding:0.3rem 0.7rem;border-radius:var(--radius-sm);font-weight:500";
+  container.appendChild(personalBtn);
+  // Org buttons
+  sources.filter(s => s.type === "org").forEach(s => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ghost-btn studio-source-btn";
+    btn.dataset.source = s.org_id;
+    btn.textContent = s.org_name || s.label || s.org_id;
+    btn.style.cssText = "font-size:0.78rem;padding:0.3rem 0.7rem;border-radius:var(--radius-sm);font-weight:500";
+    container.appendChild(btn);
+  });
+  // Style active
+  function styleButtons() {
+    container.querySelectorAll(".studio-source-btn").forEach(b => {
+      const isActive = b.dataset.source === (studioCurrentOrgId || "personal");
+      b.style.background = isActive ? "var(--primary-muted)" : "transparent";
+      b.style.color = isActive ? "var(--primary)" : "var(--muted)";
+      b.style.borderColor = isActive ? "var(--primary)" : "var(--line)";
+      b.classList.toggle("active", isActive);
+    });
+  }
+  styleButtons();
+  // Click handler
+  container.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".studio-source-btn");
+    if (!btn) return;
+    const src = btn.dataset.source;
+    studioCurrentOrgId = src === "personal" ? null : src;
+    styleButtons();
+    // Reload persona seeds from the selected source
+    try {
+      const cfg = await fetchJSON(studioCurrentOrgId
+        ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
+        : "/api/config/effective");
+      const rawSeeds = cfg?.config?.persona_seeds;
+      if (rawSeeds) {
+        const seeds = typeof rawSeeds === "string" ? JSON.parse(rawSeeds) : rawSeeds;
+        if (Array.isArray(seeds) && seeds.length) {
+          const userPersonas = seeds.map(e => ({
+            number: parseInt(e.persona_number || e.number, 10),
+            name: String(e.persona_name || e.name || `Persona ${e.persona_number || e.number}`),
+          })).filter(p => p.number);
+          if (userPersonas.length) {
+            state.defaultData.personas = userPersonas;
+            initPersonaState(userPersonas);
+            renderPersonas();
+          }
+        }
+      }
+      const mode = cfg?.mode || "personal";
+      const source = cfg?.source || "generic";
+      setStatus(`Config source: ${mode}${source ? ` (${source})` : ""}`);
+    } catch (err) {
+      setStatus(`Failed to load config source: ${String(err)}`);
+    }
+  });
 }
 
 async function loadProviderConfigsIntoFields() {
@@ -385,6 +422,7 @@ async function runPipeline() {
     [...inputImageFilesEl.files].forEach((file) => form.append("input_image_files", file));
   }
   form.append("clear_input_images", clearInputImagesEl?.checked ? "true" : "false");
+  form.append("org_id", studioCurrentOrgId || "");
 
   setStatus("Running pipeline... this can take time.");
   if (runBtn) {

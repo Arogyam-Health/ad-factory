@@ -164,7 +164,7 @@ def create_org_invite(
         metadata=audit_meta,
     )
 
-    # Never return token_hash
+    # Never return token_hash, but always return invite_url so frontend can show it
     return {
         "invite": {
             "invite_id": invite["invite_id"],
@@ -175,6 +175,7 @@ def create_org_invite(
             "expires_at": invite["expires_at"],
             "created_at": invite["created_at"],
         },
+        "invite_url": invite_url,
         "email_sent": email_result.get("sent", False),
         "email_provider": email_result.get("provider", "none"),
         "invite_url": invite_url,

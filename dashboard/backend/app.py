@@ -6103,6 +6103,7 @@ async def api_run_execute(
     input_image_files: list[UploadFile] | None = File(None),
     clear_input_images: bool = Form(False),
     user_id: str = "dev_user",
+    org_id: str = "",
 ) -> dict[str, Any]:
     ensure_dirs()
     try:
@@ -6121,10 +6122,10 @@ async def api_run_execute(
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     (run_dir / "context").mkdir(parents=True, exist_ok=True)
 
-    # Load per-user config overrides from MongoDB
+    # Load per-user config overrides from MongoDB (optionally for a specific org)
     try:
-        from dashboard.backend.services.user_config import get_user_config
-        user_cfg = get_user_config(user_id)
+        from dashboard.backend.services.user_config import resolve_effective_config
+        user_cfg = resolve_effective_config(user_id, org_id=org_id or None)
         _set_user_config_overrides(user_cfg)
     except Exception:
         _set_user_config_overrides({})

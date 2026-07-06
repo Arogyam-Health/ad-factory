@@ -24,6 +24,7 @@ async def _run_execute(
     image_source_file: UploadFile | None = File(None),
     input_image_files: list[UploadFile] | None = File(None),
     clear_input_images: bool = Form(False),
+    org_id: str = Form(""),
 ) -> dict[str, Any]:
     user_id = _resolve_user_id(request)
     return await api_run_execute(
@@ -35,4 +36,5 @@ async def _run_execute(
         input_image_files=input_image_files,
         clear_input_images=clear_input_images,
         user_id=user_id,
+        org_id=org_id,
     )
