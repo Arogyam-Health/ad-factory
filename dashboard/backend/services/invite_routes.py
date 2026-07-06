@@ -369,8 +369,8 @@ def accept_invite(
         )
         return {
             "status": "accepted",
-            "org": org,
-            "membership": existing_member,
+            "org": _json_safe(org),
+            "membership": _json_safe(existing_member),
         }
 
     target_role = invite.get("role", "creator")
@@ -449,8 +449,8 @@ def accept_invite(
 
     return {
         "status": "accepted",
-        "org": org,
-        "membership": membership_doc,
+        "org": _json_safe(org),
+        "membership": _json_safe(membership_doc),
     }
 
 
