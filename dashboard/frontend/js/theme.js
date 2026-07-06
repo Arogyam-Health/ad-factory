@@ -2,6 +2,7 @@ const SUN = "&#9728;";
 const MOON = "&#9790;";
 
 export function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
   document.body.setAttribute("data-theme", theme);
   localStorage.setItem("dashboard_theme", theme);
   const btn = document.getElementById("themeToggle");
