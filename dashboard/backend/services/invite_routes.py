@@ -565,6 +565,46 @@ def remove_member(
     return {"status": "removed", "user_id": target_user_id}
 
 
+# ─── Config sources endpoint ───────────────────────────────────────────
+
+
+@router.get("/api/config/sources")
+def get_config_sources(
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    """Return all config sources available to the user: personal + each org."""
+    user_id = user["user_id"]
+    from dashboard.backend.services.user_config import has_custom_config as user_has_config
+    from dashboard.backend.services.org_helper import get_user_org_memberships, get_org_by_id
+
+    has_personal = user_has_config(user_id)
+    memberships = get_user_org_memberships(user_id)
+
+    sources: list[dict[str, Any]] = [
+        {
+            "type": "personal",
+            "label": "My Config",
+            "has_custom": has_personal,
+        }
+    ]
+
+    for mem in memberships:
+        org_id = mem.get("org_id", "")
+        org = get_org_by_id(org_id)
+        if org:
+            role = mem.get("role", "creator")
+            sources.append({
+                "type": "org",
+                "org_id": org_id,
+                "org_name": org.get("name", ""),
+                "config_mode": org.get("config_mode", "shared_org_config"),
+                "role": role,
+                "can_edit": role in ("owner", "config_admin"),
+            })
+
+    return {"sources": sources}
+
+
 # ─── Effective config endpoint ─────────────────────────────────────────────
 
 
@@ -621,57 +661,9 @@ def get_effective_config(
                 "config_id": config_id,
             }
 
-    # No org_id provided — check default org first
-    from dashboard.backend.services.org_helper import get_user_default_org
+    # No org_id provided — always return personal config by default
     from dashboard.backend.services.user_config import has_custom_config as user_has_config
 
-    default_org = get_user_default_org(user_id)
-    if default_org is not None:
-        org = default_org
-        resolved_org_id = org["org_id"]
-        membership = get_user_org_membership(user_id, resolved_org_id)
-        role = membership.get("role", "creator") if membership else "creator"
-        can_edit = role in ("owner", "config_admin")
-
-        config_mode = org.get("config_mode", "shared_org_config")
-        if config_mode == "shared_org_config":
-            config = resolve_effective_config(user_id, resolved_org_id)
-            doc = get_config_doc("org", resolved_org_id)
-            config_id = doc.get("config_id") if doc else None
-            return {
-                "config": config,
-                "source": "org_shared",
-                "owner_type": "org",
-                "owner_id": resolved_org_id,
-                "org": _json_safe(org),
-                "membership": _json_safe(membership),
-                "mode": config_mode,
-                "can_edit": can_edit,
-                "can_view_versions": can_edit,
-                "can_rollback": can_edit,
-                "can_copy": role in ("owner", "config_admin"),
-                "config_id": config_id,
-            }
-        else:
-            config = resolve_effective_config(user_id, resolved_org_id)
-            doc = get_config_doc("user", user_id) if user_has_config(user_id) else None
-            config_id = doc.get("config_id") if doc else None
-            return {
-                "config": config,
-                "source": "user_personal",
-                "owner_type": "user",
-                "owner_id": user_id,
-                "org": _json_safe(org),
-                "membership": _json_safe(membership),
-                "mode": config_mode,
-                "can_edit": can_edit,
-                "can_view_versions": can_edit,
-                "can_rollback": can_edit,
-                "can_copy": role in ("owner", "config_admin"),
-                "config_id": config_id,
-            }
-
-    # No org at all — return personal/generic
     config = resolve_effective_config(user_id)
     has_custom = user_has_config(user_id)
     doc = get_config_doc("user", user_id) if has_custom else None

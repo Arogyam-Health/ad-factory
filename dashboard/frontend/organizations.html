@@ -277,32 +277,89 @@
 
       const modeLabel = org.config_mode === "shared_org_config" ? "Shared Config" : "Individual Config";
       const isOwner   = role === "owner";
+      const detailId  = `org-detail-${org.org_id}`;
 
       card.innerHTML = `
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap">
+        <div class="org-card-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;cursor:pointer;user-select:none" data-org="${esc(org.org_id)}">
           <div>
             <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem">
               <h3 style="margin:0;font-family:var(--font-head);font-size:1.05rem;font-weight:700">${esc(org.name || "Unnamed")}</h3>
               ${isOwner ? `<span class="role-badge role-owner">Owner</span>` : `<span class="role-badge role-${esc(role)}">${esc(role)}</span>`}
               <span class="profile-mode-badge">${esc(modeLabel)}</span>
+              <span class="org-expand-icon" style="font-size:0.7rem;color:var(--muted);transition:transform 0.2s">&#9660;</span>
             </div>
             <div style="font-size:0.8rem;color:var(--muted)">
               ${org.domain ? `<span>&#127757; ${esc(org.domain)}</span> &nbsp;` : ""}
               <span>ID: <code style="font-size:0.72rem;background:var(--surface-2);padding:1px 6px;border-radius:4px">${esc(org.org_id)}</code></span>
             </div>
           </div>
-          <a href="/" class="ghost-btn" style="font-size:0.82rem;text-decoration:none;display:inline-flex;align-items:center;gap:0.3rem">&#9881; Open Studio</a>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap" onclick="event.stopPropagation()">
+            <button class="ghost-btn org-fetch-config-btn" data-org="${esc(org.org_id)}" data-name="${esc(org.name || '')}" style="font-size:0.78rem;display:inline-flex;align-items:center;gap:0.3rem">&#8635; Fetch Config</button>
+            <a href="/" class="ghost-btn" style="font-size:0.78rem;text-decoration:none;display:inline-flex;align-items:center;gap:0.3rem">&#9881; Studio</a>
+            ${isOwner ? `<button class="ghost-btn org-delete-btn" data-org="${esc(org.org_id)}" data-name="${esc(org.name || '')}" style="font-size:0.78rem;color:var(--accent-coral);display:inline-flex;align-items:center;gap:0.3rem">&#128465; Delete</button>` : ""}
+          </div>
         </div>
 
-        <!-- Members tab area -->
-        <div id="org-detail-${esc(org.org_id)}">
+        <div id="${detailId}" class="org-detail-area" style="display:none;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)">
           <div class="sp-skeleton sp-skeleton-line wide" style="margin-bottom:6px"></div>
           <div class="sp-skeleton sp-skeleton-line medium"></div>
         </div>
       `;
 
-      // Load members & invites
-      loadOrgDetail(org, role, data);
+      // Toggle expand/collapse
+      card.querySelector(".org-card-header").addEventListener("click", () => {
+        const area = document.getElementById(detailId);
+        const icon = card.querySelector(".org-expand-icon");
+        if (!area) return;
+        const isOpen = area.style.display !== "none";
+        area.style.display = isOpen ? "none" : "";
+        if (icon) icon.style.transform = isOpen ? "rotate(-90deg)" : "";
+        // Load detail on first expand
+        if (!isOpen && !area.dataset.loaded) {
+          loadOrgDetail(org, role, data);
+        }
+      });
+
+      // Wire delete button
+      card.querySelectorAll(".org-delete-btn").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const oid = btn.dataset.org;
+          const oname = btn.dataset.name;
+          const typed = prompt(`Type the org name "${oname}" to confirm deletion:`);
+          if (typed !== oname) {
+            if (typed !== null) alert("Name did not match. Deletion cancelled.");
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = "Deleting…";
+          try {
+            await fetchJSON(`/api/orgs/${oid}`, { method: "DELETE" });
+            clearCache("/api/orgs");
+            loadOrgs();
+          } catch (err) {
+            alert("Delete failed: " + String(err));
+            btn.disabled = false;
+            btn.innerHTML = "&#128465; Delete";
+          }
+        });
+      });
+
+      // Wire fetch config button
+      card.querySelectorAll(".org-fetch-config-btn").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const oid = btn.dataset.org;
+          btn.disabled = true;
+          btn.textContent = "Loading…";
+          try {
+            window.location.href = `/config.html?org_id=${encodeURIComponent(oid)}`;
+          } catch {
+            btn.disabled = false;
+            btn.innerHTML = "&#8635; Fetch Config";
+          }
+        });
+      });
 
       return card;
     }
@@ -310,6 +367,7 @@
     async function loadOrgDetail(org, role, data) {
       const container = document.getElementById(`org-detail-${org.org_id}`);
       if (!container) return;
+      container.dataset.loaded = "1";
 
       const perms = org.permissions || {};
       let members = [], invites = [], inviteCount = 0;
@@ -321,11 +379,16 @@
           invites = invData.invites || [];
           inviteCount = invites.filter(i => i.status === "pending").length;
         }
-      } catch {}
+      } catch {
+        container.innerHTML = `<div class="sp-notice sp-notice-warn" style="margin:0"><span class="sp-notice-icon">&#9888;</span> Failed to load org details. <button class="ghost-btn" onclick="loadOrgDetail(window._currentOrg, window._currentRole, window._currentData)" style="font-size:0.78rem">Retry</button></div>`;
+        return;
+      }
 
       // Update stats
-      document.getElementById("statMemberCount").textContent = members.length;
-      document.getElementById("statInviteCount").textContent = inviteCount;
+      const mc = document.getElementById("statMemberCount");
+      const ic = document.getElementById("statInviteCount");
+      if (mc) mc.textContent = members.length;
+      if (ic) ic.textContent = inviteCount;
 
       container.innerHTML = "";
 
@@ -349,6 +412,11 @@
       // Members table
       if (members.length) {
         container.appendChild(buildMembersTable(org.org_id, members, role));
+      } else {
+        const noMembers = document.createElement("p");
+        noMembers.style.cssText = "color:var(--muted);font-size:0.85rem;margin:0";
+        noMembers.textContent = "No members yet.";
+        container.appendChild(noMembers);
       }
     }
 

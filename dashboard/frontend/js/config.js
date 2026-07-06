@@ -33,6 +33,8 @@ const KEY_LABELS = {
 
 let currentData = null;
 let activeKey = CONFIG_KEYS[0];
+let availableSources = [];
+let currentSource = "personal";
 
 function esc(s) {
   const d = document.createElement("div");
@@ -62,22 +64,51 @@ export async function initConfigPage() {
     return;
   }
 
+  // Load available sources
   try {
-    currentData = await fetchJSON("/api/config/effective");
-    renderConfigPage();
+    const srcData = await fetchJSON("/api/config/sources");
+    availableSources = srcData.sources || [];
   } catch {
+    availableSources = [{ type: "personal", label: "My Config", has_custom: false }];
+  }
+
+  // Check for ?org_id= query param (from "Fetch Config" button on Teams page)
+  const params = new URLSearchParams(window.location.search);
+  const requestedOrgId = params.get("org_id");
+
+  if (requestedOrgId) {
+    currentSource = requestedOrgId;
+  } else {
+    currentSource = "personal";
+  }
+
+  await loadConfigForSource(currentSource);
+  renderConfigPage();
+}
+
+async function loadConfigForSource(sourceId) {
+  try {
+    if (sourceId === "personal") {
+      currentData = await fetchJSON("/api/config/effective");
+    } else {
+      currentData = await fetchJSON(`/api/config/effective?org_id=${encodeURIComponent(sourceId)}`);
+    }
+  } catch {
+    currentData = null;
+  }
+}
+
+function renderConfigPage() {
+  const data = currentData;
+  if (!data) {
     document.getElementById("cfgEditors").innerHTML = `
       <div class="cfg-empty">
         <span class="cfg-empty-icon">&#9888;</span>
         <strong>Failed to load config</strong>
         <p style="color:var(--muted);margin-top:0.5rem">Refresh the page to try again.</p>
       </div>`;
+    return;
   }
-}
-
-function renderConfigPage() {
-  const data = currentData;
-  if (!data) return;
 
   const config  = data.config || {};
   const canEdit = data.can_edit === true;
@@ -90,15 +121,52 @@ function renderConfigPage() {
   const canCopy         = data.can_copy === true;
   const ownerType       = data.owner_type || "user";
 
-  // ── Meta ──────────────────────────────────────────────────────────
+  // ── Source selector ───────────────────────────────────────────────
   const metaEl = document.getElementById("cfgMeta");
-  metaEl.innerHTML = `
+  const orgSources = availableSources.filter(s => s.type === "org");
+  const currentLabel = org
+    ? `${org.name || "Org"} (${source === "org_shared" ? "Shared" : "Personal"})`
+    : "My Config";
+
+  let sourceSelectorHtml = "";
+  if (orgSources.length || availableSources.length > 1) {
+    sourceSelectorHtml = `
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;padding:0.75rem 1rem;background:var(--surface-2);border-radius:var(--radius-sm);flex-wrap:wrap">
+        <span style="font-size:0.82rem;font-weight:600;color:var(--muted);white-space:nowrap">Config Source:</span>
+        <div style="display:flex;gap:0.3rem;flex-wrap:wrap" id="cfgSourceButtons">
+          <button class="cfg-source-btn ${!org ? "active" : ""}" data-source="personal" type="button" style="padding:0.35rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--line);background:${!org ? "var(--primary-muted)" : "transparent"};color:${!org ? "var(--primary)" : "var(--muted)"};font-size:0.8rem;font-weight:500;font-family:var(--font-body);cursor:pointer;transition:all 0.15s">My Config</button>
+          ${orgSources.map(s => `
+            <button class="cfg-source-btn ${org && org.org_id === s.org_id ? "active" : ""}" data-source="${esc(s.org_id)}" type="button" style="padding:0.35rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--line);background:${org && org.org_id === s.org_id ? "var(--primary-muted)" : "transparent"};color:${org && org.org_id === s.org_id ? "var(--primary)" : "var(--muted)"};font-size:0.8rem;font-weight:500;font-family:var(--font-body);cursor:pointer;transition:all 0.15s">${esc(s.org_name)} ${s.config_mode === "shared_org_config" ? "(Shared)" : "(Individual)"}</button>
+          `).join("")}
+        </div>
+      </div>`;
+  }
+
+  metaEl.innerHTML = sourceSelectorHtml + `
     <span class="cfg-meta-item"><strong>Source:</strong> ${esc(source)}</span>
     <span class="cfg-meta-item"><strong>Mode:</strong> ${esc(mode)}</span>
     ${org ? `<span class="cfg-meta-item"><strong>Org:</strong> ${esc(org.name || "")}</span>` : ""}
     <span class="cfg-meta-item"><strong>Can Edit:</strong> ${canEdit ? "Yes" : "No"}</span>
     ${configId ? `<span class="cfg-meta-item"><strong>Config ID:</strong> <code style="font-size:0.75rem;background:var(--surface-2);padding:1px 6px;border-radius:4px">${esc(configId)}</code></span>` : ""}
   `;
+
+  // Wire source buttons
+  metaEl.querySelectorAll(".cfg-source-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const src = btn.dataset.source;
+      currentSource = src;
+      // Update URL without reload
+      const url = new URL(window.location);
+      if (src === "personal") {
+        url.searchParams.delete("org_id");
+      } else {
+        url.searchParams.set("org_id", src);
+      }
+      history.replaceState(null, "", url);
+      await loadConfigForSource(src);
+      renderConfigPage();
+    });
+  });
 
   // ── Tabs ──────────────────────────────────────────────────────────
   const tabsEl = document.getElementById("cfgTabs");
@@ -208,7 +276,8 @@ async function saveAllConfigs() {
     }
     status("All configs saved", "success");
     clearCache("/api/config/effective");
-    currentData = await fetchJSON("/api/config/effective");
+    await loadConfigForSource(currentSource);
+    renderConfigPage();
   } catch (err) {
     status(`Save failed: ${String(err)}`, "error");
   } finally {
@@ -464,7 +533,7 @@ async function rollbackVersion(configId, versionId) {
     });
     status("Config rolled back", "success");
     clearCache("/api/config/effective");
-    currentData = await fetchJSON("/api/config/effective");
+    await loadConfigForSource(currentSource);
     renderConfigPage();
   } catch (err) {
     status(`Rollback failed: ${String(err)}`, "error");

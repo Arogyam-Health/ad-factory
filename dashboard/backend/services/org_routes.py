@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_ORGS, COLL_ORG_MEMBERS, COLL_USER_CONFIGS
+from dashboard.backend.db.collections import COLL_ORGS, COLL_ORG_MEMBERS, COLL_ORG_INVITES, COLL_USER_CONFIGS
 from dashboard.backend.services.org_helper import (
     get_user_default_org,
     get_user_org_membership,
@@ -288,6 +288,60 @@ def update_org(
 
     updated_org = get_org_by_id(org_id)
     return updated_org or org
+
+
+@router.delete("/api/orgs/{org_id}")
+def delete_org(
+    org_id: str,
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    """Soft-delete an organization (owner only). Deactivates org, removes memberships and invites."""
+    user_id = user["user_id"]
+    email = user.get("email", "")
+
+    org = _get_active_user_org(org_id, user_id)
+
+    if org["owner_user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Only the organization owner can delete it")
+
+    db = get_sync_db()
+    now = time.time()
+
+    # Soft-delete org
+    db[COLL_ORGS].update_one(
+        {"org_id": org_id},
+        {"$set": {"is_active": False, "updated_at": now, "deleted_by_user_id": user_id}},
+    )
+
+    # Remove all memberships
+    db[COLL_ORG_MEMBERS].update_many(
+        {"org_id": org_id, "status": "active"},
+        {"$set": {"status": "removed", "removed_at": now}},
+    )
+
+    # Remove all pending invites
+    db[COLL_ORG_INVITES].update_many(
+        {"org_id": org_id, "status": "pending"},
+        {"$set": {"status": "revoked", "revoked_at": now}},
+    )
+
+    # Deactivate org config
+    db[COLL_USER_CONFIGS].update_many(
+        {"owner_type": "org", "owner_id": org_id, "is_active": True},
+        {"$set": {"is_active": False, "updated_at": now}},
+    )
+
+    write_audit_event(
+        event_type="org_deleted",
+        actor_user_id=user_id,
+        actor_email=email,
+        target_type="org",
+        target_id=org_id,
+        org_id=org_id,
+        metadata={"name": org.get("name", "")},
+    )
+
+    return {"ok": True, "message": "Organization deleted"}
 
 
 @router.get("/api/orgs/{org_id}/config")

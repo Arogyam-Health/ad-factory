@@ -230,16 +230,20 @@ def create_or_update_config(
             coll.insert_one(new_doc)
         except DuplicateKeyError:
             # Stale unique index (user_id_1) rejects org configs that lack
-            # a user_id field.  Retry via upsert so the doc is persisted.
-            coll.update_one(
-                {
+            # a user_id field.  Drop the stale index and retry.
+            try:
+                coll.drop_index("user_id_1")
+            except Exception:
+                pass
+            try:
+                coll.insert_one(new_doc)
+            except DuplicateKeyError:
+                # If still failing, delete any conflicting doc and upsert
+                coll.delete_one({
                     "owner_type": owner_type,
                     "owner_id": owner_id,
-                    "is_active": True,
-                },
-                {"$set": {**new_doc}},
-                upsert=True,
-            )
+                })
+                coll.insert_one(new_doc)
 
     updated_doc = coll.find_one({
         "owner_type": owner_type,
