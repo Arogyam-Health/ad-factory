@@ -132,13 +132,22 @@ def _send_via_smtp(
         msg["From"] = email_from
         msg["To"] = to_email
 
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
+        print(f"[SMTP] Connecting to {smtp_host}:{smtp_port}...", file=sys.stderr)
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+        try:
+            print(f"[SMTP] Connected, sending EHLO...", file=sys.stderr)
+            server.ehlo()
+            print(f"[SMTP] Starting TLS...", file=sys.stderr)
             server.starttls()
+            server.ehlo()
             if smtp_user and smtp_password:
+                print(f"[SMTP] Logging in as {smtp_user}...", file=sys.stderr)
                 server.login(smtp_user, smtp_password)
+                print(f"[SMTP] Logged in, sending message...", file=sys.stderr)
             server.send_message(msg)
-
-        print(f"[SMTP] Send succeeded: to={to_email}", file=sys.stderr)
+            print(f"[SMTP] Send succeeded: to={to_email}", file=sys.stderr)
+        finally:
+            server.quit()
         return {"sent": True, "provider": "smtp", "error": None}
     except Exception as e:
         print(f"[SMTP] Send FAILED: {type(e).__name__}: {e}", file=sys.stderr)
