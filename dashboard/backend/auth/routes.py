@@ -40,7 +40,7 @@ def auth_me(user: dict[str, Any] = Depends(require_user_dependency)) -> dict[str
 
 
 @router.get("/api/auth/google/login")
-def auth_google_login():
+def auth_google_login(login_hint: str = ""):
     if not settings.google_client_id:
         return {"status": "error", "message": "Google OAuth not configured"}
     redirect_uri = settings.google_redirect_uri
@@ -51,7 +51,10 @@ def auth_google_login():
         "&response_type=code"
         "&scope=openid%20email%20profile"
         "&access_type=offline"
+        "&prompt=select_account"
     )
+    if login_hint:
+        auth_url += f"&login_hint={login_hint}"
     return RedirectResponse(url=auth_url)
 
 

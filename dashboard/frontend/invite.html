@@ -57,15 +57,29 @@
         const auth = isAuthenticated();
         const user = getAuthUser();
 
+        const loggedInEmail = user?.email || "";
+        const inviteEmail = inv.email || "";
+        const emailMismatch = auth && loggedInEmail && loggedInEmail !== inviteEmail;
+
         content.innerHTML = `
           <p class="invite-email">You've been invited to join</p>
           <p class="org-name">${escapeHtml(inv.org_name)}</p>
           <p><span class="role-badge">${escapeHtml(inv.role)}</span></p>
           <p class="invite-email">as ${escapeHtml(inv.email)}</p>
           <p class="expiry-note">This invite expires on ${inv.expires_at ? new Date(inv.expires_at * 1000).toLocaleDateString() : "?"}</p>
-          <p class="expiry-note">Organization: ${escapeHtml(inv.org_domain)}</p>
+          <p class="expiry-note">Organization: ${escapeHtml(inv.org_domain || "")}</p>
 
-          ${auth ? `
+          ${emailMismatch ? `
+            <div style="background:#fff3f0;border:1px solid #ffd0c8;border-radius:8px;padding:16px;margin:16px 0;text-align:left">
+              <p style="margin:0 0 8px;font-weight:600;color:#c0392b">Wrong account</p>
+              <p style="margin:0 0 4px;font-size:0.88rem;color:var(--ink)">You're logged in as <strong>${escapeHtml(loggedInEmail)}</strong></p>
+              <p style="margin:0 0 12px;font-size:0.88rem;color:var(--muted)">This invite is for <strong>${escapeHtml(inviteEmail)}</strong></p>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a href="/api/auth/google/login?login_hint=${encodeURIComponent(inviteEmail)}" class="ghost-btn" style="display:inline-block;padding:8px 20px;font-size:0.88rem;font-weight:500">Switch to ${escapeHtml(inviteEmail)}</a>
+                <button id="logoutSwitchBtn" class="ghost-btn" type="button" style="padding:8px 20px;font-size:0.88rem;color:var(--muted)">Log out first</button>
+              </div>
+            </div>
+          ` : auth ? `
             <div id="acceptSection">
               <button id="acceptInviteBtn" class="ghost-btn" type="button" style="font-size:1rem;padding:12px 40px">Accept Invite</button>
               <div id="acceptResult"></div>
@@ -73,7 +87,7 @@
           ` : `
             <div class="login-prompt">
               <p>Login with Google to accept this invite.</p>
-              <a href="/api/auth/google/login" class="ghost-btn" style="display:inline-block;margin-top:12px;padding:12px 40px">Login with Google</a>
+              <a href="/api/auth/google/login?login_hint=${encodeURIComponent(inviteEmail)}" class="ghost-btn" style="display:inline-block;margin-top:12px;padding:12px 40px">Login as ${escapeHtml(inviteEmail)}</a>
             </div>
           `}
         `;
@@ -90,6 +104,18 @@
               resultDiv.innerHTML = `<p class="error-msg">${escapeHtml(String(err))}</p>`;
               acceptBtn.disabled = false;
             }
+          });
+        }
+
+        const logoutSwitchBtn = document.getElementById("logoutSwitchBtn");
+        if (logoutSwitchBtn) {
+          logoutSwitchBtn.addEventListener("click", async () => {
+            logoutSwitchBtn.disabled = true;
+            logoutSwitchBtn.textContent = "Logging out...";
+            try {
+              await fetchJSON("/api/auth/logout", { method: "POST" });
+            } catch {}
+            window.location.href = `/api/auth/google/login?login_hint=${encodeURIComponent(inviteEmail)}`;
           });
         }
       } catch (err) {
