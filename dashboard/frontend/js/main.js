@@ -6,7 +6,7 @@ import { loadRuns as loadAndRenderRuns, showRunsSkeletons } from "./runs.js";
 import { showPromptFullscreen } from "./images.js";
 import { stopProgressPolling } from "./chrome.js";
 import { initTheme } from "./theme.js";
-import { fetchJSON, invalidateRuns } from "./api.js";
+import { fetchJSON, invalidateRuns, clearCache } from "./api.js";
 import { enhanceAllSelects, refreshSelect } from "./custom-select.js";
 
 const modelSelectEl = document.getElementById("opencodeModel");
@@ -215,6 +215,7 @@ let studioCurrentOrgId = null;  // null = personal
 
 async function initStudioSourceSelector() {
   const container = document.getElementById("studioSourceButtons");
+  const labelEl = document.querySelector("#studioSourceSelector span");
   if (!container) return;
   let sources = [];
   try {
@@ -233,7 +234,8 @@ async function initStudioSourceSelector() {
   personalBtn.style.cssText = "font-size:0.78rem;padding:0.3rem 0.7rem;border-radius:var(--radius-sm);font-weight:500";
   container.appendChild(personalBtn);
   // Org buttons
-  sources.filter(s => s.type === "org").forEach(s => {
+  const orgSources = sources.filter(s => s.type === "org");
+  orgSources.forEach(s => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "ghost-btn studio-source-btn";
@@ -251,16 +253,14 @@ async function initStudioSourceSelector() {
       b.style.borderColor = isActive ? "var(--primary)" : "var(--line)";
       b.classList.toggle("active", isActive);
     });
+    if (labelEl) {
+      const activeBtn = container.querySelector(".studio-source-btn.active");
+      labelEl.textContent = activeBtn ? `Source: ${activeBtn.textContent}` : "Source:";
+    }
   }
   styleButtons();
-  // Click handler
-  container.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".studio-source-btn");
-    if (!btn) return;
-    const src = btn.dataset.source;
-    studioCurrentOrgId = src === "personal" ? null : src;
-    styleButtons();
-    // Reload persona seeds from the selected source
+  // Reload persona seeds for the initial active source
+  async function reloadPersonaSeeds() {
     try {
       const cfg = await fetchJSON(studioCurrentOrgId
         ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
@@ -280,12 +280,19 @@ async function initStudioSourceSelector() {
           }
         }
       }
-      const mode = cfg?.mode || "personal";
-      const source = cfg?.source || "generic";
-      setStatus(`Config source: ${mode}${source ? ` (${source})` : ""}`);
-    } catch (err) {
-      setStatus(`Failed to load config source: ${String(err)}`);
-    }
+    } catch {}
+  }
+  await reloadPersonaSeeds();
+  // Click handler
+  container.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".studio-source-btn");
+    if (!btn) return;
+    const src = btn.dataset.source;
+    studioCurrentOrgId = src === "personal" ? null : src;
+    styleButtons();
+    await reloadPersonaSeeds();
+    const suffix = studioCurrentOrgId ? `(org: ${btn.textContent})` : "(personal)";
+    setStatus(`Config source switched to ${btn.textContent} ${suffix}`);
   });
 }
 
@@ -603,14 +610,26 @@ document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
     const filePath = card.dataset.filePath;
     const title = card.querySelector("strong").textContent;
 
-    if (configKey === "product_master_doc") {
-      fetch("/api/product-doc")
-        .then((r) => r.json())
+    if (configKey) {
+      const orgId = studioCurrentOrgId;
+      const fetchUrl = orgId
+        ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
+        : "/api/config/effective";
+      fetchJSON(fetchUrl)
         .then((data) => {
-          showPromptFullscreen(title, data.content || "", {
-            fetchUrl: "/api/product-doc",
-            saveUrl: "/api/product-doc",
-            saveBody: (text) => ({ content: text }),
+          const content = data?.config?.[configKey] || "";
+          const isOrg = data?.owner_type === "org";
+          const saveUrl = isOrg && orgId
+            ? `/api/orgs/${orgId}/config`
+            : "/api/user/config";
+          const saveBodyFn = (text) => isOrg && orgId
+            ? { config: { [configKey]: text } }
+            : { [configKey]: text };
+          showPromptFullscreen(title, content, {
+            saveUrl: saveUrl,
+            saveMethod: "PUT",
+            saveBody: saveBodyFn,
+            postSave: () => { clearCache("/api/config/effective"); clearCache("/api/config/sources"); },
           });
         })
         .catch((err) => appendLog(`Failed to load ${title}: ${err}`));

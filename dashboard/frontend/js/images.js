@@ -707,12 +707,14 @@ export function showPromptFullscreen(title, promptText, opts = {}) {
     saveBtn.disabled = true;
     try {
       const body = saveBody ? saveBody(textarea.value) : { content: textarea.value };
+      const method = opts.saveMethod || "POST";
       await fetchJSON(saveUrl, {
-        method: "POST",
+        method: method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       appendLog("Saved.");
+      if (opts.postSave) opts.postSave();
       close();
     } catch (err) {
       appendLog(`Save error: ${String(err)}`);

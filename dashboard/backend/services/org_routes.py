@@ -115,13 +115,14 @@ def create_org(
     org = {
         "org_id": org_id,
         "name": name,
-        "domain": domain,
         "owner_user_id": user_id,
         "config_mode": "shared_org_config",
         "is_active": True,
         "created_at": now,
         "updated_at": now,
     }
+    if domain:
+        org["domain"] = domain
     db[COLL_ORGS].insert_one(org)
 
     membership = {

@@ -623,6 +623,20 @@ def get_effective_config(
             config = resolve_effective_config(user_id, org_id)
             doc = get_config_doc("org", org_id)
             config_id = doc.get("config_id") if doc else None
+            from dashboard.backend.services.org_helper import get_user_org_memberships
+            memberships_x = get_user_org_memberships(user_id)
+            available_orgs = []
+            for m in memberships_x:
+                r = m.get("role", "")
+                if r in ("owner", "config_admin"):
+                    o = get_org_by_id(m["org_id"])
+                    if o:
+                        available_orgs.append({
+                            "org_id": o["org_id"],
+                            "name": o.get("name", ""),
+                            "config_mode": o.get("config_mode", "shared_org_config"),
+                        })
+
             return {
                 "config": config,
                 "source": "org_shared",
@@ -636,11 +650,25 @@ def get_effective_config(
                 "can_rollback": can_edit,
                 "can_copy": role == "owner" or can_edit,
                 "config_id": config_id,
+                "available_orgs": available_orgs,
             }
         else:
             config = resolve_effective_config(user_id, org_id)
             doc = get_config_doc("user", user_id)
             config_id = doc.get("config_id") if doc else None
+            from dashboard.backend.services.org_helper import get_user_org_memberships
+            memberships_x = get_user_org_memberships(user_id)
+            available_orgs = []
+            for m in memberships_x:
+                r = m.get("role", "")
+                if r in ("owner", "config_admin"):
+                    o = get_org_by_id(m["org_id"])
+                    if o:
+                        available_orgs.append({
+                            "org_id": o["org_id"],
+                            "name": o.get("name", ""),
+                            "config_mode": o.get("config_mode", "shared_org_config"),
+                        })
             return {
                 "config": config,
                 "source": "user_personal",
@@ -654,6 +682,7 @@ def get_effective_config(
                 "can_rollback": can_edit,
                 "can_copy": role in ("owner", "config_admin"),
                 "config_id": config_id,
+                "available_orgs": available_orgs,
             }
 
     # No org_id provided — always return personal config by default
@@ -663,6 +692,20 @@ def get_effective_config(
     has_custom = user_has_config(user_id)
     doc = get_config_doc("user", user_id) if has_custom else None
     config_id = doc.get("config_id") if doc else None
+
+    from dashboard.backend.services.org_helper import get_user_org_memberships
+    memberships = get_user_org_memberships(user_id)
+    available_orgs = []
+    for m in memberships:
+        role = m.get("role", "")
+        if role in ("owner", "config_admin"):
+            o = get_org_by_id(m["org_id"])
+            if o:
+                available_orgs.append({
+                    "org_id": o["org_id"],
+                    "name": o.get("name", ""),
+                    "config_mode": o.get("config_mode", "shared_org_config"),
+                })
 
     return {
         "config": config,
@@ -675,6 +718,7 @@ def get_effective_config(
         "can_edit": True,
         "can_view_versions": True,
         "can_rollback": True,
-        "can_copy": False,
+        "can_copy": len(available_orgs) > 0,
         "config_id": config_id,
+        "available_orgs": available_orgs,
     }

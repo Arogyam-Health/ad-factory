@@ -82,7 +82,7 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
     ],
     COLL_ORGS: [
         IndexModel([("org_id", ASCENDING)], unique=True),
-        IndexModel([("domain", ASCENDING)], unique=True, partialFilterExpression={"is_active": True}),
+        IndexModel([("domain", ASCENDING)], unique=True, sparse=True),
         IndexModel([("owner_user_id", ASCENDING)]),
         IndexModel([("is_active", ASCENDING)]),
     ],

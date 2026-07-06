@@ -329,69 +329,73 @@ def manual_save_version(
     return {"status": "saved", "version_id": version_doc["version_id"]}
 
 
-@router.post("/api/config/{config_id}/merge-to-org")
-def merge_config_to_org(
+@router.post("/api/config/{config_id}/copy-to-org")
+def copy_config_to_org(
     config_id: str,
     payload: dict[str, Any],
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict:
-    """Merge individual user's config into the org's shared config."""
+    """Copy config (personal or org) into a target org's shared config."""
     user_id = user["user_id"]
     user_email = user.get("email", "")
 
     doc = _require_config_access(config_id, user_id)
 
-    if doc.get("owner_type") != "user":
-        raise HTTPException(status_code=400, detail="Can only merge personal configs to org")
+    source_owner_type = doc.get("owner_type", "user")
+    source_owner_id = doc.get("owner_id", user_id)
 
-    org_id = payload.get("org_id", "").strip()
-    if not org_id:
+    target_org_id = payload.get("org_id", "").strip()
+    if not target_org_id:
         raise HTTPException(status_code=400, detail="org_id is required")
 
-    org = get_org_by_id(org_id)
+    org = get_org_by_id(target_org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    require_org_member(user_id, org_id)
+    require_org_member(user_id, target_org_id)
 
-    if not can_copy_config(user_id, org_id):
-        raise HTTPException(status_code=403, detail="You do not have permission to merge configs")
+    if not can_copy_config(user_id, target_org_id):
+        raise HTTPException(status_code=403, detail="You do not have permission to copy config to this org")
 
-    reason = payload.get("reason", "").strip() or "merge_individual_to_org"
+    if source_owner_type == "org":
+        require_org_member(user_id, source_owner_id)
+
+    reason = payload.get("reason", "").strip() or "copy_config_to_org"
 
     try:
         result = _copy_config(
-            source_owner_type="user",
-            source_owner_id=user_id,
+            source_owner_type=source_owner_type,
+            source_owner_id=source_owner_id,
             target_owner_type="org",
-            target_owner_id=org_id,
+            target_owner_id=target_org_id,
             actor_user_id=user_id,
             actor_email=user_email,
             mode="replace_all",
             reason=reason,
-            org_id=org_id,
+            org_id=target_org_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     write_audit_event(
-        event_type="config_merged_to_org",
+        event_type="config_copied_to_org",
         actor_user_id=user_id,
         actor_email=user_email,
         target_type="config",
         target_id=config_id,
-        org_id=org_id,
+        org_id=target_org_id,
         metadata={
             "config_id": config_id,
-            "source_owner_id": user_id,
-            "target_org_id": org_id,
+            "source_owner_type": source_owner_type,
+            "source_owner_id": source_owner_id,
+            "target_org_id": target_org_id,
             "reason": reason,
         },
     )
 
     return {
-        "status": "merged",
-        "org_id": org_id,
+        "status": "copied",
+        "org_id": target_org_id,
         "config": result,
         "reason": reason,
     }

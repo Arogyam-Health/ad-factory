@@ -120,6 +120,10 @@ function renderConfigPage() {
   const canRollback     = data.can_rollback === true;
   const canCopy         = data.can_copy === true;
   const ownerType       = data.owner_type || "user";
+  const rawAvailableOrgs = data.available_orgs || [];
+  const availableOrgs = ownerType === "org" && org
+    ? rawAvailableOrgs.filter(o => o.org_id !== org.org_id)
+    : rawAvailableOrgs;
 
   // ── Source selector ───────────────────────────────────────────────
   const metaEl = document.getElementById("cfgMeta");
@@ -197,8 +201,8 @@ function renderConfigPage() {
     actionsHtml += `<button class="cfg-save-btn" id="cfgSaveAllBtn" type="button">Save Changes</button>`;
     actionsHtml += `<button class="cfg-save-version-btn" id="cfgSaveVersionBtn" type="button">&#128190; Save Version</button>`;
   }
-  if (canCopy && org && ownerType === "user") {
-    actionsHtml += `<button class="cfg-merge-btn" id="cfgMergeBtn" type="button">&#10132; Merge to Org</button>`;
+  if (canCopy && availableOrgs.length) {
+    actionsHtml += `<button class="cfg-merge-btn" id="cfgMergeBtn" type="button">&#10132; Copy to Org</button>`;
   }
   actionsEl.innerHTML = actionsHtml;
 
@@ -206,7 +210,7 @@ function renderConfigPage() {
     document.getElementById("cfgSaveAllBtn")?.addEventListener("click", saveAllConfigs);
     document.getElementById("cfgSaveVersionBtn")?.addEventListener("click", openSaveVersionModal);
   }
-  if (canCopy && org && ownerType === "user") {
+  if (canCopy && availableOrgs.length) {
     document.getElementById("cfgMergeBtn")?.addEventListener("click", openMergeModal);
   }
 
@@ -345,26 +349,34 @@ function openSaveVersionModal() {
 // ── Merge to Org modal ─────────────────────────────────────────────
 
 function openMergeModal() {
-  const org = currentData?.org;
-  if (!org) return;
+  const orgs = currentData?.available_orgs || [];
+  if (!orgs.length) return;
+
+  const single = orgs.length === 1;
 
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
     <div class="modal-box">
       <div class="modal-header">
-        <h2>Merge Config to Organization</h2>
+        <h2>Copy Config to Organization</h2>
         <button class="modal-close" type="button">&times;</button>
       </div>
       <p style="color:var(--muted);font-size:0.88rem;margin-bottom:1rem">
-        This will copy your current personal configuration into the shared org config
-        (<strong>${esc(org.name || "")}</strong>), replacing the org's current values.
+        This will copy the current configuration into the target org's shared config,
+        replacing its current values.
       </p>
+      ${single ? `<input type="hidden" id="mergeOrgId" value="${esc(orgs[0].org_id)}" />` : `
+      <label style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:0.4rem">Target Organization</label>
+      <select id="mergeOrgId" style="width:100%;padding:0.5rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font-size:0.88rem;margin-bottom:1rem">
+        ${orgs.map(o => `<option value="${esc(o.org_id)}">${esc(o.name)}</option>`).join("")}
+      </select>
+      `}
       <label style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:0.4rem">Reason (optional)</label>
       <input class="cfg-version-reason-input" id="mergeReasonInput" type="text"
-        placeholder="e.g. Promote winning config to team" />
+        placeholder="e.g. Promote config to team" />
       <div style="display:flex;gap:0.5rem;margin-top:1.25rem">
-        <button class="cfg-merge-btn" id="mergeConfirmBtn" type="button" style="background:var(--accent-amber);color:#fff">Merge Now</button>
+        <button class="cfg-merge-btn" id="mergeConfirmBtn" type="button" style="background:var(--accent-amber);color:#fff">${single ? "Copy Now" : "Copy to Selected Org"}</button>
         <button class="modal-close ghost-btn" type="button" style="font-size:0.85rem">Cancel</button>
       </div>
     </div>
@@ -372,30 +384,32 @@ function openMergeModal() {
   document.body.appendChild(modal);
 
   const close = () => modal.remove();
-  modal.querySelector(".modal-close").addEventListener("click", close);
+  modal.querySelectorAll(".modal-close").forEach(el => el.addEventListener("click", close));
   modal.addEventListener("click", e => { if (e.target === modal) close(); });
 
   document.getElementById("mergeConfirmBtn").addEventListener("click", async () => {
-    const reason = document.getElementById("mergeReasonInput").value.trim() || "merge_individual_to_org";
+    const orgId = document.getElementById("mergeOrgId").value;
+    if (!orgId) { status("Select an organization", "error"); return; }
+    const reason = document.getElementById("mergeReasonInput").value.trim() || "copy_config_to_org";
     const btn = document.getElementById("mergeConfirmBtn");
     btn.disabled = true;
-    btn.textContent = "Merging…";
+    btn.textContent = "Copying…";
 
     try {
       const configId = currentData?.config_id;
       if (!configId) throw new Error("No config ID available");
 
-      await fetchJSON(`/api/config/${configId}/merge-to-org`, {
+      await fetchJSON(`/api/config/${configId}/copy-to-org`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ org_id: org.org_id, reason }),
+        body: JSON.stringify({ org_id: orgId, reason }),
       });
-      status("Config merged to org", "success");
+      status("Config copied to org", "success");
       close();
     } catch (err) {
-      status(`Merge failed: ${String(err)}`, "error");
+      status(`Copy failed: ${String(err)}`, "error");
       btn.disabled = false;
-      btn.textContent = "Merge Now";
+      btn.textContent = "Copy to Selected Org";
     }
   });
 }
