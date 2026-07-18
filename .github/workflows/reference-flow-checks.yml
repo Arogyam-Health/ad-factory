@@ -6,21 +6,26 @@ on:
       - "dashboard/backend/reference_flow.py"
       - "dashboard/backend/reference_library.py"
       - "dashboard/backend/reference_workspace.py"
+      - "dashboard/backend/reference_workspace_v2.py"
       - "dashboard/backend/chatgpt_watchdog.py"
       - "dashboard/backend/chatgpt_runtime_patch.py"
       - "dashboard/backend/routes/execute.py"
       - "dashboard/backend/routes/runs.py"
       - "dashboard/frontend/index.html"
       - "dashboard/frontend/reference-flow.css"
+      - "dashboard/frontend/reference-product-selection.css"
       - "dashboard/frontend/js/reference-flow.js"
+      - "dashboard/frontend/js/reference-product-selection.js"
       - "dashboard/frontend/js/image-comments.js"
       - "scripts/chatgpt_web_watchdog.py"
+      - "scripts/reference_image_job.py"
       - ".github/workflows/reference-flow-checks.yml"
   push:
     branches:
       - feature/reference-image-flow
       - fix/reference-persona-refresh-chatgpt-failures
       - feature/reference-workspace-polish
+      - fix/reference-product-selection-cancel-prompt
 
 jobs:
   syntax:
@@ -39,29 +44,41 @@ jobs:
           dashboard/backend/reference_flow.py
           dashboard/backend/reference_library.py
           dashboard/backend/reference_workspace.py
+          dashboard/backend/reference_workspace_v2.py
           dashboard/backend/chatgpt_watchdog.py
           dashboard/backend/chatgpt_runtime_patch.py
           dashboard/backend/routes/execute.py
           dashboard/backend/routes/runs.py
           scripts/chatgpt_web_watchdog.py
+          scripts/reference_image_job.py
       - name: Check frontend modules
         run: |
           node --check dashboard/frontend/js/reference-flow.js
+          node --check dashboard/frontend/js/reference-product-selection.js
           node --check dashboard/frontend/js/image-comments.js
       - name: Verify workspace contracts
         run: |
           grep -q 'id="referenceFlowPanel"' dashboard/frontend/index.html
           grep -q 'id="generationWorkspace"' dashboard/frontend/index.html
           grep -q 'id="referenceProgressText"' dashboard/frontend/index.html
+          grep -q 'id="referenceProductImageSummary"' dashboard/frontend/index.html
           ! grep -q 'id="referenceStatus"' dashboard/frontend/index.html
           grep -q '/api/reference-workspace' dashboard/backend/routes/execute.py
           grep -q '/api/runs/execute-reference' dashboard/backend/routes/execute.py
           grep -q 'reference_comments' dashboard/frontend/js/reference-flow.js
           grep -q 'reference_comment' dashboard/backend/reference_workspace.py
-          grep -q 'product_images' dashboard/backend/reference_workspace.py
+          grep -q 'product_image_paths' dashboard/frontend/js/reference-product-selection.js
+          grep -q 'product_image_paths' dashboard/backend/reference_workspace_v2.py
           grep -q 'STARTING_PROMPT_PATH' dashboard/backend/reference_workspace.py
+          grep -q 'LEGACY_PROMPT_MARKERS' dashboard/backend/reference_workspace_v2.py
           grep -q 'ref_v' dashboard/backend/reference_library.py
           grep -q '8% clear margin' dashboard/backend/reference_flow.py
+      - name: Verify immediate reference cancellation
+        run: |
+          grep -q 'reference_image_job.py' dashboard/backend/reference_workspace_v2.py
+          grep -q '_terminate_process_tree' dashboard/backend/reference_workspace_v2.py
+          grep -q 'cancel_event.is_set' dashboard/backend/reference_workspace_v2.py
+          grep -q 'start_new_session' dashboard/backend/reference_workspace_v2.py
       - name: Verify live persona synchronization
         run: |
           grep -q 'refreshReferencePersonas' dashboard/frontend/js/reference-flow.js

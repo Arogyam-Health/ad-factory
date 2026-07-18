@@ -11,11 +11,13 @@ from dashboard.backend.reference_library import (
 )
 from dashboard.backend.reference_workspace import (
     api_delete_reference_product_image,
-    api_reference_workspace,
-    api_run_execute_reference_workspace,
     api_save_reference_starting_prompt,
     api_upload_reference_product_doc,
     api_upload_reference_product_images,
+)
+from dashboard.backend.reference_workspace_v2 import (
+    api_reference_workspace_v2,
+    api_run_execute_reference_workspace_v2,
 )
 
 install_chatgpt_watchdog()
@@ -60,7 +62,7 @@ def _delete_reference_image(payload: dict[str, Any] = Body(...)) -> dict[str, An
 
 @router.get("/api/reference-workspace")
 def _reference_workspace() -> dict[str, Any]:
-    return api_reference_workspace()
+    return api_reference_workspace_v2()
 
 
 @router.post("/api/reference-workspace/product-images")
@@ -94,7 +96,7 @@ async def _run_execute_reference(
     input_image_files: list[UploadFile] | None = File(None),
     clear_input_images: bool = Form(False),
 ) -> dict[str, Any]:
-    return await api_run_execute_reference_workspace(
+    return await api_run_execute_reference_workspace_v2(
         config=config,
         reference_image_files=reference_image_files,
         product_info_file=product_info_file,
