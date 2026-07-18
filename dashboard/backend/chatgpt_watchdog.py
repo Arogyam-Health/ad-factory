@@ -90,7 +90,6 @@ def run_chatgpt_generation_watchdog(
         str(login_timeout),
         "--upload-dir",
         str(INPUT_IMAGES_DIR),
-        "--continue-on-error",
     ]
     if headless:
         cmd.append("--headless")
@@ -100,13 +99,13 @@ def run_chatgpt_generation_watchdog(
         cmd.extend(["--image-source-file", image_sources_file])
     cmd.extend(["--aspect-ratio", aspect_ratio])
 
-    cdp_url_for_log = ""
     if Path("/mnt/c").exists():
         cdp_url = wsl_chrome_cdp_url()
-        cmd.extend(["--cdp-url", cdp_url])
-        cdp_url_for_log = cdp_url
     else:
-        cdp_url_for_log = "NOT WSL - /mnt/c not found"
+        cdp_url = os.getenv("CHATGPT_CDP_URL", "http://127.0.0.1:9222").strip()
+    if cdp_url:
+        cmd.extend(["--cdp-url", cdp_url])
+    cdp_url_for_log = cdp_url or "auto-launch"
 
     log_dir = RUNTIME_ROOT / "generation_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
