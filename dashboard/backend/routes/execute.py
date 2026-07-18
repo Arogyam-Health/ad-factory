@@ -1,8 +1,14 @@
 from typing import Any
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Body, File, Form, UploadFile
 
 from dashboard.backend.app import api_run_execute
-from dashboard.backend.reference_flow import api_reference_run_status, api_run_execute_reference
+from dashboard.backend.reference_flow import api_reference_run_status
+from dashboard.backend.reference_library import (
+    api_delete_reference_image,
+    api_reference_images,
+    api_run_execute_reference_persistent,
+    api_upload_reference_images,
+)
 
 router = APIRouter()
 
@@ -28,15 +34,32 @@ async def _run_execute(
     )
 
 
+@router.get("/api/reference-images")
+def _reference_images() -> dict[str, Any]:
+    return api_reference_images()
+
+
+@router.post("/api/reference-images")
+async def _upload_reference_images(
+    files: list[UploadFile] = File(...),
+) -> dict[str, Any]:
+    return await api_upload_reference_images(files)
+
+
+@router.delete("/api/reference-images")
+def _delete_reference_image(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return api_delete_reference_image(payload)
+
+
 @router.post("/api/runs/execute-reference")
 async def _run_execute_reference(
     config: str = Form(...),
-    reference_image_files: list[UploadFile] = File(...),
+    reference_image_files: list[UploadFile] | None = File(None),
     product_info_file: UploadFile | None = File(None),
     input_image_files: list[UploadFile] | None = File(None),
     clear_input_images: bool = Form(False),
 ) -> dict[str, Any]:
-    return await api_run_execute_reference(
+    return await api_run_execute_reference_persistent(
         config=config,
         reference_image_files=reference_image_files,
         product_info_file=product_info_file,
