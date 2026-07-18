@@ -1,7 +1,10 @@
+import json
+from pathlib import Path
 from typing import Any
+
 from fastapi import APIRouter, Body, File, Form, UploadFile
 
-from dashboard.backend.app import api_run_execute
+from dashboard.backend.app import RUNS_ROOT, api_run_execute
 from dashboard.backend.chatgpt_runtime_patch import install_chatgpt_watchdog
 from dashboard.backend.reference_flow import api_reference_run_status
 from dashboard.backend.reference_library import (
@@ -22,6 +25,28 @@ from dashboard.backend.reference_workspace_v2 import (
 
 install_chatgpt_watchdog()
 router = APIRouter()
+
+
+def _latest_reference_job_error(run_id: str) -> str:
+    job_dir = RUNS_ROOT / run_id / "context" / "active_jobs"
+    if not job_dir.exists():
+        return ""
+    candidates = sorted(
+        job_dir.glob("*.result.json"),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        output = str(payload.get("stderr") or payload.get("stdout") or "").strip()
+        if output:
+            return output[-2400:]
+    return ""
 
 
 @router.post("/api/runs/execute")
@@ -107,4 +132,11 @@ async def _run_execute_reference(
 
 @router.get("/api/runs/{run_id}/reference-status")
 def _reference_run_status(run_id: str) -> dict[str, Any]:
-    return api_reference_run_status(run_id)
+    status = api_reference_run_status(run_id)
+    if status.get("status") == "error":
+        detail = _latest_reference_job_error(run_id)
+        if detail:
+            status["job_error"] = detail
+            status["error"] = detail
+            status["message"] = f"Reference job failed: {detail}"
+    return status
