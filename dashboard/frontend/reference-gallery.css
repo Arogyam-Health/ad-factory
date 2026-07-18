@@ -1,0 +1,146 @@
+/* Reference Flow generated-image gallery only. Structured Flow keeps its existing layout. */
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-gallery {
+  display: grid;
+  gap: 14px;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .gallery-header {
+  margin-bottom: 0;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .regeneration-toolbar,
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .gallery-filters {
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-2));
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-grid {
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-card {
+  min-width: 0;
+  padding: 10px;
+  overflow: visible;
+  border-radius: 15px;
+  cursor: default;
+  box-shadow: 0 10px 26px rgba(10, 16, 28, 0.08);
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-wrap,
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-card[data-aspect="9_16"] .image-wrap {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 300px;
+  max-height: 620px;
+  aspect-ratio: auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+  border-radius: 11px;
+  background:
+    linear-gradient(45deg, color-mix(in srgb, var(--line) 12%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--line) 12%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--line) 12%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--line) 12%, transparent) 75%),
+    var(--surface-2);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .gallery-thumb {
+  width: 100%;
+  height: auto;
+  max-height: 620px;
+  object-fit: contain;
+  object-position: center;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-filename {
+  padding: 10px 3px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-prompt-box {
+  margin-top: 3px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+  border-radius: 11px;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-prompt-box summary {
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-prompt-box a,
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .prompt-fullscreen-btn {
+  margin-left: 11px;
+  margin-right: 11px;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-prompt-box pre {
+  max-height: 230px;
+  margin: 8px 11px 11px;
+  padding: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-comment-box {
+  margin: 12px 0 0;
+  border-radius: 12px;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-comment-box summary {
+  padding: 11px 12px;
+  font-size: 12px;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-comment-body {
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-comment-body textarea {
+  min-height: 112px;
+  line-height: 1.5;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-comment-controls {
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+
+body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-select-label {
+  left: 9px;
+  bottom: 9px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
+
+@media (min-width: 1400px) {
+  body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-grid {
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-wrap,
+  body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-card[data-aspect="9_16"] .image-wrap {
+    min-height: 240px;
+  }
+}

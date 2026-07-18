@@ -5,6 +5,10 @@ The upstream automation is intentionally left untouched. This wrapper imports it
 replaces only its generated-image wait routine, and then executes the normal CLI.
 A visible ChatGPT image-generation failure is treated as a completed failed job
 instead of waiting for the full image timeout.
+
+Reference Flow batches also preserve the exact downloaded image dimensions. The
+legacy PIL crop remains active for Structured Flow because this wrapper only
+suppresses it when the output path belongs to a ``ref_vN`` batch.
 """
 
 from __future__ import annotations
@@ -43,6 +47,28 @@ _FAILURE_PATTERNS = (
     "error while generating the image",
     "generation failed",
 )
+
+
+def _is_reference_batch_cli() -> bool:
+    """Return True only for Reference Flow output directories (ref_vN)."""
+    try:
+        index = sys.argv.index("--out-dir")
+    except ValueError:
+        return False
+    if index + 1 >= len(sys.argv):
+        return False
+    output_path = Path(sys.argv[index + 1]).expanduser()
+    return any(re.fullmatch(r"ref_v\d+", part, flags=re.IGNORECASE) for part in output_path.parts)
+
+
+def _preserve_reference_image_dimensions(
+    input_path: Path,
+    output_path: Path,
+    output_size: tuple[int, int],
+) -> None:
+    """Reference Flow deliberately keeps the downloaded source pixels unchanged."""
+    del input_path, output_path, output_size
+    print("  [crop] Reference Flow: automatic crop disabled; preserving original image dimensions.")
 
 
 def _latest_assistant_text(page: Any) -> str:
@@ -161,6 +187,8 @@ def wait_for_generated_image(page: Any, baseline_srcs: set[str], timeout: int) -
 
 
 BASE.wait_for_generated_image = wait_for_generated_image
+if _is_reference_batch_cli():
+    BASE.resize_to_ratio = _preserve_reference_image_dimensions
 
 
 if __name__ == "__main__":
