@@ -9,6 +9,9 @@ const selectedReferences = new Set();
 let referenceItems = [];
 let activeRunId = "";
 let statusTimer = null;
+let personaRefreshTimer = null;
+let personaSignature = "";
+let personaRefreshBusy = false;
 
 function activeMode() {
   return localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured";
@@ -87,6 +90,15 @@ function setFlow(mode) {
   localStorage.setItem("adFactoryFlowMode", mode);
   setWorkspaceMode(mode);
   loadWorkspaceRuns(mode);
+  if (reference) refreshReferencePersonas(true);
+}
+
+function currentPersonaSignature(personas) {
+  return JSON.stringify((personas || []).map((persona) => ({
+    number: Number(persona.number),
+    name: String(persona.name || ""),
+    core_pattern: String(persona.core_pattern || persona.description || ""),
+  })));
 }
 
 function renderPersonas() {
@@ -96,11 +108,18 @@ function renderPersonas() {
   state.defaultData.personas.forEach((persona) => {
     const card = document.createElement("label");
     card.className = "reference-persona-card";
+
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = selectedPersonas.has(persona.number);
+
     const copy = document.createElement("span");
-    copy.innerHTML = `<strong>${persona.number}. ${persona.name}</strong><small>${persona.core_pattern || persona.description || ""}</small>`;
+    const title = document.createElement("strong");
+    title.textContent = `${persona.number}. ${persona.name}`;
+    const detail = document.createElement("small");
+    detail.textContent = persona.core_pattern || persona.description || "";
+    copy.append(title, detail);
+
     checkbox.addEventListener("change", () => {
       checkbox.checked ? selectedPersonas.add(persona.number) : selectedPersonas.delete(persona.number);
       card.classList.toggle("selected", checkbox.checked);
@@ -112,15 +131,54 @@ function renderPersonas() {
   });
 }
 
+async function refreshReferencePersonas(force = false) {
+  if (personaRefreshBusy) return false;
+  personaRefreshBusy = true;
+  try {
+    const data = await fetchJSON(`/api/defaults?t=${Date.now()}`);
+    const personas = Array.isArray(data?.personas) ? data.personas : [];
+    const nextSignature = currentPersonaSignature(personas);
+    const changed = force || nextSignature !== personaSignature;
+    if (!changed) return false;
+
+    const validNumbers = new Set(personas.map((persona) => Number(persona.number)));
+    [...selectedPersonas].forEach((number) => {
+      if (!validNumbers.has(Number(number))) selectedPersonas.delete(number);
+    });
+
+    state.defaultData = { ...(state.defaultData || {}), ...data, personas };
+    personaSignature = nextSignature;
+    renderPersonas();
+    updateJobCount();
+    if (!force) appendLog("Reference personas refreshed from persona_seeds.json.");
+    return true;
+  } catch (error) {
+    if (force) appendLog(`Could not refresh persona seeds: ${String(error)}`);
+    return false;
+  } finally {
+    personaRefreshBusy = false;
+  }
+}
+
 async function waitForDefaults() {
   for (let i = 0; i < 100; i += 1) {
     if (state.defaultData?.personas?.length) {
+      personaSignature = currentPersonaSignature(state.defaultData.personas);
       renderPersonas();
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   $("referencePersonaList").textContent = "Could not load persona seeds.";
+}
+
+function startPersonaRefreshLoop() {
+  if (personaRefreshTimer) clearInterval(personaRefreshTimer);
+  personaRefreshTimer = setInterval(() => {
+    if (activeMode() === "reference" && document.visibilityState === "visible") {
+      refreshReferencePersonas(false);
+    }
+  }, 5000);
 }
 
 function renderReferenceLibrary() {
@@ -140,7 +198,12 @@ function renderReferenceLibrary() {
     image.loading = "lazy";
     const meta = document.createElement("div");
     meta.className = "reference-preview-meta";
-    meta.innerHTML = `<strong title="${item.name}">${item.name}</strong><small>${Math.max(1, Math.round((item.size_bytes || 0) / 1024))} KB</small>`;
+    const name = document.createElement("strong");
+    name.title = item.name;
+    name.textContent = item.name;
+    const size = document.createElement("small");
+    size.textContent = `${Math.max(1, Math.round((item.size_bytes || 0) / 1024))} KB`;
+    meta.append(name, size);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "reference-remove-btn";
@@ -247,6 +310,7 @@ async function pollStatus() {
 }
 
 async function startRun() {
+  await refreshReferencePersonas(true);
   if (!selectedPersonas.size) return appendLog("Select at least one persona for the reference flow.");
   if (!selectedReferences.size) return appendLog("Select at least one stored reference image.");
   const form = new FormData();
@@ -304,9 +368,19 @@ $("refreshRuns")?.addEventListener("click", (event) => {
   if (activeMode() !== "reference") return;
   event.stopImmediatePropagation();
   invalidateRuns();
+  refreshReferencePersonas(true);
   loadWorkspaceRuns("reference");
 }, true);
+window.addEventListener("focus", () => {
+  if (activeMode() === "reference") refreshReferencePersonas(false);
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && activeMode() === "reference") {
+    refreshReferencePersonas(false);
+  }
+});
 
 setFlow(activeMode());
 waitForDefaults();
+startPersonaRefreshLoop();
 loadReferenceLibrary();
