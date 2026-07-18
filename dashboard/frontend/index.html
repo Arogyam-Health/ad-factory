@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/reference-flow.css" />
 </head>
 <body>
   <div class="page">
@@ -20,7 +21,12 @@
       <button id="themeToggle" class="theme-toggle" type="button">Dark mode</button>
     </header>
 
-    <div class="layout-columns">
+    <nav class="flow-mode-switch" aria-label="Generation flow">
+      <button id="structuredFlowTab" class="flow-mode-tab active" type="button" data-flow="structured">Structured Flow</button>
+      <button id="referenceFlowTab" class="flow-mode-tab" type="button" data-flow="reference">Reference Image Flow</button>
+    </nav>
+
+    <div id="structuredFlowPanel" class="layout-columns">
       <div class="column column-left">
         <section class="card card-personas">
           <h2>1) Persona + Formats</h2>
@@ -58,26 +64,11 @@
         <section class="card card-files">
           <h2>4) Config Files</h2>
           <div class="input-prompts-grid">
-            <div class="input-prompt-card" data-file-path="persona_seeds.json">
-              <strong>Persona Seeds</strong>
-              <span>30 personas with tags, guardrails, headline anchors</span>
-            </div>
-            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_architecture.json">
-              <strong>Copy Architecture</strong>
-              <span>Headline &amp; support line architecture definitions</span>
-            </div>
-            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_prompt_templates.json">
-              <strong>Copy Prompt Templates</strong>
-              <span>System prompts, format rules, schema, angle definitions</span>
-            </div>
-            <div class="input-prompt-card" data-file-path="scripts/prompt_assembler_templates.json">
-              <strong>Prompt Assembler Templates</strong>
-              <span>Image prompt assembly blocks (product lock, proof bar, safe zone, etc.)</span>
-            </div>
-            <div class="input-prompt-card" data-file-path="background_variant.json">
-              <strong>Background Variants</strong>
-              <span>500 background visual variants catalog</span>
-            </div>
+            <div class="input-prompt-card" data-file-path="persona_seeds.json"><strong>Persona Seeds</strong><span>30 personas with tags, guardrails, headline anchors</span></div>
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_architecture.json"><strong>Copy Architecture</strong><span>Headline &amp; support line architecture definitions</span></div>
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_prompt_templates.json"><strong>Copy Prompt Templates</strong><span>System prompts, format rules, schema, angle definitions</span></div>
+            <div class="input-prompt-card" data-file-path="scripts/prompt_assembler_templates.json"><strong>Prompt Assembler Templates</strong><span>Image prompt assembly blocks (product lock, proof bar, safe zone, etc.)</span></div>
+            <div class="input-prompt-card" data-file-path="background_variant.json"><strong>Background Variants</strong><span>500 background visual variants catalog</span></div>
           </div>
         </section>
       </div>
@@ -86,76 +77,48 @@
         <section class="card card-hypothesis">
           <h2>5) Hypothesis Testing</h2>
           <p class="hint">Select a variable to A/B test. The pipeline will generate controlled variants where only this variable changes.</p>
-          <label>Hypothesis Variable</label>
-          <select id="hypothesisType"></select>
-          <div id="hypothesisVariantRow" class="hidden">
-            <label>Style</label>
-            <select id="hypothesisVariant"></select>
-          </div>
+          <label>Hypothesis Variable</label><select id="hypothesisType"></select>
+          <div id="hypothesisVariantRow" class="hidden"><label>Style</label><select id="hypothesisVariant"></select></div>
           <div id="hypothesisSummary" class="hint"></div>
         </section>
 
         <section class="card card-execution">
           <h2>6) Execution</h2>
-          <label>Server</label>
-          <select id="serverType">
-            <option value="opencode">OpenCode</option>
-          </select>
-          <label>API URL (auto-wired by launcher; editable)</label>
-          <input id="opencodeApiUrl" type="text" placeholder="http://127.0.0.1:4090" />
-          <label>API Key (optional - defaults to server password)</label>
-          <input id="opencodeApiKey" type="password" placeholder="sk-..." />
-          <label>Provider</label>
-          <select id="opencodeProvider"></select>
-          <label>Model</label>
-          <select id="opencodeModel"></select>
-          <label>Ad multiplier per selected persona/format</label>
-          <input id="adMultiplier" type="number" min="1" max="20" value="1" />
+          <label>Server</label><select id="serverType"><option value="opencode">OpenCode</option></select>
+          <label>API URL (auto-wired by launcher; editable)</label><input id="opencodeApiUrl" type="text" placeholder="http://127.0.0.1:4090" />
+          <label>API Key (optional - defaults to server password)</label><input id="opencodeApiKey" type="password" placeholder="sk-..." />
+          <label>Provider</label><select id="opencodeProvider"></select>
+          <label>Model</label><select id="opencodeModel"></select>
+          <label>Ad multiplier per selected persona/format</label><input id="adMultiplier" type="number" min="1" max="20" value="1" />
           <p class="hint">Use this to create multiple ads for the same persona, format, and hypothesis. The selected background stays locked across those multiplied ads.</p>
-          <label>Ads per LLM call (batch size)</label>
-          <input id="batchSize" type="number" min="1" max="500" value="10" />
+          <label>Ads per LLM call (batch size)</label><input id="batchSize" type="number" min="1" max="500" value="10" />
           <p class="hint">How many ad requests to send in a single LLM call. Higher = fewer calls, larger context.</p>
-          <label class="toggle-label execution-toggle" title="Use the same background for the same selected format across all selected personas in this run.">
-            <input id="shareBackgroundAcrossPersonas" type="checkbox" />
-            <span>Keep same background across personas for each format</span>
-          </label>
-          <label class="toggle-label execution-toggle" title="Reuse background slot and seed from a previous run so hypothesis/variant tests keep background constant.">
-            <input id="reuseBackgrounds" type="checkbox" />
-            <span>Reuse backgrounds from previous run</span>
-          </label>
+          <label class="toggle-label execution-toggle"><input id="shareBackgroundAcrossPersonas" type="checkbox" /><span>Keep same background across personas for each format</span></label>
+          <label class="toggle-label execution-toggle"><input id="reuseBackgrounds" type="checkbox" /><span>Reuse backgrounds from previous run</span></label>
           <select id="backgroundReuseRun" disabled></select>
-          <label class="toggle-label execution-toggle" title="Reuse the selected visual pattern from a previous run for fair testing.">
-            <input id="reuseVisualPatterns" type="checkbox" />
-            <span>Reuse visual patterns from previous run</span>
-          </label>
+          <label class="toggle-label execution-toggle"><input id="reuseVisualPatterns" type="checkbox" /><span>Reuse visual patterns from previous run</span></label>
           <select id="visualPatternReuseRun" disabled></select>
-
           <p class="hint">Image and Cloudinary credentials are loaded from root <code>.env.dashboard</code>.</p>
-
-          <button id="runBtn">Run Pipeline</button>
-          <button id="cancelRunBtn" class="ghost-btn" type="button" style="display:none">Cancel</button>
-          <pre id="status" class="status"></pre>
+          <button id="runBtn">Run Pipeline</button><button id="cancelRunBtn" class="ghost-btn" type="button" style="display:none">Cancel</button><pre id="status" class="status"></pre>
         </section>
 
         <section class="card card-uploads">
           <h2>7) Optional File Uploads</h2>
-          <div class="uploads">
-            <label>Product Master Doc <input id="productFile" type="file" /></label>
-             
-          </div>
+          <div class="uploads"><label>Product Master Doc <input id="productFile" type="file" /></label></div>
           <div id="productDocInfo" class="product-doc-info"></div>
-          <div id="productDocEditor" class="product-doc-editor hidden">
-            <div class="product-doc-editor-top">
-              <strong>Edit Product Doc</strong>
-              <div class="product-doc-editor-actions">
-                <button id="saveProductDoc" class="ghost-btn" type="button">Save</button>
-                <button id="closeProductDoc" class="ghost-btn" type="button">Close</button>
-              </div>
-            </div>
-            <textarea id="productDocText" spellcheck="false"></textarea>
-          </div>
+          <div id="productDocEditor" class="product-doc-editor hidden"><div class="product-doc-editor-top"><strong>Edit Product Doc</strong><div class="product-doc-editor-actions"><button id="saveProductDoc" class="ghost-btn" type="button">Save</button><button id="closeProductDoc" class="ghost-btn" type="button">Close</button></div></div><textarea id="productDocText" spellcheck="false"></textarea></div>
           <div id="defaultsInfo" class="hint"></div>
         </section>
+      </div>
+    </div>
+
+    <div id="referenceFlowPanel" class="reference-flow-panel hidden">
+      <section class="card reference-intro-card"><div><p class="eyebrow">Reference-led generation</p><h2>Reference Image Flow</h2><p class="hint">No format selection, visual patterns, copy architecture, or hypothesis setup. The model receives the selected persona, product document, product images, and one reference image per job.</p></div><div class="reference-flow-equation"><strong id="referenceJobCount">0 jobs</strong><span>personas × reference images</span></div></section>
+      <div class="reference-flow-grid">
+        <section class="card"><h2>1) Select Personas</h2><p class="hint">Every uploaded reference image will be generated for each selected persona, persona by persona.</p><div id="referencePersonaList" class="reference-persona-grid"></div></section>
+        <section class="card"><h2>2) Upload Reference Images</h2><label>Choose a folder or multiple images</label><input id="referenceImageFiles" type="file" multiple webkitdirectory directory accept="image/png,image/jpeg,image/webp" /><div class="reference-upload-actions"><button id="referenceChooseFiles" class="ghost-btn" type="button">Choose individual files</button><span id="referenceImageSummary" class="hint">No reference images selected.</span></div><input id="referenceIndividualFiles" class="hidden" type="file" multiple accept="image/png,image/jpeg,image/webp" /><div id="referencePreviewGrid" class="reference-preview-grid"></div></section>
+        <section class="card"><h2>3) Product Inputs</h2><label>Optional product document override</label><input id="referenceProductFile" type="file" accept=".txt,.md,.doc,.docx,.pdf,text/plain" /><label>Optional product images to add</label><input id="referenceProductImages" type="file" multiple accept="image/*" /><label class="toggle-label execution-toggle"><input id="referenceClearProductImages" type="checkbox" /><span>Clear existing product images before adding these</span></label><p class="hint">When left empty, this flow uses the current product document and all images already stored in <code>input/images</code>.</p></section>
+        <section class="card reference-execution-card"><h2>4) Generate</h2><label>Image engine</label><select id="referenceEngine"><option value="gemini">Gemini</option><option value="chatgpt">ChatGPT</option></select><label class="toggle-label execution-toggle"><input id="referenceGenerate916" type="checkbox" checked /><span>Create 9:16 versions after 4:5</span></label><p class="hint">4:5 is always generated first with an 8% protected safe zone. 9:16 uses the existing 4:5 conversion flow.</p><button id="referenceRunBtn" type="button">Run Reference Flow</button><button id="referenceCancelBtn" class="ghost-btn" type="button" disabled>Cancel Run</button><div class="reference-progress-shell" aria-live="polite"><div id="referenceProgressBar" class="reference-progress-bar"></div></div><pre id="referenceStatus" class="status"></pre></section>
       </div>
     </div>
 
@@ -163,33 +126,18 @@
       <h2>8) Latest Runs</h2>
       <div class="runs-toolbar">
         <button id="refreshRuns" class="ghost-btn" type="button">Refresh</button>
-        <div class="batch-dropdown">
-          <button id="batchDropdownBtn" class="ghost-btn batch-dropdown-btn" type="button">Select batch(es)</button>
-          <div id="batchDropdownMenu" class="dropdown-menu hidden"></div>
-        </div>
-        <button id="batchGen45" class="ghost-btn" type="button">Generate 4:5</button>
-        <button id="batchGenBoth" class="ghost-btn" type="button">Generate 4:5+9:16</button>
-        <button id="batchGen916" class="ghost-btn" type="button">Generate 9:16</button>
+        <div class="batch-dropdown"><button id="batchDropdownBtn" class="ghost-btn batch-dropdown-btn" type="button">Select batch(es)</button><div id="batchDropdownMenu" class="dropdown-menu hidden"></div></div>
+        <button id="batchGen45" class="ghost-btn" type="button">Generate 4:5</button><button id="batchGenBoth" class="ghost-btn" type="button">Generate 4:5+9:16</button><button id="batchGen916" class="ghost-btn" type="button">Generate 9:16</button>
         <button id="stopGeneration" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">⏹ Stop Gen</button>
-        <button id="batchDownload" class="ghost-btn" type="button" title="Download all generated images for this run as ZIP">Download Batch</button>
-        <button id="launchChrome" class="ghost-btn" type="button">🚀 Launch Visible Chrome</button>
-        <button id="killChrome" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">⛔ Kill Chrome</button>
-        <label id="headlessToggle" class="toggle-label" title="Toggle headless mode for Gemini image generation">
-          <input type="checkbox" id="headlessMode" />
-          <span>Headless</span>
-        </label>
-        <button id="runPrev" class="carousel-btn" type="button">◀</button>
-        <span id="runIndex" class="run-index">0 / 0</span>
-        <button id="runNext" class="carousel-btn" type="button">▶</button>
+        <button id="batchDownload" class="ghost-btn" type="button" title="Download all generated images for this run as ZIP">Download Batch</button><button id="launchChrome" class="ghost-btn" type="button">🚀 Launch Visible Chrome</button><button id="killChrome" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">⛔ Kill Chrome</button>
+        <label id="headlessToggle" class="toggle-label"><input type="checkbox" id="headlessMode" /><span>Headless</span></label><button id="runPrev" class="carousel-btn" type="button">◀</button><span id="runIndex" class="run-index">0 / 0</span><button id="runNext" class="carousel-btn" type="button">▶</button>
       </div>
-      <div id="runs" class="runs-carousel"></div>
-      <div class="log-terminal-wrap">
-        <div class="log-terminal-header">Activity Log</div>
-        <pre id="logStatus" class="status log-status"></pre>
-      </div>
+      <div id="runs" class="runs-carousel"></div><div class="log-terminal-wrap"><div class="log-terminal-header">Activity Log</div><pre id="logStatus" class="status log-status"></pre></div>
     </section>
   </div>
 
   <script type="module" src="/js/main.js"></script>
+  <script type="module" src="/js/reference-flow.js"></script>
+  <script type="module" src="/js/image-comments.js"></script>
 </body>
 </html>

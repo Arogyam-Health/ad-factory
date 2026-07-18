@@ -22,12 +22,18 @@ from dashboard.backend.app import (
     signal_cancel_run,
     signal_cancel_current_run,
 )
+from dashboard.backend.reference_flow import (
+    api_image_revision_status,
+    api_revise_image_with_comment,
+)
 
 router = APIRouter()
+
 
 @router.get("/api/runs")
 def _runs() -> dict[str, Any]:
     return api_runs()
+
 
 @router.get("/api/runs/{run_id}")
 def _run(run_id: str) -> dict[str, Any]:
@@ -38,41 +44,61 @@ def _run(run_id: str) -> dict[str, Any]:
 def _run_partial(run_id: str) -> dict[str, Any]:
     return api_run_partial(run_id)
 
+
 @router.delete("/api/runs/{run_id}")
 def _delete_run(run_id: str) -> dict[str, Any]:
     return api_delete_run(run_id)
+
 
 @router.get("/api/runs/{run_id}/prompt-copies")
 def _prompt_copies(run_id: str) -> dict[str, Any]:
     return api_run_prompt_copies(run_id)
 
+
 @router.post("/api/runs/{run_id}/prompt-copies")
 def _update_prompt_copies(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_run_update_prompt_copies(run_id, payload)
+
 
 @router.post("/api/runs/{run_id}/edit-prompt")
 def _edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_edit_prompt(run_id, payload)
 
+
 @router.post("/api/runs/{run_id}/delete-prompt")
 def _delete_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_delete_prompt(run_id, payload)
+
 
 @router.post("/api/runs/{run_id}/delete-image")
 def _delete_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_delete_image(run_id, payload)
 
+
 @router.post("/api/runs/{run_id}/mark-images-to-regenerate")
 def _mark_images_to_regenerate(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_mark_images_to_regenerate(run_id, payload)
+
 
 @router.post("/api/runs/{run_id}/restore-images-from-queue")
 def _restore_images_from_queue(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_restore_images_from_regeneration_queue(run_id, payload)
 
+
 @router.post("/api/runs/{run_id}/regenerate-queued-images")
 def _regenerate_queued_images(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_regenerate_queued_images(run_id, payload)
+
+
+@router.post("/api/runs/{run_id}/revise-image")
+def _revise_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return api_revise_image_with_comment(run_id, payload)
+
+
+@router.get("/api/runs/{run_id}/revisions/{revision_id}")
+def _revision_status(run_id: str, revision_id: str) -> dict[str, Any]:
+    return api_image_revision_status(run_id, revision_id)
+
 
 @router.post("/api/runs/{run_id}/replace-image")
 async def _replace_image(
@@ -82,9 +108,11 @@ async def _replace_image(
 ) -> dict[str, Any]:
     return await api_replace_image(run_id, image_file, replacement_file)
 
+
 @router.get("/api/runs/{run_id}/download-image")
 def _download_single_image(run_id: str, image_file: str) -> StreamingResponse:
     return api_download_single_image(run_id, image_file)
+
 
 @router.get("/api/runs/{run_id}/download-batch")
 def _download_batch_images(run_id: str) -> StreamingResponse:
