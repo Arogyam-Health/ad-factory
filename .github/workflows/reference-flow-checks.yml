@@ -5,6 +5,7 @@ on:
     paths:
       - "dashboard/backend/reference_flow.py"
       - "dashboard/backend/reference_library.py"
+      - "dashboard/backend/reference_workspace.py"
       - "dashboard/backend/chatgpt_watchdog.py"
       - "dashboard/backend/chatgpt_runtime_patch.py"
       - "dashboard/backend/routes/execute.py"
@@ -19,6 +20,7 @@ on:
     branches:
       - feature/reference-image-flow
       - fix/reference-persona-refresh-chatgpt-failures
+      - feature/reference-workspace-polish
 
 jobs:
   syntax:
@@ -36,6 +38,7 @@ jobs:
           python -m py_compile
           dashboard/backend/reference_flow.py
           dashboard/backend/reference_library.py
+          dashboard/backend/reference_workspace.py
           dashboard/backend/chatgpt_watchdog.py
           dashboard/backend/chatgpt_runtime_patch.py
           dashboard/backend/routes/execute.py
@@ -45,21 +48,26 @@ jobs:
         run: |
           node --check dashboard/frontend/js/reference-flow.js
           node --check dashboard/frontend/js/image-comments.js
-      - name: Verify required UI and routes
+      - name: Verify workspace contracts
         run: |
           grep -q 'id="referenceFlowPanel"' dashboard/frontend/index.html
           grep -q 'id="generationWorkspace"' dashboard/frontend/index.html
-          grep -q '/api/reference-images' dashboard/backend/routes/execute.py
+          grep -q 'id="referenceProgressText"' dashboard/frontend/index.html
+          ! grep -q 'id="referenceStatus"' dashboard/frontend/index.html
+          grep -q '/api/reference-workspace' dashboard/backend/routes/execute.py
           grep -q '/api/runs/execute-reference' dashboard/backend/routes/execute.py
-          grep -q '/revise-image' dashboard/backend/routes/runs.py
+          grep -q 'reference_comments' dashboard/frontend/js/reference-flow.js
+          grep -q 'reference_comment' dashboard/backend/reference_workspace.py
+          grep -q 'product_images' dashboard/backend/reference_workspace.py
+          grep -q 'STARTING_PROMPT_PATH' dashboard/backend/reference_workspace.py
           grep -q 'ref_v' dashboard/backend/reference_library.py
           grep -q '8% clear margin' dashboard/backend/reference_flow.py
       - name: Verify live persona synchronization
         run: |
           grep -q 'refreshReferencePersonas' dashboard/frontend/js/reference-flow.js
           grep -q '/api/defaults?t=' dashboard/frontend/js/reference-flow.js
-          grep -q 'startPersonaRefreshLoop' dashboard/frontend/js/reference-flow.js
-      - name: Verify ChatGPT terminal failure handling
+          grep -q 'startPersonaSync' dashboard/frontend/js/reference-flow.js
+      - name: Verify ChatGPT failure handling
         run: |
           grep -q 'image-generation tool encountered an error' scripts/chatgpt_web_watchdog.py
           grep -q 'CHATGPT_TERMINAL_RESPONSE_GRACE_SECONDS' scripts/chatgpt_web_watchdog.py
