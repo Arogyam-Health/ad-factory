@@ -5,16 +5,20 @@ on:
     paths:
       - "dashboard/backend/reference_flow.py"
       - "dashboard/backend/reference_library.py"
+      - "dashboard/backend/chatgpt_watchdog.py"
+      - "dashboard/backend/chatgpt_runtime_patch.py"
       - "dashboard/backend/routes/execute.py"
       - "dashboard/backend/routes/runs.py"
       - "dashboard/frontend/index.html"
       - "dashboard/frontend/reference-flow.css"
       - "dashboard/frontend/js/reference-flow.js"
       - "dashboard/frontend/js/image-comments.js"
+      - "scripts/chatgpt_web_watchdog.py"
       - ".github/workflows/reference-flow-checks.yml"
   push:
     branches:
       - feature/reference-image-flow
+      - fix/reference-persona-refresh-chatgpt-failures
 
 jobs:
   syntax:
@@ -28,7 +32,15 @@ jobs:
         with:
           node-version: "20"
       - name: Compile Python files
-        run: python -m py_compile dashboard/backend/reference_flow.py dashboard/backend/reference_library.py dashboard/backend/routes/execute.py dashboard/backend/routes/runs.py
+        run: >-
+          python -m py_compile
+          dashboard/backend/reference_flow.py
+          dashboard/backend/reference_library.py
+          dashboard/backend/chatgpt_watchdog.py
+          dashboard/backend/chatgpt_runtime_patch.py
+          dashboard/backend/routes/execute.py
+          dashboard/backend/routes/runs.py
+          scripts/chatgpt_web_watchdog.py
       - name: Check frontend modules
         run: |
           node --check dashboard/frontend/js/reference-flow.js
@@ -42,3 +54,14 @@ jobs:
           grep -q '/revise-image' dashboard/backend/routes/runs.py
           grep -q 'ref_v' dashboard/backend/reference_library.py
           grep -q '8% clear margin' dashboard/backend/reference_flow.py
+      - name: Verify live persona synchronization
+        run: |
+          grep -q 'refreshReferencePersonas' dashboard/frontend/js/reference-flow.js
+          grep -q '/api/defaults?t=' dashboard/frontend/js/reference-flow.js
+          grep -q 'startPersonaRefreshLoop' dashboard/frontend/js/reference-flow.js
+      - name: Verify ChatGPT terminal failure handling
+        run: |
+          grep -q 'image-generation tool encountered an error' scripts/chatgpt_web_watchdog.py
+          grep -q 'CHATGPT_TERMINAL_RESPONSE_GRACE_SECONDS' scripts/chatgpt_web_watchdog.py
+          grep -q 'CHATGPT_PROCESS_TIMEOUT_SECONDS' dashboard/backend/chatgpt_watchdog.py
+          grep -q -- '--continue-on-error' dashboard/backend/chatgpt_watchdog.py
