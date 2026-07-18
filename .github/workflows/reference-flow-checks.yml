@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "dashboard/backend/reference_flow.py"
+      - "dashboard/backend/reference_library.py"
       - "dashboard/backend/routes/execute.py"
       - "dashboard/backend/routes/runs.py"
       - "dashboard/frontend/index.html"
@@ -27,7 +28,7 @@ jobs:
         with:
           node-version: "20"
       - name: Compile Python files
-        run: python -m py_compile dashboard/backend/reference_flow.py dashboard/backend/routes/execute.py dashboard/backend/routes/runs.py
+        run: python -m py_compile dashboard/backend/reference_flow.py dashboard/backend/reference_library.py dashboard/backend/routes/execute.py dashboard/backend/routes/runs.py
       - name: Check frontend modules
         run: |
           node --check dashboard/frontend/js/reference-flow.js
@@ -35,6 +36,9 @@ jobs:
       - name: Verify required UI and routes
         run: |
           grep -q 'id="referenceFlowPanel"' dashboard/frontend/index.html
+          grep -q 'id="generationWorkspace"' dashboard/frontend/index.html
+          grep -q '/api/reference-images' dashboard/backend/routes/execute.py
           grep -q '/api/runs/execute-reference' dashboard/backend/routes/execute.py
           grep -q '/revise-image' dashboard/backend/routes/runs.py
+          grep -q 'ref_v' dashboard/backend/reference_library.py
           grep -q '8% clear margin' dashboard/backend/reference_flow.py
