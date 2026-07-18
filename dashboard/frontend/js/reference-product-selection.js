@@ -1,6 +1,7 @@
 import { appendLog } from "./ui.js";
 
 const selectedProductImages = new Set();
+const knownProductImages = new Set();
 let initialized = false;
 let refreshTimer = null;
 let currentItems = [];
@@ -55,7 +56,7 @@ function decorateProductCards() {
   updateSummary();
 }
 
-async function refreshProductSelection({ selectNew = false } = {}) {
+async function refreshProductSelection() {
   try {
     const response = await fetch(`/api/reference-workspace?t=${Date.now()}`);
     if (!response.ok) return;
@@ -65,9 +66,13 @@ async function refreshProductSelection({ selectNew = false } = {}) {
     [...selectedProductImages].forEach((path) => {
       if (!valid.has(path)) selectedProductImages.delete(path);
     });
-    if (!initialized || selectNew) {
-      nextItems.forEach((item) => selectedProductImages.add(item.path));
-    }
+    nextItems.forEach((item) => {
+      if (!initialized || !knownProductImages.has(item.path)) selectedProductImages.add(item.path);
+      knownProductImages.add(item.path);
+    });
+    [...knownProductImages].forEach((path) => {
+      if (!valid.has(path)) knownProductImages.delete(path);
+    });
     initialized = true;
     currentItems = nextItems;
     decorateProductCards();
@@ -76,9 +81,9 @@ async function refreshProductSelection({ selectNew = false } = {}) {
   }
 }
 
-function scheduleRefresh(options = {}) {
+function scheduleRefresh() {
   if (refreshTimer) clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => refreshProductSelection(options), 80);
+  refreshTimer = setTimeout(() => refreshProductSelection(), 80);
 }
 
 const gallery = $("referenceProductGallery");
@@ -98,9 +103,7 @@ window.fetch = async (input, init = {}) => {
     }
   }
   const response = await originalFetch(input, init);
-  if (url.includes("/api/reference-workspace/product-images") && response.ok) {
-    scheduleRefresh({ selectNew: init.method?.toUpperCase() === "POST" });
-  }
+  if (url.includes("/api/reference-workspace/product-images") && response.ok) scheduleRefresh();
   return response;
 };
 
