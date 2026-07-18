@@ -1,0 +1,40 @@
+name: Reference flow checks
+
+on:
+  pull_request:
+    paths:
+      - "dashboard/backend/reference_flow.py"
+      - "dashboard/backend/routes/execute.py"
+      - "dashboard/backend/routes/runs.py"
+      - "dashboard/frontend/index.html"
+      - "dashboard/frontend/reference-flow.css"
+      - "dashboard/frontend/js/reference-flow.js"
+      - "dashboard/frontend/js/image-comments.js"
+      - ".github/workflows/reference-flow-checks.yml"
+  push:
+    branches:
+      - feature/reference-image-flow
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Compile Python files
+        run: python -m py_compile dashboard/backend/reference_flow.py dashboard/backend/routes/execute.py dashboard/backend/routes/runs.py
+      - name: Check frontend modules
+        run: |
+          node --check dashboard/frontend/js/reference-flow.js
+          node --check dashboard/frontend/js/image-comments.js
+      - name: Verify required UI and routes
+        run: |
+          grep -q 'id="referenceFlowPanel"' dashboard/frontend/index.html
+          grep -q '/api/runs/execute-reference' dashboard/backend/routes/execute.py
+          grep -q '/revise-image' dashboard/backend/routes/runs.py
+          grep -q '8% clear margin' dashboard/backend/reference_flow.py
