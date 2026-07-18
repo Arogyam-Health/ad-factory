@@ -97,6 +97,8 @@ def run_chatgpt_generation_watchdog(
         cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_sources_file:
         cmd.extend(["--image-source-file", image_sources_file])
+    if not prepend_starting_prompt:
+        cmd.extend(["--starting-prompt-file", ""])
     cmd.extend(["--aspect-ratio", aspect_ratio])
 
     if Path("/mnt/c").exists():

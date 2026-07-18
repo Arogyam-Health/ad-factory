@@ -1571,6 +1571,8 @@ def run_gemini_generation(
         cmd.extend(["--first-tab-mode", first_tab_mode])
     if image_source_arg:
         cmd.extend(["--image-source-file", image_source_arg])
+    if not prepend_starting_prompt:
+        cmd.extend(["--starting-prompt-file", ""])
     if run_dir is not None:
         hyp_path = run_dir / "context" / "hypothesis_config.json"
         if hyp_path.exists():
