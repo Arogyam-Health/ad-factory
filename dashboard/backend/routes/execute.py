@@ -6,7 +6,6 @@ from fastapi import APIRouter, Body, File, Form, UploadFile
 
 from dashboard.backend.app import RUNS_ROOT, api_run_execute
 from dashboard.backend.chatgpt_runtime_patch import install_chatgpt_watchdog
-from dashboard.backend.reference_flow import api_reference_run_status
 from dashboard.backend.reference_library import (
     api_delete_reference_image,
     api_reference_images,
@@ -132,6 +131,7 @@ async def _run_execute_reference(
 
 @router.get("/api/runs/{run_id}/reference-status")
 def _reference_run_status(run_id: str) -> dict[str, Any]:
+    from dashboard.backend.reference_flow import api_reference_run_status
     status = api_reference_run_status(run_id)
     if status.get("status") == "error":
         detail = _latest_reference_job_error(run_id)

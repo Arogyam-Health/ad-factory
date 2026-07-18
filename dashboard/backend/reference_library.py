@@ -21,12 +21,7 @@ from dashboard.backend.app import (
     now_iso,
     store_uploaded_input_images,
 )
-from dashboard.backend.reference_flow import (
-    _load_persona_map,
-    _run_reference_generation,
-    _save_product_doc,
-    _write_status,
-)
+import dashboard.backend.reference_flow as _reference_flow
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 REFERENCE_LIBRARY_DIR = STORAGE_ROOT / "reference_images"
@@ -261,7 +256,7 @@ async def api_run_execute_reference_persistent(
         raise HTTPException(status_code=400, detail="Select at least one persona")
 
     # Persona seeds are loaded from persona_seeds.json for every new run.
-    persona_map = _load_persona_map()
+    persona_map = _reference_flow._load_persona_map()
     selected_numbers: list[int] = []
     for raw in selected_raw:
         try:
@@ -295,7 +290,7 @@ async def api_run_execute_reference_persistent(
     if not references:
         raise HTTPException(status_code=400, detail="Select at least one stored reference image")
 
-    product_doc_path = await _save_product_doc(run_dir, product_info_file)
+    product_doc_path = await _reference_flow._save_product_doc(run_dir, product_info_file)
     if not product_doc_path.exists():
         raise HTTPException(status_code=400, detail="Product document is missing")
     uploaded_product_images = store_uploaded_input_images(input_image_files or [], clear_input_images)
@@ -319,7 +314,7 @@ async def api_run_execute_reference_persistent(
         json.dumps(request_snapshot, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    _write_status(
+    _reference_flow._write_status(
         run_dir,
         status="queued",
         phase="queued",
@@ -332,7 +327,7 @@ async def api_run_execute_reference_persistent(
     )
 
     threading.Thread(
-        target=_run_reference_generation,
+        target=_reference_flow._run_reference_generation,
         kwargs={
             "run_dir": run_dir,
             "run_id": run_id,

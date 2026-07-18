@@ -11,7 +11,6 @@ from dashboard.backend.app import (
     api_edit_prompt,
     api_delete_prompt,
     api_delete_image,
-    api_delete_run,
     api_mark_images_to_regenerate,
     api_restore_images_from_regeneration_queue,
     api_regenerate_queued_images,
@@ -22,11 +21,6 @@ from dashboard.backend.app import (
     signal_cancel_run,
     signal_cancel_current_run,
 )
-from dashboard.backend.reference_flow import (
-    api_image_revision_status,
-    api_revise_image_with_comment,
-)
-
 router = APIRouter()
 
 
@@ -92,11 +86,13 @@ def _regenerate_queued_images(run_id: str, payload: dict[str, Any] = Body(...)) 
 
 @router.post("/api/runs/{run_id}/revise-image")
 def _revise_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    from dashboard.backend.reference_flow import api_revise_image_with_comment
     return api_revise_image_with_comment(run_id, payload)
 
 
 @router.get("/api/runs/{run_id}/revisions/{revision_id}")
 def _revision_status(run_id: str, revision_id: str) -> dict[str, Any]:
+    from dashboard.backend.reference_flow import api_image_revision_status
     return api_image_revision_status(run_id, revision_id)
 
 
