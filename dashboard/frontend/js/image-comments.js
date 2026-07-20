@@ -51,7 +51,7 @@ async function submitRevision(card, box) {
   const runId = resolveRunId(card);
   const imageFile = card.dataset.path || "";
   const textarea = box.querySelector("textarea");
-  const engine = box.querySelector("select")?.value || "gemini";
+  const engine = box.querySelector("select")?.value || "chatgpt";
   const comment = textarea?.value?.trim() || "";
   if (!runId || !imageFile) {
     appendLog("Could not resolve the run or image for this comment.");
@@ -124,8 +124,8 @@ function enhanceCard(card) {
       <textarea rows="4" maxlength="8000" placeholder="Tell the model exactly what to change, remove, add, emphasize, or preserve."></textarea>
       <div class="image-comment-controls">
         <select aria-label="Revision engine">
-          <option value="gemini">Gemini</option>
           <option value="chatgpt">ChatGPT</option>
+          <option value="gemini">Gemini</option>
         </select>
         <button type="button" class="ghost-btn image-comment-submit">Generate revision</button>
       </div>

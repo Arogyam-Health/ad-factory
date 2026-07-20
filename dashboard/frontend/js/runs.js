@@ -464,13 +464,13 @@ function showEngineSelector(aspectLabel = "4:5") {
         <h3>Select Image Generation Engine</h3>
         <p>Choose which engine to use for generating ${aspectLabel} images:</p>
         <div class="engine-options">
-          <button class="engine-option-btn" data-engine="gemini">
-            <span class="engine-name">Gemini</span>
-            <span class="engine-desc">Google Gemini image generation</span>
-          </button>
           <button class="engine-option-btn" data-engine="chatgpt">
             <span class="engine-name">ChatGPT</span>
             <span class="engine-desc">OpenAI ChatGPT image generation</span>
+          </button>
+          <button class="engine-option-btn" data-engine="gemini">
+            <span class="engine-name">Gemini</span>
+            <span class="engine-desc">Google Gemini image generation</span>
           </button>
         </div>
         <button class="engine-cancel-btn">Cancel</button>
