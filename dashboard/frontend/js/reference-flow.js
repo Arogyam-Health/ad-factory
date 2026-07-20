@@ -331,6 +331,57 @@ function openWorkspaceText(kind) {
   }
 }
 
+function renderLiveGallery(imageFiles) {
+  const container = $("referenceLiveGallery");
+  if (!container) return;
+  if (!imageFiles?.length) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+  container.classList.remove("hidden");
+  container.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "gallery-header";
+  header.innerHTML = `<strong>Generated so far (${imageFiles.length})</strong>`;
+  container.appendChild(header);
+  const grid = document.createElement("div");
+  grid.className = "image-grid";
+  imageFiles.forEach((path) => {
+    const cleanPath = path.replace(/^generated_images\//, "");
+    const url = `/generated_images/${cleanPath}`;
+    const card = document.createElement("div");
+    card.className = "image-card";
+    card.dataset.path = path;
+    const is916 = path.includes("/9_16/");
+    card.dataset.aspect = is916 ? "9_16" : "4_5";
+    const imgWrap = document.createElement("div");
+    imgWrap.className = "image-wrap";
+    const img = document.createElement("img");
+    img.className = "gallery-thumb";
+    img.loading = "lazy";
+    img.src = url;
+    img.alt = path.split("/").pop() || "";
+    imgWrap.appendChild(img);
+    card.appendChild(imgWrap);
+    const badge = document.createElement("span");
+    badge.className = `aspect-badge ${is916 ? "ar-916" : "ar-45"}`;
+    badge.textContent = is916 ? "9:16" : "4:5";
+    card.appendChild(badge);
+    const fname = document.createElement("div");
+    fname.className = "image-filename";
+    fname.textContent = path.split("/").pop() || path;
+    fname.title = path;
+    card.appendChild(fname);
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button") || event.target.closest("input") || event.target.closest("details") || event.target.closest("label")) return;
+      window.open(url, "_blank");
+    });
+    grid.appendChild(card);
+  });
+  container.appendChild(grid);
+}
+
 function showStatus(payload) {
   const completed = Number(payload.completed_jobs || 0);
   const total = Number(payload.total_jobs || 0);
@@ -344,6 +395,7 @@ function showStatus(payload) {
     lastStatusSignature = signature;
     appendLog(`[Reference] ${payload.message || payload.phase || payload.status}`);
   }
+  renderLiveGallery(payload.partial_image_files);
 }
 
 function stopPolling() {
@@ -360,6 +412,8 @@ async function pollStatus() {
       stopPolling();
       $("referenceRunBtn").disabled = false;
       $("referenceCancelBtn").disabled = true;
+      $("referenceLiveGallery").classList.add("hidden");
+      $("referenceLiveGallery").innerHTML = "";
       invalidateRuns();
       await loadWorkspaceRuns("reference");
     }

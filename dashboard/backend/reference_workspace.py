@@ -243,6 +243,7 @@ def _run_reference_worker(
         if not product_images:
             raise RuntimeError("No reference-flow product images are stored")
         flow._write_status(run_dir, status="running", phase="4:5 generation", completed_jobs=0, total_jobs=total, message="Preparing reference jobs")
+        partial_image_files: list[str] = []
         for persona_index, persona in enumerate(personas, start=1):
             for reference_index, reference in enumerate(references, start=1):
                 if cancel_event.is_set():
@@ -290,11 +291,12 @@ def _run_reference_worker(
                     )
                     if grouped:
                         completed += 1
+                        partial_image_files.append(grouped)
                     else:
                         failures.append({"persona_number": int(persona["persona_number"]), "reference_image": reference.get("original_name", ""), "error": "Output image could not be located"})
                 else:
                     failures.append({"persona_number": int(persona["persona_number"]), "reference_image": reference.get("original_name", ""), "error": (result.stderr or result.stdout or "Generation failed")[-1200:]})
-                flow._write_status(run_dir, status="running", phase="4:5 generation", completed_jobs=job_index, total_jobs=total, completed_45=completed, failures=len(failures), message=f"Completed {job_index}/{total} reference jobs")
+                flow._write_status(run_dir, status="running", phase="4:5 generation", completed_jobs=job_index, total_jobs=total, completed_45=completed, failures=len(failures), partial_image_files=list(partial_image_files), message=f"Completed {job_index}/{total} reference jobs")
         if completed == 0:
             raise RuntimeError("No 4:5 reference job succeeded")
         conversion: dict[str, Any] | None = None
