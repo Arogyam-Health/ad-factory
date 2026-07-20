@@ -47,12 +47,14 @@ async function submitRevision(card, box) {
       }),
     });
     appendLog(`Image revision queued with ${engine === "chatgpt" ? "ChatGPT" : "Gemini"}: ${imageFile.split("/").pop()}`);
-    const ok = await waitForRevision(runId, data.revision_id, box);
-    if (ok) {
-      appendLog(data.message || "Image revision completed.");
+    const result = await waitForRevision(runId, data.revision_id, box);
+    if (result.ok) {
+      appendLog(`Revision completed: ${imageFile.split("/").pop()}`);
       invalidateRuns();
       const { loadRuns } = await import("./runs.js");
       await loadRuns();
+    } else {
+      appendLog(`Revision failed for ${imageFile.split("/").pop()}: ${result.message}`);
     }
   } catch (error) {
     setRevisionState(box, String(error), false);
@@ -120,8 +122,12 @@ async function waitForRevision(runId, revisionId, box) {
   for (;;) {
     const data = await fetchJSON(`/api/runs/${runId}/revisions/${revisionId}?t=${Date.now()}`);
     setRevisionState(box, data.message || data.status || "", !["completed", "error"].includes(data.status));
-    if (data.status === "completed") return true;
-    if (data.status === "error") return false;
+    if (data.status === "completed") return { ok: true, message: data.message || "Completed" };
+    if (data.status === "error") {
+      const errMsg = data.error || data.message || "Unknown error";
+      setRevisionState(box, errMsg, false);
+      return { ok: false, message: errMsg };
+    }
     await delay(2000);
   }
 }
@@ -153,8 +159,13 @@ export async function submitAllRevisions(runId) {
         body: JSON.stringify({ image_file: imageFile, comment, engine, headless: state.headlessModeEnabled }),
       });
       appendLog(`Revision queued for: ${imageFile.split("/").pop()}`);
-      const ok = await waitForRevision(runId, data.revision_id, box);
-      if (ok) completed++; else failed++;
+      const result = await waitForRevision(runId, data.revision_id, box);
+      if (result.ok) {
+        completed++;
+      } else {
+        failed++;
+        appendLog(`Revision failed for ${imageFile.split("/").pop()}: ${result.message}`);
+      }
     } catch (error) {
       failed++;
       setRevisionState(box, String(error), false);
