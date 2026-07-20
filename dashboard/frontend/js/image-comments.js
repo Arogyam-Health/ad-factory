@@ -137,6 +137,52 @@ function enhanceCard(card) {
   card.appendChild(box);
 }
 
+export async function submitAllRevisions(runId) {
+  const cards = runsRoot?.querySelectorAll(".image-card[data-path]") || [];
+  const revisions = [];
+  for (const card of cards) {
+    if (resolveRunId(card) !== runId) continue;
+    const box = card.querySelector(".image-comment-box");
+    const textarea = box?.querySelector("textarea");
+    if (!textarea?.value?.trim()) continue;
+    revisions.push({ card, box, comment: textarea.value.trim(), engine: box.querySelector("select")?.value || "gemini" });
+  }
+  if (!revisions.length) {
+    appendLog("No commented images found.");
+    return;
+  }
+  appendLog(`Submitting ${revisions.length} revision(s)...`);
+  let completed = 0;
+  let failed = 0;
+  for (const { card, box, comment, engine } of revisions) {
+    try {
+      setRevisionState(box, "Queuing...", true);
+      const imageFile = card.dataset.path || "";
+      const data = await fetchJSON(`/api/runs/${runId}/revise-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_file: imageFile, comment, engine, headless: state.headlessModeEnabled }),
+      });
+      appendLog(`Revision queued for: ${imageFile.split("/").pop()}`);
+      const revisionId = data.revision_id;
+      const timer = window.setInterval(() => pollRevision(runId, revisionId, box), 2000);
+      activePolls.set(revisionId, timer);
+      await pollRevision(runId, revisionId, box);
+      completed++;
+    } catch (error) {
+      failed++;
+      setRevisionState(box, String(error), false);
+      appendLog(`Revision error for ${card.dataset.path?.split("/").pop()}: ${String(error)}`);
+    }
+  }
+  if (completed) {
+    invalidateRuns();
+    const { loadRuns } = await import("./runs.js");
+    await loadRuns();
+  }
+  appendLog(`Revisions done: ${completed} succeeded, ${failed} failed.`);
+}
+
 function scanCards() {
   runsRoot?.querySelectorAll(".run").forEach(enhanceRunHeader);
   runsRoot?.querySelectorAll(".image-card[data-path]").forEach(enhanceCard);

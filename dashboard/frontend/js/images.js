@@ -47,7 +47,14 @@ export function buildImageGallery(run) {
   regenerateNowBtn.className = "ghost-btn";
   regenerateNowBtn.textContent = "Regenerate selected";
 
-  regenBar.append(selectedCount, selectVisibleBtn, clearSelectionBtn, markBtn, regenerateNowBtn);
+  const bulkReviseBtn = document.createElement("button");
+  bulkReviseBtn.type = "button";
+  bulkReviseBtn.className = "ghost-btn";
+  bulkReviseBtn.textContent = "Revise all commented";
+  bulkReviseBtn.addEventListener("click", () => {
+    import("./image-comments.js").then(m => m.submitAllRevisions(run.run_id));
+  });
+  regenBar.append(selectedCount, selectVisibleBtn, clearSelectionBtn, markBtn, regenerateNowBtn, bulkReviseBtn);
   gal.appendChild(regenBar);
 
   const allCount = activeImageFiles.length;
