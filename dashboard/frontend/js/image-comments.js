@@ -3,7 +3,6 @@ import { state } from "./state.js";
 import { appendLog } from "./ui.js";
 
 const runsRoot = document.getElementById("runs");
-const activePolls = new Map();
 
 function resolveRunId(card) {
   return card.closest(".run")?.querySelector(".run-header strong")?.textContent?.trim() || "";
@@ -18,33 +17,6 @@ function setRevisionState(box, message, busy = false) {
   if (button) button.disabled = busy;
   if (textarea) textarea.disabled = busy;
   if (select) select.disabled = busy;
-}
-
-function stopRevisionPoll(revisionId) {
-  const timer = activePolls.get(revisionId);
-  if (timer) window.clearInterval(timer);
-  activePolls.delete(revisionId);
-}
-
-async function pollRevision(runId, revisionId, box) {
-  try {
-    const data = await fetchJSON(`/api/runs/${runId}/revisions/${revisionId}?t=${Date.now()}`);
-    setRevisionState(box, data.message || data.status || "", !["completed", "error"].includes(data.status));
-    if (["completed", "error"].includes(data.status)) {
-      stopRevisionPoll(revisionId);
-      setRevisionState(box, data.message || data.status, false);
-      appendLog(data.message || `Revision ${data.status}.`);
-      if (data.status === "completed") {
-        invalidateRuns();
-        const { loadRuns } = await import("./runs.js");
-        await loadRuns();
-      }
-    }
-  } catch (error) {
-    stopRevisionPoll(revisionId);
-    setRevisionState(box, String(error), false);
-    appendLog(`Revision status error: ${String(error)}`);
-  }
 }
 
 async function submitRevision(card, box) {
@@ -75,10 +47,13 @@ async function submitRevision(card, box) {
       }),
     });
     appendLog(`Image revision queued with ${engine === "chatgpt" ? "ChatGPT" : "Gemini"}: ${imageFile.split("/").pop()}`);
-    const revisionId = data.revision_id;
-    const timer = window.setInterval(() => pollRevision(runId, revisionId, box), 2000);
-    activePolls.set(revisionId, timer);
-    await pollRevision(runId, revisionId, box);
+    const ok = await waitForRevision(runId, data.revision_id, box);
+    if (ok) {
+      appendLog(data.message || "Image revision completed.");
+      invalidateRuns();
+      const { loadRuns } = await import("./runs.js");
+      await loadRuns();
+    }
   } catch (error) {
     setRevisionState(box, String(error), false);
     appendLog(`Revision error: ${String(error)}`);
@@ -137,6 +112,20 @@ function enhanceCard(card) {
   card.appendChild(box);
 }
 
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function waitForRevision(runId, revisionId, box) {
+  for (;;) {
+    const data = await fetchJSON(`/api/runs/${runId}/revisions/${revisionId}?t=${Date.now()}`);
+    setRevisionState(box, data.message || data.status || "", !["completed", "error"].includes(data.status));
+    if (data.status === "completed") return true;
+    if (data.status === "error") return false;
+    await delay(2000);
+  }
+}
+
 export async function submitAllRevisions(runId) {
   const cards = runsRoot?.querySelectorAll(".image-card[data-path]") || [];
   const revisions = [];
@@ -145,7 +134,7 @@ export async function submitAllRevisions(runId) {
     const box = card.querySelector(".image-comment-box");
     const textarea = box?.querySelector("textarea");
     if (!textarea?.value?.trim()) continue;
-    revisions.push({ card, box, comment: textarea.value.trim(), engine: box.querySelector("select")?.value || "gemini" });
+    revisions.push({ card, box, comment: textarea.value.trim(), engine: box.querySelector("select")?.value || "chatgpt" });
   }
   if (!revisions.length) {
     appendLog("No commented images found.");
@@ -164,11 +153,8 @@ export async function submitAllRevisions(runId) {
         body: JSON.stringify({ image_file: imageFile, comment, engine, headless: state.headlessModeEnabled }),
       });
       appendLog(`Revision queued for: ${imageFile.split("/").pop()}`);
-      const revisionId = data.revision_id;
-      const timer = window.setInterval(() => pollRevision(runId, revisionId, box), 2000);
-      activePolls.set(revisionId, timer);
-      await pollRevision(runId, revisionId, box);
-      completed++;
+      const ok = await waitForRevision(runId, data.revision_id, box);
+      if (ok) completed++; else failed++;
     } catch (error) {
       failed++;
       setRevisionState(box, String(error), false);
