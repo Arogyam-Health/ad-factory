@@ -322,7 +322,12 @@ function openWorkspaceText(kind) {
   if (kind === "doc") {
     showPromptFullscreen("Reference product document", workspace.product_document?.content || "", {});
   } else if (kind === "persona") {
-    showPromptFullscreen("Persona seed used by both flows", workspace.persona_seed?.content || "", {});
+    const persona = workspace.persona_seed;
+    showPromptFullscreen("Persona seed (editable)", persona?.content || "", {
+      fetchUrl: persona?.path ? `/api/prompt-file-content?prompt_path=${encodeURIComponent(persona.path)}` : undefined,
+      saveUrl: "/api/prompt-file-content",
+      saveBody: (text) => ({ prompt_path: persona.path, content: text }),
+    });
   } else {
     showPromptFullscreen("Reference Flow starting prompt", workspace.starting_prompt?.content || "", {
       saveUrl: "/api/reference-workspace/starting-prompt",
