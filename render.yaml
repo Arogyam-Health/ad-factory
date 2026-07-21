@@ -2,11 +2,15 @@ services:
   - type: web
     name: ad-factory
     env: python
-    buildCommand: pip install -r requirements-dashboard.txt && playwright install chromium 2>/dev/null || true
-    startCommand: uvicorn dashboard.backend.app:app --host 0.0.0.0 --port 4090
+    plan: free
+    buildCommand: pip install --no-cache-dir -r requirements-dashboard.txt
+    startCommand: uvicorn dashboard.backend.app:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
     envVars:
       - key: DEPLOYMENT_MODE
         value: production
+      - key: BROWSER_AUTOMATION_MODE
+        value: local-agent
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB_NAME
@@ -20,11 +24,11 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        value: https://your-app.onrender.com/api/auth/google/callback
+        sync: false
       - key: FRONTEND_ORIGIN
-        value: https://your-app.onrender.com
+        sync: false
       - key: CORS_ORIGINS
-        value: https://your-app.onrender.com
+        sync: false
       - key: SESSION_EXPIRE_MINUTES
         value: "1440"
       - key: STORAGE_PROVIDER
