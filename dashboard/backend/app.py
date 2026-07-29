@@ -1056,8 +1056,10 @@ def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
         if not isinstance(base.get("ads"), list) or not base["ads"]:
             if fmt in {"HERO", "UGC"}:
                 base = {"format": "{format}", "copy": {"EN": {"headline": "", "support_line": "", "cta": ""}}}
-            elif fmt in {"BA", "FEAT"}:
-                base = {"format": "{format}", "copy": {"EN": {"headline": "", "bullets": [], "cta": ""}}}
+            elif fmt == "BA":
+                base = {"format": "{format}", "copy": {"EN": {"headline": "", "bullets": ["", "", "", ""], "cta": ""}}}
+            elif fmt == "FEAT":
+                base = {"format": "{format}", "copy": {"EN": {"headline": "", "bullets": ["", ""], "cta": ""}}}
             else:
                 base = {"format": "{format}", "copy": {"EN": {"headline": "", "trust_line": "", "cta": ""}}}
         else:
@@ -1080,8 +1082,10 @@ def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
         if not isinstance(base.get("ads"), list) or not base["ads"]:
             if f in {"HERO", "UGC"}:
                 fallback_copy = {"EN": {"headline": "", "support_line": "", "cta": ""}}
-            elif f in {"BA", "FEAT"}:
-                fallback_copy = {"EN": {"headline": "", "bullets": [], "cta": ""}}
+            elif f == "BA":
+                fallback_copy = {"EN": {"headline": "", "bullets": ["", "", "", ""], "cta": ""}}
+            elif f == "FEAT":
+                fallback_copy = {"EN": {"headline": "", "bullets": ["", ""], "cta": ""}}
             else:
                 fallback_copy = {"EN": {"headline": "", "trust_line": "", "cta": ""}}
             ad = {"format": f, "persona": {"number": 0, "name": ""}, "headline_angle": "", "concept_angle": "", "copy": fallback_copy}
@@ -2937,7 +2941,7 @@ def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir:
         if code == -1 and err_msg in ("CANCELLED",):
             pass
         elif parsed is None:
-            errors.append(err_msg)
+            errors.append(err_msg if err_msg and err_msg.strip() else "LLM returned empty response (model may be unavailable or token limit reached)")
         else:
             ads_out = parsed.get("ads") if isinstance(parsed, dict) else None
             if not isinstance(ads_out, list):
@@ -3061,7 +3065,8 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
 
             try:
                 data = resp.json()
-                content = data["choices"][0]["message"]["content"]
+                msg = data["choices"][0]["message"]
+                content = msg.get("content") or msg.get("reasoning_content") or ""
             except (json.JSONDecodeError, KeyError, IndexError) as exc:
                 _log_llm_trace(run_dir.name, label, model, body, None, resp.status_code, elapsed, error=str(exc))
                 return None, resp.text, f"Parse error: {exc}", -1
@@ -3100,7 +3105,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         if code == -1 and err_msg in ("CANCELLED",):
             pass
         elif parsed is None:
-            errors.append(err_msg)
+            errors.append(err_msg if err_msg and err_msg.strip() else "LLM returned empty response (model may be unavailable or token limit reached)")
         else:
             ads_out = parsed.get("ads") if isinstance(parsed, dict) else None
             if not isinstance(ads_out, list):
@@ -6336,7 +6341,8 @@ def _run_pipeline_background(
             (run_dir / "partial").mkdir(parents=True, exist_ok=True)
             provider_label = "Google Gemini" if llm_mode == "google_gemini" else "OpenCode"
             if opencode_failures:
-                error_detail = "; ".join(str(e).splitlines()[0] for e in opencode_failures[:3])
+                non_empty = [str(e) for e in opencode_failures if str(e).strip()]
+                error_detail = "; ".join(e.splitlines()[0] if e.splitlines() else "(empty)" for e in non_empty[:3])
                 (run_dir / "partial" / "error.txt").write_text(f"{provider_label} API error: {error_detail}", encoding="utf-8")
             else:
                 (run_dir / "partial" / "error.txt").write_text(f"{provider_label} copy generation returned incomplete copy: {generated_copy_error}", encoding="utf-8")
@@ -6368,11 +6374,11 @@ def _run_pipeline_background(
             manifest["copy_source"] = "opencode generated copy"
         if opencode_failures:
             manifest["copy_generation_failures"] = len(opencode_failures)
-            manifest["copy_generation_notes"] = [str(e).splitlines()[0] for e in opencode_failures[:5]]
+            manifest["copy_generation_notes"] = [str(e).splitlines()[0] if str(e).splitlines() else "(empty)" for e in opencode_failures[:5]]
         if opencode_warnings:
             manifest["copy_generation_warnings"] = len(opencode_warnings)
             manifest["copy_warning_log"] = str((run_dir / "logs" / "opencode_error.txt").relative_to(ROOT))
-            manifest["copy_generation_notes"] = [str(item).splitlines()[0] for item in opencode_warnings[:3]]
+            manifest["copy_generation_notes"] = [str(item).splitlines()[0] if str(item).splitlines() else "(empty)" for item in opencode_warnings[:3]]
         if opencode_session_rollovers:
             manifest["copy_session_rollovers"] = opencode_session_rollovers
             manifest["copy_session_schedule"] = OPENCODE_ADS_PER_SESSION_SCHEDULE
