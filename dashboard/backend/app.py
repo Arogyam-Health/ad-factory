@@ -1857,6 +1857,30 @@ def wsl_chrome_cdp_url() -> str:
     return f"http://{detect_wsl_windows_host_ip()}:9223"
 
 
+def extension_browser_required_for_chatgpt(visible: bool) -> bool:
+    mode = str(os.getenv("BROWSER_AUTOMATION_MODE") or "").strip().lower()
+    is_render = str(os.getenv("RENDER") or "").strip().lower() == "true"
+    return visible or mode in {"local-agent", "extension", "extension-bridge", "remote-extension"} or is_render
+
+
+def start_extension_cdp_proxy_for_user(user_id: str, *, visible: bool) -> str:
+    from dashboard.backend.services.extension_bridge import extension_bridge
+
+    conn = extension_bridge.get_connection(user_id)
+    if not conn:
+        mode = "Visible mode" if visible else "This deployment"
+        raise HTTPException(
+            status_code=400,
+            detail=f"{mode} uses your connected browser via the Chrome Extension. "
+                   "Click the extension icon and connect first.",
+        )
+    from dashboard.backend.services.cdp_proxy import init_proxy
+
+    cdp_proxy_url = init_proxy(user_id)
+    print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
+    return cdp_proxy_url
+
+
 def resolve_gemini_debugger_address() -> str:
     configured = str(os.getenv("GEMINI_DEBUGGER_ADDRESS") or "").strip()
     candidates = [configured] if configured else []
@@ -5658,18 +5682,8 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cdp_proxy_url = ""
-    if visible:
-        from dashboard.backend.services.extension_bridge import extension_bridge
-        conn = extension_bridge.get_connection(user_id)
-        if not conn:
-            raise HTTPException(
-                status_code=400,
-                detail="Visible mode requires the Chrome Extension to be connected. "
-                       "Click the extension icon and connect first.",
-            )
-        from dashboard.backend.services.cdp_proxy import init_proxy
-        cdp_proxy_url = init_proxy(user_id)
-        print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
+    if engine == "chatgpt" and extension_browser_required_for_chatgpt(visible):
+        cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
 
     if engine == "chatgpt":
         cmd = [
@@ -5743,18 +5757,8 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
 
     cdp_proxy_url = ""
-    if visible:
-        from dashboard.backend.services.extension_bridge import extension_bridge
-        conn = extension_bridge.get_connection(user_id)
-        if not conn:
-            raise HTTPException(
-                status_code=400,
-                detail="Visible mode requires the Chrome Extension to be connected. "
-                       "Click the extension icon and connect first.",
-            )
-        from dashboard.backend.services.cdp_proxy import init_proxy
-        cdp_proxy_url = init_proxy(user_id)
-        print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
+    if engine == "chatgpt" and extension_browser_required_for_chatgpt(visible):
+        cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
 
     # ---- Step 1: Generate 4:5 images ----
     all_prompt_files: list[str] = []
@@ -6134,20 +6138,9 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
     if engine not in {"gemini", "chatgpt"}:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
 
-    if visible:
-        from dashboard.backend.services.extension_bridge import extension_bridge
-        conn = extension_bridge.get_connection(user_id)
-        if not conn:
-            raise HTTPException(
-                status_code=400,
-                detail="Visible mode requires the Chrome Extension to be connected. "
-                       "Click the extension icon and connect first.",
-            )
-        from dashboard.backend.services.cdp_proxy import init_proxy
-        cdp_proxy_url = init_proxy(user_id)
-        print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
-    else:
-        cdp_proxy_url = ""
+    cdp_proxy_url = ""
+    if engine == "chatgpt" and extension_browser_required_for_chatgpt(visible):
+        cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
 
     batch_to_run_dir: dict[str, Path | None] = {}
     for run_id in run_ids:

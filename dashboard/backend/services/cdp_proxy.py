@@ -119,14 +119,17 @@ def init_proxy(user_id: str, host: str = "127.0.0.1", port: int = 0) -> str:
 
     _ensure_refresh()
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind((host, port if port else 0))
-        actual_port = sock.getsockname()[1]
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, port if port else 0))
+    actual_port = sock.getsockname()[1]
     _port = actual_port
 
     config = uvicorn.Config(app, host=host, port=actual_port, log_level="warning")
+    sock.listen(config.backlog)
+    sock.setblocking(False)
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
+    thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
     thread.start()
     time.sleep(0.3)
 
@@ -296,7 +299,13 @@ async def devtools_browser(websocket: WebSocket):
             elif method == "Target.closeTarget":
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {"success": True}}))
             elif method == "Target.createTarget":
-                await websocket.send_text(json.dumps({"id": cmd_id, "result": {"targetId": uuid.uuid4().hex[:12]}}))
+                try:
+                    result = _run_async(
+                        _bridge.send_command(_user_id, method, msg.get("params"), timeout=30.0)
+                    )
+                    await websocket.send_text(json.dumps({"id": cmd_id, "result": result}))
+                except Exception as e:
+                    await websocket.send_text(json.dumps({"id": cmd_id, "error": {"code": -32000, "message": str(e).splitlines()[0]}}))
             elif method == "Browser.getVersion":
                 await websocket.send_text(json.dumps({
                     "id": cmd_id, "result": {

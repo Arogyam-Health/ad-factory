@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Ad Factory CDP Bridge",
+  "version": "1.0.0",
+  "description": "Bridges Chrome DevTools Protocol to the Ad Factory server for remote browser automation.",
+  "permissions": [
+    "debugger",
+    "cookies",
+    "tabs",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://ad-factory-3rn5.onrender.com/*",
+    "http://localhost:4090/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  }
+}
