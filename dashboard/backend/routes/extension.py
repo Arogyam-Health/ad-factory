@@ -11,9 +11,9 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Cookie, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 from dashboard.backend.auth.service import get_current_user_from_cookie
 from dashboard.backend.services.extension_bridge import extension_bridge
@@ -44,6 +44,21 @@ def _check_rate_limit(user_id: str) -> bool:
 def _validate_cdp_method(method: str) -> bool:
     domain = method.split(".")[0]
     return domain in _ALLOWED_CDP_DOMAINS
+
+
+def _resolve_user(request: Request, session: Optional[str] = Cookie(None)) -> dict[str, Any] | None:
+    """Resolve user from session cookie (same pattern as auth routes)."""
+    if session:
+        return get_current_user_from_cookie(session)
+    return None
+
+
+def _require_user(request: Request, session: Optional[str] = Cookie(None)) -> dict[str, Any]:
+    """Require authenticated user, raise 401 if not found."""
+    user = _resolve_user(request, session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
 
 
 # ─── WebSocket endpoint ───
@@ -95,8 +110,9 @@ async def extension_websocket(ws: WebSocket, session: str = Query("")):
 
 
 @router.get("/api/extension/status")
-def extension_status(user: dict[str, Any] | None = None) -> dict[str, Any]:
+def extension_status(request: Request, session: Optional[str] = Cookie(None)) -> dict[str, Any]:
     """Check extension connection status for the current user."""
+    user = _resolve_user(request, session)
     uid = user["user_id"] if user else ""
     conn = extension_bridge.get_connection(uid) if uid else None
     return {
@@ -109,22 +125,22 @@ def extension_status(user: dict[str, Any] | None = None) -> dict[str, Any]:
 @router.get("/api/extension/status-all")
 def extension_status_all() -> dict[str, Any]:
     """Admin: list all active extension connections."""
-    import asyncio as _aio
-    loop = _aio.get_event_loop()
-    health = loop.run_until_complete(extension_bridge.health_check())
+    health = asyncio.get_event_loop().run_until_complete(extension_bridge.health_check())
     return health
 
 
 @router.get("/api/extension/targets")
-async def extension_targets(user: dict[str, Any]) -> dict[str, Any]:
+async def extension_targets(request: Request, session: Optional[str] = Cookie(None)) -> dict[str, Any]:
     """Get browser targets (open tabs) from the extension."""
+    user = _require_user(request, session)
     targets = await extension_bridge.get_targets(user["user_id"])
     return {"targets": targets}
 
 
 @router.post("/api/extension/command")
 async def extension_command(
-    user: dict[str, Any],
+    request: Request,
+    session: Optional[str] = Cookie(None),
     method: str = Query(...),
     timeout: float = Query(30.0),
     target_id: str = Query(""),
@@ -134,6 +150,8 @@ async def extension_command(
 
     Only whitelisted CDP domains are allowed.
     """
+    user = _require_user(request, session)
+
     if not _validate_cdp_method(method):
         raise HTTPException(
             status_code=400,
@@ -162,11 +180,13 @@ async def extension_command(
 
 @router.post("/api/extension/navigate")
 async def extension_navigate(
-    user: dict[str, Any],
+    request: Request,
+    session: Optional[str] = Cookie(None),
     url: str = Query(...),
     target_id: str = Query(""),
 ) -> dict[str, Any]:
     """Navigate a tab to a URL via the extension."""
+    user = _require_user(request, session)
     params = {"url": url}
     try:
         result = await extension_bridge.send_command(
@@ -187,10 +207,12 @@ async def extension_navigate(
 
 @router.post("/api/extension/screenshot")
 async def extension_screenshot(
-    user: dict[str, Any],
+    request: Request,
+    session: Optional[str] = Cookie(None),
     target_id: str = Query(""),
 ) -> dict[str, Any]:
     """Capture a screenshot via the extension."""
+    user = _require_user(request, session)
     try:
         result = await extension_bridge.send_command(
             user_id=user["user_id"],
