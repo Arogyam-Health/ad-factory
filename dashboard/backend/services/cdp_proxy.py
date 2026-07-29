@@ -101,9 +101,9 @@ def _ensure_refresh():
         return
     _refresh_started = True
     if _MAIN_LOOP and _MAIN_LOOP.is_running():
-        asyncio.run_coroutine_threadsafe(
-            asyncio.create_task(_background_target_refresh()), _MAIN_LOOP
-        )
+        async def _start():
+            asyncio.create_task(_background_target_refresh())
+        asyncio.run_coroutine_threadsafe(_start(), _MAIN_LOOP)
 
 
 def init_proxy(user_id: str, host: str = "127.0.0.1", port: int = 0) -> str:
