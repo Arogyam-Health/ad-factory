@@ -45,6 +45,7 @@ _refresh_started = False
 
 _cached_targets: list[dict[str, Any]] = []
 _cached_targets_lock = threading.Lock()
+_auto_attach = False
 
 app = FastAPI()
 
@@ -72,13 +73,37 @@ def _sync_update_targets():
         return
     targets = []
     for t in conn.targets:
+        target_id = str(t.get("targetId") or t.get("id") or "")
+        if not target_id:
+            continue
         targets.append({
-            "id": t.get("targetId", t.get("id", "")),
+            "targetId": target_id,
+            "id": target_id,
             "type": t.get("type", "page"),
             "title": t.get("title", ""),
             "url": t.get("url", ""),
             "attached": False,
             "browserContextId": "",
+        })
+    with _cached_targets_lock:
+        _cached_targets = targets
+
+
+def _cache_raw_targets(raw_targets: list[dict[str, Any]]) -> None:
+    global _cached_targets
+    targets = []
+    for t in raw_targets:
+        target_id = str(t.get("targetId") or t.get("id") or "")
+        if not target_id:
+            continue
+        targets.append({
+            "targetId": target_id,
+            "id": target_id,
+            "type": t.get("type", "page"),
+            "title": t.get("title", ""),
+            "url": t.get("url", ""),
+            "attached": bool(t.get("attached", False)),
+            "browserContextId": t.get("browserContextId", ""),
         })
     with _cached_targets_lock:
         _cached_targets = targets
@@ -118,6 +143,11 @@ def init_proxy(user_id: str, host: str = "127.0.0.1", port: int = 0) -> str:
     _host = host
 
     _ensure_refresh()
+    try:
+        result = _run_async(_bridge.send_command(_user_id, "Target.getTargets", {}, timeout=5.0))
+        _cache_raw_targets(result.get("targetInfos", []))
+    except Exception:
+        _sync_update_targets()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -142,7 +172,7 @@ def _build_target_list() -> list[dict[str, Any]]:
     targets = _sync_get_targets()
     result = []
     for t in targets:
-        tid = t.get("id", "")
+        tid = t.get("targetId") or t.get("id") or ""
         result.append({
             "description": t.get("title", ""),
             "devtoolsFrontendUrl": f"devtools://devtools/bundled/inspector.html?ws={_host}:{_port}/devtools/page/{tid}",
@@ -204,7 +234,7 @@ async def devtools_page(websocket: WebSocket, target_id: str):
 
 @app.websocket("/devtools/browser")
 async def devtools_browser(websocket: WebSocket):
-    global _browser_ws
+    global _browser_ws, _auto_attach
     await websocket.accept()
     _browser_ws = websocket
     logger.info("[cdp-proxy] Playwright connected to browser")
@@ -216,14 +246,22 @@ async def devtools_browser(websocket: WebSocket):
         while not poll_stop.is_set():
             try:
                 current = _sync_get_targets()
-                current_ids = {t["id"] for t in current}
+                current_ids = {str(t.get("targetId") or t.get("id") or "") for t in current}
                 new_ids = current_ids - last_seen
                 removed_ids = last_seen - current_ids
                 if new_ids or removed_ids:
                     for tid in new_ids:
-                        info = next((t for t in current if t["id"] == tid), None)
+                        info = next((t for t in current if str(t.get("targetId") or t.get("id") or "") == tid), None)
                         if info and _browser_ws:
                             _send_event("Target.targetCreated", {"targetInfo": info})
+                            if _auto_attach:
+                                session_id = uuid.uuid4().hex[:8]
+                                _sessions[session_id] = tid
+                                _send_event("Target.attachedToTarget", {
+                                    "sessionId": session_id,
+                                    "targetInfo": info,
+                                    "waitingForDebugger": False,
+                                })
                     for tid in removed_ids:
                         if _browser_ws:
                             _send_event("Target.targetDestroyed", {"targetId": tid})
@@ -282,8 +320,32 @@ async def devtools_browser(websocket: WebSocket):
 
             if method == "Target.setDiscoverTargets":
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
-            elif method in ("Target.setAutoAttach", "Target.activateTarget"):
+                if msg.get("params", {}).get("discover", True):
+                    for info in _sync_get_targets():
+                        await websocket.send_text(json.dumps({"method": "Target.targetCreated", "params": {"targetInfo": info}}))
+            elif method == "Target.setAutoAttach":
+                _auto_attach = bool(msg.get("params", {}).get("autoAttach"))
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
+                if _auto_attach:
+                    for info in _sync_get_targets():
+                        target_id = str(info.get("targetId") or info.get("id") or "")
+                        if not target_id:
+                            continue
+                        session_id = uuid.uuid4().hex[:8]
+                        _sessions[session_id] = target_id
+                        await websocket.send_text(json.dumps({
+                            "method": "Target.attachedToTarget",
+                            "params": {"sessionId": session_id, "targetInfo": info, "waitingForDebugger": False},
+                        }))
+            elif method == "Target.activateTarget":
+                target_id = msg.get("params", {}).get("targetId", "")
+                try:
+                    result = _run_async(
+                        _bridge.send_command(_user_id, method, msg.get("params"), timeout=30.0, target_id=target_id)
+                    )
+                    await websocket.send_text(json.dumps({"id": cmd_id, "result": result}))
+                except Exception:
+                    await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
             elif method == "Target.getTargets":
                 targets = _sync_get_targets()
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {"targetInfos": targets}}))
@@ -303,7 +365,26 @@ async def devtools_browser(websocket: WebSocket):
                     result = _run_async(
                         _bridge.send_command(_user_id, method, msg.get("params"), timeout=30.0)
                     )
+                    target_id = str(result.get("targetId") or "")
+                    target_info = {
+                        "targetId": target_id,
+                        "id": target_id,
+                        "type": "page",
+                        "title": "",
+                        "url": msg.get("params", {}).get("url") or "about:blank",
+                        "attached": False,
+                        "browserContextId": "",
+                    }
                     await websocket.send_text(json.dumps({"id": cmd_id, "result": result}))
+                    if target_id:
+                        await websocket.send_text(json.dumps({"method": "Target.targetCreated", "params": {"targetInfo": target_info}}))
+                        if _auto_attach:
+                            session_id = uuid.uuid4().hex[:8]
+                            _sessions[session_id] = target_id
+                            await websocket.send_text(json.dumps({
+                                "method": "Target.attachedToTarget",
+                                "params": {"sessionId": session_id, "targetInfo": target_info, "waitingForDebugger": False},
+                            }))
                 except Exception as e:
                     await websocket.send_text(json.dumps({"id": cmd_id, "error": {"code": -32000, "message": str(e).splitlines()[0]}}))
             elif method == "Browser.getVersion":

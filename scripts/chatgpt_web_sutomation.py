@@ -54,6 +54,7 @@ CHATGPT_URL = "https://chatgpt.com/"
 FORMAT_ORDER = ["BA", "FEAT", "HERO", "TEST", "UGC"]
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 DOWNLOAD_TEMP_EXTS = {".crdownload", ".tmp", ".part"}
+EXTENSION_CDP_MODE = False
 
 
 def wsl_to_windows_path(path: str) -> str:
@@ -267,6 +268,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--send-confirm-timeout", type=float, default=35.0)
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--cdp-url", default="", help="CDP URL for connecting to existing Chrome (e.g. http://172.18.160.1:9222)")
+    parser.add_argument("--extension-cdp", action="store_true", help="Use the Ad Factory extension CDP proxy; reuses extension tabs instead of Playwright-created pages")
     parser.add_argument(
         "--aspect-ratio",
         choices=["4:5", "9:16"],
@@ -687,6 +689,8 @@ def grant_chatgpt_permissions(context: BrowserContext) -> None:
 
 
 def build_browser_context(args: argparse.Namespace, download_dir: Path):
+    global EXTENSION_CDP_MODE
+    EXTENSION_CDP_MODE = bool(getattr(args, "extension_cdp", False))
     p = sync_playwright().start()
     download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -697,7 +701,11 @@ def build_browser_context(args: argparse.Namespace, download_dir: Path):
         context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
         context.set_default_timeout(30000)
         grant_chatgpt_permissions(context)
-        if not context.pages:
+        if EXTENSION_CDP_MODE:
+            deadline = time.time() + 5
+            while not context.pages and time.time() < deadline:
+                time.sleep(0.25)
+        elif not context.pages:
             context.new_page().goto("about:blank")
         return p, context
 
@@ -922,6 +930,14 @@ def click_new_chat_safely(page: Page) -> bool:
 
 
 def open_prompt_tab(context: BrowserContext, page: Page, job_index: int, first_tab_mode: str) -> Page:
+    if EXTENSION_CDP_MODE:
+        print("  [tab] Reusing extension-controlled browser tab.")
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        return page
+
     use_current = False
     if job_index == 1 and first_tab_mode == "reuse-blank":
         try:
@@ -3001,6 +3017,8 @@ def run() -> None:
             p, context = build_browser_context(args, download_dir)
             _configure_download_dir(context, download_dir)
 
+            if not context.pages and args.extension_cdp:
+                raise RuntimeError("Extension CDP proxy connected, but Playwright did not receive any page targets from the extension")
             page = context.pages[0] if context.pages else context.new_page()
             page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
 

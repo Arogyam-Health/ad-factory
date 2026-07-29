@@ -2001,6 +2001,7 @@ def run_chatgpt_generation(
     prepend_starting_prompt: bool = True,
     first_tab_mode: str = "reuse-blank",
     cdp_url: str = "",
+    extension_cdp: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     prompt_work_dir = RUNTIME_ROOT / "chatgpt_selected_prompts" / f"{batch}_{aspect_folder}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -2055,6 +2056,8 @@ def run_chatgpt_generation(
 
     if cdp_url:
         cmd.extend(["--cdp-url", cdp_url])
+        if extension_cdp:
+            cmd.append("--extension-cdp")
     elif Path("/mnt/c").exists():
         cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
 
@@ -5707,6 +5710,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
         ]
         if cdp_proxy_url:
             cmd.extend(["--cdp-url", cdp_proxy_url])
+            cmd.append("--extension-cdp")
         elif Path("/mnt/c").exists():
             cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
     else:
@@ -5824,6 +5828,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
         ]
         if cdp_proxy_url:
             cmd.extend(["--cdp-url", cdp_proxy_url])
+            cmd.append("--extension-cdp")
         elif Path("/mnt/c").exists():
             cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
     else:
@@ -5865,7 +5870,14 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
 
     for batch, run_dir in sorted(batch_to_run_dir.items()):
         try:
-            result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine, cdp_url=cdp_proxy_url)
+            result = run_916_conversion_from_45_for_batch(
+                batch=batch,
+                headless=headless,
+                run_dir=run_dir,
+                engine=engine,
+                cdp_url=cdp_proxy_url,
+                extension_cdp=bool(cdp_proxy_url),
+            )
         except HTTPException as exc:
             batch_errors.append(f"{batch}: {exc.detail}")
             continue
@@ -6047,6 +6059,7 @@ def run_916_conversion_from_45_for_batch(
     engine: str = "gemini",
     jobs: list[dict[str, Any]] | None = None,
     cdp_url: str = "",
+    extension_cdp: bool = False,
 ) -> dict[str, Any]:
     resolved_jobs = jobs if isinstance(jobs, list) else collect_45_reference_jobs_for_batch(batch)
     if not resolved_jobs:
@@ -6093,6 +6106,7 @@ def run_916_conversion_from_45_for_batch(
                 prepend_starting_prompt=False,
                 first_tab_mode="new",
                 cdp_url=cdp_url,
+                extension_cdp=extension_cdp,
             )
         else:
             result = run_gemini_generation(
@@ -6166,7 +6180,14 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
 
     for batch, run_dir in sorted(batch_to_run_dir.items()):
         try:
-            result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine, cdp_url=cdp_proxy_url)
+            result = run_916_conversion_from_45_for_batch(
+                batch=batch,
+                headless=headless,
+                run_dir=run_dir,
+                engine=engine,
+                cdp_url=cdp_proxy_url,
+                extension_cdp=bool(cdp_proxy_url),
+            )
         except HTTPException as exc:
             batch_errors.append(f"{batch}: {exc.detail}")
             continue

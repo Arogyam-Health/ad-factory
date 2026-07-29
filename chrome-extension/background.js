@@ -354,29 +354,8 @@ async function handleRuntimeCommand(command, params) {
   const tabId = await resolveTabId(params);
   switch (command) {
     case "evaluate": {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: new Function("params", `
-          try {
-            const result = (function() { ${params.expression} }).call(undefined);
-            return { type: typeof result, value: result };
-          } catch(e) {
-            return { type: 'error', description: e.message, value: undefined };
-          }
-        `),
-        args: [params],
-      });
-      const val = results?.[0]?.result;
-      if (val?.type === "error") {
-        return {
-          result: { type: "object", subtype: "error", description: val.description },
-          exceptionDetails: { text: val.description },
-        };
-      }
-      return {
-        result: { type: val?.type || "undefined", value: val?.value },
-        exceptionDetails: null,
-      };
+      await ensureAttached(tabId);
+      return cdpSend(tabId, "Runtime.evaluate", params);
     }
     default:
       return cdpFallback(`Runtime.${command}`, params);
@@ -480,8 +459,9 @@ async function ensureAttached(tabId) {
 }
 
 function cdpSend(tabId, method, params) {
+  const cdpParams = cleanCDPParams(params);
   return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
+    chrome.debugger.sendCommand({ tabId }, method, cdpParams, (result) => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
       } else {
@@ -489,6 +469,14 @@ function cdpSend(tabId, method, params) {
       }
     });
   });
+}
+
+function cleanCDPParams(params) {
+  const clean = { ...(params || {}) };
+  for (const key of Object.keys(clean)) {
+    if (key.startsWith("_")) delete clean[key];
+  }
+  return clean;
 }
 
 /* ─── Helpers ─── */
