@@ -1,0 +1,36 @@
+# ===== COPY this entire block into Render Dashboard → Environment (as "Manual" env vars) =====
+# Replace YOUR_APP_NAME and all <PLACEHOLDER> values with your actual credentials.
+# The app URL will be: https://YOUR_APP_NAME.onrender.com
+
+DEPLOYMENT_MODE=production
+PYTHON_VERSION=3.11.9
+
+MONGODB_URI=<your_mongodb_atlas_connection_string>
+MONGODB_DB_NAME=ad_factory
+APP_SECRET_KEY=<your_random_secret_key>
+ENCRYPTION_KEY=<your_encryption_key>
+
+GOOGLE_CLIENT_ID=<your_google_client_id>
+GOOGLE_CLIENT_SECRET=<your_google_client_secret>
+GOOGLE_REDIRECT_URI=https://YOUR_APP_NAME.onrender.com/api/auth/google/callback
+
+FRONTEND_ORIGIN=https://YOUR_APP_NAME.onrender.com
+CORS_ORIGINS=https://YOUR_APP_NAME.onrender.com
+SESSION_EXPIRE_MINUTES=1440
+STORAGE_PROVIDER=cloudinary
+
+CLOUDINARY_CLOUD_NAME=<your_cloudinary_cloud_name>
+CLOUDINARY_API_KEY=<your_cloudinary_api_key>
+CLOUDINARY_API_SECRET=<your_cloudinary_api_secret>
+
+RESEND_API_KEY=<your_resend_api_key>
+EMAIL_FROM=onboarding@resend.dev
+
+# Optional: SMTP fallback (remove if not needed)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<your_smtp_email>
+SMTP_PASSWORD=<your_smtp_password>
+
+# REQUIRED: add YOUR email here so you can access the admin dashboard
+SUPER_ADMIN_EMAILS=<your_email@example.com>
