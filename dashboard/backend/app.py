@@ -1976,6 +1976,7 @@ def run_chatgpt_generation(
     run_dir: Path | None = None,
     prepend_starting_prompt: bool = True,
     first_tab_mode: str = "reuse-blank",
+    cdp_url: str = "",
 ) -> subprocess.CompletedProcess[str]:
     aspect_folder = "9_16" if aspect_ratio == "9:16" else "4_5"
     prompt_work_dir = RUNTIME_ROOT / "chatgpt_selected_prompts" / f"{batch}_{aspect_folder}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -2028,9 +2029,10 @@ def run_chatgpt_generation(
         cmd.extend(["--image-source-file", image_sources_file])
     cmd.extend(["--aspect-ratio", aspect_ratio])
 
-    if Path("/mnt/c").exists():
-        cdp_url = wsl_chrome_cdp_url()
+    if cdp_url:
         cmd.extend(["--cdp-url", cdp_url])
+    elif Path("/mnt/c").exists():
+        cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
 
     env = dashboard_subprocess_env()
 
@@ -5655,6 +5657,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     out_dir = GENERATED_IMAGES_ROOT / batch_name / "4_5"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    cdp_proxy_url = ""
     if visible:
         from dashboard.backend.services.extension_bridge import extension_bridge
         conn = extension_bridge.get_connection(user_id)
@@ -5664,6 +5667,9 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
                 detail="Visible mode requires the Chrome Extension to be connected. "
                        "Click the extension icon and connect first.",
             )
+        from dashboard.backend.services.cdp_proxy import init_proxy
+        cdp_proxy_url = init_proxy(user_id)
+        print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
 
     if engine == "chatgpt":
         cmd = [
@@ -5685,8 +5691,9 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
             str(INPUT_IMAGES_DIR),
             "--aspect-ratio", "4:5",
         ]
-        # Pass CDP URL if running in WSL
-        if Path("/mnt/c").exists():
+        if cdp_proxy_url:
+            cmd.extend(["--cdp-url", cdp_proxy_url])
+        elif Path("/mnt/c").exists():
             cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
     else:
         cmd = [
@@ -5735,6 +5742,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
     engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
 
+    cdp_proxy_url = ""
     if visible:
         from dashboard.backend.services.extension_bridge import extension_bridge
         conn = extension_bridge.get_connection(user_id)
@@ -5744,6 +5752,9 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
                 detail="Visible mode requires the Chrome Extension to be connected. "
                        "Click the extension icon and connect first.",
             )
+        from dashboard.backend.services.cdp_proxy import init_proxy
+        cdp_proxy_url = init_proxy(user_id)
+        print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
 
     # ---- Step 1: Generate 4:5 images ----
     all_prompt_files: list[str] = []
@@ -5807,7 +5818,9 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
             "--upload-dir", str(INPUT_IMAGES_DIR),
             "--aspect-ratio", "4:5",
         ]
-        if Path("/mnt/c").exists():
+        if cdp_proxy_url:
+            cmd.extend(["--cdp-url", cdp_proxy_url])
+        elif Path("/mnt/c").exists():
             cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
     else:
         cmd = [
@@ -5848,7 +5861,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
 
     for batch, run_dir in sorted(batch_to_run_dir.items()):
         try:
-            result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine)
+            result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine, cdp_url=cdp_proxy_url)
         except HTTPException as exc:
             batch_errors.append(f"{batch}: {exc.detail}")
             continue
@@ -6029,6 +6042,7 @@ def run_916_conversion_from_45_for_batch(
     run_dir: Path | None,
     engine: str = "gemini",
     jobs: list[dict[str, Any]] | None = None,
+    cdp_url: str = "",
 ) -> dict[str, Any]:
     resolved_jobs = jobs if isinstance(jobs, list) else collect_45_reference_jobs_for_batch(batch)
     if not resolved_jobs:
@@ -6074,6 +6088,7 @@ def run_916_conversion_from_45_for_batch(
                 run_dir=run_dir,
                 prepend_starting_prompt=False,
                 first_tab_mode="new",
+                cdp_url=cdp_url,
             )
         else:
             result = run_gemini_generation(
@@ -6128,6 +6143,12 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
                 detail="Visible mode requires the Chrome Extension to be connected. "
                        "Click the extension icon and connect first.",
             )
+        from dashboard.backend.services.cdp_proxy import init_proxy
+        cdp_proxy_url = init_proxy(user_id)
+        print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
+    else:
+        cdp_proxy_url = ""
+
     batch_to_run_dir: dict[str, Path | None] = {}
     for run_id in run_ids:
         try:
@@ -6152,7 +6173,7 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
 
     for batch, run_dir in sorted(batch_to_run_dir.items()):
         try:
-            result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine)
+            result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine, cdp_url=cdp_proxy_url)
         except HTTPException as exc:
             batch_errors.append(f"{batch}: {exc.detail}")
             continue
