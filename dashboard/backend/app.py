@@ -1050,10 +1050,18 @@ def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
 
     if fmt != "ALL" or not formats:
         # Single-format skeleton
-        fmt_override = skeletons.get(fmt, {})
-        if fmt_override and "copy" in fmt_override:
-            if "copy" in base.get("ads", [{}])[0]:
-                base["ads"][0]["copy"] = copy.deepcopy(fmt_override["copy"])
+        if not isinstance(base.get("ads"), list) or not base["ads"]:
+            if fmt in {"HERO", "UGC"}:
+                base = {"format": "{format}", "copy": {"EN": {"headline": "", "support_line": "", "cta": ""}}}
+            elif fmt in {"BA", "FEAT"}:
+                base = {"format": "{format}", "copy": {"EN": {"headline": "", "bullets": [], "cta": ""}}}
+            else:
+                base = {"format": "{format}", "copy": {"EN": {"headline": "", "trust_line": "", "cta": ""}}}
+        else:
+            fmt_override = skeletons.get(fmt, {})
+            if fmt_override and "copy" in fmt_override:
+                if "copy" in base["ads"][0]:
+                    base["ads"][0]["copy"] = copy.deepcopy(fmt_override["copy"])
         placeholder_fmt = fmt if fmt != "ALL" else "<FORMAT>"
         raw = json.dumps(base, ensure_ascii=False, indent=2)
         return raw.replace("{format}", placeholder_fmt)
@@ -1067,7 +1075,13 @@ def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
             continue
         seen.add(f)
         if not isinstance(base.get("ads"), list) or not base["ads"]:
-            ad = {"format": f, "persona": {"number": 0, "name": ""}, "headline_angle": "", "concept_angle": "", "copy": {"EN": {"headline": "", "cta": ""}}}
+            if f in {"HERO", "UGC"}:
+                fallback_copy = {"EN": {"headline": "", "support_line": "", "cta": ""}}
+            elif f in {"BA", "FEAT"}:
+                fallback_copy = {"EN": {"headline": "", "bullets": [], "cta": ""}}
+            else:
+                fallback_copy = {"EN": {"headline": "", "trust_line": "", "cta": ""}}
+            ad = {"format": f, "persona": {"number": 0, "name": ""}, "headline_angle": "", "concept_angle": "", "copy": fallback_copy}
         else:
             ad = copy.deepcopy(base["ads"][0])
         ad["format"] = f
@@ -2916,7 +2930,12 @@ def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir:
         elif parsed is None:
             errors.append(err_msg)
         else:
-            ads_out = parsed.get("ads") or []
+            ads_out = parsed.get("ads")
+            if not isinstance(ads_out, list):
+                if isinstance(parsed, dict) and any(k in parsed for k in {"headline", "format", "copy", "subheadline", "support_line", "cta", "body"}):
+                    ads_out = [parsed]
+                else:
+                    ads_out = []
             for ad_idx, ad_item in enumerate(all_items):
                 if ad_idx < len(ads_out):
                     generated_ads.append(ads_out[ad_idx])
@@ -3066,7 +3085,12 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         elif parsed is None:
             errors.append(err_msg)
         else:
-            ads_out = parsed.get("ads") or []
+            ads_out = parsed.get("ads")
+            if not isinstance(ads_out, list):
+                if isinstance(parsed, dict) and any(k in parsed for k in {"headline", "format", "copy", "subheadline", "support_line", "cta", "body"}):
+                    ads_out = [parsed]
+                else:
+                    ads_out = []
             for ad_idx, ad_item in enumerate(all_items):
                 if ad_idx < len(ads_out):
                     generated_ads.append(ads_out[ad_idx])
