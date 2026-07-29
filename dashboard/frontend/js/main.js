@@ -509,6 +509,9 @@ async function runPipeline() {
           const fallbackLine = data.copy_generation_failures
             ? `\nCopy failures: ${data.copy_generation_failures} ad(s)`
             : "";
+          const failedAdsLine = data.failed_ads_count
+            ? `\nValidation failures: ${data.failed_ads_count} ad(s) excluded — see ${data.failed_ads_log || "run logs"}`
+            : "";
           const warningLine = data.copy_generation_warnings
             ? `\nCopy warnings: ${data.copy_generation_warnings}; log: ${data.copy_warning_log || "run logs"}`
             : "";
@@ -516,7 +519,7 @@ async function runPipeline() {
             ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
             : "";
           const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
-          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${warningLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
+          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${failedAdsLine}${warningLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
           fetchJSON("/api/defaults")
             .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
             .catch(() => {});

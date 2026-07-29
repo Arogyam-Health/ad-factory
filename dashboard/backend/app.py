@@ -1190,6 +1190,55 @@ def validate_generated_copy_payload(copy_json: dict[str, Any], planned_ads: list
     return None
 
 
+def validate_single_ad(ad: dict[str, Any], target_langs: list[str]) -> str | None:
+    """Validate a single ad. Returns error string or None if valid."""
+    if not isinstance(ad, dict):
+        return "Non-object ad item"
+    fmt = str(ad.get("format") or "").strip().upper()
+    persona = ad.get("persona") if isinstance(ad.get("persona"), dict) else {}
+    persona_number = persona.get("number") or persona.get("persona_number")
+    if not isinstance(persona_number, int):
+        return f"Ad {fmt} missing persona number"
+    copy = ad.get("copy") if isinstance(ad.get("copy"), dict) else {}
+    if not copy:
+        return f"Ad {fmt}/P{persona_number} missing copy"
+    for lang in target_langs:
+        block = copy.get(lang) if isinstance(copy.get(lang), dict) else {}
+        if not str(block.get("headline") or "").strip():
+            return f"Ad {fmt}/P{persona_number} missing {lang} headline"
+        if fmt in {"HERO", "UGC"} and not str(block.get("subheadline") or block.get("support_line") or "").strip():
+            return f"Ad {fmt}/P{persona_number} missing {lang} subheadline/support_line"
+        if fmt in {"BA", "FEAT"}:
+            bullets = block.get("bullets") if isinstance(block.get("bullets"), list) else []
+            min_bullets = 4 if fmt == "BA" else 2
+            if len([item for item in bullets if isinstance(item, str) and item.strip()]) < min_bullets:
+                return f"Ad {fmt}/P{persona_number} insufficient {lang} bullets ({min_bullets} required)"
+    return None
+
+
+def filter_valid_ads(copy_json: dict[str, Any], planned_ads: list[dict[str, Any]], language_mode: str = "ALL") -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    """Filter ads to keep only valid ones. Returns (filtered_copy_json, failed_ads, warnings)."""
+    target_langs = TARGET_LANGS_MAP.get(language_mode, ["EN", "HI"])
+    ads = copy_json.get("ads") if isinstance(copy_json, dict) else []
+    if not isinstance(ads, list):
+        return copy_json, [], ["No ads array in payload"]
+
+    valid_ads = []
+    failed_ads = []
+    for ad in ads:
+        err = validate_single_ad(ad, target_langs)
+        if err:
+            failed_ads.append({"ad": ad, "error": err})
+        else:
+            valid_ads.append(ad)
+
+    warnings = [f"{item['error']}" for item in failed_ads]
+
+    filtered = dict(copy_json) if isinstance(copy_json, dict) else {}
+    filtered["ads"] = valid_ads
+    return filtered, failed_ads, warnings
+
+
 def extract_generated_ad_candidate(payload: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
@@ -6368,18 +6417,25 @@ def _run_pipeline_background(
             locks = collect_background_reuse_locks(reuse_backgrounds_from_run_id)
             copy_json, applied_locks = apply_background_reuse_locks(copy_json, locks, share_across_personas=bool(cfg.get("share_background_across_personas")))
             (run_dir / "context" / "background_reuse.json").write_text(json.dumps({"source_run_id": reuse_backgrounds_from_run_id, "available_locks": len(locks), "applied_ads": applied_locks, "share_background_across_personas": bool(cfg.get("share_background_across_personas"))}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        generated_copy_error = validate_generated_copy_payload(copy_json, ads_context, language_mode)
-        if generated_copy_error:
-            (run_dir / "logs" / "opencode_error.txt").write_text(generated_copy_error + "\n\nGenerated payload:\n" + json.dumps(copy_json, ensure_ascii=False, indent=2), encoding="utf-8")
+        copy_json, failed_ads, validation_warnings = filter_valid_ads(copy_json, ads_context, language_mode)
+
+        if failed_ads:
+            failed_log = "\n".join(f"  - {item['error']}" for item in failed_ads)
+            (run_dir / "logs" / "failed_ads.txt").write_text(
+                f"{len(failed_ads)} ad(s) failed validation and were excluded:\n{failed_log}\n\n"
+                f"Full payload:\n{json.dumps(copy_json, ensure_ascii=False, indent=2)}",
+                encoding="utf-8",
+            )
+            print(f"[PIPELINE] {len(failed_ads)} ad(s) failed validation, continuing with {len(copy_json.get('ads', []))} valid ads", file=sys.stderr)
+
+        if not copy_json.get("ads"):
             (run_dir / "partial").mkdir(parents=True, exist_ok=True)
             provider_label = "Google Gemini" if llm_mode == "google_gemini" else "OpenCode"
-            if opencode_failures:
-                non_empty = [str(e) for e in opencode_failures if str(e).strip()]
-                error_detail = "; ".join(e.splitlines()[0] if e.splitlines() else "(empty)" for e in non_empty[:3])
-                (run_dir / "partial" / "error.txt").write_text(f"{provider_label} API error: {error_detail}", encoding="utf-8")
-            else:
-                (run_dir / "partial" / "error.txt").write_text(f"{provider_label} copy generation returned incomplete copy: {generated_copy_error}", encoding="utf-8")
-            print(f"[PIPELINE ERROR] {generated_copy_error}", file=sys.stderr)
+            error_msg = f"{provider_label} copy generation: all {len(failed_ads)} ads failed validation. No valid ads to assemble."
+            if failed_ads:
+                error_msg += f"\nFailed: {'; '.join(item['error'] for item in failed_ads[:5])}"
+            (run_dir / "partial" / "error.txt").write_text(error_msg, encoding="utf-8")
+            print(f"[PIPELINE ERROR] {error_msg}", file=sys.stderr)
             return
 
         copy_file = run_dir / "context" / "copy_batch.json"
@@ -6423,6 +6479,10 @@ def _run_pipeline_background(
         manifest["image_sources_file"] = str(image_sources_file_path)
         manifest["input_images_dir"] = str(INPUT_IMAGES_DIR.relative_to(ROOT)).replace("\\", "/")
         manifest["input_images_uploaded"] = saved_input_images
+        if failed_ads:
+            manifest["failed_ads_count"] = len(failed_ads)
+            manifest["failed_ads"] = [{"error": item["error"], "format": item["ad"].get("format", "?"), "persona": item["ad"].get("persona", {}).get("number", "?")} for item in failed_ads[:20]]
+            manifest["failed_ads_log"] = str((run_dir / "logs" / "failed_ads.txt").relative_to(ROOT))
         if reuse_visual_patterns_from_run_id:
             manifest["visual_pattern_reuse_from_run_id"] = reuse_visual_patterns_from_run_id
         (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
