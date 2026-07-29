@@ -119,12 +119,12 @@ def init_proxy(user_id: str, host: str = "127.0.0.1", port: int = 0) -> str:
 
     _ensure_refresh()
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind((host, port if port else 0))
-    actual_port = sock.getsockname()[1]
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((host, port if port else 0))
+        actual_port = sock.getsockname()[1]
     _port = actual_port
 
-    config = uvicorn.Config(app, host=host, port=actual_port, log_level="warning", sock=sock)
+    config = uvicorn.Config(app, host=host, port=actual_port, log_level="warning")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
