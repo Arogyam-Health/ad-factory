@@ -2352,6 +2352,8 @@ def _upload_one_by_one_via_menu(page: Page, file_paths: list[str], before_srcs: 
     """
     for idx, file_path in enumerate(file_paths, start=1):
         _upload_one_file_via_menu(page, file_path, before_srcs, target_count=idx)
+        if idx < len(file_paths):
+            time.sleep(3.0)
     return True
 
 

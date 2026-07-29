@@ -42,6 +42,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/reference-flow.css" />
+  <link rel="stylesheet" href="/reference-product-selection.css" />
+  <link rel="stylesheet" href="/reference-gallery.css" />
   <script>
     (function(){var t=localStorage.getItem("dashboard_theme");if(t==="dark"||t==="light"){document.documentElement.setAttribute("data-theme",t)}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches){document.documentElement.setAttribute("data-theme","dark")}})();
   </script>
@@ -115,7 +118,12 @@
       </div>
     </header>
 
-    <div class="layout-columns">
+    <nav class="flow-mode-switch" aria-label="Generation flow">
+      <button id="structuredFlowTab" class="flow-mode-tab active" type="button" data-flow="structured">Structured Flow</button>
+      <button id="referenceFlowTab" class="flow-mode-tab" type="button" data-flow="reference">Reference Image Flow</button>
+    </nav>
+
+    <div id="structuredFlowPanel" class="layout-columns">
       <div class="column column-left">
         <section class="card card-personas" aria-labelledby="personaHeading">
           <h2 id="personaHeading">1) Persona + Formats</h2>
@@ -257,7 +265,7 @@
           </label>
           <select id="visualPatternReuseRun" disabled></select>
 
-          <p class="hint">Image and Cloudinary credentials are loaded from root <code>.env.dashboard</code>.</p>
+          <p class="hint">All generated images and output files are stored locally on the server.</p>
 
           <button id="runBtn">Run Pipeline</button>
           <button id="cancelRunBtn" class="ghost-btn" type="button" style="display:none">Cancel</button>
@@ -267,8 +275,36 @@
       </div>
     </div>
 
-    <section class="card card-runs" aria-labelledby="runsHeading">
-      <h2 id="runsHeading">7) Latest Runs</h2>
+    <div id="referenceFlowPanel" class="reference-flow-panel hidden">
+      <section class="card reference-hero-card"><div><p class="eyebrow">Reference-led generation</p><h2>Visual references in. Production-ready ads out.</h2><p>Each job receives the latest persona seed, one visual reference, the dedicated reference product document, only the selected product packshots, and that reference card's optional instruction.</p></div><div class="reference-flow-equation"><strong id="referenceJobCount">0 jobs</strong><span>personas × selected references</span></div></section>
+      <div class="reference-bento">
+        <section class="card reference-personas-card"><div class="reference-card-heading"><span class="reference-step">01</span><div><h2>Target personas</h2><p class="hint">Synced live from <code>persona_seeds.json</code>.</p></div></div><div id="referencePersonaList" class="reference-persona-grid"></div></section>
+        <section class="card reference-library-card"><div class="reference-card-heading"><span class="reference-step">02</span><div><h2>Reference library</h2><p class="hint">Manual swipe only. Comments apply to one reference and are never persisted.</p></div></div><div class="reference-upload-zone"><input id="referenceImageFiles" class="reference-folder-input" type="file" multiple webkitdirectory directory accept="image/png,image/jpeg,image/webp" /><button id="referenceChooseFiles" class="ghost-btn" type="button">Add images</button><input id="referenceIndividualFiles" class="hidden" type="file" multiple accept="image/png,image/jpeg,image/webp" /><span id="referenceImageSummary" class="hint">Loading…</span></div><div class="swiper-shell"><button id="referencePrev" class="swiper-arrow" type="button">←</button><div id="referencePreviewGrid" class="reference-swiper-track"></div><button id="referenceNext" class="swiper-arrow" type="button">→</button></div></section>
+        <section class="card reference-assets-card"><div class="reference-card-heading"><span class="reference-step">03</span><div><h2>Product assets</h2><p class="hint">Persistent, separately stored, and individually selectable for each run.</p></div></div><div class="asset-upload-row"><label class="asset-upload-button">Upload product images<input id="referenceProductImages" type="file" multiple accept="image/*" /></label><label class="toggle-label"><input id="referenceClearProductImages" type="checkbox" /><span>Replace existing</span></label></div><span id="referenceProductImageSummary" class="hint">Loading product images…</span><div class="swiper-shell compact"><button id="productPrev" class="swiper-arrow" type="button">←</button><div id="referenceProductGallery" class="reference-swiper-track product-track"></div><button id="productNext" class="swiper-arrow" type="button">→</button></div><label>Product document</label><input id="referenceProductFile" type="file" accept=".txt,.md,text/plain" /><button id="viewReferenceProductDoc" class="ghost-btn" type="button">View product document</button><div id="referenceProductDocMeta" class="hint"></div></section>
+        <section class="card reference-context-card"><div class="reference-card-heading"><span class="reference-step">04</span><div><h2>Reference context</h2><p class="hint">Inspect exactly what this flow uses.</p></div></div><div class="context-actions"><button id="viewReferencePersonaSeed" class="ghost-btn" type="button">View persona seed</button><button id="editReferenceStartingPrompt" class="ghost-btn" type="button">Reference starting prompt</button></div><p class="reference-settings-note">The Structured Flow starting prompt remains unchanged. Legacy global-rule text is automatically removed from the Reference Flow prompt.</p></section>
+        <section class="card reference-config-card"><div class="reference-card-heading"><span class="reference-step">05</span><div><h2>Generation</h2><p class="hint">Execution happens in the shared run workspace below.</p></div></div><label>Image engine</label><select id="referenceEngine"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option></select><label class="toggle-label execution-toggle"><input id="referenceGenerate916" type="checkbox" checked /><span>Create 9:16 after 4:5</span></label><div class="reference-settings-note">4:5 uses an 8% safe zone. Outputs remain in separate <code>ref_vN</code> batches.</div></section>
+      </div>
+    </div>
+
+    <section class="card card-runs" id="generationWorkspace" aria-labelledby="runsHeading">
+      <div class="workspace-heading">
+        <div>
+          <p class="eyebrow" id="workspaceEyebrow">Structured generation</p>
+          <h2 id="workspaceTitle">8) Latest Runs</h2>
+          <p id="workspaceDescription" class="hint">Generate, inspect, revise, and download structured-flow batches.</p>
+        </div>
+        <div id="referenceWorkspaceActions" class="reference-workspace-actions hidden">
+          <button id="referenceRunBtn" type="button">Run Reference Flow</button>
+          <button id="referenceCancelBtn" class="ghost-btn" type="button" disabled>Cancel Run</button>
+        </div>
+      </div>
+      <div id="referenceProgressArea" class="reference-progress-area hidden">
+        <div class="reference-progress-shell">
+          <div id="referenceProgressBar" class="reference-progress-bar"></div>
+        </div>
+        <div id="referenceProgressText" class="reference-progress-text">Ready</div>
+      </div>
+      <div id="referenceLiveGallery" class="image-gallery live-gallery hidden"></div>
       <div class="runs-toolbar">
         <button id="refreshRuns" class="ghost-btn" type="button">Refresh</button>
         <div class="batch-dropdown">
@@ -296,6 +332,13 @@
       <div class="log-terminal-wrap">
         <div class="log-terminal-header">Activity Log</div>
         <pre id="logStatus" class="status log-status" aria-live="polite"></pre>
+      </div>
+    </section>
+
+    <section class="card card-storage" aria-labelledby="storageHeading">
+      <h2 id="storageHeading">Storage</h2>
+      <div id="storageInfo" class="storage-info">
+        <p class="hint">Loading storage info...</p>
       </div>
     </section>
   </div>
@@ -344,5 +387,8 @@
       });
     });
   </script>
+  <script type="module" src="/js/reference-flow.js"></script>
+  <script type="module" src="/js/reference-product-selection.js"></script>
+  <script type="module" src="/js/image-comments.js"></script>
 </body>
 </html>

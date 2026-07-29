@@ -8,7 +8,7 @@ LOG_DIR="$ROOT_DIR/dashboard_storage/logs"
 RUNS_DIR="$ROOT_DIR/dashboard_storage/runs"
 
 DASHBOARD_HOST="127.0.0.1"
-DASHBOARD_PORT="8787"
+DASHBOARD_PORT="4090"
 DASHBOARD_PID_FILE="$PID_DIR/dashboard.pid"
 DASHBOARD_LOG="$LOG_DIR/dashboard.log"
 

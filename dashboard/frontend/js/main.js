@@ -123,15 +123,8 @@ async function initDefaults() {
         opencode = await fetchJSON("/api/opencode/catalog");
       } catch {}
     }
-    state.modelsByProvider = opencode.models_by_provider || {};
-    document.getElementById("opencodeApiUrl").value = opencode.api_url || "";
 
-    const defaultModel = opencode.default_model || "";
-    const defaultProvider = (opencode.providers || Object.keys(state.modelsByProvider))[0] || "";
-
-    renderModelOptions(defaultProvider, defaultModel);
-
-    // Load provider config
+    // Load provider config (may have saved URL/key)
     const pcfg = data.provider || {};
     const provider = pcfg.current || "opencode";
     document.getElementById("llmProvider").value = provider;
@@ -140,7 +133,31 @@ async function initDefaults() {
     populateGoogleModels(pcfg.google_models || [], pcfg.google_model || "");
     document.getElementById("googleApiKey").value = "";
 
-    await loadProviderConfigsIntoFields();
+    const providerConfigs = await loadProviderConfigsIntoFields();
+
+    // Prefer the user's saved MongoDB OpenCode config over the global fallback catalog.
+    if (providerConfigs.opencode?.api_url || providerConfigs.opencode?._has_keys) {
+      try {
+        opencode = await fetchJSON("/api/user/provider-config/opencode/catalog");
+      } catch (err) {
+        setStatus(`Failed to load saved OpenCode models: ${String(err)}`);
+      }
+    } else if (!Object.keys(opencode.models_by_provider || {}).length) {
+      try {
+        opencode = await fetchJSON("/api/user/provider-config/opencode/catalog");
+      } catch {}
+    }
+
+    state.modelsByProvider = opencode.models_by_provider || {};
+    const opencodeUrlField = document.getElementById("opencodeApiUrl");
+    if (opencodeUrlField && (!opencodeUrlField.value || opencode.api_url !== data.opencode?.api_url)) {
+      opencodeUrlField.value = opencode.api_url || opencodeUrlField.value || "";
+    }
+
+    const defaultModel = opencode.default_model || "";
+    const defaultProvider = (opencode.providers || Object.keys(state.modelsByProvider))[0] || "";
+
+    renderModelOptions(defaultProvider, defaultModel);
   } catch (err) {
     setStatus(`Failed to load defaults: ${String(err)}`);
   }
@@ -296,12 +313,28 @@ async function initStudioSourceSelector() {
   });
 }
 
+async function refreshOpenCodeModels() {
+  try {
+    const catalog = await fetchJSON("/api/user/provider-config/opencode/catalog");
+    state.modelsByProvider = catalog.models_by_provider || {};
+    const defaultModel = catalog.default_model || "";
+    const defaultProvider = (catalog.providers || Object.keys(state.modelsByProvider))[0] || "";
+    const urlField = document.getElementById("opencodeApiUrl");
+    if (urlField && catalog.api_url) urlField.value = catalog.api_url;
+    renderModelOptions(defaultProvider, defaultModel);
+  } catch (err) {
+    setStatus(`Failed to load OpenCode models: ${String(err)}`);
+  }
+}
+
 async function loadProviderConfigsIntoFields() {
+  const saved = {};
   try {
     const configs = await fetchJSON("/api/user/provider-config");
     for (const entry of configs) {
       const p = entry.provider;
       const cfg = entry.config || {};
+      saved[p] = cfg;
       if (p === "opencode") {
         if (cfg.api_url) document.getElementById("opencodeApiUrl").value = cfg.api_url;
         if (cfg.api_key) document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
@@ -317,7 +350,10 @@ async function loadProviderConfigsIntoFields() {
         }
       }
     }
-  } catch {}
+  } catch (err) {
+    setStatus(`Failed to load saved provider config: ${String(err)}`);
+  }
+  return saved;
 }
 
 document.getElementById("saveGoogleKey")?.addEventListener("click", async () => {
@@ -338,6 +374,7 @@ document.getElementById("saveOpenCodeUrl")?.addEventListener("click", async () =
   if (!url) { setStatus("Enter an API URL first."); return; }
   try {
     await saveProviderConfig("opencode", { api_url: url });
+    await refreshOpenCodeModels();
     setStatus("OpenCode URL saved to MongoDB");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
@@ -350,6 +387,7 @@ document.getElementById("saveOpenCodeKey")?.addEventListener("click", async () =
     await saveProviderConfig("opencode", { api_key: key, default_model: model });
     document.getElementById("opencodeApiKey").value = "";
     document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
+    await refreshOpenCodeModels();
     setStatus("OpenCode API key saved to MongoDB");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
@@ -775,3 +813,24 @@ window.addEventListener("hashchange", () => {
 });
 
 Promise.all([initDefaults(), loadAndRenderRuns()]).catch((err) => setStatus(String(err)));
+
+// Load storage info
+fetch("/api/storage/info")
+  .then(r => r.json())
+  .then(info => {
+    const el = document.getElementById("storageInfo");
+    if (!el) return;
+    el.innerHTML = `
+      <p class="hint">All files are stored locally on the server filesystem.</p>
+      <table class="storage-paths">
+        <tr><td><strong>Generated Images</strong></td><td><code>${info.generated_images_dir}</code></td></tr>
+        <tr><td><strong>Output Files</strong></td><td><code>${info.output_dir}</code></td></tr>
+        <tr><td><strong>Run Data</strong></td><td><code>${info.runs_dir}</code></td></tr>
+      </table>
+      <p class="hint">You can access these directories directly on the server to view or download files.</p>
+    `;
+  })
+  .catch(() => {
+    const el = document.getElementById("storageInfo");
+    if (el) el.innerHTML = '<p class="hint">Could not load storage info.</p>';
+  });

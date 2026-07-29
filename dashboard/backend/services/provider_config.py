@@ -36,17 +36,22 @@ def get_provider_config(user_id: str, provider: str) -> Optional[dict[str, Any]]
 
 
 def set_provider_config(user_id: str, provider: str, raw_config: dict[str, Any]) -> dict[str, Any]:
-    encrypted_config = {}
+    existing_doc = get_sync_db()[COLL_PROVIDER_CONFIGS].find_one(
+        {"user_id": user_id, "provider": provider},
+    )
+    existing_config = existing_doc.get("config", {}) if existing_doc else {}
+
+    merged_config = dict(existing_config)
     for key, value in raw_config.items():
         if key.endswith("_key") or key.endswith("_secret"):
-            encrypted_config[key] = encrypt_value(str(value))
+            merged_config[key] = encrypt_value(str(value))
         else:
-            encrypted_config[key] = value
+            merged_config[key] = value
 
     get_sync_db()[COLL_PROVIDER_CONFIGS].update_one(
         {"user_id": user_id, "provider": provider},
         {"$set": {
-            "config": encrypted_config,
+            "config": merged_config,
             "updated_at": time.time(),
         }},
         upsert=True,

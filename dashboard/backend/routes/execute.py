@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Body, File, Form, Request, UploadFile
 
 from dashboard.backend.app import RUNS_ROOT, api_run_execute
+from dashboard.backend.auth.service import get_current_user_from_cookie
 from dashboard.backend.chatgpt_runtime_patch import install_chatgpt_watchdog
 from dashboard.backend.db.settings import settings
 from dashboard.backend.reference_library import (
@@ -30,10 +31,15 @@ router = APIRouter()
 
 
 def _resolve_user_id(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    if user:
+        return user["user_id"]
+    session_token = request.cookies.get("session")
+    user = get_current_user_from_cookie(session_token)
+    if user:
+        return user["user_id"]
     if settings.is_production:
-        user = getattr(request.state, "user", None)
-        if user:
-            return user["user_id"]
+        return ""
     return "dev_user"
 
 

@@ -1017,7 +1017,7 @@ async function renderImages(container, page = 1, filters = {}) {
       ["Image ID", "Thumbnail", "Run ID", "User ID", "Created", "Actions"],
       data.items,
       (tr, img) => {
-        const hasUrl = img.url || img.storage_path || img.cloudinary_url;
+        const hasUrl = img.local_path || img.file_path || img.url || img.storage_path;
         tr.innerHTML = `
           <td>${escapeHtml((img.image_id || img._id || "").toString().slice(0, 12))}...</td>
           <td>${hasUrl ? `<a href="${escapeHtml(hasUrl)}" target="_blank" rel="noopener">View</a>` : "-"}</td>

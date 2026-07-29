@@ -32,12 +32,6 @@ services:
       - key: SESSION_EXPIRE_MINUTES
         value: "1440"
       - key: STORAGE_PROVIDER
-        value: cloudinary
-      - key: CLOUDINARY_CLOUD_NAME
-        sync: false
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
+        value: local
       - key: PYTHON_VERSION
         value: "3.11"

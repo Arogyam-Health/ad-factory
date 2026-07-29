@@ -50,15 +50,6 @@ class Settings:
     storage_provider: str = field(default_factory=lambda: os.getenv(
         "STORAGE_PROVIDER", "local"
     ))
-    cloudinary_cloud_name: str = field(default_factory=lambda: os.getenv(
-        "CLOUDINARY_CLOUD_NAME", ""
-    ))
-    cloudinary_api_key: str = field(default_factory=lambda: os.getenv(
-        "CLOUDINARY_API_KEY", ""
-    ))
-    cloudinary_api_secret: str = field(default_factory=lambda: os.getenv(
-        "CLOUDINARY_API_SECRET", ""
-    ))
     super_admin_emails: str = field(default_factory=lambda: os.getenv(
         "SUPER_ADMIN_EMAILS", ""
     ))

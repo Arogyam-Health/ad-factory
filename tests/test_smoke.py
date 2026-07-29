@@ -442,109 +442,6 @@ def test_storage_backend() -> int:
     return failed
 
 
-def test_cloudinary_upload() -> int:
-    failed = 0
-    print("\n[Cloudinary upload]")
-
-    try:
-        import cloudinary  # noqa: F401
-    except ImportError:
-        print("  SKIP (cloudinary package not installed)")
-        return failed
-
-    from dashboard.backend.services.storage.service import reset_storage_backend
-
-    import tempfile
-    try:
-        from unittest.mock import patch
-    except ImportError:
-        print("  SKIP (unittest.mock not available)")
-        return failed
-
-    # Set env vars so backend reports available
-    import os
-    os.environ["CLOUDINARY_CLOUD_NAME"] = "test-cloud"
-    os.environ["CLOUDINARY_API_KEY"] = "test-key"
-    os.environ["CLOUDINARY_API_SECRET"] = "test-secret"
-    reset_storage_backend()
-
-    mock_result = {
-        "public_id": "ad-factory/test_image",
-        "secure_url": "https://res.cloudinary.com/test-cloud/image/upload/v1/ad-factory/test_image.png",
-        "width": 1024,
-        "height": 768,
-        "format": "png",
-        "bytes": 12345,
-        "etag": "abc123",
-        "version": "1",
-        "signature": "sig123",
-        "original_filename": "test_image",
-    }
-
-    with patch("cloudinary.uploader.upload", return_value=mock_result) as mock_upload:
-        from dashboard.backend.services.storage.service import image_metadata_for_db
-        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        tmp.write(b"fake-png-data")
-        tmp.close()
-        tmp_path = Path(tmp.name)
-
-        doc = image_metadata_for_db(tmp_path, run_id="test-cld-run", user_id="test-cld-user", batch="v999")
-        mock_upload.assert_called_once()
-        failed += ok(True, "cloudinary.uploader.upload was called")
-
-        failed += ok(doc["storage_provider"] == "cloudinary", f"storage_provider is cloudinary: {doc['storage_provider']}")
-        failed += ok(doc["secure_url"] == mock_result["secure_url"], "secure_url matches Cloudinary response")
-        failed += ok(doc["cloudinary_public_id"] == mock_result["public_id"], "cloudinary_public_id matches")
-        failed += ok(doc["width"] == 1024, "width matches")
-        failed += ok(doc["height"] == 768, "height matches")
-        failed += ok(doc["format"] == "png", "format matches")
-        failed += ok(doc["bytes"] == 12345, "bytes matches")
-        failed += ok("metadata" in doc, "metadata present")
-        failed += ok(doc["metadata"]["etag"] == "abc123", "cloudinary metadata present")
-
-        # Download endpoint should redirect to secure_url (requires MongoDB)
-        from dashboard.backend.db.client import get_sync_db
-        from dashboard.backend.db.collections import COLL_IMAGES
-        from dashboard.backend.db.client import db_available
-
-        if db_available():
-            db = get_sync_db()
-            db[COLL_IMAGES].update_one(
-                {"image_id": doc["image_id"]},
-                {"$set": doc},
-                upsert=True,
-            )
-
-            from dashboard.backend.auth.service import create_session
-            tok = create_session("test-cld-user")
-            resp = client.get(f"/api/files/download/image/{doc['image_id']}", cookies={"session": tok})
-            failed += ok(resp.status_code in (200, 307, 302), f"Download returns redirect or success: {resp.status_code}")
-            if resp.status_code in (302, 307):
-                failed += ok(mock_result["secure_url"] in str(resp.headers.get("location", "")), "Redirects to Cloudinary secure_url")
-
-            # Wrong user gets 403
-            tok_b = create_session("user_B")
-            resp_b = client.get(f"/api/files/download/image/{doc['image_id']}", cookies={"session": tok_b})
-            failed += ok(resp_b.status_code == 403, "Wrong user gets 403 for cloudinary image")
-
-            db[COLL_IMAGES].delete_many({"run_id": "test-cld-run"})
-        else:
-            from dashboard.backend.auth.service import create_session
-            resp = client.get(f"/api/files/download/image/{doc['image_id']}")
-            failed += ok(resp.status_code == 401, "Download image without auth returns 401 (not found)")
-            print("  SKIP download/ownership HTTP tests (MongoDB not available)")
-
-        tmp_path.unlink()
-
-    # Clean env
-    del os.environ["CLOUDINARY_CLOUD_NAME"]
-    del os.environ["CLOUDINARY_API_KEY"]
-    del os.environ["CLOUDINARY_API_SECRET"]
-    reset_storage_backend()
-
-    return failed
-
-
 # ─── Provider config isolation tests ───────────────────────────────────────
 
 
@@ -1770,7 +1667,6 @@ def main() -> int:
     total += test_ownership_isolation()
     total += test_file_mapping()
     total += test_storage_backend()
-    total += test_cloudinary_upload()
     total += test_config_system()
     total += test_org_system()
     total += test_config_versions()

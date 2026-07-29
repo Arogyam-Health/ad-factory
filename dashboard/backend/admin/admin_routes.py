@@ -808,33 +808,11 @@ def admin_readiness(
         })
 
     # 7. storage
-    storage_provider = os.environ.get("STORAGE_PROVIDER", "").lower()
-    if storage_provider == "cloudinary":
-        st_checks: list[str] = []
-        if not os.environ.get("CLOUDINARY_CLOUD_NAME", ""):
-            st_checks.append("CLOUDINARY_CLOUD_NAME")
-        if not os.environ.get("CLOUDINARY_API_KEY", ""):
-            st_checks.append("CLOUDINARY_API_KEY")
-        if not os.environ.get("CLOUDINARY_API_SECRET", ""):
-            st_checks.append("CLOUDINARY_API_SECRET")
-        if st_checks:
-            checks.append({
-                "key": "storage",
-                "status": "error",
-                "message": f"Cloudinary configured but missing: {', '.join(st_checks)}",
-            })
-        else:
-            checks.append({
-                "key": "storage",
-                "status": "ok",
-                "message": "Cloudinary configured",
-            })
-    else:
-        checks.append({
-            "key": "storage",
-            "status": "ok",
-            "message": f"Storage provider: {storage_provider or 'local'}",
-        })
+    checks.append({
+        "key": "storage",
+        "status": "ok",
+        "message": "Storage provider: local (all files stored on server filesystem)",
+    })
 
     # 8. config_integrity
     if db_ok:

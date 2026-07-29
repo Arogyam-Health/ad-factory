@@ -74,6 +74,22 @@ FORMAT_VISUAL_ARCHETYPES = _load_visual_archetypes()
 PROMPT_ASSEMBLER_DIR = Path(__file__).resolve().parent
 PROMPT_ASSEMBLER_TEMPLATES = json.loads((PROMPT_ASSEMBLER_DIR / "prompt_assembler_templates.json").read_text(encoding="utf-8"))
 
+
+def default_visual_archetype(fmt: str) -> dict[str, Any]:
+    label = f"Default {fmt} layout"
+    return {
+        "id": f"default_{fmt.lower()}",
+        "label": label,
+        "layout_lines": [
+            f"- Use a clean {fmt} composition with one obvious focal hierarchy.",
+            "- Keep product labels readable and fully inside the safe-zone.",
+            "- Place headline, support copy, CTA, and proof bar with clear separation.",
+        ],
+        "direction_lines": [
+            f"- Selected visual archetype fallback: default_{fmt.lower()} - {label}",
+        ],
+    }
+
 @dataclass(frozen=True)
 class CopyBlock:
     headline: str
@@ -209,6 +225,67 @@ def require_str(obj: dict[str, Any], key: str, ctx: str) -> str:
     return val.strip()
 
 
+def optional_str(obj: dict[str, Any], key: str) -> str:
+    val = obj.get(key)
+    return val.strip() if isinstance(val, str) and val.strip() else ""
+
+
+def default_copy_text(fmt: str, lang: str, field: str) -> str:
+    defaults = {
+        "EN": {
+            "headline": "A simpler daily wellness routine",
+            "support_line": "Designed to fit into your day with clear, guided steps.",
+            "trust_line": "Trusted by thousands of wellness-focused customers.",
+            "cta": "See how it works",
+        },
+        "HI": {
+            "headline": "रोज की वेलनेस के लिए आसान रूटीन",
+            "support_line": "आपके दिन में आसानी से फिट होने वाले साफ, गाइडेड स्टेप्स।",
+            "trust_line": "हजारों वेलनेस-केंद्रित ग्राहकों का भरोसा।",
+            "cta": "जानें कैसे काम करता है",
+        },
+        "HINGLISH": {
+            "headline": "Daily wellness ke liye simple routine",
+            "support_line": "Aapke day mein fit hone wale clear, guided steps.",
+            "trust_line": "Thousands of wellness-focused customers ka trust.",
+            "cta": "Dekhein kaise work karta hai",
+        },
+    }
+    text = defaults.get(lang, defaults["EN"]).get(field, "")
+    if fmt == "TEST" and field == "headline":
+        return {
+            "EN": "Real routines, real trust",
+            "HI": "असली रूटीन, असली भरोसा",
+            "HINGLISH": "Real routine, real trust",
+        }.get(lang, text)
+    return text
+
+
+def default_bullets(fmt: str, lang: str) -> list[str]:
+    if fmt == "BA":
+        return {
+            "EN": ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"],
+            "HI": ["पहले: शुरुआत साफ नहीं थी", "पहले: रूटीन फॉलो करना मुश्किल था", "बाद में: रोज के स्टेप्स साफ हुए", "बाद में: जारी रखने का भरोसा बढ़ा"],
+            "HINGLISH": ["Before: start clear nahi tha", "Before: routine follow karna hard tha", "After: daily steps clearer hue", "After: continue karne ka confidence badha"],
+        }.get(lang, ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"])
+    return {
+        "EN": ["Clear daily steps", "Premium, guided routine"],
+        "HI": ["साफ रोजाना स्टेप्स", "प्रीमियम, गाइडेड रूटीन"],
+        "HINGLISH": ["Clear daily steps", "Premium guided routine"],
+    }.get(lang, ["Clear daily steps", "Premium, guided routine"])
+
+
+def safe_headline(raw: dict[str, Any], fmt: str, lang: str, ctx: str) -> str:
+    headline = optional_str(raw, "headline") or default_copy_text(fmt, lang, "headline")
+    if re.search(r"\b(ok\s*liquid|ok\s*tablet|ok\s*powder|okp)\b", headline, flags=re.IGNORECASE):
+        return default_copy_text(fmt, lang, "headline")
+    if re.search(r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b", headline, flags=re.IGNORECASE):
+        return default_copy_text(fmt, lang, "headline")
+    if not headline:
+        raise RuntimeError(f"Missing or empty string 'headline' in {ctx}")
+    return headline
+
+
 def require_int(obj: dict[str, Any], key: str, ctx: str) -> int:
     val = obj.get(key)
     if not isinstance(val, int):
@@ -232,23 +309,32 @@ def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]
 
 def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
     ctx = f"ads[].copy.{lang} for format={fmt}"
-    headline = require_str(raw, "headline", ctx)
-    if re.search(r"\b(ok\s*liquid|ok\s*tablet|ok\s*powder|okp)\b", headline, flags=re.IGNORECASE):
-        raise RuntimeError(f"{ctx}.headline contains product component name; move it to support/bullets")
-    if re.search(r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b", headline, flags=re.IGNORECASE):
-        raise RuntimeError(f"{ctx}.headline contains protocol mechanics; move to support/bullets")
-    cta = require_str(raw, "cta", ctx)
+    headline = safe_headline(raw, fmt, lang, ctx)
+    cta = optional_str(raw, "cta") or default_copy_text(fmt, lang, "cta")
     sub_val = raw.get("subheadline") or raw.get("support_line")
     support_line = (sub_val or "").strip() if isinstance(sub_val, str) else ""
-    context_line = (raw.get("context_line") or "").strip() if isinstance(raw.get("context_line"), str) else ""
-    trust_line = (raw.get("trust_line") or "").strip() if isinstance(raw.get("trust_line"), str) else ""
-    attribution = (raw.get("attribution") or "").strip() if isinstance(raw.get("attribution"), str) else ""
+    if fmt in {"HERO", "UGC"} and not support_line:
+        support_line = default_copy_text(fmt, lang, "support_line")
+    context_line = optional_str(raw, "context_line")
+    trust_line = optional_str(raw, "trust_line")
+    if fmt == "TEST" and not trust_line:
+        trust_line = default_copy_text(fmt, lang, "trust_line")
+    attribution = optional_str(raw, "attribution")
     bullets_val = raw.get("bullets")
     bullets: list[str] | None = None
     if bullets_val is not None:
-        if not isinstance(bullets_val, list) or not all(isinstance(x, str) and x.strip() for x in bullets_val):
-            raise RuntimeError(f"'bullets' must be a non-empty string list when present in {ctx}")
-        bullets = [x.strip() for x in bullets_val]
+        if isinstance(bullets_val, list):
+            bullets = [x.strip() for x in bullets_val if isinstance(x, str) and x.strip()]
+        if not bullets:
+            bullets = None
+    if fmt in {"BA", "FEAT"}:
+        min_bullets = 4 if fmt == "BA" else 2
+        if not bullets or len(bullets) < min_bullets:
+            fallback_bullets = default_bullets(fmt, lang)
+            bullets = (bullets or []) + fallback_bullets[len(bullets or []):min_bullets]
+        if bullets:
+            bullets = bullets[: max(min_bullets, len(bullets))]
+    if bullets:
         if fmt == "BA":
             bullets = [strip_ba_panel_label(x) for x in bullets]
     return CopyBlock(
@@ -304,7 +390,7 @@ def pick_visual_archetype(
 ) -> dict[str, Any]:
     variants = FORMAT_VISUAL_ARCHETYPES.get(fmt) or []
     if not variants:
-        raise RuntimeError(f"No visual archetypes configured for format {fmt}")
+        return default_visual_archetype(fmt)
 
     if forced_archetype and forced_archetype.strip():
         return find_visual_archetype(fmt, forced_archetype.strip())

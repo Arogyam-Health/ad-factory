@@ -15,7 +15,6 @@ import time
 import urllib.request
 import hashlib
 import importlib.util
-import mimetypes
 import traceback
 import uuid
 import asyncio
@@ -354,7 +353,7 @@ def _store_output_mapping(run_id: str, user_id: str, batch: str, manifest: dict[
                                 meta = json.loads(sidecar.read_text(encoding="utf-8", errors="ignore"))
                             except Exception:
                                 pass
-                        # Upload via active storage backend (local or cloudinary)
+                        # Store image metadata in MongoDB
                         try:
                             from dashboard.backend.services.storage.service import image_metadata_for_db
                             img_doc = image_metadata_for_db(
@@ -1067,7 +1066,10 @@ def build_response_skeleton(fmt: str, formats: list[str] | None = None) -> str:
         if f in seen:
             continue
         seen.add(f)
-        ad = copy.deepcopy(base["ads"][0])
+        if not isinstance(base.get("ads"), list) or not base["ads"]:
+            ad = {"format": f, "persona": {"number": 0, "name": ""}, "headline_angle": "", "concept_angle": "", "copy": {"EN": {"headline": "", "cta": ""}}}
+        else:
+            ad = copy.deepcopy(base["ads"][0])
         ad["format"] = f
         fmt_override = skeletons.get(f, {})
         if fmt_override and "copy" in fmt_override:
@@ -1970,62 +1972,6 @@ def run_chatgpt_generation(
     return result
 
 
-def build_multipart_form(fields: dict[str, str], file_field: str, file_path: Path) -> tuple[bytes, str]:
-    boundary = f"----dashboard{uuid.uuid4().hex}"
-    lines: list[bytes] = []
-
-    for key, value in fields.items():
-        lines.append(f"--{boundary}\r\n".encode("utf-8"))
-        lines.append(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
-        lines.append(f"{value}\r\n".encode("utf-8"))
-
-    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-    lines.append(f"--{boundary}\r\n".encode("utf-8"))
-    lines.append(
-        (
-            f'Content-Disposition: form-data; name="{file_field}"; filename="{file_path.name}"\r\n'
-            f"Content-Type: {mime_type}\r\n\r\n"
-        ).encode("utf-8")
-    )
-    lines.append(file_path.read_bytes())
-    lines.append(b"\r\n")
-    lines.append(f"--{boundary}--\r\n".encode("utf-8"))
-
-    body = b"".join(lines)
-    content_type = f"multipart/form-data; boundary={boundary}"
-    return body, content_type
-
-
-def upload_image_to_cloudinary(image_path: Path, cloud_name: str, api_key: str, api_secret: str) -> str:
-    if not image_path.exists() or not image_path.is_file():
-        raise RuntimeError(f"Image not found for upload: {image_path}")
-
-    timestamp = str(int(time.time()))
-    signature_base = f"timestamp={timestamp}{api_secret}"
-    signature = hashlib.sha1(signature_base.encode("utf-8")).hexdigest()
-
-    fields = {
-        "api_key": api_key,
-        "timestamp": timestamp,
-        "signature": signature,
-    }
-    body, content_type = build_multipart_form(fields, "file", image_path)
-    upload_url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
-    req = urllib.request.Request(
-        url=upload_url,
-        data=body,
-        method="POST",
-        headers={"Content-Type": content_type},
-    )
-    with urllib.request.urlopen(req, timeout=180) as response:
-        raw = response.read().decode("utf-8")
-    payload = json.loads(raw)
-    secure_url = str(payload.get("secure_url") or "").strip()
-    if not secure_url:
-        raise RuntimeError(f"Cloudinary upload did not return secure_url: {payload}")
-    return secure_url
-
-
 def load_batch_image_summary(batch: str) -> list[dict[str, Any]]:
     summary_path = GENERATED_IMAGES_ROOT / batch / "batch_run_summary.json"
     if not summary_path.exists():
@@ -2096,9 +2042,9 @@ def strip_ansi(text: str | None) -> str:
 
 
 
-def list_opencode_models(api_url: str | None = None) -> list[str]:
+def list_opencode_models(api_url: str | None = None, api_key: str | None = None) -> list[str]:
     url = (api_url or "").strip() or os.getenv("OPENCODE_API_URL", "").strip() or DEFAULT_OPENCODE_API_URL
-    api_key = os.getenv("OPENCODE_API_KEY", "").strip()
+    api_key = (api_key or "").strip() or os.getenv("OPENCODE_API_KEY", "").strip()
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -2132,6 +2078,18 @@ def list_opencode_models(api_url: str | None = None) -> list[str]:
 def choose_openai_gpt52(models: list[str]) -> str:
     if not models:
         return ""
+    preferred_free = [
+        "opencode/mimo-v2.5-free",
+        "opencode/north-mini-code-free",
+        "opencode/nemotron-3-ultra-free",
+        "opencode/deepseek-v4-flash-free",
+    ]
+    for preferred in preferred_free:
+        if preferred in models:
+            return preferred
+    for model in models:
+        if "free" in model.lower():
+            return model
     preferred = "openai/gpt-5.2"
     if preferred in models:
         return preferred
@@ -2376,6 +2334,28 @@ def parse_json_object_from_text(content: str) -> dict[str, Any] | None:
 
 def parse_opencode_json_output(stdout: str) -> dict[str, Any] | None:
     text_chunks: list[str] = []
+
+    def collect_text(value: Any) -> None:
+        if isinstance(value, str) and value.strip():
+            text_chunks.append(value.strip())
+            return
+        if isinstance(value, list):
+            for item in value:
+                collect_text(item)
+            return
+        if not isinstance(value, dict):
+            return
+
+        for key in ("text", "content", "message", "output"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                text_chunks.append(candidate.strip())
+        part = value.get("part")
+        if isinstance(part, dict):
+            collect_text(part)
+        elif isinstance(part, str) and part.strip():
+            text_chunks.append(part.strip())
+
     for raw_line in (stdout or "").splitlines():
         line = raw_line.strip()
         if not line:
@@ -2384,12 +2364,20 @@ def parse_opencode_json_output(stdout: str) -> dict[str, Any] | None:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") != "text":
+        if isinstance(event, str):
+            text_chunks.append(event.strip())
             continue
-        part = event.get("part") or {}
-        text = part.get("text")
-        if isinstance(text, str) and text.strip():
-            text_chunks.append(text.strip())
+        if isinstance(event, list):
+            collect_text(event)
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("type") or "").lower()
+        if event_type and event_type not in {"text", "message", "content", "output"}:
+            part = event.get("part")
+            if not isinstance(part, (dict, str)):
+                continue
+        collect_text(event)
 
     if text_chunks:
         parsed = parse_json_object_from_text("\n".join(text_chunks).strip())
@@ -2635,7 +2623,7 @@ def _persona_name_from_candidate(candidate: dict[str, Any]) -> str:
 def _build_copy_skeleton(context: dict[str, Any], run_id: str) -> dict[str, Any]:
     ads: list[dict[str, Any]] = []
     token = run_id[-4:]
-    for idx, item in enumerate(context["ads"], start=1):
+    for idx, item in enumerate(context.get("ads") or [], start=1):
         persona = item["persona"]
         fmt = item["format"]
         persona_num = int(persona["persona_number"])
@@ -6113,6 +6101,21 @@ async def api_run_execute(
     if str((cfg.get("server_type") or "opencode")).strip().lower() != "opencode":
         raise HTTPException(status_code=400, detail="Unsupported server type. Use OpenCode.")
 
+    if (cfg.get("provider") or "opencode").strip().lower() == "opencode":
+        try:
+            from dashboard.backend.services.provider_config import get_decrypted_provider_key, get_provider_config
+
+            saved = get_provider_config(user_id, "opencode") or {}
+            saved_cfg = saved.get("config", {}) if isinstance(saved, dict) else {}
+            if not (cfg.get("opencode_api_url") or "").strip() and saved_cfg.get("api_url"):
+                cfg["opencode_api_url"] = saved_cfg.get("api_url") or cfg.get("opencode_api_url") or ""
+            if not (cfg.get("opencode_api_key") or "").strip():
+                cfg["opencode_api_key"] = get_decrypted_provider_key(user_id, "opencode", "api_key") or ""
+            if not (cfg.get("opencode_model") or "").strip() and saved_cfg.get("default_model"):
+                cfg["opencode_model"] = saved_cfg.get("default_model") or cfg.get("opencode_model") or ""
+        except Exception as exc:
+            print(f"[api_run_execute] Provider config hydration skipped: {exc}", file=sys.stderr)
+
     run_id = make_run_id()
     run_dir = RUNS_ROOT / run_id
 
@@ -6136,7 +6139,8 @@ async def api_run_execute(
 
     # Use user's product master doc if uploaded file is empty and user has custom config
     user_product_doc = _resolve_user_config("product_master_doc")
-    if not product_path.exists() and user_product_doc:
+    if (product_path is None or not product_path.exists()) and user_product_doc:
+        product_path = run_dir / "inputs" / "product master doc.txt"
         product_path.parent.mkdir(parents=True, exist_ok=True)
         product_path.write_text(user_product_doc, encoding="utf-8")
     product_file = coalesce_path(product_path, DEFAULT_PRODUCT_MASTER)
@@ -7545,6 +7549,17 @@ def api_download_batches(batch_names: list[str]):
     return StreamingResponse(buf, media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="{label}.zip"'})
 
+def _try_parse_json(raw: Any) -> Any:
+    if isinstance(raw, (dict, list)):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return {}
+
+
 def api_llm_traces(user_id: str, limit: int = 50, offset: int = 0, run_id_filter: str | None = None) -> dict[str, Any]:
     from dashboard.backend.db.client import get_sync_db
     from dashboard.backend.db.collections import COLL_LLM_TRACES
@@ -7561,6 +7576,14 @@ def api_llm_traces(user_id: str, limit: int = 50, offset: int = 0, run_id_filter
     )
     for t in traces:
         t["_id"] = str(t["_id"])
+        t["label"] = t.pop("batch", "")
+        t["request"] = _try_parse_json(t.pop("prompt", "{}"))
+        t["response"] = _try_parse_json(t.get("response", "{}"))
+        t["status_code"] = 200 if t.get("status") == "completed" else -1
+        t["duration_s"] = round((t.pop("duration_ms", 0) or 0) / 1000, 2)
+        ts = t.pop("created_at", 0)
+        t["timestamp"] = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z") if ts else ""
+        t.pop("error", None)
     return {"traces": traces, "total": total, "offset": offset, "limit": limit}
 
 
@@ -7831,20 +7854,14 @@ def _register_download_routes():
             raise HTTPException(status_code=404, detail="Image not found")
         if doc.get("user_id") != user["user_id"]:
             raise HTTPException(status_code=403, detail="Access denied")
-        # Cloudinary: redirect to secure_url
-        secure_url = doc.get("secure_url") or ""
-        if secure_url:
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(secure_url)
-        # Legacy storage_url fallback
-        storage_url = doc.get("storage_url") or ""
-        if storage_url:
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(storage_url)
-        # Local file fallback
         local_path = doc.get("local_path") or ""
         if local_path:
-            img_path = ROOT / local_path
+            img_path = Path(local_path) if Path(local_path).is_absolute() else ROOT / local_path
+            if img_path.exists():
+                return FileResponse(img_path, filename=doc.get("filename", "image.png"))
+        file_path = doc.get("file_path") or ""
+        if file_path:
+            img_path = ROOT / file_path
             if img_path.exists():
                 return FileResponse(img_path, filename=doc.get("filename", "image.png"))
         raise HTTPException(status_code=404, detail="Image file not available")
@@ -7944,20 +7961,31 @@ def _register_download_routes():
 _register_download_routes()
 
 
+@app.get("/api/storage/info")
+def storage_info(request: Request) -> dict[str, Any]:
+    user = _get_user_from_request(request)
+    return {
+        "storage_provider": "local",
+        "generated_images_dir": str(GENERATED_IMAGES_ROOT.resolve()),
+        "output_dir": str((ROOT / "output").resolve()),
+        "runs_dir": str(RUNS_ROOT.resolve()),
+        "storage_root": str(STORAGE_ROOT.resolve()),
+        "note": "All files are stored locally on the server filesystem.",
+    }
+
+
 INPUT_ROOT = ROOT / "input"
 
-if app_settings.is_dev:
-    # Dev: mount local folders directly for convenience
-    app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
-    app.mount("/output", StaticFiles(directory=str(ROOT / "output")), name="output")
-    GENERATED_IMAGES_ROOT.mkdir(parents=True, exist_ok=True)
-    app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_ROOT)), name="generated_images")
-    print("[startup] Local dev mode: /storage, /output, /generated_images mounted publicly")
-    # /input contains seed files stored in the repo
-    app.mount("/input", StaticFiles(directory=str(INPUT_ROOT)), name="input")
-else:
-    # Production: do NOT mount user data folders publicly
-    print("[startup] Production mode: user data folders not publicly mounted")
+# Mount static directories for serving generated images and output files
+# These are used in both dev and production; access control is enforced
+# by the /api/files/download/* endpoints for production use.
+GENERATED_IMAGES_ROOT.mkdir(parents=True, exist_ok=True)
+(ROOT / "output").mkdir(parents=True, exist_ok=True)
+STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_ROOT)), name="generated_images")
+app.mount("/output", StaticFiles(directory=str(ROOT / "output")), name="output")
+app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
+app.mount("/input", StaticFiles(directory=str(INPUT_ROOT)), name="input")
 
 
 @app.get("/api/seeds")

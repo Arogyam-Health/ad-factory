@@ -1837,6 +1837,7 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
 
         if uploaded:
             _wait_for_uploaded_count_at_least(page, before_srcs, target_count=idx, timeout=120)
+            time.sleep(3.0)
             continue
 
         print("  [upload] No hidden input available; using upload menu for this file.")
@@ -1844,6 +1845,8 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
             _upload_one_file_via_menu(page, file_path, before_srcs, target_count=idx)
         except Exception as exc:
             raise PWTimeoutError(str(exc))
+        if idx < len(file_paths):
+            time.sleep(3.0)
 
     wait_for_uploads_to_settle(page, before_srcs, expected_count=len(file_paths), timeout=timeout)
     dismiss_open_overlays(page)

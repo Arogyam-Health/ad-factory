@@ -40,5 +40,5 @@ class StorageBackend(ABC):
     @property
     @abstractmethod
     def provider_name(self) -> str:
-        """Return 'local' or 'cloudinary'."""
+        """Return 'local'."""
         ...
