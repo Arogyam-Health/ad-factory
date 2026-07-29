@@ -314,6 +314,16 @@
         <button id="batchGen45" class="ghost-btn" type="button">Generate 4:5</button>
         <button id="batchGenBoth" class="ghost-btn" type="button">Generate 4:5+9:16</button>
         <button id="batchGen916" class="ghost-btn" type="button">Generate 9:16</button>
+        <div class="gen-mode-toggle" title="Background: runs silently. Visible: watch automation in real-time (for debugging).">
+          <label class="toggle-label gen-mode-option">
+            <input type="radio" name="genMode" value="background" checked />
+            <span>Background</span>
+          </label>
+          <label class="toggle-label gen-mode-option">
+            <input type="radio" name="genMode" value="visible" />
+            <span>Visible</span>
+          </label>
+        </div>
         <button id="stopGeneration" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">&#9209; Stop Gen</button>
         <button id="batchDownload" class="ghost-btn" type="button" title="Download all generated images for this run as ZIP">Download Batch</button>
         <a href="/traces.html" class="ghost-btn" style="display:inline-flex;align-items:center;gap:0.3rem;text-decoration:none" target="_blank">&#128202; LLM Traces</a>
@@ -429,6 +439,31 @@
       border-radius: 6px;
       margin-top: 0.25rem;
       font-size: 12px;
+    }
+    .gen-mode-toggle {
+      display: inline-flex;
+      border: 1px solid var(--border, #e0e0e0);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 12px;
+    }
+    .gen-mode-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.3rem 0.6rem;
+      cursor: pointer;
+      background: var(--surface, #fff);
+      color: var(--text-secondary, #666);
+      border: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .gen-mode-option:has(input:checked) {
+      background: var(--accent-primary, #4285F4);
+      color: #fff;
+    }
+    .gen-mode-option input[type="radio"] {
+      display: none;
     }
   </style>
 </body>

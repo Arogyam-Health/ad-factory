@@ -60,7 +60,8 @@ def wsl_to_windows_path(path: str) -> str:
     """Convert WSL path to Windows path for CDP-connected Chrome."""
     if path.startswith("/mnt/c/") or path.startswith("/mnt/C/"):
         rest = path[7:]
-        return f"C:\\{rest.replace('/', '\\')}"
+        win_backslash = "\\"
+        return "C:\\" + rest.replace("/", win_backslash)
     return path
 
 

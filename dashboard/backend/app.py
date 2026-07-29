@@ -5602,8 +5602,19 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
             (prompt_work_dir / sidecar.name).write_text(sidecar.read_text(encoding="utf-8"), encoding="utf-8")
         prompt_files_created.append(str(dest))
     headless = bool(payload.get("headless", False))
+    visible = bool(payload.get("visible", False))
     out_dir = GENERATED_IMAGES_ROOT / batch_name / "4_5"
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if visible:
+        from dashboard.backend.services.extension_bridge import extension_bridge
+        conn = extension_bridge.get_connection("")
+        if not conn:
+            raise HTTPException(
+                status_code=400,
+                detail="Visible mode requires the Chrome Extension to be connected. "
+                       "Click the extension icon and connect first.",
+            )
 
     if engine == "chatgpt":
         cmd = [
@@ -5669,10 +5680,21 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
 
     headless = bool(payload.get("headless", False))
+    visible = bool(payload.get("visible", False))
     engine = str(payload.get("engine") or "gemini").strip().lower()
     if engine not in {"gemini", "chatgpt"}:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
     engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
+
+    if visible:
+        from dashboard.backend.services.extension_bridge import extension_bridge
+        conn = extension_bridge.get_connection("")
+        if not conn:
+            raise HTTPException(
+                status_code=400,
+                detail="Visible mode requires the Chrome Extension to be connected. "
+                       "Click the extension icon and connect first.",
+            )
 
     # ---- Step 1: Generate 4:5 images ----
     all_prompt_files: list[str] = []
@@ -6043,9 +6065,20 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...)) -> dict[s
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
 
     headless = bool(payload.get("headless", False))
+    visible = bool(payload.get("visible", False))
     engine = str(payload.get("engine") or "gemini").strip().lower()
     if engine not in {"gemini", "chatgpt"}:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
+
+    if visible:
+        from dashboard.backend.services.extension_bridge import extension_bridge
+        conn = extension_bridge.get_connection("")
+        if not conn:
+            raise HTTPException(
+                status_code=400,
+                detail="Visible mode requires the Chrome Extension to be connected. "
+                       "Click the extension icon and connect first.",
+            )
     batch_to_run_dir: dict[str, Path | None] = {}
     for run_id in run_ids:
         try:

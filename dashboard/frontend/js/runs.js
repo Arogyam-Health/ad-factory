@@ -368,13 +368,15 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
   if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Batch generating 4:5 in ${engineLabel} for ${runIds.length} run(s)...`);
+  const genMode = document.querySelector('input[name="genMode"]:checked')?.value || "background";
+  const visible = genMode === "visible";
+  appendLog(`Batch generating 4:5 in ${engineLabel} for ${runIds.length} run(s) [${genMode}]...`);
   showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-45", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine }),
+      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine, visible }),
     });
     const batchKey = data.batch_key || "";
     if (batchKey && state.headlessModeEnabled) {
@@ -400,13 +402,15 @@ document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
   if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Batch generating 4:5 + 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  const genMode = document.querySelector('input[name="genMode"]:checked')?.value || "background";
+  const visible = genMode === "visible";
+  appendLog(`Batch generating 4:5 + 9:16 in ${engineLabel} for ${runIds.length} run(s) [${genMode}]...`);
   showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-both", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine }),
+      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine, visible }),
     });
     appendLog(`Done. 4:5 prompts: ${data.total_45_prompts}, 9:16 images: ${data.total_916_completed}, Batches: ${data.batch_key}`);
     loadRuns();
@@ -427,13 +431,15 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
   if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
   const runIds = runsForBatches.map((r) => r.run_id);
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Batch generating 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  const genMode = document.querySelector('input[name="genMode"]:checked')?.value || "background";
+  const visible = genMode === "visible";
+  appendLog(`Batch generating 9:16 in ${engineLabel} for ${runIds.length} run(s) [${genMode}]...`);
   showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-916", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine }),
+      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine, visible }),
     });
     const batchKey = data.batch_key || "";
     if (batchKey && state.headlessModeEnabled) {
