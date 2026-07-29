@@ -5590,7 +5590,7 @@ def api_run_generate_images_916_from_45(run_id: str, payload: dict[str, Any] = B
     return merged
 
 
-def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
     run_ids = payload.get("run_ids")
     if not isinstance(run_ids, list) or not run_ids:
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
@@ -5657,7 +5657,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
 
     if visible:
         from dashboard.backend.services.extension_bridge import extension_bridge
-        conn = extension_bridge.get_connection("")
+        conn = extension_bridge.get_connection(user_id)
         if not conn:
             raise HTTPException(
                 status_code=400,
@@ -5722,7 +5722,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...)) -> dict[st
     }
 
 
-def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
     """First generate 4:5 images, then generate 9:16 from them."""
     run_ids = payload.get("run_ids")
     if not isinstance(run_ids, list) or not run_ids:
@@ -5737,7 +5737,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...)) -> dict[
 
     if visible:
         from dashboard.backend.services.extension_bridge import extension_bridge
-        conn = extension_bridge.get_connection("")
+        conn = extension_bridge.get_connection(user_id)
         if not conn:
             raise HTTPException(
                 status_code=400,
@@ -6108,7 +6108,7 @@ def run_916_conversion_from_45_for_batch(
     }
 
 
-def api_batch_generate_images_916(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
     run_ids = payload.get("run_ids")
     if not isinstance(run_ids, list) or not run_ids:
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
@@ -6121,7 +6121,7 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...)) -> dict[s
 
     if visible:
         from dashboard.backend.services.extension_bridge import extension_bridge
-        conn = extension_bridge.get_connection("")
+        conn = extension_bridge.get_connection(user_id)
         if not conn:
             raise HTTPException(
                 status_code=400,
