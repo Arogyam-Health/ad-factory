@@ -1,6 +1,7 @@
 import { appendLog } from "./ui.js";
 import { fetchJSON } from "./api.js";
 import { state } from "./state.js";
+import { getExtensionStatus } from "./extension.js";
 
 const launchChromeBtn = document.getElementById("launchChrome");
 const killChromeBtn = document.getElementById("killChrome");
@@ -35,13 +36,36 @@ if (headlessToggle) {
 
 if (launchChromeBtn) {
   launchChromeBtn.addEventListener("click", async () => {
+    // Check if extension is connected — prefer extension bridge in production
+    const ext = getExtensionStatus();
+    if (ext.connected) {
+      appendLog("Using Chrome Extension bridge (extension is connected).");
+      launchChromeBtn.disabled = true;
+      try {
+        // Get targets from extension
+        const targets = await fetchJSON("/api/extension/targets");
+        appendLog(`Extension bridge active. ${targets.targets?.length || 0} browser tabs available.`);
+        showChromeKillButton();
+      } catch (err) {
+        appendLog(`Extension error: ${String(err)}`);
+      } finally {
+        launchChromeBtn.disabled = false;
+      }
+      return;
+    }
+
+    // Fallback to server-side Chrome launch (local dev only)
     launchChromeBtn.disabled = true;
     try {
       const data = await fetchJSON(`/api/launch-visible-browser`, { method: "POST" });
       showChromeKillButton();
       appendLog(`${data.message} | CDP: ${data.cdp_url}`);
     } catch (err) {
-      appendLog(`Launch error: ${String(err)}`);
+      if (String(err).includes("disabled in production")) {
+        appendLog("Server-side Chrome launch is disabled in production. Install the Chrome Extension to control your browser remotely.");
+      } else {
+        appendLog(`Launch error: ${String(err)}`);
+      }
     } finally {
       launchChromeBtn.disabled = false;
     }

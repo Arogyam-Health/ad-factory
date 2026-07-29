@@ -7765,7 +7765,7 @@ def delete_llm_traces_batch(request: Request, trace_ids: list[str] = []) -> dict
 
 
 # ── Modular routes ───────────────────────────────────────────────────────────
-from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, chrome
+from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, chrome, extension
 
 app.include_router(defaults.router)
 app.include_router(progress.router)
@@ -7775,6 +7775,7 @@ app.include_router(batch.router)
 app.include_router(export_import.router)
 app.include_router(execute.router)
 app.include_router(chrome.router)
+app.include_router(extension.router)
 
 # ── Cloud/multi-user routes ─────────────────────────────────────────────────
 from dashboard.backend.auth.routes import router as auth_router
