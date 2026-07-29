@@ -1030,13 +1030,16 @@ def build_strict_schema_note(fmt: str, languages: list[str] | None = None) -> st
     return " ".join(parts)
 
 
-def build_ad_prompt_tail(fmt: str, formats: list[str] | None = None) -> str:
+def build_ad_prompt_tail(fmt: str, formats: list[str] | None = None, total_ad_count: int = 1) -> str:
     fmt = fmt.strip().upper()
     tail = _resolve_copy_prompts().get("prompt_tail", {})
     support_map = tail.get("support_target_map", {})
     support_target = support_map.get(fmt, tail.get("default_support_target", "subheadline"))
     display_fmt = fmt if fmt != "ALL" else "ad"
     lines = [line.format(fmt=display_fmt, support_target=support_target) for line in tail.get("lines", [])]
+    if total_ad_count > 1 or (len(formats or []) > 1):
+        lines = [l for l in lines if "one ad only" not in l]
+        lines.insert(1, f"Return all {total_ad_count} ads matching the JSON skeleton below. The payload above has data for each ad.")
     skeleton = build_response_skeleton(fmt, formats=formats)
     if skeleton:
         lines.append(f"\nReturn your response using exactly this JSON skeleton (replace placeholder values with your actual copy):\n{skeleton}")
@@ -2465,8 +2468,8 @@ def _log_llm_trace(run_id: str, label: str, model: str, request_body: dict, resp
             "batch": label,
             "provider": "opencode" if "opencode" in label.lower() else "google",
             "model": model,
-            "prompt": json.dumps(request_body, ensure_ascii=False)[:5000],
-            "response": json.dumps(response_body, ensure_ascii=False)[:10000] if response_body else "",
+            "prompt": json.dumps(request_body, ensure_ascii=False)[:15000],
+            "response": json.dumps(response_body, ensure_ascii=False)[:30000] if response_body else "",
             "duration_ms": int(duration_s * 1000),
             "status": "error" if error else "completed",
         })
@@ -2905,6 +2908,12 @@ def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir:
         except (KeyError, IndexError, TypeError) as exc:
             return None, json.dumps(data), f"Gemini parse error: {exc}", -1
 
+        try:
+            full = json.loads(content)
+            if isinstance(full, list):
+                return full, content, "", 0
+        except json.JSONDecodeError:
+            pass
         parsed = parse_opencode_json_output(content)
         return parsed, content, "", 0
 
@@ -2920,7 +2929,7 @@ def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir:
 
         formats_in_batch = sorted({str(a.get("format", "")).strip().upper() for a in all_items if isinstance(a, dict)})
         single_format = formats_in_batch[0] if len(formats_in_batch) == 1 else "ALL"
-        skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch)
+        skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch, total_ad_count=len(all_items))
         prompt = json.dumps(payload, ensure_ascii=False) + "\n\n" + skeleton_tail
 
         parsed, raw_content, err_msg, code = call_llm(prompt, label="ad_generation")
@@ -2930,9 +2939,11 @@ def call_google_gemini(config: dict[str, Any], context: dict[str, Any], run_dir:
         elif parsed is None:
             errors.append(err_msg)
         else:
-            ads_out = parsed.get("ads")
+            ads_out = parsed.get("ads") if isinstance(parsed, dict) else None
             if not isinstance(ads_out, list):
-                if isinstance(parsed, dict) and any(k in parsed for k in {"headline", "format", "copy", "subheadline", "support_line", "cta", "body"}):
+                if isinstance(parsed, list):
+                    ads_out = parsed
+                elif isinstance(parsed, dict) and any(k in parsed for k in {"headline", "format", "copy", "subheadline", "support_line", "cta", "body"}):
                     ads_out = [parsed]
                 else:
                     ads_out = []
@@ -3059,6 +3070,12 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
             client.close()
 
         _log_llm_trace(run_dir.name, label, model, body, data, resp.status_code, elapsed)
+        try:
+            full = json.loads(content)
+            if isinstance(full, list):
+                return full, content, "", 0
+        except json.JSONDecodeError:
+            pass
         parsed = parse_opencode_json_output(content)
         return parsed, content, "", 0
 
@@ -3075,7 +3092,7 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         # Build response skeleton instruction so the LLM knows the expected JSON format
         formats_in_batch = sorted({str(a.get("format", "")).strip().upper() for a in all_items if isinstance(a, dict)})
         single_format = formats_in_batch[0] if len(formats_in_batch) == 1 else "ALL"
-        skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch)
+        skeleton_tail = build_ad_prompt_tail(single_format, formats=formats_in_batch, total_ad_count=len(all_items))
         prompt = json.dumps(payload, ensure_ascii=False) + "\n\n" + skeleton_tail
 
         parsed, raw_content, err_msg, code = call_llm(prompt, label="ad_generation")
@@ -3085,9 +3102,11 @@ def call_opencode_compatible(config: dict[str, Any], context: dict[str, Any], ru
         elif parsed is None:
             errors.append(err_msg)
         else:
-            ads_out = parsed.get("ads")
+            ads_out = parsed.get("ads") if isinstance(parsed, dict) else None
             if not isinstance(ads_out, list):
-                if isinstance(parsed, dict) and any(k in parsed for k in {"headline", "format", "copy", "subheadline", "support_line", "cta", "body"}):
+                if isinstance(parsed, list):
+                    ads_out = parsed
+                elif isinstance(parsed, dict) and any(k in parsed for k in {"headline", "format", "copy", "subheadline", "support_line", "cta", "body"}):
                     ads_out = [parsed]
                 else:
                     ads_out = []
