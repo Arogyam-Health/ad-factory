@@ -7,6 +7,7 @@ from dashboard.backend.app import (
     api_batch_generate_images_both,
 )
 from dashboard.backend.auth.service import get_current_user_from_cookie
+import dashboard.backend.services.cdp_proxy  # noqa: F401 — eager import to capture main event loop
 
 router = APIRouter()
 

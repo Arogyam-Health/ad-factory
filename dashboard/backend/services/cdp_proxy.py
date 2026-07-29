@@ -1,7 +1,7 @@
 """CDP proxy bridging Playwright's connect_over_cdp to the Chrome Extension bridge.
 
 Playwright's Node.js driver connects to a standard CDP endpoint:
-  1. GET /json/version → gets browser WebSocket URL
+  1. GET /json/version -> gets browser WebSocket URL
   2. Connects WebSocket to /devtools/browser
   3. Sends browser-level commands (Target.*, Browser.*) over that socket
   4. Page-level commands use a sessionId from Target.attachToTarget
@@ -26,29 +26,44 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
+# Captured at import time (server startup, main thread)
+_MAIN_LOOP: asyncio.AbstractEventLoop | None = None
+try:
+    _MAIN_LOOP = asyncio.get_event_loop()
+except RuntimeError:
+    _MAIN_LOOP = None
+
 _bridge = None
 _user_id: str = ""
 _host: str = "127.0.0.1"
 _port: int = 0
-_main_loop: asyncio.AbstractEventLoop | None = None
 
 _sessions: dict[str, str] = {}
 _browser_ws: WebSocket | None = None
 _last_targets: list[dict[str, Any]] = []
-_poll_task: asyncio.Task | None = None
+_refresh_started = False
 
 _cached_targets: list[dict[str, Any]] = []
 _cached_targets_lock = threading.Lock()
 
+app = FastAPI()
+
+
+def _run_async(coro) -> Any:
+    """Run an async coroutine on the captured main event loop from any thread."""
+    if _MAIN_LOOP is None or not _MAIN_LOOP.is_running():
+        raise RuntimeError("Main event loop not available")
+    future = asyncio.run_coroutine_threadsafe(coro, _MAIN_LOOP)
+    return future.result(timeout=30)
+
 
 def _sync_get_targets() -> list[dict[str, Any]]:
-    """Thread-safe way to read cached targets."""
     with _cached_targets_lock:
         return list(_cached_targets)
 
 
 def _sync_update_targets():
-    """Update the cached target list (called from main event loop)."""
+    """Update the cached target list (must run on main event loop)."""
     global _cached_targets
     if not _bridge:
         return
@@ -70,7 +85,7 @@ def _sync_update_targets():
 
 
 async def _background_target_refresh():
-    """Background task that periodically refreshes target cache from main loop."""
+    """Poll target cache on main loop every second."""
     while True:
         try:
             _sync_update_targets()
@@ -79,35 +94,30 @@ async def _background_target_refresh():
         await asyncio.sleep(1)
 
 
-def _ensure_target_refresh():
-    """Start background target refresh if not running."""
-    global _poll_task
-    if _poll_task is None or _poll_task.done():
-        _poll_task = asyncio.create_task(_background_target_refresh())
-
-
-def _run_async(coro) -> Any:
-    """Run an async coroutine from the proxy thread in the main event loop."""
-    global _main_loop
-    if _main_loop is None or not _main_loop.is_running():
-        raise RuntimeError("Main event loop not available")
-    future = asyncio.run_coroutine_threadsafe(coro, _main_loop)
-    return future.result(timeout=30)
-
-
-app = FastAPI()
+def _ensure_refresh():
+    """Start background refresh task on main loop (idempotent)."""
+    global _refresh_started
+    if _refresh_started:
+        return
+    _refresh_started = True
+    if _MAIN_LOOP and _MAIN_LOOP.is_running():
+        asyncio.run_coroutine_threadsafe(
+            asyncio.create_task(_background_target_refresh()), _MAIN_LOOP
+        )
 
 
 def init_proxy(user_id: str, host: str = "127.0.0.1", port: int = 0) -> str:
     """Start the CDP proxy and return the base URL."""
-    global _bridge, _user_id, _host, _port, _main_loop
+    global _bridge, _user_id, _host, _port
+    if _MAIN_LOOP is None:
+        raise RuntimeError("CDP proxy: main event loop not available")
+
     from dashboard.backend.services.extension_bridge import extension_bridge
     _bridge = extension_bridge
     _user_id = user_id
     _host = host
 
-    _main_loop = asyncio.get_event_loop()
-    _ensure_target_refresh()
+    _ensure_refresh()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind((host, port if port else 0))
@@ -118,15 +128,14 @@ def init_proxy(user_id: str, host: str = "127.0.0.1", port: int = 0) -> str:
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-
     time.sleep(0.3)
+
     url = f"http://{host}:{actual_port}"
     logger.info(f"[cdp-proxy] Started on {url}")
     return url
 
 
 def _build_target_list() -> list[dict[str, Any]]:
-    """Build CDP-formatted target list for /json/list."""
     targets = _sync_get_targets()
     result = []
     for t in targets:
@@ -167,20 +176,16 @@ async def json_root():
 
 @app.websocket("/devtools/page/{target_id}")
 async def devtools_page(websocket: WebSocket, target_id: str):
-    """Page-level CDP session. Forward commands to extension bridge."""
     await websocket.accept()
     logger.info(f"[cdp-proxy] Page session for target {target_id}")
-
     try:
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
             method = msg.get("method", "")
             cmd_id = msg.get("id", "")
-
             if not method:
                 continue
-
             try:
                 result = _run_async(
                     _bridge.send_command(_user_id, method, msg.get("params"), timeout=30.0, target_id=target_id)
@@ -196,59 +201,49 @@ async def devtools_page(websocket: WebSocket, target_id: str):
 
 @app.websocket("/devtools/browser")
 async def devtools_browser(websocket: WebSocket):
-    """Browser-level CDP session. Intercept browser commands locally,
-    forward page commands (with sessionId) to extension bridge."""
     global _browser_ws
     await websocket.accept()
     _browser_ws = websocket
     logger.info("[cdp-proxy] Playwright connected to browser")
 
     poll_stop = threading.Event()
+    last_seen: set[str] = set()
 
-    def _poll_targets_in_main():
-        """Poll target changes on main loop and send events to browser WS."""
-        nonlocal poll_stop
-        global _last_targets
-        last_seen: set[str] = set()
+    def _poll():
         while not poll_stop.is_set():
             try:
                 current = _sync_get_targets()
                 current_ids = {t["id"] for t in current}
-
                 new_ids = current_ids - last_seen
                 removed_ids = last_seen - current_ids
-
                 if new_ids or removed_ids:
                     for tid in new_ids:
                         info = next((t for t in current if t["id"] == tid), None)
                         if info and _browser_ws:
-                            _send_event_to_browser("Target.targetCreated", {"targetInfo": info})
+                            _send_event("Target.targetCreated", {"targetInfo": info})
                     for tid in removed_ids:
                         if _browser_ws:
-                            _send_event_to_browser("Target.targetDestroyed", {"targetId": tid})
+                            _send_event("Target.targetDestroyed", {"targetId": tid})
                     last_seen = current_ids
-                    _last_targets = current
-
                 time.sleep(1)
             except Exception:
                 time.sleep(1)
 
-    def _send_event_to_browser(method: str, params: dict):
-        """Schedule sending a CDP event to the browser WebSocket."""
+    def _send_event(method: str, params: dict):
         try:
             msg = json.dumps({"method": method, "params": params})
-            if _main_loop and _main_loop.is_running():
+            if _MAIN_LOOP and _MAIN_LOOP.is_running():
                 async def _send():
                     try:
                         if _browser_ws:
                             await _browser_ws.send_text(msg)
                     except Exception:
                         pass
-                asyncio.run_coroutine_threadsafe(_send(), _main_loop)
+                asyncio.run_coroutine_threadsafe(_send(), _MAIN_LOOP)
         except Exception:
             pass
 
-    poll_thread = threading.Thread(target=_poll_targets_in_main, daemon=True)
+    poll_thread = threading.Thread(target=_poll, daemon=True)
     poll_thread.start()
 
     try:
@@ -269,7 +264,6 @@ async def devtools_browser(websocket: WebSocket):
                         "id": cmd_id, "error": {"code": -32000, "message": f"Unknown session: {session_id}"}
                     }))
                     continue
-
                 try:
                     result = _run_async(
                         _bridge.send_command(_user_id, method, msg.get("params"), timeout=30.0, target_id=target_id)
@@ -285,19 +279,16 @@ async def devtools_browser(websocket: WebSocket):
 
             if method == "Target.setDiscoverTargets":
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
-            elif method == "Target.setAutoAttach":
+            elif method in ("Target.setAutoAttach", "Target.activateTarget"):
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
             elif method == "Target.getTargets":
                 targets = _sync_get_targets()
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {"targetInfos": targets}}))
             elif method == "Target.attachToTarget":
                 target_id = msg.get("params", {}).get("targetId", "")
-                flatten = msg.get("params", {}).get("flatten", True)
                 session_id = uuid.uuid4().hex[:8]
                 _sessions[session_id] = target_id
-                await websocket.send_text(json.dumps({
-                    "id": cmd_id, "result": {"sessionId": session_id}
-                }))
+                await websocket.send_text(json.dumps({"id": cmd_id, "result": {"sessionId": session_id}}))
             elif method == "Target.detachFromTarget":
                 sid = msg.get("params", {}).get("sessionId", "")
                 _sessions.pop(sid, None)
@@ -305,22 +296,16 @@ async def devtools_browser(websocket: WebSocket):
             elif method == "Target.closeTarget":
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {"success": True}}))
             elif method == "Target.createTarget":
-                fake_id = uuid.uuid4().hex[:12]
-                await websocket.send_text(json.dumps({
-                    "id": cmd_id, "result": {"targetId": fake_id}
-                }))
+                await websocket.send_text(json.dumps({"id": cmd_id, "result": {"targetId": uuid.uuid4().hex[:12]}}))
             elif method == "Browser.getVersion":
                 await websocket.send_text(json.dumps({
                     "id": cmd_id, "result": {
-                        "protocolVersion": "1.3",
-                        "product": "Chrome/120.0.0.0",
+                        "protocolVersion": "1.3", "product": "Chrome/120.0.0.0",
                         "revision": "@000000000000",
                         "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
                         "jsVersion": "12.0.0.0",
                     }
                 }))
-            elif method == "Target.activateTarget":
-                await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
             else:
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
     except WebSocketDisconnect:
