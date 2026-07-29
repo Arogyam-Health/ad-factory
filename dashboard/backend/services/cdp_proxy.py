@@ -46,6 +46,7 @@ _refresh_started = False
 _cached_targets: list[dict[str, Any]] = []
 _cached_targets_lock = threading.Lock()
 _auto_attach = False
+_CONTEXT_ID = "ad-factory-extension-context"
 
 app = FastAPI()
 
@@ -83,7 +84,7 @@ def _sync_update_targets():
             "title": t.get("title", ""),
             "url": t.get("url", ""),
             "attached": False,
-            "browserContextId": "",
+            "browserContextId": t.get("browserContextId") or _CONTEXT_ID,
         })
     with _cached_targets_lock:
         _cached_targets = targets
@@ -103,7 +104,7 @@ def _cache_raw_targets(raw_targets: list[dict[str, Any]]) -> None:
             "title": t.get("title", ""),
             "url": t.get("url", ""),
             "attached": bool(t.get("attached", False)),
-            "browserContextId": t.get("browserContextId", ""),
+            "browserContextId": t.get("browserContextId") or _CONTEXT_ID,
         })
     with _cached_targets_lock:
         _cached_targets = targets
@@ -346,6 +347,12 @@ async def devtools_browser(websocket: WebSocket):
                     await websocket.send_text(json.dumps({"id": cmd_id, "result": result}))
                 except Exception:
                     await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
+            elif method == "Target.getBrowserContexts":
+                await websocket.send_text(json.dumps({"id": cmd_id, "result": {"browserContextIds": [_CONTEXT_ID]}}))
+            elif method == "Target.createBrowserContext":
+                await websocket.send_text(json.dumps({"id": cmd_id, "result": {"browserContextId": _CONTEXT_ID}}))
+            elif method == "Target.disposeBrowserContext":
+                await websocket.send_text(json.dumps({"id": cmd_id, "result": {}}))
             elif method == "Target.getTargets":
                 targets = _sync_get_targets()
                 await websocket.send_text(json.dumps({"id": cmd_id, "result": {"targetInfos": targets}}))
@@ -373,7 +380,7 @@ async def devtools_browser(websocket: WebSocket):
                         "title": "",
                         "url": msg.get("params", {}).get("url") or "about:blank",
                         "attached": False,
-                        "browserContextId": "",
+                        "browserContextId": msg.get("params", {}).get("browserContextId") or _CONTEXT_ID,
                     }
                     await websocket.send_text(json.dumps({"id": cmd_id, "result": result}))
                     if target_id:
