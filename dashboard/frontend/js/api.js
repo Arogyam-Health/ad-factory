@@ -6,12 +6,14 @@ function cacheKey(url, init) {
 }
 
 export async function fetchJSON(url, init = {}) {
+  const { noCache, ...fetchInit } = init;
+  const bypassCache = noCache || fetchInit.cache === "no-store";
   const key = cacheKey(url, init);
   const cached = cache.get(key);
-  if (cached && Date.now() - cached.ts < TTL_MS && init.method !== "POST") {
+  if (!bypassCache && cached && Date.now() - cached.ts < TTL_MS && fetchInit.method !== "POST") {
     return cached.data;
   }
-  const res = await fetch(url, init);
+  const res = await fetch(url, fetchInit);
   const raw = await res.text();
   let data = null;
   if (raw) {
@@ -25,7 +27,7 @@ export async function fetchJSON(url, init = {}) {
     const detail = data?.detail || data || res.statusText;
     throw new Error(`${res.status}: ${detail}`);
   }
-  cache.set(key, { data, ts: Date.now() });
+  if (!bypassCache) cache.set(key, { data, ts: Date.now() });
   return data;
 }
 

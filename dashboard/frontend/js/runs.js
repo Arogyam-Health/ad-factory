@@ -414,6 +414,7 @@ function showAgentJobBar(text, spinning = true, job = null) {
     try {
       await fetchJSON(`/api/agents/jobs/${encodeURIComponent(job.job_id)}/cancel`, { method: "POST" });
       appendLog(`Cancel requested for local agent job ${job.job_id}.`);
+      showAgentJobBar("Agent job Canceling: cancel requested", false, { ...job, status: "cancel_requested" });
     } catch (err) {
       appendLog(`Cancel failed: ${String(err)}`);
       cancelBtn.disabled = false;
@@ -473,7 +474,7 @@ function startAgentJobPolling() {
   showAgentJobBar("Agent job in progress...");
   agentJobPollTimer = setInterval(async () => {
     try {
-      const data = await fetchJSON("/api/batch/job-status");
+      const data = await fetchJSON("/api/batch/job-status", { cache: "no-store" });
       if (!data || !data.job) {
         appendLog("No recent agent job found.");
         hideAgentJobBar();
@@ -507,7 +508,7 @@ function startAgentJobPolling() {
         agentJobPollTimer = null;
       }
     }
-  }, 5000);
+  }, 1000);
 }
 
 function checkActiveAgentJob() {
@@ -526,7 +527,7 @@ function checkActiveAgentJob() {
 }
 
 checkActiveAgentJob();
-fetchJSON("/api/batch/job-status").then((data) => {
+fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   if (data?.job && !data.active && data.job.status === "completed") {
     renderLocalAgentArtifacts(data.job);
     const warningText = Array.isArray(data.job.result?.warnings) && data.job.result.warnings.length ? ` ${data.job.result.warnings[0]}` : "";

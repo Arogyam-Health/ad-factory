@@ -11,6 +11,7 @@ import os
 import queue
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -36,7 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCAL_OUTPUT_ROOT = Path(os.getenv("AGENT_OUTPUT_DIR", str(Path.home() / "ad-factory-agent-output"))).expanduser()
 
 
-def api_request(method: str, path: str, data: Any = None, token: str = "", timeout: int = 10) -> Any:
+def api_request(method: str, path: str, data: Any = None, token: str = "", timeout: int = 10, quiet: bool = False) -> Any:
     url = f"{AGENT_API_BASE}{path}"
     headers = {"Content-Type": "application/json"}
     if token:
@@ -49,10 +50,12 @@ def api_request(method: str, path: str, data: Any = None, token: str = "", timeo
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        print(f"  [agent] API error {e.code} {method} {path}: {e.read().decode()}")
+        if not quiet:
+            print(f"  [agent] API error {e.code} {method} {path}: {e.read().decode()}", flush=True)
         return None
     except Exception as e:
-        print(f"  [agent] Request failed: {e}")
+        if not quiet:
+            print(f"  [agent] Request failed: {e}", flush=True)
         return None
 
 
@@ -398,10 +401,12 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
         encoding="utf-8",
         errors="replace",
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        start_new_session=(os.name != "nt"),
     )
     lines: list[str] = []
     assert proc.stdout is not None
     stdout_queue: queue.Queue[str | None] = queue.Queue()
+    cancel_event = threading.Event()
 
     def _read_stdout() -> None:
         try:
@@ -412,24 +417,18 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
 
     reader = threading.Thread(target=_read_stdout, daemon=True)
     reader.start()
+    cancel_watcher = threading.Thread(
+        target=_watch_and_cancel_process,
+        args=(job_id, proc, cancel_event),
+        daemon=True,
+    )
+    cancel_watcher.start()
     stream_done = False
-    last_cancel_check = 0.0
     while True:
-        now = time.time()
-        if now - last_cancel_check >= 2:
-            last_cancel_check = now
-            if _agent_job_cancel_requested(job_id):
-                msg = "Canceled by user; terminating local automation process."
-                print(f"  [agent] {msg}", flush=True)
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": "canceling"}, token=AGENT_TOKEN, timeout=3)
-                proc.terminate()
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=5)
-                lines.append(msg)
-                return -15, "\n".join(lines[-200:])
+        if cancel_event.is_set():
+            msg = "Canceled by user; local automation process terminated."
+            lines.append(msg)
+            return -15, "\n".join(lines[-200:])
 
         try:
             line = stdout_queue.get(timeout=0.5)
@@ -454,8 +453,47 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
     return proc.returncode, "\n".join(lines[-200:])
 
 
+def _watch_and_cancel_process(job_id: str, proc: subprocess.Popen, cancel_event: threading.Event) -> None:
+    while proc.poll() is None and not cancel_event.is_set():
+        if _agent_job_cancel_requested(job_id):
+            cancel_event.set()
+            msg = "Cancel requested; killing local automation process now."
+            print(f"  [agent] {msg}", flush=True)
+            api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": "canceling"}, token=AGENT_TOKEN, timeout=1, quiet=True)
+            _terminate_process_tree(proc)
+            return
+        time.sleep(0.5)
+
+
+def _terminate_process_tree(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        if os.name != "nt":
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name != "nt":
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+    except ProcessLookupError:
+        pass
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 def _agent_job_cancel_requested(job_id: str) -> bool:
-    status = api_request("GET", f"/api/agents/jobs/{job_id}/status", token=AGENT_TOKEN, timeout=3)
+    status = api_request("GET", f"/api/agents/jobs/{job_id}/status", token=AGENT_TOKEN, timeout=1, quiet=True)
     return bool(status and status.get("cancel_requested"))
 
 
