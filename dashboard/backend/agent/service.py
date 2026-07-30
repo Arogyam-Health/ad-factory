@@ -68,6 +68,18 @@ def list_user_agents(user_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def get_recent_active_agent(user_id: str, max_age_seconds: int = 60) -> Optional[dict[str, Any]]:
+    return get_sync_db()[COLL_AGENTS].find_one(
+        {
+            "user_id": user_id,
+            "is_active": True,
+            "last_heartbeat_at": {"$gte": time.time() - max_age_seconds},
+        },
+        {"token_hash": 0},
+        sort=[("last_heartbeat_at", -1)],
+    )
+
+
 def create_job(agent_id: str, user_id: str, job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     job_id = "job_" + generate_token(16)
     now = time.time()

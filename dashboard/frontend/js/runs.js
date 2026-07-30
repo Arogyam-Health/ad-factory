@@ -357,6 +357,14 @@ document.getElementById("refreshRuns")?.addEventListener("click", () => {
   loadRuns().catch(() => {});
 });
 
+function appendGenerationResult(data, fallback) {
+  if (data?.status === "queued_local_agent") {
+    appendLog(`Queued local agent job ${data.job_id} on ${data.agent_name || data.agent_id}. Images will save on the local agent machine.`);
+    return;
+  }
+  appendLog(fallback(data));
+}
+
 document.getElementById("batchGen45")?.addEventListener("click", async () => {
   const selectedBatches = getSelectedBatchValues();
   if (!selectedBatches.length) { appendLog("Select at least one batch."); return; }
@@ -382,7 +390,7 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
     if (batchKey && state.headlessModeEnabled) {
       import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
     }
-    appendLog(`Done. Batch: ${data.batch_key}, Prompts: ${data.total_prompts}`);
+    appendGenerationResult(data, (d) => `Done. Batch: ${d.batch_key}, Prompts: ${d.total_prompts}`);
     loadRuns();
   } catch (err) {
     appendLog(String(err));
@@ -412,7 +420,7 @@ document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine, visible }),
     });
-    appendLog(`Done. 4:5 prompts: ${data.total_45_prompts}, 9:16 images: ${data.total_916_completed}, Batches: ${data.batch_key}`);
+    appendGenerationResult(data, (d) => `Done. 4:5 prompts: ${d.total_45_prompts}, 9:16 images: ${d.total_916_completed}, Batches: ${d.batch_key}`);
     loadRuns();
   } catch (err) {
     appendLog(String(err));
@@ -445,7 +453,7 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
     if (batchKey && state.headlessModeEnabled) {
       import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
     }
-    appendLog(`Done. Batch: ${data.batch_key}, Prompts: ${data.total_prompts}`);
+    appendGenerationResult(data, (d) => `Done. Batch: ${d.batch_key}, Prompts: ${d.total_prompts}`);
     loadRuns();
   } catch (err) {
     appendLog(String(err));

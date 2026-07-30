@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import base64
 import json
 import os
 import random
@@ -1902,6 +1903,87 @@ def start_extension_cdp_proxy_for_user(user_id: str, *, visible: bool) -> str:
     cdp_proxy_url = init_proxy(user_id)
     print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
     return cdp_proxy_url
+
+
+def render_chatgpt_uses_local_agent() -> bool:
+    mode = str(os.getenv("BROWSER_AUTOMATION_MODE") or "").strip().lower()
+    is_render = str(os.getenv("RENDER") or "").strip().lower() == "true"
+    return is_render or mode in {"local-agent", "agent", "remote-agent"}
+
+
+def _bundle_text_file(path: Path, *, root: Path | None = None) -> dict[str, str]:
+    rel = path.name if root is None else str(path.relative_to(root)).replace("\\", "/")
+    return {"name": rel, "content": path.read_text(encoding="utf-8", errors="replace")}
+
+
+def _bundle_binary_file(path: Path, *, root: Path | None = None) -> dict[str, str]:
+    rel = path.name if root is None else str(path.relative_to(root)).replace("\\", "/")
+    return {"name": rel, "base64": base64.b64encode(path.read_bytes()).decode("ascii")}
+
+
+def _bundle_input_images(max_total_bytes: int = 10 * 1024 * 1024) -> list[dict[str, str]]:
+    if not INPUT_IMAGES_DIR.exists():
+        return []
+    files: list[dict[str, str]] = []
+    total = 0
+    for path in sorted(INPUT_IMAGES_DIR.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            continue
+        size = path.stat().st_size
+        if total + size > max_total_bytes:
+            raise HTTPException(status_code=400, detail="Input images are too large to send to the local agent")
+        total += size
+        files.append(_bundle_binary_file(path, root=INPUT_IMAGES_DIR))
+    return files
+
+
+def _latest_online_agent_for_user(user_id: str) -> dict[str, Any]:
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in before using the local agent")
+    from dashboard.backend.agent.service import get_recent_active_agent
+
+    agent = get_recent_active_agent(user_id)
+    if not agent:
+        raise HTTPException(
+            status_code=400,
+            detail="No local agent is online. Run: python scripts/local_agent.py --api-base https://ad-factory-3rn5.onrender.com --token <agent-token>",
+        )
+    return agent
+
+
+def _queue_local_chatgpt_job(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    agent = _latest_online_agent_for_user(user_id)
+    from dashboard.backend.agent.service import create_job
+
+    job = create_job(agent["agent_id"], user_id, "run_chatgpt_batch", payload)
+    return {
+        "status": "queued_local_agent",
+        "job_id": job["job_id"],
+        "agent_id": agent["agent_id"],
+        "agent_name": agent.get("name", "local-agent"),
+        "message": "Queued for local agent. Generated images will be saved on the machine running scripts/local_agent.py.",
+    }
+
+
+def _bundle_916_prompt_files_for_batches(batch_names: list[str]) -> list[dict[str, str]]:
+    bundled: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for batch in batch_names:
+        prompt_dir = ROOT / "output" / batch / "96"
+        if not prompt_dir.exists():
+            continue
+        for path in sorted(prompt_dir.glob("*.txt")):
+            key = f"{batch}/96/{path.name}"
+            if key in seen:
+                continue
+            seen.add(key)
+            bundled.append({"name": path.name, "content": path.read_text(encoding="utf-8", errors="replace")})
+            sidecar = path.with_suffix(".json")
+            if sidecar.exists():
+                bundled.append({"name": sidecar.name, "content": sidecar.read_text(encoding="utf-8", errors="replace")})
+    return bundled
 
 
 def resolve_gemini_debugger_address() -> str:
@@ -5728,8 +5810,20 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     out_dir = GENERATED_IMAGES_ROOT / batch_name / "4_5"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    if engine == "chatgpt" and render_chatgpt_uses_local_agent():
+        return _queue_local_chatgpt_job(user_id, {
+            "mode": "45",
+            "batch_name": batch_name,
+            "headless": headless,
+            "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
+            "input_images": _bundle_input_images(),
+            "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
+            "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
+            "manual_login_timeout": int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180"),
+        })
+
     cdp_proxy_url = ""
-    if engine == "chatgpt" and extension_browser_required_for_chatgpt(visible):
+    if engine == "chatgpt" and not render_chatgpt_uses_local_agent() and extension_browser_required_for_chatgpt(visible):
         cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
 
     if engine == "chatgpt":
@@ -5809,7 +5903,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
 
     cdp_proxy_url = ""
-    if engine == "chatgpt" and extension_browser_required_for_chatgpt(visible):
+    if engine == "chatgpt" and not render_chatgpt_uses_local_agent() and extension_browser_required_for_chatgpt(visible):
         cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
 
     # ---- Step 1: Generate 4:5 images ----
@@ -5862,6 +5956,19 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
 
     out_dir_45 = GENERATED_IMAGES_ROOT / batch_name / "4_5"
     out_dir_45.mkdir(parents=True, exist_ok=True)
+
+    if engine == "chatgpt" and render_chatgpt_uses_local_agent():
+        return _queue_local_chatgpt_job(user_id, {
+            "mode": "both",
+            "batch_name": batch_name,
+            "headless": headless,
+            "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
+            "prompts_916": _bundle_916_prompt_files_for_batches(batch_names),
+            "input_images": _bundle_input_images(),
+            "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
+            "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
+            "manual_login_timeout": int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180"),
+        })
 
     if engine == "chatgpt":
         cmd = [
@@ -6205,7 +6312,7 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
 
     cdp_proxy_url = ""
-    if engine == "chatgpt" and extension_browser_required_for_chatgpt(visible):
+    if engine == "chatgpt" and not render_chatgpt_uses_local_agent() and extension_browser_required_for_chatgpt(visible):
         cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
 
     batch_to_run_dir: dict[str, Path | None] = {}
@@ -6224,6 +6331,19 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
 
     if not batch_to_run_dir:
         raise HTTPException(status_code=400, detail="No valid batches found for selected runs")
+
+    if engine == "chatgpt" and render_chatgpt_uses_local_agent():
+        batch_names = sorted(batch_to_run_dir)
+        return _queue_local_chatgpt_job(user_id, {
+            "mode": "916",
+            "batch_name": batch_names[0] if len(batch_names) == 1 else "_".join(batch_names),
+            "headless": headless,
+            "prompts_916": _bundle_916_prompt_files_for_batches(batch_names),
+            "input_images": [],
+            "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
+            "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
+            "manual_login_timeout": int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180"),
+        })
 
     total_attempted = 0
     total_completed = 0
