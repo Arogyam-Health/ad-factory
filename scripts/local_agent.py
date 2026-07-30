@@ -51,12 +51,31 @@ def api_request(method: str, path: str, data: Any = None, token: str = "", timeo
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         if not quiet:
-            print(f"  [agent] API error {e.code} {method} {path}: {e.read().decode()}", flush=True)
+            detail = e.read().decode(errors="replace").replace("\n", " ")[:500]
+            print(f"  [agent] API error {e.code} {method} {path}: {detail}", flush=True)
         return None
     except Exception as e:
         if not quiet:
             print(f"  [agent] Request failed: {e}", flush=True)
         return None
+
+
+def api_request_retry(
+    method: str,
+    path: str,
+    data: Any = None,
+    token: str = "",
+    *,
+    attempts: int = 4,
+    timeout: int = 15,
+) -> Any:
+    for attempt in range(1, attempts + 1):
+        result = api_request(method, path, data, token=token, timeout=timeout, quiet=attempt < attempts)
+        if result is not None:
+            return result
+        if attempt < attempts:
+            time.sleep(min(2.0, 0.5 * attempt))
+    return None
 
 
 def check_cdp() -> dict[str, Any]:
@@ -211,6 +230,57 @@ def collect_local_artifacts(job_root: Path, artifact_base_url: str) -> list[dict
             "bytes": path.stat().st_size,
         })
     return images
+
+
+class JobProgressReporter:
+    """Coalesce remote updates so Render latency never blocks terminal output."""
+
+    def __init__(self, job_id: str, artifact_root: Path | None = None) -> None:
+        self.job_id = job_id
+        self.artifact_root = artifact_root
+        self._latest = ""
+        self._last_progress = ""
+        self._last_artifacts: tuple[tuple[str, int], ...] = ()
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, progress: str) -> None:
+        with self._lock:
+            self._latest = progress
+
+    def close(self) -> None:
+        self._stop.set()
+
+    def _run(self) -> None:
+        while not self._stop.wait(0.5):
+            with self._lock:
+                progress = self._latest
+            payload: dict[str, Any] = {"progress": progress}
+            artifacts_changed = False
+            if self.artifact_root is not None:
+                images = collect_local_artifacts(self.artifact_root, AGENT_ARTIFACT_BASE_URL)
+                signature = tuple((str(item.get("url") or ""), int(item.get("bytes") or 0)) for item in images)
+                if signature != self._last_artifacts:
+                    self._last_artifacts = signature
+                    artifacts_changed = True
+                    payload["result"] = {
+                        "local_output_dir": str(self.artifact_root),
+                        "artifact_base_url": AGENT_ARTIFACT_BASE_URL,
+                        "images": images,
+                    }
+            if not artifacts_changed and (not progress or progress == self._last_progress):
+                continue
+            api_request(
+                "POST",
+                f"/api/agents/jobs/{self.job_id}/progress",
+                payload,
+                token=AGENT_TOKEN,
+                timeout=2,
+                quiet=True,
+            )
+            self._last_progress = progress
 
 
 def _prepare_916_conversion_prompts(
@@ -390,7 +460,7 @@ def _write_binary_bundle(root: Path, files: list[dict[str, str]]) -> None:
         path.write_bytes(base64.b64decode(item.get("base64") or ""))
 
 
-def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
+def _run_and_stream(job_id: str, cmd: list[str], cwd: Path, artifact_root: Path | None = None) -> tuple[int, str]:
     print(f"  [agent] Running: {' '.join(cmd)}", flush=True)
     proc = subprocess.Popen(
         cmd,
@@ -407,6 +477,7 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
     assert proc.stdout is not None
     stdout_queue: queue.Queue[str | None] = queue.Queue()
     cancel_event = threading.Event()
+    reporter = JobProgressReporter(job_id, artifact_root=artifact_root)
 
     def _read_stdout() -> None:
         try:
@@ -428,6 +499,7 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
         if cancel_event.is_set():
             msg = "Canceled by user; local automation process terminated."
             lines.append(msg)
+            reporter.close()
             return -15, "\n".join(lines[-200:])
 
         try:
@@ -444,12 +516,13 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
                 lines.append(clean)
                 if len(lines) > 400:
                     lines = lines[-400:]
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": clean}, token=AGENT_TOKEN, timeout=5)
+                reporter.submit(clean)
 
         if proc.poll() is not None and (stream_done or stdout_queue.empty()):
             break
 
     proc.wait()
+    reporter.close()
     return proc.returncode, "\n".join(lines[-200:])
 
 
@@ -578,6 +651,7 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
             job_id,
             _chatgpt_cmd(script_path, prompt_45_dir, out_45_dir, input_dir, payload, "4:5"),
             ROOT,
+            artifact_root=job_root,
         )
         logs.append(tail)
         if code != 0:
@@ -622,6 +696,7 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
                         image_source_file=source_file,
                     ),
                     ROOT,
+                    artifact_root=job_root,
                 )
                 logs.append(tail)
                 if code != 0:
@@ -633,13 +708,14 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
                 job_id,
                 _chatgpt_cmd(script_path, prompt_916_dir, out_916_dir, upload_dir, payload, "9:16"),
                 ROOT,
+                artifact_root=job_root,
             )
             logs.append(tail)
             if code != 0:
                 api_request("POST", f"/api/agents/jobs/{job_id}/fail", {"error": tail or f"ChatGPT 9:16 exited {code}"}, token=AGENT_TOKEN)
                 return
 
-    api_request(
+    api_request_retry(
         "POST",
         f"/api/agents/jobs/{job_id}/complete",
         {"result": {

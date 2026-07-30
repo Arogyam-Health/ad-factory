@@ -167,11 +167,22 @@ def claim_job(job_id: str, agent_id: str) -> Optional[dict[str, Any]]:
     return result
 
 
-def update_job_progress(job_id: str, progress: str, agent_id: str) -> None:
-    get_sync_db()[COLL_AGENT_JOBS].update_one(
+def update_job_progress(job_id: str, progress: str, agent_id: str, result: Any = None) -> None:
+    now = time.time()
+    db = get_sync_db()
+    update: dict[str, Any] = {"progress": progress, "updated_at": now}
+    if isinstance(result, dict):
+        update["result"] = result
+    db[COLL_AGENT_JOBS].update_one(
         {"job_id": job_id, "agent_id": agent_id},
-        {"$set": {"progress": progress, "updated_at": time.time()}},
+        {"$set": update},
     )
+    if isinstance(result, dict):
+        job = db[COLL_AGENT_JOBS].find_one({"job_id": job_id, "agent_id": agent_id}) or {}
+        try:
+            _persist_local_agent_result(db, job, result, now, completed=False)
+        except Exception:
+            pass
 
 
 def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
@@ -194,12 +205,12 @@ def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
         }},
     )
     try:
-        _persist_local_agent_result(db, job, result, now)
+        _persist_local_agent_result(db, job, result, now, completed=True)
     except Exception:
         pass
 
 
-def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: float) -> None:
+def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: float, *, completed: bool) -> None:
     if job.get("job_type") != "run_chatgpt_batch" or not isinstance(result, dict):
         return
     payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
@@ -212,7 +223,6 @@ def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: 
     batch_name = str(payload.get("batch_name") or "")
     image_urls = [str(img.get("url")) for img in images]
     update = {
-        "status": "completed",
         "image_generated": True,
         "image_files": image_urls,
         "local_artifacts": images,
@@ -221,6 +231,8 @@ def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: 
         "local_agent_warnings": result.get("warnings") or [],
         "updated_at": now,
     }
+    if completed:
+        update["status"] = "completed"
     if batch_name:
         update["batch"] = batch_name
     update["manifest_summary"] = {

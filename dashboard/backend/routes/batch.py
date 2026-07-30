@@ -52,7 +52,7 @@ def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
     db = get_sync_db()
     job = db[COLL_AGENT_JOBS].find_one(
         {"user_id": user_id, "status": {"$in": ["pending", "running", "cancel_requested"]}},
-        {"_id": 0, "result": 0},
+        {"_id": 0, "payload": 0},
         sort=[("created_at", -1)],
     )
     if not job:

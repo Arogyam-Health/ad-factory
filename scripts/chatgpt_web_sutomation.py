@@ -38,7 +38,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from PIL import Image as PILImage
 
@@ -208,7 +208,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--timeout", type=int, default=420, help="Generation timeout per prompt")
     parser.add_argument("--download-timeout", type=int, default=90)
-    parser.add_argument("--sleep-after-download", type=float, default=3.0)
+    parser.add_argument("--sleep-after-download", type=float, default=0.0)
     parser.add_argument("--min-image-bytes", type=int, default=20_000)
     parser.add_argument("--max-attempts", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
@@ -259,7 +259,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--prompt-paste-timeout", type=int, default=35)
     parser.add_argument("--prompt-integrity-ratio", type=float, default=0.98)
-    parser.add_argument("--prompt-settle-wait", type=float, default=4.0)
+    parser.add_argument(
+        "--prompt-settle-wait",
+        type=float,
+        default=4.0,
+        help="Maximum time to verify composer stability; returns early as soon as two UI reads match.",
+    )
     parser.add_argument(
         "--send-submit-method",
         choices=["enter", "click", "auto"],
@@ -1405,6 +1410,15 @@ def instant_model_selected(page: Page) -> bool:
         return False
 
 
+def wait_for_ui_state(check: Callable[[], bool], timeout: float = 2.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if check():
+            return True
+        time.sleep(0.2)
+    return check()
+
+
 def select_instant_model(page: Page) -> bool:
     if instant_model_selected(page):
         return True
@@ -1413,13 +1427,12 @@ def select_instant_model(page: Page) -> bool:
     opened = safe_click_labels(page, ["model", "auto", "thinking", "instant", "gpt", "chatgpt"], timeout=5)
     if not opened:
         return instant_model_selected(page)
-    time.sleep(0.8)
 
     # Prefer the exact "Instant" option; allow versioned names such as "GPT-5.5 Instant".
     clicked = safe_click_labels(page, ["gpt-5.5 instant", "instant"], timeout=6)
-    time.sleep(1.0)
+    confirmed = wait_for_ui_state(lambda: instant_model_selected(page)) if clicked else False
     dismiss_open_overlays(page)
-    return clicked or instant_model_selected(page)
+    return confirmed or instant_model_selected(page)
 
 
 def create_image_tool_selected(page: Page) -> bool:
@@ -1512,11 +1525,10 @@ def select_create_image_tool(page: Page) -> bool:
     if not opened:
         return create_image_tool_selected(page)
 
-    time.sleep(0.8)
     clicked = safe_click_labels(page, ["create image", "image generation", "images", "generate image"], timeout=6)
-    time.sleep(0.8)
+    confirmed = wait_for_ui_state(lambda: create_image_tool_selected(page)) if clicked else False
     dismiss_open_overlays(page)
-    return clicked or create_image_tool_selected(page)
+    return confirmed or create_image_tool_selected(page)
 
 
 def select_model_and_tool_if_requested(page: Page, args: argparse.Namespace) -> None:
@@ -2225,6 +2237,33 @@ def press_enter_to_send(page: Page, composer: Locator) -> None:
     page.keyboard.press("Enter")
 
 
+def wait_for_composer_stability(
+    page: Page,
+    expected_prompt: str,
+    min_integrity_ratio: float,
+    max_wait: float,
+) -> tuple[Locator, str, dict[str, Any]]:
+    deadline = time.time() + max(0.5, max_wait)
+    previous_text: str | None = None
+    stable_reads = 0
+    composer = find_composer(page, timeout=5)
+    actual = get_composer_text(page, composer).strip()
+    report = prompt_integrity_report(expected_prompt, actual, min_integrity_ratio)
+    while time.time() < deadline:
+        composer = find_composer(page, timeout=2)
+        actual = get_composer_text(page, composer).strip()
+        report = prompt_integrity_report(expected_prompt, actual, min_integrity_ratio)
+        if report["ok"] and actual == previous_text:
+            stable_reads += 1
+            if stable_reads >= 2:
+                return composer, actual, report
+        else:
+            stable_reads = 0
+        previous_text = actual
+        time.sleep(0.2)
+    return composer, actual, report
+
+
 def click_send_and_confirm(
     page: Page,
     composer: Locator,
@@ -2237,23 +2276,25 @@ def click_send_and_confirm(
     expected_attachment_count: int = 0,
     ready_timeout: float = 180.0,
 ) -> None:
-    if settle_wait > 0:
-        print(f"  [send] Waiting {settle_wait:g}s for ChatGPT composer to settle before final prompt check...")
-        time.sleep(settle_wait)
-
-    composer = find_composer(page, timeout=5)
-    before_text = get_composer_text(page, composer).strip()
     if expected_prompt is not None:
-        report = prompt_integrity_report(expected_prompt, before_text, min_integrity_ratio)
-        print(f"  [send] Final prompt check after settle wait: {format_prompt_integrity(report)}")
+        composer, before_text, report = wait_for_composer_stability(
+            page,
+            expected_prompt,
+            min_integrity_ratio,
+            max_wait=settle_wait,
+        )
+        print(f"  [send] Stable composer check: {format_prompt_integrity(report)}")
         if not report["ok"]:
-            write_prompt_debug_file(debug_path, expected_prompt, before_text, report, "before-send-after-settle")
+            write_prompt_debug_file(debug_path, expected_prompt, before_text, report, "before-send-stability")
             raise PWTimeoutError(
-                "Refusing to send because ChatGPT composer does not contain the complete prompt after settle wait. "
+                "Refusing to send because ChatGPT composer does not contain the complete prompt after stability checks. "
                 + format_prompt_integrity(report)
             )
-    elif not before_text:
-        raise PWTimeoutError("Cannot send because ChatGPT composer is empty")
+    else:
+        composer = find_composer(page, timeout=5)
+        before_text = get_composer_text(page, composer).strip()
+        if not before_text:
+            raise PWTimeoutError("Cannot send because ChatGPT composer is empty")
 
     before_marker_count = prompt_visible_outside_composer_count(page, expected_prompt)
     before_url = page.url or ""
@@ -2424,21 +2465,48 @@ def mark_largest_generated_image(page: Page, src: str | None = None) -> str:
         return ""
 
 
+def wait_for_generated_image_stability(
+    page: Page,
+    baseline_srcs: set[str],
+    chosen: dict[str, Any],
+    max_wait: float = 4.0,
+) -> dict[str, Any]:
+    deadline = time.time() + max_wait
+    previous_key: tuple[str, int, int] | None = None
+    stable_reads = 0
+    current = chosen
+    while time.time() < deadline:
+        candidates = _image_candidates(page, baseline_srcs)
+        if candidates:
+            assistant = [candidate for candidate in candidates if candidate.get("assistantArea")]
+            current = assistant[0] if assistant else candidates[0]
+        key = (
+            str(current.get("src") or ""),
+            int(current.get("width") or 0),
+            int(current.get("height") or 0),
+        )
+        if key == previous_key:
+            stable_reads += 1
+        else:
+            stable_reads = 0
+        if not generation_in_progress(page) or stable_reads >= 2:
+            return current
+        previous_key = key
+        time.sleep(0.25)
+    return current
+
+
 def wait_for_generated_image(page: Page, baseline_srcs: set[str], timeout: int) -> str:
     print("  [wait-img] Waiting for a new generated image in the assistant response...")
     deadline = time.time() + timeout
-    next_log = time.time() + 10
+    next_log = time.time() + 3
     while time.time() < deadline:
         candidates = _image_candidates(page, baseline_srcs)
         if candidates:
             assistant_candidates = [c for c in candidates if c.get("assistantArea")]
             chosen = assistant_candidates[0] if assistant_candidates else candidates[0]
             if generation_in_progress(page):
-                time.sleep(4.0)
-                refreshed = _image_candidates(page, baseline_srcs)
-                if refreshed:
-                    assistant_refreshed = [c for c in refreshed if c.get("assistantArea")]
-                    chosen = assistant_refreshed[0] if assistant_refreshed else refreshed[0]
+                chosen = wait_for_generated_image_stability(page, baseline_srcs, chosen)
             print(
                 "  [wait-img] Found generated image: "
                 f"{int(chosen.get('width', 0))}x{int(chosen.get('height', 0))}, "
@@ -2452,8 +2520,8 @@ def wait_for_generated_image(page: Page, baseline_srcs: set[str], timeout: int) 
                 print("  [wait-img] Found generated image using relaxed visible-image detection.")
                 return marked_src
             print("  [wait-img] Still waiting for generated image...")
-            next_log = time.time() + 10
-        time.sleep(2.0)
+            next_log = time.time() + 3
+        time.sleep(0.5)
 
     marked_src = mark_largest_generated_image(page)
     if marked_src:

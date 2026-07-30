@@ -106,7 +106,7 @@ def report_progress(
     payload: dict[str, Any] = Body(...),
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, str]:
-    update_job_progress(job_id, payload.get("progress", ""), agent["agent_id"])
+    update_job_progress(job_id, payload.get("progress", ""), agent["agent_id"], payload.get("result"))
     return {"status": "ok"}
 
 

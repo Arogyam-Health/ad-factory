@@ -502,6 +502,7 @@ function startAgentJobPolling() {
       const label = status === "cancel_requested" ? "Canceling" : (status === "running" ? "Running" : "Queued");
       const msg = `Agent job ${label}: ${progress || "waiting for pickup..."}`;
       showAgentJobBar(msg, status !== "cancel_requested", job);
+      renderLocalAgentArtifacts(job);
     } catch (err) {
       if (agentJobPollTimer) {
         clearInterval(agentJobPollTimer);

@@ -1603,6 +1603,33 @@ def test_local_agent_916_template_flow() -> int:
     return failed
 
 
+def test_local_agent_responsiveness_contract() -> int:
+    failed = 0
+    print("\n[Local Agent Responsiveness]")
+
+    local_agent = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+    chatgpt = (ROOT / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
+    batch_routes = (ROOT / "dashboard" / "backend" / "routes" / "batch.py").read_text(encoding="utf-8")
+    runs_js = (ROOT / "dashboard" / "frontend" / "js" / "runs.js").read_text(encoding="utf-8")
+
+    failed += ok("class JobProgressReporter" in local_agent and "reporter.submit(clean)" in local_agent,
+                 "terminal output is decoupled from Render progress requests")
+    failed += ok('"result": {' in local_agent and "collect_local_artifacts" in local_agent,
+                 "local agent publishes artifacts while automation is running")
+    failed += ok('parser.add_argument("--sleep-after-download", type=float, default=0.0)' in chatgpt,
+                 "ChatGPT automation has no default post-download sleep")
+    failed += ok("time.sleep(settle_wait)" not in chatgpt and "wait_for_composer_stability" in chatgpt,
+                 "composer readiness uses UI stability checks instead of fixed sleep")
+    failed += ok("wait_for_generated_image_stability" in chatgpt and "time.sleep(2.0)" not in chatgpt.split("def wait_for_generated_image(", 1)[1].split("def infer_ext_from_src", 1)[0],
+                 "generated-image detection polls UI state without two-second fixed waits")
+    failed += ok('{"_id": 0, "payload": 0}' in batch_routes,
+                 "active job status includes incremental result artifacts")
+    failed += ok("renderLocalAgentArtifacts(job);" in runs_js,
+                 "dashboard renders artifacts for active jobs")
+
+    return failed
+
+
 # ─── Phase 6: Readiness, Exports, Safety ──────────────────────────────────
 
 
@@ -1842,6 +1869,7 @@ def main() -> int:
     total += test_admin_api()
     total += test_admin_frontend()
     total += test_local_agent_916_template_flow()
+    total += test_local_agent_responsiveness_contract()
     total += test_admin_readiness_phase6()
 
     print(f"\n{'='*50}")
