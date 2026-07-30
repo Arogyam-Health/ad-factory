@@ -357,13 +357,82 @@ document.getElementById("refreshRuns")?.addEventListener("click", () => {
   loadRuns().catch(() => {});
 });
 
+const LOCAL_STORAGE_JOB_KEY = "adFactoryActiveJob";
+let agentJobPollTimer = null;
+
 function appendGenerationResult(data, fallback) {
   if (data?.status === "queued_local_agent") {
     appendLog(`Queued local agent job ${data.job_id} on ${data.agent_name || data.agent_id}. Images will save on the local agent machine.`);
+    localStorage.setItem(LOCAL_STORAGE_JOB_KEY, JSON.stringify({
+      job_id: data.job_id,
+      agent_name: data.agent_name || data.agent_id,
+      mode: data.mode || "both",
+      timestamp: Date.now(),
+    }));
+    startAgentJobPolling();
     return;
   }
   appendLog(fallback(data));
 }
+
+function showAgentJobBar(text) {
+  const bar = document.getElementById("agentJobBar");
+  const status = document.getElementById("agentJobStatus");
+  if (!bar || !status) return;
+  bar.classList.remove("hidden");
+  status.innerHTML = `<span class="agent-job-spinner"></span> ${text}`;
+}
+
+function hideAgentJobBar() {
+  const bar = document.getElementById("agentJobBar");
+  if (bar) bar.classList.add("hidden");
+  localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+  if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
+}
+
+function startAgentJobPolling() {
+  if (agentJobPollTimer) return;
+  showAgentJobBar("Agent job in progress...");
+  agentJobPollTimer = setInterval(async () => {
+    try {
+      const data = await fetchJSON("/api/batch/job-status");
+      if (!data || !data.active) {
+        appendLog("Agent job completed or no longer active.");
+        hideAgentJobBar();
+        loadRuns();
+        return;
+      }
+      const job = data.job || {};
+      const progress = job.progress || "";
+      const status = job.status || "pending";
+      const label = status === "running" ? "Running" : "Queued";
+      const msg = `Agent job ${label}: ${progress || "waiting for pickup..."}`;
+      showAgentJobBar(msg);
+    } catch (err) {
+      if (agentJobPollTimer) {
+        clearInterval(agentJobPollTimer);
+        agentJobPollTimer = null;
+      }
+    }
+  }, 5000);
+}
+
+function checkActiveAgentJob() {
+  const raw = localStorage.getItem(LOCAL_STORAGE_JOB_KEY);
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.job_id || (Date.now() - saved.timestamp > 7200000)) {
+      localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+      return;
+    }
+    startAgentJobPolling();
+  } catch {
+    localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+  }
+}
+
+checkActiveAgentJob();
 
 document.getElementById("batchGen45")?.addEventListener("click", async () => {
   const selectedBatches = getSelectedBatchValues();

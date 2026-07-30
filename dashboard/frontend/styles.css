@@ -234,6 +234,22 @@ body::before {
 .card-runs { margin-top: 12px; }
 
 /* ── Toolbar ──────────────────────────────────────────────────────────────── */
+.agent-job-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--accent-teal) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent-teal) 35%, var(--line));
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--ink);
+}
+.agent-job-bar.hidden { display: none; }
+.agent-job-bar .agent-job-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent-teal); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .runs-toolbar {
   display: flex;
   align-items: center;
