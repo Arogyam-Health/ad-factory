@@ -444,7 +444,8 @@ function startAgentJobPolling() {
       const job = data.job || {};
       if (!data.active) {
         if (job.status === "completed") {
-          showAgentJobBar(`Agent job completed. ${job.result?.images?.length || 0} local image(s) ready.`, false);
+          const warningText = Array.isArray(job.result?.warnings) && job.result.warnings.length ? ` ${job.result.warnings[0]}` : "";
+          showAgentJobBar(`Agent job completed. ${job.result?.images?.length || 0} local image(s) ready.${warningText}`, false);
           renderLocalAgentArtifacts(job);
           localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
           if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
@@ -488,7 +489,8 @@ checkActiveAgentJob();
 fetchJSON("/api/batch/job-status").then((data) => {
   if (data?.job && !data.active && data.job.status === "completed") {
     renderLocalAgentArtifacts(data.job);
-    showAgentJobBar(`Last local agent job completed. ${data.job.result?.images?.length || 0} local image(s) ready.`, false);
+    const warningText = Array.isArray(data.job.result?.warnings) && data.job.result.warnings.length ? ` ${data.job.result.warnings[0]}` : "";
+    showAgentJobBar(`Last local agent job completed. ${data.job.result?.images?.length || 0} local image(s) ready.${warningText}`, false);
   }
 }).catch(() => {});
 

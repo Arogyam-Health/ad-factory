@@ -6005,12 +6005,15 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     out_dir_45.mkdir(parents=True, exist_ok=True)
 
     if engine == "chatgpt" and render_chatgpt_uses_local_agent():
+        prompts_916 = _bundle_916_prompt_files_for_batches(batch_names)
+        mode = "both" if any(str(item.get("name") or "").endswith(".txt") for item in prompts_916) else "45"
         return _queue_local_chatgpt_job(user_id, {
-            "mode": "both",
+            "mode": mode,
             "batch_name": batch_name,
             "headless": headless,
             "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
-            "prompts_916": _bundle_916_prompt_files_for_batches(batch_names),
+            "prompts_916": prompts_916,
+            "warnings": [] if mode == "both" else ["Queued 4:5 only because no 9:16 prompt files exist yet for the selected batch."],
             "input_images": _bundle_input_images(),
             "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
             "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),

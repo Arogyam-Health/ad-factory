@@ -424,6 +424,7 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": f"local output: {job_root}"}, token=AGENT_TOKEN)
 
     logs: list[str] = []
+    warnings: list[str] = [str(item) for item in (payload.get("warnings") or []) if str(item).strip()]
     if mode in {"45", "both"}:
         code, tail = _run_and_stream(
             job_id,
@@ -437,18 +438,24 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
 
     if mode in {"916", "both"}:
         if not any(prompt_916_dir.glob("*.txt")):
-            api_request("POST", f"/api/agents/jobs/{job_id}/fail", {"error": "No 9:16 prompt files were included in the local-agent job"}, token=AGENT_TOKEN)
-            return
-        upload_dir = out_45_dir if out_45_dir.exists() else input_dir
-        code, tail = _run_and_stream(
-            job_id,
-            _chatgpt_cmd(script_path, prompt_916_dir, out_916_dir, upload_dir, payload, "9:16"),
-            ROOT,
-        )
-        logs.append(tail)
-        if code != 0:
-            api_request("POST", f"/api/agents/jobs/{job_id}/fail", {"error": tail or f"ChatGPT 9:16 exited {code}"}, token=AGENT_TOKEN)
-            return
+            if mode == "both":
+                warning = "Skipped 9:16 phase: no 9:16 prompt files were included in the local-agent job."
+                warnings.append(warning)
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": warning}, token=AGENT_TOKEN)
+            else:
+                api_request("POST", f"/api/agents/jobs/{job_id}/fail", {"error": "No 9:16 prompt files were included in the local-agent job"}, token=AGENT_TOKEN)
+                return
+        else:
+            upload_dir = out_45_dir if out_45_dir.exists() else input_dir
+            code, tail = _run_and_stream(
+                job_id,
+                _chatgpt_cmd(script_path, prompt_916_dir, out_916_dir, upload_dir, payload, "9:16"),
+                ROOT,
+            )
+            logs.append(tail)
+            if code != 0:
+                api_request("POST", f"/api/agents/jobs/{job_id}/fail", {"error": tail or f"ChatGPT 9:16 exited {code}"}, token=AGENT_TOKEN)
+                return
 
     api_request(
         "POST",
@@ -457,6 +464,7 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
             "local_output_dir": str(job_root),
             "artifact_base_url": AGENT_ARTIFACT_BASE_URL,
             "images": collect_local_artifacts(job_root, AGENT_ARTIFACT_BASE_URL),
+            "warnings": warnings,
             "log_tail": "\n".join(logs)[-4000:],
         }},
         token=AGENT_TOKEN,
