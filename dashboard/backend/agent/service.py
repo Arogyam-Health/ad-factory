@@ -105,7 +105,7 @@ def create_job(agent_id: str, user_id: str, job_type: str, payload: dict[str, An
 def poll_jobs(agent_id: str) -> list[dict[str, Any]]:
     return list(
         get_sync_db()[COLL_AGENT_JOBS]
-        .find({"agent_id": agent_id, "status": "pending"})
+        .find({"agent_id": agent_id, "status": "pending"}, {"_id": 0})
         .sort("created_at", 1)
         .limit(5)
     )
@@ -116,6 +116,7 @@ def claim_job(job_id: str, agent_id: str) -> Optional[dict[str, Any]]:
     result = get_sync_db()[COLL_AGENT_JOBS].find_one_and_update(
         {"job_id": job_id, "agent_id": agent_id, "status": "pending"},
         {"$set": {"status": "running", "started_at": now, "updated_at": now}},
+        projection={"_id": 0},
     )
     return result
 

@@ -41,7 +41,7 @@ def api_request(method: str, path: str, data: Any = None, token: str = "") -> An
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        print(f"  [agent] API error {e.code}: {e.read().decode()}")
+        print(f"  [agent] API error {e.code} {method} {path}: {e.read().decode()}")
         return None
     except Exception as e:
         print(f"  [agent] Request failed: {e}")
