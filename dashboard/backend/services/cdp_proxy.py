@@ -13,12 +13,15 @@ page-level commands through the extension bridge to the user's real browser.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
+import mimetypes
 import socket
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import uvicorn
@@ -47,16 +50,35 @@ _cached_targets: list[dict[str, Any]] = []
 _cached_targets_lock = threading.Lock()
 _auto_attach = False
 _CONTEXT_ID = "ad-factory-extension-context"
+_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 app = FastAPI()
 
 
-def _run_async(coro) -> Any:
+def _run_async(coro, timeout: float = 30.0) -> Any:
     """Run an async coroutine on the captured main event loop from any thread."""
     if _MAIN_LOOP is None or not _MAIN_LOOP.is_running():
         raise RuntimeError("Main event loop not available")
     future = asyncio.run_coroutine_threadsafe(coro, _MAIN_LOOP)
-    return future.result(timeout=30)
+    return future.result(timeout=timeout)
+
+
+def _load_files_for_extension(paths: list[str]) -> list[dict[str, str]]:
+    files: list[dict[str, str]] = []
+    for raw_path in paths:
+        path = Path(str(raw_path)).expanduser().resolve()
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"Upload file not found on server: {path}")
+        size = path.stat().st_size
+        if size > _MAX_UPLOAD_BYTES:
+            raise ValueError(f"Upload file too large for extension bridge ({size} bytes): {path.name}")
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        files.append({
+            "name": path.name,
+            "mime": mime,
+            "base64": base64.b64encode(path.read_bytes()).decode("ascii"),
+        })
+    return files
 
 
 async def forward_extension_event(user_id: str, msg: dict[str, Any]) -> None:
@@ -330,9 +352,23 @@ async def devtools_browser(websocket: WebSocket):
                     }))
                     continue
                 try:
-                    result = _run_async(
-                        _bridge.send_command(_user_id, method, msg.get("params"), timeout=30.0, target_id=target_id)
-                    )
+                    params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+                    if method == "DOM.setFileInputFiles":
+                        upload_files = _load_files_for_extension(list(params.get("files") or []))
+                        result = _run_async(
+                            _bridge.send_command(
+                                _user_id,
+                                "AdFactory.setFileInputFiles",
+                                {"files": upload_files},
+                                timeout=60.0,
+                                target_id=target_id,
+                            ),
+                            timeout=65.0,
+                        )
+                    else:
+                        result = _run_async(
+                            _bridge.send_command(_user_id, method, params, timeout=30.0, target_id=target_id)
+                        )
                     resp = {"id": cmd_id, "sessionId": session_id, "result": result}
                     await websocket.send_text(json.dumps(resp))
                 except Exception as e:

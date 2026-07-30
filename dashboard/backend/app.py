@@ -1644,6 +1644,7 @@ def run_cmd(
     *,
     run_id: str | None = None,
     poll_cancel: bool = True,
+    timeout_seconds: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = dashboard_subprocess_env()
     proc = subprocess.Popen(
@@ -1659,8 +1660,18 @@ def run_cmd(
     _register_subprocess(run_id, proc)
     cancel_event = cancel_event_for_run(run_id) if run_id else _cancel_current_run
     poll_interval = 0.1
+    started_at = time.monotonic()
     try:
         while True:
+            if timeout_seconds and time.monotonic() - started_at > timeout_seconds:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                return subprocess.CompletedProcess(
+                    proc.args,
+                    proc.returncode if proc.returncode is not None else -1,
+                    stdout or "",
+                    (stderr or "") + f"\n[killed: browser automation timed out after {timeout_seconds}s]",
+                )
             if poll_cancel and cancel_event.is_set():
                 proc.kill()
                 stdout, stderr = proc.communicate()
@@ -1677,6 +1688,18 @@ def run_cmd(
                 continue
     finally:
         _unregister_subprocess(proc)
+
+
+def browser_automation_timeout_seconds(prompt_count: int, provider: str = "chatgpt") -> int:
+    configured = str(os.getenv("BROWSER_AUTOMATION_MAX_SECONDS") or "").strip()
+    if configured.isdigit():
+        return max(60, int(configured))
+    prefix = "CHATGPT" if provider == "chatgpt" else "GEMINI"
+    generation = int(os.getenv(f"{prefix}_GENERATION_TIMEOUT_SECONDS") or "420")
+    manual_login = int(os.getenv(f"{prefix}_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")
+    download = int(os.getenv(f"{prefix}_DOWNLOAD_TIMEOUT_SECONDS") or "90") if provider == "chatgpt" else 90
+    per_prompt = generation + download + 120
+    return max(300, manual_login + max(1, prompt_count) * per_prompt)
 
 
 def generated_image_roots() -> list[Path]:
@@ -2063,7 +2086,28 @@ def run_chatgpt_generation(
 
     env = dashboard_subprocess_env()
 
-    result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, env=env)
+    timeout_seconds = browser_automation_timeout_seconds(len(prompt_files), "chatgpt")
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(ROOT),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            env=env,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        timeout_output = exc.stdout or ""
+        if isinstance(timeout_output, bytes):
+            timeout_output = timeout_output.decode("utf-8", errors="replace")
+        result = subprocess.CompletedProcess(
+            cmd,
+            -1,
+            timeout_output + f"\n[killed: browser automation timed out after {timeout_seconds}s]",
+            "",
+        )
 
     full_output = result.stdout or ""
     result.stdout = full_output
@@ -5733,7 +5777,11 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     if headless:
         cmd.append("--headless")
 
-    result = run_cmd(cmd, cwd=ROOT)
+    result = run_cmd(
+        cmd,
+        cwd=ROOT,
+        timeout_seconds=browser_automation_timeout_seconds(len(prompt_files_created), engine),
+    )
     if result.returncode != 0:
         error_text = result.stderr or result.stdout
         short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-30:])
@@ -5843,7 +5891,11 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     if headless:
         cmd.append("--headless")
 
-    result = run_cmd(cmd, cwd=ROOT)
+    result = run_cmd(
+        cmd,
+        cwd=ROOT,
+        timeout_seconds=browser_automation_timeout_seconds(len(all_prompt_files), engine),
+    )
     if result.returncode != 0:
         error_text = result.stderr or result.stdout
         short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-30:])

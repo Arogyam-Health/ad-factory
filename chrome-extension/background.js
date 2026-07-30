@@ -226,6 +226,8 @@ function executeCDPCommand(method, params) {
       return handleBrowserCommand(command, params);
     case "Network":
       return handleNetworkCommand(command, params);
+    case "AdFactory":
+      return handleAdFactoryCommand(command, params);
     default:
       return cdpFallback(method, params);
   }
@@ -422,6 +424,47 @@ async function handleNetworkCommand(command, params) {
   const tabId = await resolveTabId(params);
   await ensureAttached(tabId);
   return cdpSend(tabId, `Network.${command}`, params);
+}
+
+/* ─── Ad Factory bridge-only helpers ─── */
+
+async function handleAdFactoryCommand(command, params) {
+  const tabId = await resolveTabId(params);
+  switch (command) {
+    case "setFileInputFiles": {
+      const files = Array.isArray(params.files) ? params.files : [];
+      if (!files.length) return { count: 0 };
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async (filePayloads) => {
+          function b64ToBytes(b64) {
+            const binary = atob(b64 || "");
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+            return bytes;
+          }
+          const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+          const input = inputs.find((el) => el.matches(':focus')) || inputs[inputs.length - 1];
+          if (!input) throw new Error("No file input found in page");
+          const transfer = new DataTransfer();
+          for (const payload of filePayloads) {
+            const file = new File([b64ToBytes(payload.base64)], payload.name || "upload", {
+              type: payload.mime || "application/octet-stream",
+            });
+            transfer.items.add(file);
+          }
+          input.files = transfer.files;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          return { count: transfer.files.length };
+        },
+        args: [files],
+      });
+      return results?.[0]?.result || { count: files.length };
+    }
+    default:
+      throw new Error(`Unknown AdFactory command: ${command}`);
+  }
 }
 
 /* ─── Fallback: send raw CDP via debugger ─── */

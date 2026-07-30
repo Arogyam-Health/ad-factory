@@ -8,11 +8,13 @@
     "cookies",
     "tabs",
     "windows",
+    "scripting",
     "storage",
     "activeTab"
   ],
   "host_permissions": [
     "https://ad-factory-3rn5.onrender.com/*",
+    "https://chatgpt.com/*",
     "http://localhost:4090/*"
   ],
   "background": {
