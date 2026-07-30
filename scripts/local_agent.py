@@ -8,6 +8,7 @@ import base64
 import mimetypes
 import json
 import os
+import queue
 import re
 import shutil
 import socket
@@ -35,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCAL_OUTPUT_ROOT = Path(os.getenv("AGENT_OUTPUT_DIR", str(Path.home() / "ad-factory-agent-output"))).expanduser()
 
 
-def api_request(method: str, path: str, data: Any = None, token: str = "") -> Any:
+def api_request(method: str, path: str, data: Any = None, token: str = "", timeout: int = 30) -> Any:
     url = f"{AGENT_API_BASE}{path}"
     headers = {"Content-Type": "application/json"}
     if token:
@@ -45,7 +46,7 @@ def api_request(method: str, path: str, data: Any = None, token: str = "") -> An
     body = json.dumps(data).encode("utf-8") if data is not None else None
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         print(f"  [agent] API error {e.code} {method} {path}: {e.read().decode()}")
@@ -399,18 +400,62 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
     )
     lines: list[str] = []
     assert proc.stdout is not None
-    for line in iter(proc.stdout.readline, ""):
-        if not line:
+    stdout_queue: queue.Queue[str | None] = queue.Queue()
+
+    def _read_stdout() -> None:
+        try:
+            for line in proc.stdout or []:
+                stdout_queue.put(line)
+        finally:
+            stdout_queue.put(None)
+
+    reader = threading.Thread(target=_read_stdout, daemon=True)
+    reader.start()
+    stream_done = False
+    last_cancel_check = 0.0
+    while True:
+        now = time.time()
+        if now - last_cancel_check >= 2:
+            last_cancel_check = now
+            if _agent_job_cancel_requested(job_id):
+                msg = "Canceled by user; terminating local automation process."
+                print(f"  [agent] {msg}")
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": "canceling"}, token=AGENT_TOKEN, timeout=5)
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                lines.append(msg)
+                return -15, "\n".join(lines[-200:])
+
+        try:
+            line = stdout_queue.get(timeout=0.5)
+        except queue.Empty:
+            line = None
+
+        if line is None:
+            stream_done = stream_done or proc.poll() is not None
+        else:
+            clean = line.rstrip()
+            if clean:
+                print(clean)
+                lines.append(clean)
+                if len(lines) > 400:
+                    lines = lines[-400:]
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": clean}, token=AGENT_TOKEN, timeout=10)
+
+        if proc.poll() is not None and (stream_done or stdout_queue.empty()):
             break
-        clean = line.rstrip()
-        if clean:
-            print(clean)
-            lines.append(clean)
-            if len(lines) > 400:
-                lines = lines[-400:]
-            api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": clean}, token=AGENT_TOKEN)
+
     proc.wait()
     return proc.returncode, "\n".join(lines[-200:])
+
+
+def _agent_job_cancel_requested(job_id: str) -> bool:
+    status = api_request("GET", f"/api/agents/jobs/{job_id}/status", token=AGENT_TOKEN, timeout=5)
+    return bool(status and status.get("cancel_requested"))
 
 
 def _chatgpt_cmd(

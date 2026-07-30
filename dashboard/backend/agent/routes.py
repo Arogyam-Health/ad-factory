@@ -6,11 +6,13 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
 from dashboard.backend.agent.service import (
     authenticate_agent,
+    cancel_user_job,
     claim_job,
     complete_job,
     create_job,
     fail_job,
     heartbeat_agent,
+    get_job_status_for_agent,
     list_user_agents,
     poll_jobs,
     register_agent,
@@ -63,6 +65,28 @@ def poll_for_jobs(
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> list[dict[str, Any]]:
     return poll_jobs(agent["agent_id"])
+
+
+@router.get("/api/agents/jobs/{job_id}/status")
+def get_agent_job_status(
+    job_id: str,
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, Any]:
+    job = get_job_status_for_agent(job_id, agent["agent_id"])
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.post("/api/agents/jobs/{job_id}/cancel")
+def cancel_agent_job(
+    job_id: str,
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    job = cancel_user_job(user["user_id"], job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"status": job.get("status", ""), "job_id": job_id}
 
 
 @router.post("/api/agents/jobs/{job_id}/claim")

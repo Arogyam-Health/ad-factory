@@ -49,7 +49,15 @@ from dashboard.backend.app import (
 from dashboard.backend.db.settings import settings, DEPLOYMENT_PROD, validate_production_settings
 from dashboard.backend.security.crypto import encrypt_value, decrypt_value, hash_token, mask_key, generate_token
 from dashboard.backend.auth.models import generate_user_id, generate_session_token
-from dashboard.backend.agent.service import register_agent, authenticate_agent
+from dashboard.backend.agent.service import (
+    authenticate_agent,
+    cancel_user_job,
+    claim_job,
+    create_job,
+    fail_job,
+    get_job_status_for_agent,
+    register_agent,
+)
 
 
 client = TestClient(app)
@@ -154,6 +162,18 @@ def test_agent_lifecycle() -> int:
 
     bad = authenticate_agent("nonexistent-token")
     failed += ok(bad is None, "authenticate_agent returns None for bad token")
+
+    if agent:
+        job = create_job(agent["agent_id"], "test-user", "run_chatgpt_batch", {"batch_name": "vtest"})
+        claimed = claim_job(job["job_id"], agent["agent_id"])
+        failed += ok(claimed is not None, "agent can claim pending job")
+        canceled = cancel_user_job("test-user", job["job_id"])
+        failed += ok(canceled is not None and canceled.get("status") == "cancel_requested", "running agent job can be cancel-requested")
+        status = get_job_status_for_agent(job["job_id"], agent["agent_id"])
+        failed += ok(status is not None and status.get("cancel_requested") is True, "agent can detect cancel_requested status")
+        fail_job(job["job_id"], agent["agent_id"], "terminated")
+        status = get_job_status_for_agent(job["job_id"], agent["agent_id"])
+        failed += ok(status is not None and status.get("status") == "canceled", "fail after cancel request marks job canceled")
 
     return failed
 

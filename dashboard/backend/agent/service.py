@@ -112,6 +112,51 @@ def poll_jobs(agent_id: str) -> list[dict[str, Any]]:
     )
 
 
+def get_job_status_for_agent(job_id: str, agent_id: str) -> dict[str, Any] | None:
+    job = get_sync_db()[COLL_AGENT_JOBS].find_one(
+        {"job_id": job_id, "agent_id": agent_id},
+        {"_id": 0, "status": 1, "progress": 1, "updated_at": 1},
+    )
+    if not job:
+        return None
+    job["cancel_requested"] = job.get("status") in {"cancel_requested", "canceled"}
+    return job
+
+
+def cancel_user_job(user_id: str, job_id: str) -> dict[str, Any] | None:
+    now = time.time()
+    job = get_sync_db()[COLL_AGENT_JOBS].find_one({"user_id": user_id, "job_id": job_id}, {"_id": 0})
+    if not job:
+        return None
+    status = job.get("status")
+    if status == "pending":
+        new_status = "canceled"
+        completed_at = now
+    elif status == "running":
+        new_status = "cancel_requested"
+        completed_at = None
+    elif status == "cancel_requested":
+        new_status = "cancel_requested"
+        completed_at = None
+    else:
+        return job
+
+    update = {
+        "status": new_status,
+        "error": "Canceled by user",
+        "progress": "cancel requested",
+        "updated_at": now,
+        "cancel_requested_at": now,
+    }
+    if completed_at is not None:
+        update["completed_at"] = completed_at
+    get_sync_db()[COLL_AGENT_JOBS].update_one(
+        {"user_id": user_id, "job_id": job_id},
+        {"$set": update},
+    )
+    return {**job, **update}
+
+
 def claim_job(job_id: str, agent_id: str) -> Optional[dict[str, Any]]:
     now = time.time()
     result = get_sync_db()[COLL_AGENT_JOBS].find_one_and_update(
@@ -133,6 +178,12 @@ def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
     now = time.time()
     db = get_sync_db()
     job = db[COLL_AGENT_JOBS].find_one({"job_id": job_id, "agent_id": agent_id}) or {}
+    if job.get("status") in {"cancel_requested", "canceled"}:
+        db[COLL_AGENT_JOBS].update_one(
+            {"job_id": job_id, "agent_id": agent_id},
+            {"$set": {"status": "canceled", "error": "Canceled by user", "completed_at": now, "updated_at": now}},
+        )
+        return
     get_sync_db()[COLL_AGENT_JOBS].update_one(
         {"job_id": job_id, "agent_id": agent_id},
         {"$set": {
@@ -209,6 +260,14 @@ def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: 
 
 def fail_job(job_id: str, agent_id: str, error: str) -> None:
     now = time.time()
+    db = get_sync_db()
+    job = db[COLL_AGENT_JOBS].find_one({"job_id": job_id, "agent_id": agent_id}) or {}
+    if job.get("status") in {"cancel_requested", "canceled"}:
+        db[COLL_AGENT_JOBS].update_one(
+            {"job_id": job_id, "agent_id": agent_id},
+            {"$set": {"status": "canceled", "error": "Canceled by user", "completed_at": now, "updated_at": now}},
+        )
+        return
     get_sync_db()[COLL_AGENT_JOBS].update_one(
         {"job_id": job_id, "agent_id": agent_id},
         {"$set": {

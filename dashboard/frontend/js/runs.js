@@ -387,12 +387,39 @@ function appendGenerationResult(data, fallback) {
   appendLog(fallback(data));
 }
 
-function showAgentJobBar(text, spinning = true) {
+function showAgentJobBar(text, spinning = true, job = null) {
   const bar = document.getElementById("agentJobBar");
   const status = document.getElementById("agentJobStatus");
   if (!bar || !status) return;
   bar.classList.remove("hidden");
   status.innerHTML = `${spinning ? '<span class="agent-job-spinner"></span> ' : ''}${escapeHtml(text)}`;
+  let cancelBtn = bar.querySelector(".agent-job-cancel-btn");
+  const canCancel = job?.job_id && ["pending", "running", "cancel_requested"].includes(job.status || "");
+  if (!canCancel) {
+    cancelBtn?.remove();
+    return;
+  }
+  if (!cancelBtn) {
+    cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "agent-job-cancel-btn";
+    bar.appendChild(cancelBtn);
+  }
+  cancelBtn.textContent = job.status === "cancel_requested" ? "Canceling..." : "Cancel agent job";
+  cancelBtn.disabled = job.status === "cancel_requested";
+  cancelBtn.onclick = async () => {
+    if (!confirm("Cancel the running local agent job? The local browser automation process will be terminated.")) return;
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = "Canceling...";
+    try {
+      await fetchJSON(`/api/agents/jobs/${encodeURIComponent(job.job_id)}/cancel`, { method: "POST" });
+      appendLog(`Cancel requested for local agent job ${job.job_id}.`);
+    } catch (err) {
+      appendLog(`Cancel failed: ${String(err)}`);
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = "Cancel agent job";
+    }
+  };
 }
 
 function renderLocalAgentArtifacts(job) {
@@ -463,16 +490,17 @@ function startAgentJobPolling() {
           if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
           return;
         }
-        showAgentJobBar(`Agent job failed: ${job.error || "unknown error"}`, false);
+        const terminalLabel = job.status === "canceled" ? "canceled" : "failed";
+        showAgentJobBar(`Agent job ${terminalLabel}: ${job.error || "unknown error"}`, false, job);
         localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
         if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
         return;
       }
       const progress = job.progress || "";
       const status = job.status || "pending";
-      const label = status === "running" ? "Running" : "Queued";
+      const label = status === "cancel_requested" ? "Canceling" : (status === "running" ? "Running" : "Queued");
       const msg = `Agent job ${label}: ${progress || "waiting for pickup..."}`;
-      showAgentJobBar(msg);
+      showAgentJobBar(msg, status !== "cancel_requested", job);
     } catch (err) {
       if (agentJobPollTimer) {
         clearInterval(agentJobPollTimer);

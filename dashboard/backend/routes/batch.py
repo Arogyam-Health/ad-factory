@@ -51,7 +51,7 @@ def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
 
     db = get_sync_db()
     job = db[COLL_AGENT_JOBS].find_one(
-        {"user_id": user_id, "status": {"$in": ["pending", "running"]}},
+        {"user_id": user_id, "status": {"$in": ["pending", "running", "cancel_requested"]}},
         {"_id": 0, "result": 0},
         sort=[("created_at", -1)],
     )
@@ -59,7 +59,7 @@ def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
         job = db[COLL_AGENT_JOBS].find_one(
             {
                 "user_id": user_id,
-                "status": {"$in": ["completed", "failed"]},
+                "status": {"$in": ["completed", "failed", "canceled"]},
                 "updated_at": {"$gte": time.time() - 6 * 60 * 60},
             },
             {"_id": 0, "payload": 0},
@@ -68,7 +68,7 @@ def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
     if not job:
         return {"active": False, "job": None}
 
-    active = job.get("status") in {"pending", "running"}
+    active = job.get("status") in {"pending", "running", "cancel_requested"}
 
     return {
         "active": active,
