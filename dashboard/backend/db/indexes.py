@@ -53,12 +53,16 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
     COLL_AGENTS: [
         IndexModel([("token_hash", ASCENDING)], unique=True),
         IndexModel([(FIELD_USER_ID, ASCENDING)]),
+        IndexModel([(FIELD_USER_ID, ASCENDING), ("is_active", ASCENDING), ("last_heartbeat_at", DESCENDING)]),
         IndexModel([(FIELD_AGENT_ID, ASCENDING)], unique=True),
         IndexModel([("last_heartbeat_at", DESCENDING)]),
     ],
     COLL_AGENT_JOBS: [
         IndexModel([(FIELD_AGENT_ID, ASCENDING), (FIELD_STATUS, ASCENDING)]),
+        IndexModel([(FIELD_AGENT_ID, ASCENDING), (FIELD_STATUS, ASCENDING), (FIELD_CREATED_AT, ASCENDING)]),
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_CREATED_AT, DESCENDING)]),
+        IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_STATUS, ASCENDING), (FIELD_CREATED_AT, DESCENDING)]),
+        IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_STATUS, ASCENDING), ("updated_at", DESCENDING)]),
         IndexModel([("job_id", ASCENDING)], unique=True),
     ],
     COLL_BROWSER_SESSIONS: [

@@ -33,6 +33,7 @@ from dashboard.backend.services.user_config import (
     create_or_update_config,
     get_config_doc,
     resolve_effective_config,
+    resolve_effective_config_for_user,
     get_generic_config,
     CONFIG_KEYS,
 )
@@ -688,7 +689,7 @@ def get_effective_config(
     # No org_id provided — always return personal config by default
     from dashboard.backend.services.user_config import has_custom_config as user_has_config
 
-    config = resolve_effective_config(user_id)
+    config = resolve_effective_config_for_user(user_id)
     has_custom = user_has_config(user_id)
     doc = get_config_doc("user", user_id) if has_custom else None
     config_id = doc.get("config_id") if doc else None

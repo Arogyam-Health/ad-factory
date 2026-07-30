@@ -260,23 +260,24 @@ async function saveAllConfigs() {
   btn.textContent = "Saving…";
 
   try {
+    const nextConfig = {};
     for (const ta of textareas) {
       const key = ta.dataset.key;
-      const content = ta.value;
+      nextConfig[key] = ta.value;
+    }
 
-      if (ownerType === "org" && orgId) {
-        await fetchJSON(`/api/orgs/${orgId}/config`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ config: { [key]: content } }),
-        });
-      } else {
-        await fetchJSON("/api/user/config", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [key]: content }),
-        });
-      }
+    if (ownerType === "org" && orgId) {
+      await fetchJSON(`/api/orgs/${orgId}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: nextConfig }),
+      });
+    } else {
+      await fetchJSON("/api/user/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: nextConfig }),
+      });
     }
     status("All configs saved", "success");
     clearCache("/api/config/effective");
