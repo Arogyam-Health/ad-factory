@@ -1712,6 +1712,20 @@ def ensure_916_conversion_template() -> Path:
     return CONVERT_916_TEMPLATE_PATH
 
 
+def resolve_916_conversion_template_text(user_id: str = "", org_id: str | None = None) -> str:
+    configured = str(_resolve_user_config("conversion_916_prompt") or "").strip()
+    if not configured and user_id:
+        try:
+            from dashboard.backend.services.user_config import resolve_effective_config
+            configured = str(resolve_effective_config(user_id, org_id=org_id).get("conversion_916_prompt") or "").strip()
+        except Exception:
+            configured = ""
+    if configured:
+        return configured
+    template_path = ensure_916_conversion_template()
+    return template_path.read_text(encoding="utf-8", errors="replace").strip()
+
+
 def build_916_conversion_prompt_job(fmt: str, persona_num: int, lang: str, index: int, source_stem: str = "") -> str:
     """Build the prompt filename for a 9:16 conversion job.
 
@@ -6005,15 +6019,15 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     out_dir_45.mkdir(parents=True, exist_ok=True)
 
     if engine == "chatgpt" and render_chatgpt_uses_local_agent():
-        prompts_916 = _bundle_916_prompt_files_for_batches(batch_names)
-        mode = "both" if any(str(item.get("name") or "").endswith(".txt") for item in prompts_916) else "45"
+        org_id = str(payload.get("org_id") or "").strip() or None
         return _queue_local_chatgpt_job(user_id, {
-            "mode": mode,
+            "mode": "both",
             "batch_name": batch_name,
             "headless": headless,
             "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
-            "prompts_916": prompts_916,
-            "warnings": [] if mode == "both" else ["Queued 4:5 only because no 9:16 prompt files exist yet for the selected batch."],
+            "prompts_916": [],
+            "conversion_916_template": resolve_916_conversion_template_text(user_id, org_id=org_id),
+            "warnings": [],
             "input_images": _bundle_input_images(),
             "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
             "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
@@ -6274,8 +6288,7 @@ def run_916_conversion_from_45_for_batch(
     if not resolved_jobs:
         raise HTTPException(status_code=400, detail=f"No usable 4:5 reference images found for batch {batch}")
 
-    template_path = ensure_916_conversion_template()
-    template_text = template_path.read_text(encoding="utf-8").strip()
+    template_text = resolve_916_conversion_template_text()
     prompt_root = RUNTIME_ROOT / "conversion_916_prompts" / f"{batch}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
     prompt_root.mkdir(parents=True, exist_ok=True)
 
@@ -6384,11 +6397,13 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
 
     if engine == "chatgpt" and render_chatgpt_uses_local_agent():
         batch_names = sorted(batch_to_run_dir)
+        org_id = str(payload.get("org_id") or "").strip() or None
         return _queue_local_chatgpt_job(user_id, {
             "mode": "916",
             "batch_name": batch_names[0] if len(batch_names) == 1 else "_".join(batch_names),
             "headless": headless,
             "prompts_916": _bundle_916_prompt_files_for_batches(batch_names),
+            "conversion_916_template": resolve_916_conversion_template_text(user_id, org_id=org_id),
             "input_images": [],
             "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
             "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),

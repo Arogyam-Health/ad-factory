@@ -628,23 +628,47 @@ document.getElementById("reuseVisualPatterns")?.addEventListener("change", (even
 });
 
 // Input Prompts
+const inputPromptConfigKeys = {
+  starting_prompt: "starting_prompt",
+  "916_conversion": "conversion_916_prompt",
+};
+
 document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((card) => {
   card.addEventListener("click", () => {
     const promptType = card.dataset.promptType;
     const title = card.querySelector("strong").textContent;
-    fetch(`/api/input-prompt?prompt_type=${encodeURIComponent(promptType)}`)
-      .then((r) => r.json())
+    const configKey = inputPromptConfigKeys[promptType];
+    if (!configKey) {
+      appendLog(`Unknown input prompt type: ${promptType}`);
+      return;
+    }
+
+    const orgId = studioCurrentOrgId;
+    const fetchUrl = orgId
+      ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
+      : "/api/config/effective";
+    fetchJSON(fetchUrl)
       .then((data) => {
-        showPromptFullscreen(title, data.content || "", {
-          fetchUrl: `/api/input-prompt?prompt_type=${encodeURIComponent(promptType)}`,
-          saveUrl: "/api/input-prompt",
-          saveBody: (text) => ({ prompt_type: promptType, content: text }),
+        const content = data?.config?.[configKey] || "";
+        const isOrg = data?.owner_type === "org";
+        const saveUrl = isOrg && orgId
+          ? `/api/orgs/${orgId}/config`
+          : "/api/user/config";
+        const saveBodyFn = (text) => isOrg && orgId
+          ? { config: { [configKey]: text } }
+          : { [configKey]: text };
+        showPromptFullscreen(title, content, {
+          saveUrl: saveUrl,
+          saveMethod: "PUT",
+          saveBody: saveBodyFn,
+          postSave: () => { clearCache("/api/config/effective"); clearCache("/api/config/sources"); },
         });
       })
       .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
   });
 });
 
+// Config Files
 document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
   card.addEventListener("click", () => {
     const configKey = card.dataset.configKey;

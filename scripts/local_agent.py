@@ -8,6 +8,7 @@ import base64
 import mimetypes
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -208,6 +209,47 @@ def collect_local_artifacts(job_root: Path, artifact_base_url: str) -> list[dict
     return images
 
 
+def _prepare_916_conversion_prompts(
+    *,
+    out_45_dir: Path,
+    prompt_916_dir: Path,
+    source_916_dir: Path,
+    template_text: str,
+) -> list[dict[str, str]]:
+    template = str(template_text or "").strip()
+    if not template:
+        return []
+
+    image_paths = [
+        path
+        for path in sorted(out_45_dir.rglob("*"))
+        if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+        and not any(part in {"debug", ".browser_downloads"} for part in path.parts)
+    ]
+    if not image_paths:
+        return []
+
+    prompt_916_dir.mkdir(parents=True, exist_ok=True)
+    source_916_dir.mkdir(parents=True, exist_ok=True)
+
+    created: list[dict[str, str]] = []
+    seen_stems: set[str] = set()
+    for index, image_path in enumerate(image_paths, start=1):
+        stem = re.sub(r"_(?:4_5|9_16)$", "", image_path.stem)
+        stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("_") or f"conversion_{index:02d}"
+        if stem in seen_stems:
+            stem = f"{stem}_{index:02d}"
+        seen_stems.add(stem)
+
+        prompt_path = prompt_916_dir / f"{stem}.txt"
+        source_path = source_916_dir / f"{stem}.images.txt"
+        prompt_path.write_text(template + "\n", encoding="utf-8")
+        source_path.write_text(str(image_path.resolve()) + "\n", encoding="utf-8")
+        created.append({"prompt_path": str(prompt_path), "source_file": str(source_path)})
+
+    return created
+
+
 def launch_browser_cdp(browser: str, port: int = 9222) -> None:
     if check_cdp().get("available"):
         return
@@ -371,12 +413,22 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
     return proc.returncode, "\n".join(lines[-200:])
 
 
-def _chatgpt_cmd(script_path: Path, prompt_dir: Path, out_dir: Path, upload_dir: Path, payload: dict[str, Any], aspect_ratio: str) -> list[str]:
+def _chatgpt_cmd(
+    script_path: Path,
+    prompt_dir: Path,
+    out_dir: Path,
+    upload_dir: Path,
+    payload: dict[str, Any],
+    aspect_ratio: str,
+    *,
+    prompt_glob: str = "*.txt",
+    image_source_file: Path | None = None,
+) -> list[str]:
     cmd = [
         sys.executable,
         str(script_path),
         "--prompt-dir", str(prompt_dir),
-        "--prompt-glob", "*.txt",
+        "--prompt-glob", prompt_glob,
         "--out-dir", str(out_dir),
         "--timeout", str(int(payload.get("timeout") or 420)),
         "--download-timeout", str(int(payload.get("download_timeout") or 90)),
@@ -387,6 +439,8 @@ def _chatgpt_cmd(script_path: Path, prompt_dir: Path, out_dir: Path, upload_dir:
         "--starting-prompt-file", "",
         "--browser-download-dir", str(out_dir / ".browser_downloads"),
     ]
+    if image_source_file is not None:
+        cmd.extend(["--image-source-file", str(image_source_file)])
     if payload.get("headless"):
         cmd.append("--headless")
     return cmd
@@ -413,6 +467,7 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     job_root = LOCAL_OUTPUT_ROOT / batch_name / job_id
     prompt_45_dir = job_root / "prompts_45"
     prompt_916_dir = job_root / "prompts_916"
+    source_916_dir = job_root / "sources_916"
     input_dir = job_root / "input_images"
     out_45_dir = job_root / "generated_images" / batch_name / "4_5"
     out_916_dir = job_root / "generated_images" / batch_name / "9_16"
@@ -437,14 +492,48 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
             return
 
     if mode in {"916", "both"}:
+        prepared_916 = []
+        if mode == "both" and not any(prompt_916_dir.glob("*.txt")):
+            prepared_916 = _prepare_916_conversion_prompts(
+                out_45_dir=out_45_dir,
+                prompt_916_dir=prompt_916_dir,
+                source_916_dir=source_916_dir,
+                template_text=str(payload.get("conversion_916_template") or ""),
+            )
+            if prepared_916:
+                msg = f"Prepared {len(prepared_916)} 9:16 conversion prompt(s) from local 4:5 output."
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": msg}, token=AGENT_TOKEN)
+
         if not any(prompt_916_dir.glob("*.txt")):
             if mode == "both":
-                warning = "Skipped 9:16 phase: no 9:16 prompt files were included in the local-agent job."
+                warning = "Skipped 9:16 phase: no generated 4:5 images or conversion template were available."
                 warnings.append(warning)
                 api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": warning}, token=AGENT_TOKEN)
             else:
                 api_request("POST", f"/api/agents/jobs/{job_id}/fail", {"error": "No 9:16 prompt files were included in the local-agent job"}, token=AGENT_TOKEN)
                 return
+        elif prepared_916:
+            for item in prepared_916:
+                prompt_path = Path(item["prompt_path"])
+                source_file = Path(item["source_file"])
+                code, tail = _run_and_stream(
+                    job_id,
+                    _chatgpt_cmd(
+                        script_path,
+                        prompt_916_dir,
+                        out_916_dir,
+                        input_dir,
+                        payload,
+                        "9:16",
+                        prompt_glob=prompt_path.name,
+                        image_source_file=source_file,
+                    ),
+                    ROOT,
+                )
+                logs.append(tail)
+                if code != 0:
+                    api_request("POST", f"/api/agents/jobs/{job_id}/fail", {"error": tail or f"ChatGPT 9:16 exited {code}"}, token=AGENT_TOKEN)
+                    return
         else:
             upload_dir = out_45_dir if out_45_dir.exists() else input_dir
             code, tail = _run_and_stream(

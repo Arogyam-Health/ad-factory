@@ -1433,6 +1433,60 @@ def test_admin_frontend() -> int:
     failed += ok("hashchange" in main_js or "admin/overview" in main_js,
                  "admin navigation uses hash-based routing")
 
+    # 42. Dashboard input prompt cards save through owner config, not filesystem prompt endpoints
+    prompt_cards_block = main_js.split("// Input Prompts", 1)[1].split("// Config Files", 1)[0] if "// Input Prompts" in main_js else ""
+    failed += ok("/api/input-prompt" not in prompt_cards_block,
+                 "input prompt cards do not use filesystem /api/input-prompt endpoint")
+    failed += ok("conversion_916_prompt" in prompt_cards_block and "starting_prompt" in prompt_cards_block,
+                 "input prompt cards map to MongoDB config keys")
+    failed += ok('saveMethod: "PUT"' in prompt_cards_block and "/api/user/config" in prompt_cards_block,
+                 "input prompt cards save via config PUT endpoint")
+
+    return failed
+
+
+def test_local_agent_916_template_flow() -> int:
+    failed = 0
+    print("\n[Local Agent 9:16 Template Flow]")
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="agent-916-test-") as tmp:
+        tmp_path = Path(tmp)
+        out_45 = tmp_path / "generated_images" / "batch_a" / "4_5" / "generated images"
+        out_45.mkdir(parents=True)
+        img = out_45 / "BA_always_hungry_EN_pain_point_4_5.png"
+        img.write_bytes(b"fake-png")
+        debug_dir = tmp_path / "generated_images" / "batch_a" / "4_5" / "debug"
+        debug_dir.mkdir(parents=True)
+        (debug_dir / "debug_capture.png").write_bytes(b"debug")
+
+        from scripts.local_agent import _prepare_916_conversion_prompts
+
+        created = _prepare_916_conversion_prompts(
+            out_45_dir=tmp_path / "generated_images" / "batch_a" / "4_5",
+            prompt_916_dir=tmp_path / "prompts_916",
+            source_916_dir=tmp_path / "sources_916",
+            template_text="Convert this 4:5 image to 9:16.",
+        )
+
+        failed += ok(len(created) == 1, "local agent creates one 9:16 prompt per generated 4:5 image")
+        if created:
+            prompt_path = Path(created[0]["prompt_path"])
+            source_path = Path(created[0]["source_file"])
+            failed += ok(prompt_path.name == "BA_always_hungry_EN_pain_point.txt",
+                         "9:16 prompt filename preserves the original prompt stem")
+            failed += ok(prompt_path.read_text(encoding="utf-8").strip() == "Convert this 4:5 image to 9:16.",
+                         "9:16 prompt content comes from conversion template")
+            failed += ok(source_path.read_text(encoding="utf-8").strip() == str(img),
+                         "9:16 image source file points to the generated local 4:5 image")
+
+    app_py = (ROOT / "dashboard" / "backend" / "app.py").read_text(encoding="utf-8")
+    failed += ok('"conversion_916_template"' in app_py,
+                 "local-agent payload includes conversion_916_template")
+    failed += ok('mode = "both" if any' not in app_py,
+                 "local-agent both mode no longer depends on pre-existing output/<batch>/96 prompt files")
+
     return failed
 
 
@@ -1672,6 +1726,7 @@ def main() -> int:
     total += test_config_versions()
     total += test_admin_api()
     total += test_admin_frontend()
+    total += test_local_agent_916_template_flow()
     total += test_admin_readiness_phase6()
 
     print(f"\n{'='*50}")
