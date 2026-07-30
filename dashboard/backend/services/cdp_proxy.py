@@ -59,6 +59,29 @@ def _run_async(coro) -> Any:
     return future.result(timeout=30)
 
 
+async def forward_extension_event(user_id: str, msg: dict[str, Any]) -> None:
+    """Forward CDP events from the extension to Playwright's browser WebSocket."""
+    if user_id != _user_id or not _browser_ws:
+        return
+    method = str(msg.get("method") or "")
+    if not method or method == "Target.targetListChanged":
+        return
+    target_id = str(msg.get("targetId") or "")
+    session_ids = [sid for sid, tid in _sessions.items() if tid == target_id]
+    if not session_ids:
+        return
+    params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+    for session_id in session_ids:
+        try:
+            await _browser_ws.send_text(json.dumps({
+                "method": method,
+                "params": params,
+                "sessionId": session_id,
+            }))
+        except Exception:
+            return
+
+
 def _sync_get_targets() -> list[dict[str, Any]]:
     with _cached_targets_lock:
         return list(_cached_targets)

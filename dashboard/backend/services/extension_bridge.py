@@ -145,6 +145,14 @@ class ExtensionBridge:
             conn.targets = msg.get("params", {}).get("targetInfos", [])
             return
 
+        if method:
+            try:
+                from dashboard.backend.services.cdp_proxy import forward_extension_event
+                await forward_extension_event(user_id, msg)
+            except Exception:
+                pass
+            return
+
         # Pong
         if msg.get("type") == "pong":
             conn.last_pong = time.time()

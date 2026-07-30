@@ -2063,9 +2063,9 @@ def run_chatgpt_generation(
 
     env = dashboard_subprocess_env()
 
-    result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, env=env)
+    result = subprocess.run(cmd, cwd=str(ROOT), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, env=env)
 
-    full_output = ""
+    full_output = result.stdout or ""
     result.stdout = full_output
     result.stderr = ""
     return result

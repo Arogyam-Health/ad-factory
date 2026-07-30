@@ -18,6 +18,7 @@ const HEARTBEAT_INTERVAL = 15000;
 let heartbeatTimer = null;
 let pendingCommands = new Map(); // id → { resolve, reject, timer }
 let attachedTabs = new Map();   // targetId → { tabId, debuggerAttached }
+let debuggerEventTabs = new Set(); // tabIds with event forwarding installed
 let eventListeners = new Map(); // method → Set<callback>
 
 let connectionState = "disconnected"; // disconnected | connecting | connected
@@ -271,14 +272,7 @@ async function handleTargetCommand(command, params) {
       const tabId = parseInt(targetId, 10);
       if (isNaN(tabId)) throw new Error("Invalid targetId");
       try {
-        await chrome.debugger.attach({ tabId }, "1.3");
-        attachedTabs.set(targetId, { tabId, debuggerAttached: true });
-        // Forward CDP events from this tab
-        chrome.debugger.onEvent.addListener((source, method, eventParams) => {
-          if (source.tabId === tabId) {
-            sendToServer({ method, params: eventParams, targetId });
-          }
-        });
+        await ensureAttached(tabId);
         return { sessionId: targetId };
       } catch (err) {
         throw new Error(`Failed to attach to tab ${tabId}: ${err.message}`);
@@ -306,21 +300,8 @@ async function handlePageCommand(command, params) {
   const tabId = await resolveTabId(params);
   switch (command) {
     case "navigate": {
-      await chrome.tabs.update(tabId, { url: params.url });
-      // Wait for load
-      return new Promise((resolve) => {
-        const listener = (id, changeInfo) => {
-          if (id === tabId && changeInfo.status === "complete") {
-            chrome.tabs.onUpdated.removeListener(listener);
-            resolve({ frameId: 0, loaderId: Date.now() });
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-        setTimeout(() => {
-          chrome.tabs.onUpdated.removeListener(listener);
-          resolve({ frameId: 0, loaderId: Date.now() });
-        }, 30000);
-      });
+      await ensureAttached(tabId);
+      return cdpSend(tabId, "Page.navigate", params);
     }
     case "reload": {
       await chrome.tabs.reload(tabId);
@@ -453,9 +434,18 @@ async function cdpFallback(method, params) {
 
 async function ensureAttached(tabId) {
   const targetId = String(tabId);
-  if (attachedTabs.has(targetId)) return;
-  await chrome.debugger.attach({ tabId }, "1.3");
-  attachedTabs.set(targetId, { tabId, debuggerAttached: true });
+  if (!attachedTabs.has(targetId)) {
+    await chrome.debugger.attach({ tabId }, "1.3");
+    attachedTabs.set(targetId, { tabId, debuggerAttached: true });
+  }
+  if (!debuggerEventTabs.has(tabId)) {
+    debuggerEventTabs.add(tabId);
+    chrome.debugger.onEvent.addListener((source, method, eventParams) => {
+      if (source.tabId === tabId) {
+        sendToServer({ method, params: eventParams || {}, targetId });
+      }
+    });
+  }
 }
 
 function cdpSend(tabId, method, params) {
@@ -560,6 +550,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (attachedTabs.has(targetId)) {
     attachedTabs.delete(targetId);
   }
+  debuggerEventTabs.delete(tabId);
   announceTargets();
 });
 
