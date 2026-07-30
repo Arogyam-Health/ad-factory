@@ -402,6 +402,66 @@ def test_file_mapping() -> int:
     return failed
 
 
+def test_mongo_primary_run_manifest_shape() -> int:
+    failed = 0
+    print("\n[Mongo-primary run manifest shape]")
+
+    import shutil
+    import time
+
+    from dashboard.backend.app import ROOT, RUNS_ROOT, collect_run_result, _mongo_run_to_manifest
+
+    run_id = "run_smoke_slug_prompts"
+    batch = "v998"
+    run_dir = RUNS_ROOT / run_id
+    output_dir = ROOT / "output" / batch / "45"
+    image_dir = ROOT / "generated_images" / batch / "4_5" / "generated images"
+    try:
+        shutil.rmtree(run_dir, ignore_errors=True)
+        shutil.rmtree(ROOT / "output" / batch, ignore_errors=True)
+        shutil.rmtree(ROOT / "generated_images" / batch, ignore_errors=True)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        image_dir.mkdir(parents=True, exist_ok=True)
+        prompt_path = output_dir / "BA_always_hungry_EN_pain_point.txt"
+        prompt_path.write_text("EXACT ON-IMAGE COPY:\n- Headline: Test\n", encoding="utf-8")
+        image_path = image_dir / "BA_always_hungry_EN_pain_point_4_5.png"
+        image_path.write_bytes(b"fake-png")
+
+        manifest = collect_run_result(run_dir, batch, image_generated=True)
+        failed += ok("output/v998/45/BA_always_hungry_EN_pain_point.txt" in manifest.get("prompt_files", []),
+                     "collect_run_result includes slug-format prompt filenames")
+        failed += ok("generated_images/v998/4_5/generated images/BA_always_hungry_EN_pain_point_4_5.png" in manifest.get("image_files", []),
+                     "collect_run_result includes generated image files")
+    finally:
+        shutil.rmtree(run_dir, ignore_errors=True)
+        shutil.rmtree(ROOT / "output" / batch, ignore_errors=True)
+        shutil.rmtree(ROOT / "generated_images" / batch, ignore_errors=True)
+
+    updated_at = time.time()
+    doc = {
+        "run_id": "run_mongo_shape",
+        "batch": "v123",
+        "status": "completed",
+        "llm_mode": "opencode",
+        "copy_source": "opencode generated copy",
+        "opencode_model": "test-model",
+        "prompt_files": ["output/v123/45/BA_slug_EN_pain.txt"],
+        "image_files": ["generated_images/v123/4_5/generated images/BA_slug_EN_pain_4_5.png"],
+        "regeneration_queue_files": [],
+        "image_generated": True,
+        "updated_at": updated_at,
+    }
+    mongo_manifest = _mongo_run_to_manifest(doc)
+    failed += ok(mongo_manifest.get("source") == "mongodb", "Mongo run manifests are marked as primary MongoDB data")
+    failed += ok(mongo_manifest.get("llm_mode") == "opencode", "Mongo run manifest preserves llm_mode")
+    failed += ok(mongo_manifest.get("copy_source") == "opencode generated copy", "Mongo run manifest preserves copy_source")
+    failed += ok(len(mongo_manifest.get("prompt_files") or []) == 1, "Mongo run manifest preserves prompt files")
+    failed += ok(len(mongo_manifest.get("image_files") or []) == 1, "Mongo run manifest preserves image files")
+
+    return failed
+
+
 # ─── Storage / Cloudinary tests ───────────────────────────────────────────
 
 
@@ -1720,6 +1780,7 @@ def main() -> int:
     total += test_provider_config_isolation()
     total += test_ownership_isolation()
     total += test_file_mapping()
+    total += test_mongo_primary_run_manifest_shape()
     total += test_storage_backend()
     total += test_config_system()
     total += test_org_system()

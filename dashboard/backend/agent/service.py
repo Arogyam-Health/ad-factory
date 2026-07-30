@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import time
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_AGENTS, COLL_AGENT_JOBS
+from dashboard.backend.db.collections import COLL_AGENTS, COLL_AGENT_JOBS, COLL_RUNS, COLL_IMAGES
 from dashboard.backend.security.crypto import generate_token, hash_token
 
 
@@ -130,6 +131,8 @@ def update_job_progress(job_id: str, progress: str, agent_id: str) -> None:
 
 def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
     now = time.time()
+    db = get_sync_db()
+    job = db[COLL_AGENT_JOBS].find_one({"job_id": job_id, "agent_id": agent_id}) or {}
     get_sync_db()[COLL_AGENT_JOBS].update_one(
         {"job_id": job_id, "agent_id": agent_id},
         {"$set": {
@@ -139,6 +142,69 @@ def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
             "updated_at": now,
         }},
     )
+    try:
+        _persist_local_agent_result(db, job, result, now)
+    except Exception:
+        pass
+
+
+def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: float) -> None:
+    if job.get("job_type") != "run_chatgpt_batch" or not isinstance(result, dict):
+        return
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    user_id = str(job.get("user_id") or "")
+    run_ids = [str(rid) for rid in (payload.get("run_ids") or []) if str(rid).strip()]
+    images = [img for img in (result.get("images") or []) if isinstance(img, dict) and img.get("url")]
+    if not user_id or not run_ids or not images:
+        return
+
+    batch_name = str(payload.get("batch_name") or "")
+    image_urls = [str(img.get("url")) for img in images]
+    update = {
+        "status": "completed",
+        "image_generated": True,
+        "image_files": image_urls,
+        "local_artifacts": images,
+        "local_output_dir": str(result.get("local_output_dir") or ""),
+        "artifact_base_url": str(result.get("artifact_base_url") or ""),
+        "local_agent_warnings": result.get("warnings") or [],
+        "updated_at": now,
+    }
+    if batch_name:
+        update["batch"] = batch_name
+    update["manifest_summary"] = {
+        "batch": batch_name,
+        "image_count": len(image_urls),
+    }
+
+    for run_id in run_ids:
+        db[COLL_RUNS].update_one(
+            {"user_id": user_id, "run_id": run_id},
+            {"$set": {**update, "run_id": run_id, "user_id": user_id}, "$setOnInsert": {"created_at": now, "config": {}}},
+            upsert=True,
+        )
+        for img in images:
+            url = str(img.get("url") or "")
+            image_id = hashlib.sha256(f"{run_id}:{url}".encode()).hexdigest()[:16]
+            db[COLL_IMAGES].update_one(
+                {"image_id": image_id},
+                {"$set": {
+                    "user_id": user_id,
+                    "run_id": run_id,
+                    "image_id": image_id,
+                    "batch": batch_name,
+                    "file_path": url,
+                    "local_path": url,
+                    "url": url,
+                    "filename": str(img.get("name") or "image.png"),
+                    "bytes": int(img.get("bytes") or 0),
+                    "status": "completed",
+                    "storage_provider": "local_agent",
+                    "created_at": now,
+                    "updated_at": now,
+                }},
+                upsert=True,
+            )
 
 
 def fail_job(job_id: str, agent_id: str, error: str) -> None:

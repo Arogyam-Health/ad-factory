@@ -38,7 +38,13 @@ function parsePromptPath(path) {
   };
 }
 
-function buildPromptFileSummary(promptFiles) {
+function buildPromptFileSummary(runId, promptFiles, promptsData) {
+  const promptDocsByPath = new Map();
+  if (Array.isArray(promptsData)) {
+    promptsData.forEach((doc) => {
+      if (doc?.file_path) promptDocsByPath.set(doc.file_path, doc);
+    });
+  }
   const wrap = document.createElement("div");
   wrap.className = "run-prompt-files";
 
@@ -60,17 +66,23 @@ function buildPromptFileSummary(promptFiles) {
   const frag = document.createDocumentFragment();
   for (let i = 0; i < promptFiles.length; i++) {
     const path = promptFiles[i];
+    const promptDoc = promptDocsByPath.get(path);
     const parsed = parsePromptPath(path);
     const card = document.createElement("div");
     card.className = "prompt-file-card";
     card.title = path;
     card.innerHTML = `<span class="prompt-file-aspect">${parsed.aspect}</span><strong>${parsed.format} ${parsed.persona}</strong><span>${parsed.creative} · ${parsed.lang}${parsed.conceptAngle ? ` · <em>${parsed.conceptAngle}</em>` : ''}</span>`;
     card.addEventListener("click", () => {
-      showPromptFullscreen(Path(path).name || path, "", {
+      const opts = promptDoc?.prompt_id ? {
+        fetchUrl: `/api/runs/${encodeURIComponent(runId)}/prompts/${encodeURIComponent(promptDoc.prompt_id)}/content`,
+        saveUrl: `/api/runs/${encodeURIComponent(runId)}/prompts/${encodeURIComponent(promptDoc.prompt_id)}/content`,
+        saveBody: (text) => ({ content: text }),
+      } : {
         fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(path)}`,
         saveUrl: "/api/prompt-file-content",
         saveBody: (text) => ({ prompt_path: path, content: text }),
-      });
+      };
+      showPromptFullscreen(Path(path).name || path, "", opts);
     });
     frag.appendChild(card);
   }
@@ -141,7 +153,7 @@ export async function renderRun(run) {
   ]);
 
   if (run.prompt_files && run.prompt_files.length) {
-    div.appendChild(buildPromptFileSummary(run.prompt_files));
+    div.appendChild(buildPromptFileSummary(run.run_id, run.prompt_files, promptsData));
   }
 
   const promptActions = document.createElement("div");

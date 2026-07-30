@@ -3,6 +3,10 @@ import { fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 
 function imageUrl(item, path) {
+  const directUrl = item?.url || item?.local_path || item?.file_path || path;
+  if (/^https?:\/\//i.test(directUrl)) {
+    return directUrl;
+  }
   if (item && item.image_id) {
     return `/api/files/download/image/${item.image_id}`;
   }
