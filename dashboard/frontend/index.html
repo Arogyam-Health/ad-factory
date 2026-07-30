@@ -315,26 +315,8 @@
         <button id="batchGen45" class="ghost-btn" type="button">Generate 4:5</button>
         <button id="batchGenBoth" class="ghost-btn" type="button">Generate 4:5+9:16</button>
         <button id="batchGen916" class="ghost-btn" type="button">Generate 9:16</button>
-        <div class="gen-mode-toggle" title="Background: runs silently. Visible: watch automation in real-time (for debugging).">
-          <label class="toggle-label gen-mode-option">
-            <input type="radio" name="genMode" value="background" checked />
-            <span>Background</span>
-          </label>
-          <label class="toggle-label gen-mode-option">
-            <input type="radio" name="genMode" value="visible" />
-            <span>Visible</span>
-          </label>
-        </div>
         <button id="stopGeneration" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">&#9209; Stop Gen</button>
         <button id="batchDownload" class="ghost-btn" type="button" title="Download all generated images for this run as ZIP">Download Batch</button>
-        <a href="/traces.html" class="ghost-btn" style="display:inline-flex;align-items:center;gap:0.3rem;text-decoration:none" target="_blank">&#128202; LLM Traces</a>
-        <button id="openTraces" class="ghost-btn" type="button" style="display:none">LLM Traces</button>
-        <button id="launchChrome" class="ghost-btn" type="button">&#128640; Launch Visible Chrome</button>
-        <button id="killChrome" class="ghost-btn" type="button" style="display:none;border-color:color-mix(in srgb, var(--accent-coral) 50%, var(--line));color:var(--accent-coral);">&#9940; Kill Chrome</button>
-        <label id="headlessToggle" class="toggle-label" title="Toggle headless mode for Gemini image generation">
-          <input type="checkbox" id="headlessMode" />
-          <span>Headless</span>
-        </label>
         <button id="runPrev" class="carousel-btn" type="button">&#9664;</button>
         <span id="runIndex" class="run-index">0 / 0</span>
         <button id="runNext" class="carousel-btn" type="button">&#9654;</button>

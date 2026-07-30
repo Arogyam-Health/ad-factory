@@ -3,76 +3,13 @@ import { fetchJSON } from "./api.js";
 import { state } from "./state.js";
 import { getExtensionStatus } from "./extension.js";
 
-const launchChromeBtn = document.getElementById("launchChrome");
-const killChromeBtn = document.getElementById("killChrome");
-const headlessToggle = document.getElementById("headlessMode");
-
-function showChromeKillButton() {
-  if (killChromeBtn) killChromeBtn.style.display = "";
-  state.chromeProcessActive = true;
-}
-
-function hideChromeKillButton() {
-  if (killChromeBtn) killChromeBtn.style.display = "none";
-  state.chromeProcessActive = false;
-}
-
-async function killChrome() {
+export async function killChrome() {
   try {
     const data = await fetchJSON(`/api/kill-chrome`, { method: "POST" });
-    hideChromeKillButton();
     appendLog(`Chrome killed. Chrome: ${data.chrome}, Gemini: ${data.gemini_processes}`);
   } catch (err) {
     appendLog(`Kill error: ${String(err)}`);
   }
-}
-
-if (headlessToggle) {
-  headlessToggle.addEventListener("change", () => {
-    state.headlessModeEnabled = headlessToggle.checked;
-    appendLog(`Headless mode ${state.headlessModeEnabled ? "ON" : "OFF"}`);
-  });
-}
-
-if (launchChromeBtn) {
-  launchChromeBtn.addEventListener("click", async () => {
-    // Live-check extension status instead of using cached value
-    launchChromeBtn.disabled = true;
-    try {
-      const ext = await fetchJSON("/api/extension/status");
-      if (ext.connected) {
-        appendLog("Using Chrome Extension bridge (extension is connected).");
-        const targets = await fetchJSON("/api/extension/targets");
-        appendLog(`Extension bridge active. ${targets.targets?.length || 0} browser tabs available.`);
-        showChromeKillButton();
-      } else {
-        appendLog("Extension not connected. Click the extension icon and paste your session token to connect.");
-      }
-    } catch (_err) {
-      // Fallback to server-side Chrome launch (local dev only)
-      try {
-        const data = await fetchJSON(`/api/launch-visible-browser`, { method: "POST" });
-        showChromeKillButton();
-        appendLog(`${data.message} | CDP: ${data.cdp_url}`);
-      } catch (err) {
-        if (String(err).includes("disabled in production")) {
-          appendLog("Extension not connected. Click the extension icon and paste your session token to connect.");
-        } else {
-          appendLog(`Launch error: ${String(err)}`);
-        }
-      }
-    } finally {
-      launchChromeBtn.disabled = false;
-    }
-  });
-}
-
-if (killChromeBtn) {
-  killChromeBtn.addEventListener("click", async () => {
-    killChromeBtn.disabled = true;
-    await killChrome();
-    killChromeBtn.disabled = false;
-  });
 }
 
 let currentPollingInterval = null;
