@@ -482,6 +482,39 @@ def test_mongo_primary_run_manifest_shape() -> int:
     return failed
 
 
+def test_generation_prompt_writer_filesystem_fallback() -> int:
+    failed = 0
+    print("\n[Generation prompt writer]")
+
+    import shutil
+    import tempfile
+
+    from dashboard.backend.app import ROOT, _write_generation_prompt
+
+    rel_path = "output/v997/45/TEST_stress_snacker_EN_desired_outcome.txt"
+    prompt_path = ROOT / rel_path
+    try:
+        prompt_path.parent.mkdir(parents=True, exist_ok=True)
+        prompt_path.write_text("PROMPT BODY\n", encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="prompt-writer-") as tmp:
+            work_dir = Path(tmp)
+            written = _write_generation_prompt(
+                user_id="",
+                run_id="run_prompt_writer",
+                rel_path=rel_path,
+                prompt_work_dir=work_dir,
+                starting_prompt="START",
+            )
+            failed += ok(bool(written), "generation prompt writer creates prompt from filesystem")
+            if written:
+                text = Path(written).read_text(encoding="utf-8")
+                failed += ok(text.startswith("START\n\nPROMPT BODY"), "generation prompt writer prepends starting prompt")
+    finally:
+        shutil.rmtree(ROOT / "output" / "v997", ignore_errors=True)
+
+    return failed
+
+
 # ─── Storage / Cloudinary tests ───────────────────────────────────────────
 
 
@@ -1801,6 +1834,7 @@ def main() -> int:
     total += test_ownership_isolation()
     total += test_file_mapping()
     total += test_mongo_primary_run_manifest_shape()
+    total += test_generation_prompt_writer_filesystem_fallback()
     total += test_storage_backend()
     total += test_config_system()
     total += test_org_system()

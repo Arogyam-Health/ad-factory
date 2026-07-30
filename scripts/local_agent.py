@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCAL_OUTPUT_ROOT = Path(os.getenv("AGENT_OUTPUT_DIR", str(Path.home() / "ad-factory-agent-output"))).expanduser()
 
 
-def api_request(method: str, path: str, data: Any = None, token: str = "", timeout: int = 30) -> Any:
+def api_request(method: str, path: str, data: Any = None, token: str = "", timeout: int = 10) -> Any:
     url = f"{AGENT_API_BASE}{path}"
     headers = {"Content-Type": "application/json"}
     if token:
@@ -332,7 +332,7 @@ def _run_script_job(job_id: str, script_name: str, payload: dict[str, Any]) -> N
     out_dir = payload.get("out_dir", "")
     cdp_url = payload.get("cdp_url", "http://127.0.0.1:9222")
 
-    cmd = [sys.executable, str(script_path)]
+    cmd = [sys.executable, "-u", str(script_path)]
     if prompt_dir:
         cmd.extend(["--prompt-dir", prompt_dir])
     if out_dir:
@@ -388,7 +388,7 @@ def _write_binary_bundle(root: Path, files: list[dict[str, str]]) -> None:
 
 
 def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
-    print(f"  [agent] Running: {' '.join(cmd)}")
+    print(f"  [agent] Running: {' '.join(cmd)}", flush=True)
     proc = subprocess.Popen(
         cmd,
         cwd=str(cwd),
@@ -397,6 +397,7 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     lines: list[str] = []
     assert proc.stdout is not None
@@ -419,8 +420,8 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
             last_cancel_check = now
             if _agent_job_cancel_requested(job_id):
                 msg = "Canceled by user; terminating local automation process."
-                print(f"  [agent] {msg}")
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": "canceling"}, token=AGENT_TOKEN, timeout=5)
+                print(f"  [agent] {msg}", flush=True)
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": "canceling"}, token=AGENT_TOKEN, timeout=3)
                 proc.terminate()
                 try:
                     proc.wait(timeout=10)
@@ -440,11 +441,11 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
         else:
             clean = line.rstrip()
             if clean:
-                print(clean)
+                print(clean, flush=True)
                 lines.append(clean)
                 if len(lines) > 400:
                     lines = lines[-400:]
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": clean}, token=AGENT_TOKEN, timeout=10)
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": clean}, token=AGENT_TOKEN, timeout=5)
 
         if proc.poll() is not None and (stream_done or stdout_queue.empty()):
             break
@@ -454,7 +455,7 @@ def _run_and_stream(job_id: str, cmd: list[str], cwd: Path) -> tuple[int, str]:
 
 
 def _agent_job_cancel_requested(job_id: str) -> bool:
-    status = api_request("GET", f"/api/agents/jobs/{job_id}/status", token=AGENT_TOKEN, timeout=5)
+    status = api_request("GET", f"/api/agents/jobs/{job_id}/status", token=AGENT_TOKEN, timeout=3)
     return bool(status and status.get("cancel_requested"))
 
 
@@ -471,6 +472,7 @@ def _chatgpt_cmd(
 ) -> list[str]:
     cmd = [
         sys.executable,
+        "-u",
         str(script_path),
         "--prompt-dir", str(prompt_dir),
         "--prompt-glob", prompt_glob,
@@ -526,6 +528,14 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     logs: list[str] = []
     warnings: list[str] = [str(item) for item in (payload.get("warnings") or []) if str(item).strip()]
     if mode in {"45", "both"}:
+        if not any(prompt_45_dir.glob("*.txt")):
+            api_request(
+                "POST",
+                f"/api/agents/jobs/{job_id}/fail",
+                {"error": "No 4:5 prompt files were included in the local-agent job. Refresh the dashboard after deployment and try again."},
+                token=AGENT_TOKEN,
+            )
+            return
         code, tail = _run_and_stream(
             job_id,
             _chatgpt_cmd(script_path, prompt_45_dir, out_45_dir, input_dir, payload, "4:5"),

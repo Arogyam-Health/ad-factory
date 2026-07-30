@@ -2002,6 +2002,51 @@ def _bundle_text_file(path: Path, *, root: Path | None = None) -> dict[str, str]
     return {"name": rel, "content": path.read_text(encoding="utf-8", errors="replace")}
 
 
+def _load_prompt_text_for_generation(user_id: str, run_id: str, rel_path: str) -> str | None:
+    src = Path(rel_path)
+    if not src.is_absolute():
+        src = ROOT / src
+    src = src.resolve()
+    if src.exists() and src.is_file():
+        return src.read_text(encoding="utf-8", errors="replace")
+    if not user_id or not run_id:
+        return None
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_PROMPTS
+        doc = get_sync_db()[COLL_PROMPTS].find_one({"user_id": user_id, "run_id": run_id, "file_path": rel_path})
+        if doc and str(doc.get("content") or "").strip():
+            return str(doc.get("content") or "")
+    except Exception:
+        pass
+    return None
+
+
+def _write_generation_prompt(
+    *,
+    user_id: str,
+    run_id: str,
+    rel_path: str,
+    prompt_work_dir: Path,
+    starting_prompt: str,
+) -> str | None:
+    prompt_text = _load_prompt_text_for_generation(user_id, run_id, rel_path)
+    if prompt_text is None:
+        return None
+    name = Path(rel_path).name or f"prompt_{uuid.uuid4().hex[:8]}.txt"
+    dest = prompt_work_dir / name
+    combined = f"{starting_prompt}\n\n{prompt_text.strip()}\n" if starting_prompt else prompt_text
+    dest.write_text(combined, encoding="utf-8")
+
+    src = Path(rel_path)
+    if not src.is_absolute():
+        src = ROOT / src
+    sidecar = src.resolve().with_suffix(".json")
+    if sidecar.exists() and sidecar.is_file():
+        (prompt_work_dir / sidecar.name).write_text(sidecar.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+    return str(dest)
+
+
 def _bundle_binary_file(path: Path, *, root: Path | None = None) -> dict[str, str]:
     rel = path.name if root is None else str(path.relative_to(root)).replace("\\", "/")
     return {"name": rel, "base64": base64.b64encode(path.read_bytes()).decode("ascii")}
@@ -5965,6 +6010,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
 
     all_prompt_files: list[str] = []
+    prompt_sources: list[dict[str, str]] = []
     run_info: list[dict[str, Any]] = []
 
     primary_run_dir: Path | None = None
@@ -5981,6 +6027,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
         if not prompt_files_45:
             continue
         all_prompt_files.extend(prompt_files_45)
+        prompt_sources.extend({"run_id": run_id, "path": str(path)} for path in prompt_files_45)
         if has_storage_manifest and run_dir is not None and primary_run_dir is None:
             primary_run_dir = run_dir
         run_info.append({
@@ -6004,21 +6051,18 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     if starting_prompt_path.exists():
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
     prompt_files_created: list[str] = []
-    for src_pf in all_prompt_files:
-        src = Path(src_pf)
-        if not src.is_absolute():
-            src = ROOT / src
-        src = src.resolve()
-        if not src.exists():
-            continue
-        prompt_text = src.read_text(encoding="utf-8")
-        combined = f"{starting_prompt}\n\n{prompt_text.strip()}\n" if starting_prompt else prompt_text
-        dest = prompt_work_dir / src.name
-        dest.write_text(combined, encoding="utf-8")
-        sidecar = src.with_suffix(".json")
-        if sidecar.exists():
-            (prompt_work_dir / sidecar.name).write_text(sidecar.read_text(encoding="utf-8"), encoding="utf-8")
-        prompt_files_created.append(str(dest))
+    for item in prompt_sources:
+        dest = _write_generation_prompt(
+            user_id=user_id,
+            run_id=item["run_id"],
+            rel_path=item["path"],
+            prompt_work_dir=prompt_work_dir,
+            starting_prompt=starting_prompt,
+        )
+        if dest:
+            prompt_files_created.append(dest)
+    if not prompt_files_created:
+        raise HTTPException(status_code=400, detail="No prompt content was available for the selected run(s). Try refreshing runs after deployment, or regenerate copy first.")
     headless = bool(payload.get("headless", False))
     visible = bool(payload.get("visible", False))
     out_dir = GENERATED_IMAGES_ROOT / batch_name / "4_5"
@@ -6123,6 +6167,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
 
     # ---- Step 1: Generate 4:5 images ----
     all_prompt_files: list[str] = []
+    prompt_sources: list[dict[str, str]] = []
     run_info: list[dict[str, Any]] = []
     primary_run_dir: Path | None = None
     for run_id in run_ids:
@@ -6138,6 +6183,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
         if not prompt_files_45:
             continue
         all_prompt_files.extend(prompt_files_45)
+        prompt_sources.extend({"run_id": run_id, "path": str(path)} for path in prompt_files_45)
         if has_storage_manifest and run_dir is not None and primary_run_dir is None:
             primary_run_dir = run_dir
         run_info.append({"run_id": run_id, "batch": batch, "prompt_count": len(prompt_files_45)})
@@ -6154,20 +6200,19 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     starting_prompt_path = _resolve_starting_prompt_path()
     if starting_prompt_path.exists():
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
-    for src_pf in all_prompt_files:
-        src = Path(src_pf)
-        if not src.is_absolute():
-            src = ROOT / src
-        src = src.resolve()
-        if not src.exists():
-            continue
-        prompt_text = src.read_text(encoding="utf-8")
-        combined = f"{starting_prompt}\n\n{prompt_text.strip()}\n" if starting_prompt else prompt_text
-        dest = prompt_work_dir / src.name
-        dest.write_text(combined, encoding="utf-8")
-        sidecar = src.with_suffix(".json")
-        if sidecar.exists():
-            (prompt_work_dir / sidecar.name).write_text(sidecar.read_text(encoding="utf-8"), encoding="utf-8")
+    prompt_files_created: list[str] = []
+    for item in prompt_sources:
+        dest = _write_generation_prompt(
+            user_id=user_id,
+            run_id=item["run_id"],
+            rel_path=item["path"],
+            prompt_work_dir=prompt_work_dir,
+            starting_prompt=starting_prompt,
+        )
+        if dest:
+            prompt_files_created.append(dest)
+    if not prompt_files_created:
+        raise HTTPException(status_code=400, detail="No prompt content was available for the selected run(s). Try refreshing runs after deployment, or regenerate copy first.")
 
     out_dir_45 = GENERATED_IMAGES_ROOT / batch_name / "4_5"
     out_dir_45.mkdir(parents=True, exist_ok=True)
@@ -6220,7 +6265,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     result = run_cmd(
         cmd,
         cwd=ROOT,
-        timeout_seconds=browser_automation_timeout_seconds(len(all_prompt_files), engine),
+        timeout_seconds=browser_automation_timeout_seconds(len(prompt_files_created), engine),
     )
     if result.returncode != 0:
         error_text = result.stderr or result.stdout
