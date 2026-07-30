@@ -5,15 +5,19 @@ from __future__ import annotations
 
 import argparse
 import base64
+import mimetypes
 import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
 
@@ -23,6 +27,8 @@ POLL_INTERVAL = float(os.getenv("AGENT_POLL_INTERVAL", "5"))
 AGENT_TOKEN: str = ""
 AGENT_SESSION_COOKIE: str = ""
 AGENT_CDP_URL = os.getenv("AGENT_CDP_URL", "http://127.0.0.1:9222")
+AGENT_ARTIFACT_PORT = int(os.getenv("AGENT_ARTIFACT_PORT", "8765"))
+AGENT_ARTIFACT_BASE_URL = f"http://127.0.0.1:{AGENT_ARTIFACT_PORT}"
 SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
 ROOT = Path(__file__).resolve().parent.parent
 LOCAL_OUTPUT_ROOT = Path(os.getenv("AGENT_OUTPUT_DIR", str(Path.home() / "ad-factory-agent-output"))).expanduser()
@@ -126,6 +132,80 @@ def _prompt_browser_path(browser: str) -> str | None:
     except (EOFError, KeyboardInterrupt):
         pass
     return None
+
+
+class ArtifactHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+    def do_GET(self) -> None:
+        if self.path == "/health":
+            body = b"ok"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if not self.path.startswith("/files/"):
+            self.send_error(404)
+            return
+        rel = urllib.parse.unquote(self.path.removeprefix("/files/")).split("?", 1)[0]
+        if not rel or ".." in Path(rel).parts:
+            self.send_error(400)
+            return
+        path = (LOCAL_OUTPUT_ROOT / rel).resolve()
+        try:
+            path.relative_to(LOCAL_OUTPUT_ROOT.resolve())
+        except ValueError:
+            self.send_error(403)
+            return
+        if not path.exists() or not path.is_file():
+            self.send_error(404)
+            return
+        data = path.read_bytes()
+        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+
+def start_artifact_server(port: int) -> str:
+    LOCAL_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    url = f"http://127.0.0.1:{port}"
+    try:
+        with urllib.request.urlopen(f"{url}/health", timeout=1) as resp:
+            if resp.read() == b"ok":
+                print(f"[agent] Reusing local artifact server: {url}")
+                return url
+    except Exception:
+        pass
+    server = ThreadingHTTPServer(("127.0.0.1", port), ArtifactHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    print(f"[agent] Local artifact server: {url} -> {LOCAL_OUTPUT_ROOT}")
+    return url
+
+
+def collect_local_artifacts(job_root: Path, artifact_base_url: str) -> list[dict[str, Any]]:
+    images: list[dict[str, Any]] = []
+    for path in sorted(job_root.glob("generated_images/**/*")):
+        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            continue
+        rel_output = path.relative_to(job_root).as_posix()
+        rel_server = path.relative_to(LOCAL_OUTPUT_ROOT).as_posix()
+        images.append({
+            "name": path.name,
+            "path": rel_output,
+            "url": f"{artifact_base_url.rstrip('/')}/files/{urllib.parse.quote(rel_server)}",
+            "bytes": path.stat().st_size,
+        })
+    return images
 
 
 def launch_browser_cdp(browser: str, port: int = 9222) -> None:
@@ -373,13 +453,18 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     api_request(
         "POST",
         f"/api/agents/jobs/{job_id}/complete",
-        {"result": {"local_output_dir": str(job_root), "log_tail": "\n".join(logs)[-8000:]}},
+        {"result": {
+            "local_output_dir": str(job_root),
+            "artifact_base_url": AGENT_ARTIFACT_BASE_URL,
+            "images": collect_local_artifacts(job_root, AGENT_ARTIFACT_BASE_URL),
+            "log_tail": "\n".join(logs)[-4000:],
+        }},
         token=AGENT_TOKEN,
     )
 
 
 def register_and_run(args: argparse.Namespace) -> None:
-    global AGENT_API_BASE, AGENT_TOKEN, AGENT_SESSION_COOKIE, POLL_INTERVAL, LOCAL_OUTPUT_ROOT, AGENT_CDP_URL
+    global AGENT_API_BASE, AGENT_TOKEN, AGENT_SESSION_COOKIE, POLL_INTERVAL, LOCAL_OUTPUT_ROOT, AGENT_CDP_URL, AGENT_ARTIFACT_PORT, AGENT_ARTIFACT_BASE_URL
 
     if args.api_base:
         AGENT_API_BASE = args.api_base
@@ -390,6 +475,8 @@ def register_and_run(args: argparse.Namespace) -> None:
     if args.output_dir:
         LOCAL_OUTPUT_ROOT = Path(args.output_dir).expanduser()
     AGENT_CDP_URL = f"http://127.0.0.1:{args.cdp_port}"
+    AGENT_ARTIFACT_PORT = args.artifact_port
+    AGENT_ARTIFACT_BASE_URL = start_artifact_server(AGENT_ARTIFACT_PORT)
     if args.launch_browser:
         launch_browser_cdp(args.browser, port=args.cdp_port)
 
@@ -435,6 +522,7 @@ def main() -> None:
     parser.add_argument("--launch-browser", action="store_true", help="Start Brave/Chrome locally with CDP before polling")
     parser.add_argument("--browser", choices=["brave", "chrome"], default="brave", help="Browser to launch when --launch-browser is used")
     parser.add_argument("--cdp-port", type=int, default=9222, help="Local CDP port for --launch-browser")
+    parser.add_argument("--artifact-port", type=int, default=AGENT_ARTIFACT_PORT, help="Local localhost port used to serve generated images to the dashboard")
     args = parser.parse_args()
     register_and_run(args)
 

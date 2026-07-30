@@ -1,3 +1,4 @@
+import time
 from typing import Any, Optional
 from fastapi import APIRouter, Body, Cookie, Request
 
@@ -48,21 +49,37 @@ def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
     if not user_id:
         return {"active": False, "job": None}
 
-    job = get_sync_db()[COLL_AGENT_JOBS].find_one(
+    db = get_sync_db()
+    job = db[COLL_AGENT_JOBS].find_one(
         {"user_id": user_id, "status": {"$in": ["pending", "running"]}},
         {"_id": 0, "result": 0},
         sort=[("created_at", -1)],
     )
     if not job:
+        job = db[COLL_AGENT_JOBS].find_one(
+            {
+                "user_id": user_id,
+                "status": {"$in": ["completed", "failed"]},
+                "updated_at": {"$gte": time.time() - 6 * 60 * 60},
+            },
+            {"_id": 0, "payload": 0},
+            sort=[("updated_at", -1)],
+        )
+    if not job:
         return {"active": False, "job": None}
 
+    active = job.get("status") in {"pending", "running"}
+
     return {
-        "active": True,
+        "active": active,
         "job": {
             "job_id": job.get("job_id", ""),
             "status": job.get("status", ""),
             "progress": job.get("progress", ""),
             "job_type": job.get("job_type", ""),
             "created_at": job.get("created_at", 0),
+            "updated_at": job.get("updated_at", 0),
+            "error": job.get("error"),
+            "result": job.get("result"),
         },
     }

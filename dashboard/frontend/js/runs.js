@@ -375,12 +375,51 @@ function appendGenerationResult(data, fallback) {
   appendLog(fallback(data));
 }
 
-function showAgentJobBar(text) {
+function showAgentJobBar(text, spinning = true) {
   const bar = document.getElementById("agentJobBar");
   const status = document.getElementById("agentJobStatus");
   if (!bar || !status) return;
   bar.classList.remove("hidden");
-  status.innerHTML = `<span class="agent-job-spinner"></span> ${text}`;
+  status.innerHTML = `${spinning ? '<span class="agent-job-spinner"></span> ' : ''}${escapeHtml(text)}`;
+}
+
+function renderLocalAgentArtifacts(job) {
+  const wrap = document.getElementById("localAgentArtifacts");
+  if (!wrap) return;
+  const result = job?.result || {};
+  const images = Array.isArray(result.images) ? result.images : [];
+  if (!images.length) {
+    wrap.classList.add("hidden");
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.classList.remove("hidden");
+  const outputDir = result.local_output_dir || "local agent output";
+  wrap.innerHTML = `
+    <div class="local-agent-artifacts-head">
+      <div>
+        <strong>Local agent images</strong>
+        <span>${images.length} image(s) served from your machine</span>
+      </div>
+      <code>${escapeHtml(outputDir)}</code>
+    </div>
+    <div class="local-agent-artifacts-grid">
+      ${images.map((img) => `
+        <a class="local-agent-artifact" href="${escapeAttr(img.url)}" target="_blank" rel="noopener">
+          <img src="${escapeAttr(img.url)}" alt="${escapeAttr(img.name || "Generated image")}" loading="lazy" />
+          <span>${escapeHtml(img.name || "generated image")}</span>
+        </a>
+      `).join("")}
+    </div>
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/'/g, "&#39;");
 }
 
 function hideAgentJobBar() {
@@ -396,13 +435,26 @@ function startAgentJobPolling() {
   agentJobPollTimer = setInterval(async () => {
     try {
       const data = await fetchJSON("/api/batch/job-status");
-      if (!data || !data.active) {
-        appendLog("Agent job completed or no longer active.");
+      if (!data || !data.job) {
+        appendLog("No recent agent job found.");
         hideAgentJobBar();
         loadRuns();
         return;
       }
       const job = data.job || {};
+      if (!data.active) {
+        if (job.status === "completed") {
+          showAgentJobBar(`Agent job completed. ${job.result?.images?.length || 0} local image(s) ready.`, false);
+          renderLocalAgentArtifacts(job);
+          localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+          if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
+          return;
+        }
+        showAgentJobBar(`Agent job failed: ${job.error || "unknown error"}`, false);
+        localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+        if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
+        return;
+      }
       const progress = job.progress || "";
       const status = job.status || "pending";
       const label = status === "running" ? "Running" : "Queued";
@@ -433,6 +485,12 @@ function checkActiveAgentJob() {
 }
 
 checkActiveAgentJob();
+fetchJSON("/api/batch/job-status").then((data) => {
+  if (data?.job && !data.active && data.job.status === "completed") {
+    renderLocalAgentArtifacts(data.job);
+    showAgentJobBar(`Last local agent job completed. ${data.job.result?.images?.length || 0} local image(s) ready.`, false);
+  }
+}).catch(() => {});
 
 document.getElementById("batchGen45")?.addEventListener("click", async () => {
   const selectedBatches = getSelectedBatchValues();
