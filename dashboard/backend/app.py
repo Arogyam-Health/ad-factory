@@ -4796,7 +4796,23 @@ def collect_backfill_result(run_id: str, batch: str) -> dict[str, Any]:
     return manifest
 
 
-def api_runs() -> dict[str, Any]:
+def _ts_to_iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+def _mongo_run_to_manifest(doc: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": doc.get("run_id", ""),
+        "batch": doc.get("batch", ""),
+        "status": doc.get("status", ""),
+        "prompt_files": [],
+        "image_files": [],
+        "regeneration_queue_files": [],
+        "image_generated": False,
+        "updated_at": _ts_to_iso(float(doc.get("updated_at", 0))),
+        "source": "mongodb_fallback",
+    }
+
+def api_runs(user_id: str = "") -> dict[str, Any]:
     ensure_dirs()
     runs: list[dict[str, Any]] = []
     seen_run_ids: set[str] = set()
@@ -4844,6 +4860,22 @@ def api_runs() -> dict[str, Any]:
                 })
             )
 
+    # When filesystem runs are missing (e.g. after Render redeploy),
+    # fall back to MongoDB run records so the user doesn't lose history.
+    if not runs and user_id:
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_RUNS
+            db = get_sync_db()
+            for doc in db[COLL_RUNS].find(
+                {"user_id": user_id},
+                sort=[("updated_at", -1)],
+                limit=50,
+            ):
+                runs.append(enrich_manifest_for_dashboard(_mongo_run_to_manifest(doc)))
+        except Exception:
+            pass
+
     def batch_sort_key(run: dict[str, Any]) -> tuple[int, float]:
         batch = str(run.get("batch") or "").strip().lower()
         match = re.match(r"^v(\d+)$", batch)
@@ -4861,9 +4893,24 @@ def api_runs() -> dict[str, Any]:
     return {"runs": runs}
 
 
-def api_run(run_id: str) -> dict[str, Any]:
-    _run_dir, manifest, _has_storage_manifest = load_manifest_for_run(run_id)
-    return enrich_manifest_for_dashboard(manifest)
+def api_run(run_id: str, user_id: str = "") -> dict[str, Any]:
+    try:
+        _run_dir, manifest, _has_storage_manifest = load_manifest_for_run(run_id)
+        return enrich_manifest_for_dashboard(manifest)
+    except HTTPException:
+        if not user_id:
+            raise
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_RUNS
+        doc = get_sync_db()[COLL_RUNS].find_one(
+            {"user_id": user_id, "run_id": run_id},
+        )
+        if doc:
+            return enrich_manifest_for_dashboard(_mongo_run_to_manifest(doc))
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="Run not found")
 
 
 def api_run_partial(run_id: str) -> dict[str, Any]:

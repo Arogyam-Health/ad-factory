@@ -1,5 +1,5 @@
 from typing import Any
-from fastapi import APIRouter, Body, File, Form, UploadFile
+from fastapi import APIRouter, Body, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from dashboard.backend.app import (
@@ -29,12 +29,18 @@ from dashboard.backend.app import (
 router = APIRouter()
 
 @router.get("/api/runs")
-def _runs() -> dict[str, Any]:
-    return api_runs()
+def _runs(request: Request) -> dict[str, Any]:
+    user_id = ""
+    if hasattr(request.state, "user") and request.state.user:
+        user_id = request.state.user.get("user_id", "")
+    return api_runs(user_id=user_id)
 
 @router.get("/api/runs/{run_id}")
-def _run(run_id: str) -> dict[str, Any]:
-    return api_run(run_id)
+def _run(run_id: str, request: Request) -> dict[str, Any]:
+    user_id = ""
+    if hasattr(request.state, "user") and request.state.user:
+        user_id = request.state.user.get("user_id", "")
+    return api_run(run_id, user_id=user_id)
 
 
 @router.get("/api/runs/{run_id}/partial")
