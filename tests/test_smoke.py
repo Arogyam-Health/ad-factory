@@ -1685,6 +1685,8 @@ def test_local_agent_responsiveness_contract() -> int:
                  "duplicate startup GET requests share in-flight promises")
     failed += ok("60000" in reference_flow_js and "Promise.all" in reference_flow_js,
                  "reference persona refresh is parallel and no longer runs every five seconds")
+    failed += ok("function selectedOrCurrentRuns()" in runs_js and "state.runsData[state.currentRunIndex]" in runs_js,
+                 "image-generation toolbar defaults to the visible run when no batch is selected")
     failed += ok("doc and _mongo_run_has_dashboard_manifest(doc)" in app_py,
                  "run detail does not treat Mongo owner stubs as completed manifests")
     failed += ok("Run manifest is not ready yet" in (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(encoding="utf-8"),

@@ -544,6 +544,15 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 }
 
+function selectedOrCurrentRuns() {
+  const selectedBatches = getSelectedBatchValues();
+  if (selectedBatches.length) {
+    return state.runsData.filter((run) => selectedBatches.includes(run.batch));
+  }
+  const current = state.runsData[state.currentRunIndex];
+  return current?.batch ? [current] : [];
+}
+
 function hideAgentJobBar() {
   const bar = document.getElementById("agentJobBar");
   if (bar) bar.classList.add("hidden");
@@ -629,17 +638,16 @@ fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
 }).catch(() => {});
 
 document.getElementById("batchGen45")?.addEventListener("click", async () => {
-  const selectedBatches = getSelectedBatchValues();
-  if (!selectedBatches.length) { appendLog("Select at least one batch."); return; }
+  const runsForBatches = selectedOrCurrentRuns();
+  if (!runsForBatches.length) { appendLog("Select a batch or open a run with prompt files first."); return; }
 
   const engine = await showEngineSelector("4:5");
   if (!engine) return;
 
-  const runsForBatches = state.runsData.filter((r) => selectedBatches.includes(r.batch));
-  if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
   const runIds = runsForBatches.map((r) => r.run_id);
+  const batchLabel = runsForBatches.map((r) => r.batch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Batch generating 4:5 in ${engineLabel} for ${runIds.length} run(s)...`);
+  appendLog(`Generating 4:5 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
   showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-45", {
@@ -661,17 +669,16 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
 });
 
 document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
-  const selectedBatches = getSelectedBatchValues();
-  if (!selectedBatches.length) { appendLog("Select at least one batch."); return; }
+  const runsForBatches = selectedOrCurrentRuns();
+  if (!runsForBatches.length) { appendLog("Select a batch or open a run with prompt files first."); return; }
 
   const engine = await showEngineSelector("4:5 & 9:16");
   if (!engine) return;
 
-  const runsForBatches = state.runsData.filter((r) => selectedBatches.includes(r.batch));
-  if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
   const runIds = runsForBatches.map((r) => r.run_id);
+  const batchLabel = runsForBatches.map((r) => r.batch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Batch generating 4:5 + 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  appendLog(`Generating 4:5 + 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
   showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-both", {
@@ -689,16 +696,15 @@ document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
 });
 
 document.getElementById("batchGen916")?.addEventListener("click", async () => {
-  const selectedBatches = getSelectedBatchValues();
-  if (!selectedBatches.length) { appendLog("Select at least one batch."); return; }
+  const runsForBatches = selectedOrCurrentRuns();
+  if (!runsForBatches.length) { appendLog("Select a batch or open a run with prompt files first."); return; }
   const engine = await showEngineSelector("9:16");
   if (!engine) return;
 
-  const runsForBatches = state.runsData.filter((r) => selectedBatches.includes(r.batch));
-  if (!runsForBatches.length) { appendLog("No runs found for selected batch(es)."); return; }
   const runIds = runsForBatches.map((r) => r.run_id);
+  const batchLabel = runsForBatches.map((r) => r.batch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Batch generating 9:16 in ${engineLabel} for ${runIds.length} run(s)...`);
+  appendLog(`Generating 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
   showStopGenButton();
   try {
     const data = await fetchJSON("/api/batch/generate-images-916", {
