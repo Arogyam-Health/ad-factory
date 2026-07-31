@@ -439,9 +439,7 @@ function showAgentJobBar(text, spinning = true, job = null) {
   };
 }
 
-function renderLocalAgentArtifacts(job) {
-  const wrap = document.getElementById("localAgentArtifacts");
-  if (!wrap) return;
+function syncLocalAgentArtifacts(job) {
   const result = job?.result || {};
   let images = Array.isArray(result.images) ? result.images : [];
   if (!images.length) {
@@ -466,25 +464,6 @@ function renderLocalAgentArtifacts(job) {
   } catch {
     // Local metadata is an optimization; image files remain on the agent machine.
   }
-  wrap.classList.remove("hidden");
-  const outputDir = result.local_output_dir || "local agent output";
-  wrap.innerHTML = `
-    <div class="local-agent-artifacts-head">
-      <div>
-        <strong>Local agent images</strong>
-        <span>${images.length} image(s) served from your machine</span>
-      </div>
-      <code>${escapeHtml(outputDir)}</code>
-    </div>
-    <div class="local-agent-artifacts-grid">
-      ${images.map((img) => `
-        <a class="local-agent-artifact" href="${escapeAttr(img.url)}" target="_blank" rel="noopener">
-          <img src="${escapeAttr(img.url)}" alt="${escapeAttr(img.name || "Generated image")}" loading="lazy" />
-          <span>${escapeHtml(img.name || "generated image")}</span>
-        </a>
-      `).join("")}
-    </div>
-  `;
 }
 
 export function applyLocalArtifactsToRuns() {
@@ -509,7 +488,7 @@ function restoreCachedLocalArtifacts() {
     const cached = JSON.parse(localStorage.getItem(LOCAL_ARTIFACT_CACHE_KEY) || "null");
     if (cached?.images?.length) {
       localArtifactImages = cached.images;
-      renderLocalAgentArtifacts({ result: cached });
+      syncLocalAgentArtifacts({ result: cached });
       applyLocalArtifactsToRuns();
     }
   } catch {
@@ -535,7 +514,7 @@ async function refreshLocalArtifactManifest() {
     if (nextSignature === localArtifactSignature) return;
     localArtifactImages = manifest.images;
     localArtifactSignature = nextSignature;
-    renderLocalAgentArtifacts({
+    syncLocalAgentArtifacts({
       result: {
         local_output_dir: manifest.local_output_dir,
         artifact_base_url: manifest.artifact_base_url,
@@ -554,10 +533,6 @@ async function refreshLocalArtifactManifest() {
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/'/g, "&#39;");
 }
 
 function hideAgentJobBar() {
@@ -584,13 +559,18 @@ function startAgentJobPolling() {
         if (job.status === "completed") {
           const warningText = Array.isArray(job.result?.warnings) && job.result.warnings.length ? ` ${job.result.warnings[0]}` : "";
           showAgentJobBar(`Agent job completed. ${job.result?.images?.length || 0} local image(s) ready.${warningText}`, false);
-          renderLocalAgentArtifacts(job);
+          syncLocalAgentArtifacts(job);
           localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
           if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
           return;
         }
-        const terminalLabel = job.status === "canceled" ? "canceled" : "failed";
-        showAgentJobBar(`Agent job ${terminalLabel}: ${job.error || "unknown error"}`, false, job);
+        if (job.status === "canceled") {
+          appendLog(`Agent job canceled: ${job.error || "canceled"}`);
+          hideAgentJobBar();
+          loadRuns();
+          return;
+        }
+        showAgentJobBar(`Agent job failed: ${job.error || "unknown error"}`, false, job);
         localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
         if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
         return;
@@ -600,12 +580,9 @@ function startAgentJobPolling() {
       const label = status === "cancel_requested" ? "Canceling" : (status === "running" ? "Running" : "Queued");
       const msg = `Agent job ${label}: ${progress || "waiting for pickup..."}`;
       showAgentJobBar(msg, status !== "cancel_requested", job);
-      renderLocalAgentArtifacts(job);
+      syncLocalAgentArtifacts(job);
     } catch (err) {
-      if (agentJobPollTimer) {
-        clearInterval(agentJobPollTimer);
-        agentJobPollTimer = null;
-      }
+      // Keep polling: a transient Render error must not freeze a stale Running/Canceling banner.
     }
   }, 1000);
 }
@@ -630,8 +607,13 @@ refreshLocalArtifactManifest();
 setInterval(refreshLocalArtifactManifest, 2000);
 checkActiveAgentJob();
 fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
+  if (data?.active && data.job?.job_id) {
+    localStorage.setItem(LOCAL_STORAGE_JOB_KEY, JSON.stringify({ job_id: data.job.job_id, timestamp: Date.now() }));
+    startAgentJobPolling();
+    return;
+  }
   if (data?.job && !data.active && data.job.status === "completed") {
-    renderLocalAgentArtifacts(data.job);
+    syncLocalAgentArtifacts(data.job);
     const warningText = Array.isArray(data.job.result?.warnings) && data.job.result.warnings.length ? ` ${data.job.result.warnings[0]}` : "";
     showAgentJobBar(`Last local agent job completed. ${data.job.result?.images?.length || 0} local image(s) ready.${warningText}`, false);
   }

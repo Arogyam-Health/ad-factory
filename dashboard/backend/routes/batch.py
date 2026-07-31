@@ -10,6 +10,7 @@ from dashboard.backend.app import (
 from dashboard.backend.auth.service import get_current_user_from_cookie
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_AGENT_JOBS
+from dashboard.backend.agent.service import finalize_disconnected_agent_jobs
 import dashboard.backend.services.cdp_proxy  # noqa: F401 — eager import to capture main event loop
 
 router = APIRouter()
@@ -50,6 +51,7 @@ def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
         return {"active": False, "job": None}
 
     db = get_sync_db()
+    finalize_disconnected_agent_jobs(user_id)
     job = db[COLL_AGENT_JOBS].find_one(
         {"user_id": user_id, "status": {"$in": ["pending", "running", "cancel_requested"]}},
         {"_id": 0, "payload": 0},

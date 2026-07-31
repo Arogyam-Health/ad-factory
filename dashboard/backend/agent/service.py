@@ -81,6 +81,41 @@ def get_recent_active_agent(user_id: str, max_age_seconds: int = 60) -> Optional
     )
 
 
+def finalize_disconnected_agent_jobs(user_id: str, max_age_seconds: int = 30) -> int:
+    db = get_sync_db()
+    now = time.time()
+    active_jobs = list(db[COLL_AGENT_JOBS].find(
+        {"user_id": user_id, "status": {"$in": ["pending", "running", "cancel_requested"]}},
+        {"job_id": 1, "agent_id": 1, "status": 1},
+    ))
+    finalized = 0
+    for job in active_jobs:
+        agent = db[COLL_AGENTS].find_one(
+            {
+                "agent_id": job.get("agent_id"),
+                "is_active": True,
+                "last_heartbeat_at": {"$gte": now - max_age_seconds},
+            },
+            {"_id": 1},
+        )
+        if agent:
+            continue
+        previous_status = str(job.get("status") or "")
+        error = "Agent disconnected before cancellation completed" if previous_status == "cancel_requested" else "Agent disconnected"
+        result = db[COLL_AGENT_JOBS].update_one(
+            {"job_id": job.get("job_id"), "status": previous_status},
+            {"$set": {
+                "status": "canceled",
+                "progress": "agent disconnected",
+                "error": error,
+                "completed_at": now,
+                "updated_at": now,
+            }},
+        )
+        finalized += int(result.modified_count or 0)
+    return finalized
+
+
 def create_job(agent_id: str, user_id: str, job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     job_id = "job_" + generate_token(16)
     now = time.time()

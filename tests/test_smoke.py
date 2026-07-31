@@ -55,6 +55,7 @@ from dashboard.backend.agent.service import (
     claim_job,
     create_job,
     fail_job,
+    finalize_disconnected_agent_jobs,
     get_job_status_for_agent,
     register_agent,
 )
@@ -174,6 +175,16 @@ def test_agent_lifecycle() -> int:
         fail_job(job["job_id"], agent["agent_id"], "terminated")
         status = get_job_status_for_agent(job["job_id"], agent["agent_id"])
         failed += ok(status is not None and status.get("status") == "canceled", "fail after cancel request marks job canceled")
+
+        disconnected_job = create_job(agent["agent_id"], "test-user", "run_chatgpt_batch", {"batch_name": "vstale"})
+        claim_job(disconnected_job["job_id"], agent["agent_id"])
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_AGENTS
+        get_sync_db()[COLL_AGENTS].update_one({"agent_id": agent["agent_id"]}, {"$set": {"last_heartbeat_at": 0}})
+        finalized = finalize_disconnected_agent_jobs("test-user", max_age_seconds=1)
+        status = get_job_status_for_agent(disconnected_job["job_id"], agent["agent_id"])
+        failed += ok(finalized >= 1 and status is not None and status.get("status") == "canceled",
+                     "disconnected agent jobs are finalized automatically")
 
     return failed
 
@@ -1610,8 +1621,11 @@ def test_local_agent_responsiveness_contract() -> int:
     local_agent = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
     chatgpt = (ROOT / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
     batch_routes = (ROOT / "dashboard" / "backend" / "routes" / "batch.py").read_text(encoding="utf-8")
+    agent_service = (ROOT / "dashboard" / "backend" / "agent" / "service.py").read_text(encoding="utf-8")
     runs_js = (ROOT / "dashboard" / "frontend" / "js" / "runs.js").read_text(encoding="utf-8")
     reference_flow_js = (ROOT / "dashboard" / "frontend" / "js" / "reference-flow.js").read_text(encoding="utf-8")
+    index_html = (ROOT / "dashboard" / "frontend" / "index.html").read_text(encoding="utf-8")
+    styles_css = (ROOT / "dashboard" / "frontend" / "styles.css").read_text(encoding="utf-8")
 
     failed += ok("class JobProgressReporter" in local_agent and "reporter.submit(clean)" in local_agent,
                  "terminal output is decoupled from Render progress requests")
@@ -1625,8 +1639,8 @@ def test_local_agent_responsiveness_contract() -> int:
                  "generated-image detection polls UI state without two-second fixed waits")
     failed += ok('{"_id": 0, "payload": 0}' in batch_routes,
                  "active job status includes incremental result artifacts")
-    failed += ok("renderLocalAgentArtifacts(job);" in runs_js,
-                 "dashboard renders artifacts for active jobs")
+    failed += ok("syncLocalAgentArtifacts(job);" in runs_js,
+                 "dashboard syncs active-job artifacts into run data")
     failed += ok('request_path == "/artifacts"' in local_agent and '"Access-Control-Allow-Private-Network", "true"' in local_agent,
                  "local artifact server exposes a PNA-safe reload manifest")
     failed += ok("requests.Session()" in local_agent and "_API_SESSIONS = threading.local()" in local_agent,
@@ -1641,6 +1655,12 @@ def test_local_agent_responsiveness_contract() -> int:
                  "workspace run reload preserves local artifact mappings")
     failed += ok("runRenderVersion" in runs_js and "renderVersion !== runRenderVersion" in runs_js,
                  "concurrent artifact and workspace refreshes cannot duplicate run cards")
+    failed += ok("localAgentArtifacts" not in index_html and ".local-agent-artifacts" not in styles_css,
+                 "local images render only in run galleries, not a duplicate section")
+    failed += ok("finalize_disconnected_agent_jobs(user_id)" in batch_routes and "last_heartbeat_at" in agent_service,
+                 "job-status polling finalizes jobs assigned to disconnected agents")
+    failed += ok("transient Render error must not freeze" in runs_js,
+                 "transient job-status failures do not stop dashboard polling")
 
     return failed
 
