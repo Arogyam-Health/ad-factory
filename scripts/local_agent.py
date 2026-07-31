@@ -24,6 +24,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
 
+import requests
+
 
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "http://localhost:4090")
 POLL_INTERVAL = float(os.getenv("AGENT_POLL_INTERVAL", "5"))
@@ -35,28 +37,42 @@ AGENT_ARTIFACT_BASE_URL = f"http://127.0.0.1:{AGENT_ARTIFACT_PORT}"
 SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
 ROOT = Path(__file__).resolve().parent.parent
 LOCAL_OUTPUT_ROOT = Path(os.getenv("AGENT_OUTPUT_DIR", str(Path.home() / "ad-factory-agent-output"))).expanduser()
+_API_SESSIONS = threading.local()
+
+
+def _api_session() -> requests.Session:
+    session = getattr(_API_SESSIONS, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.headers.update({"Content-Type": "application/json"})
+        _API_SESSIONS.session = session
+    return session
 
 
 def api_request(method: str, path: str, data: Any = None, token: str = "", timeout: int = 10, quiet: bool = False) -> Any:
     url = f"{AGENT_API_BASE}{path}"
-    headers = {"Content-Type": "application/json"}
+    headers: dict[str, str] = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if AGENT_SESSION_COOKIE:
         headers["Cookie"] = f"session={AGENT_SESSION_COOKIE}"
-    body = json.dumps(data).encode("utf-8") if data is not None else None
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
+        response = _api_session().request(
+            method,
+            url,
+            headers=headers,
+            json=data,
+            timeout=(min(3, max(1, timeout)), timeout),
+        )
+        if response.status_code >= 400:
+            if not quiet:
+                detail = response.text.replace("\n", " ")[:500]
+                print(f"  [agent] API error {response.status_code} {method} {path}: {detail}", flush=True)
+            return None
+        return response.json()
+    except requests.RequestException as exc:
         if not quiet:
-            detail = e.read().decode(errors="replace").replace("\n", " ")[:500]
-            print(f"  [agent] API error {e.code} {method} {path}: {detail}", flush=True)
-        return None
-    except Exception as e:
-        if not quiet:
-            print(f"  [agent] Request failed: {e}", flush=True)
+            print(f"  [agent] Request failed: {exc}", flush=True)
         return None
 
 
@@ -162,20 +178,43 @@ class ArtifactHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         return
 
+    def _cors_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Cache-Control", "no-store")
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self._cors_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
-        if self.path == "/health":
+        request_path = urllib.parse.urlparse(self.path).path
+        if request_path == "/health":
             body = b"ok"
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._cors_headers()
             self.end_headers()
             self.wfile.write(body)
             return
-        if not self.path.startswith("/files/"):
+        if request_path == "/artifacts":
+            body = json.dumps(collect_all_local_artifacts()).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if not request_path.startswith("/files/"):
             self.send_error(404)
             return
-        rel = urllib.parse.unquote(self.path.removeprefix("/files/")).split("?", 1)[0]
+        rel = urllib.parse.unquote(request_path.removeprefix("/files/"))
         if not rel or ".." in Path(rel).parts:
             self.send_error(400)
             return
@@ -193,8 +232,7 @@ class ArtifactHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Cache-Control", "no-store")
+        self._cors_headers()
         self.end_headers()
         self.wfile.write(data)
 
@@ -203,13 +241,17 @@ def start_artifact_server(port: int) -> str:
     LOCAL_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     url = f"http://127.0.0.1:{port}"
     try:
-        with urllib.request.urlopen(f"{url}/health", timeout=1) as resp:
-            if resp.read() == b"ok":
+        with urllib.request.urlopen(f"{url}/artifacts", timeout=1) as resp:
+            manifest = json.loads(resp.read())
+            if manifest.get("schema_version") == 1:
                 print(f"[agent] Reusing local artifact server: {url}")
                 return url
     except Exception:
         pass
-    server = ThreadingHTTPServer(("127.0.0.1", port), ArtifactHandler)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", port), ArtifactHandler)
+    except OSError as exc:
+        raise RuntimeError(f"Artifact port {port} is occupied by an older agent. Stop the old local_agent.py process and retry.") from exc
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     print(f"[agent] Local artifact server: {url} -> {LOCAL_OUTPUT_ROOT}")
@@ -230,6 +272,55 @@ def collect_local_artifacts(job_root: Path, artifact_base_url: str) -> list[dict
             "bytes": path.stat().st_size,
         })
     return images
+
+
+def collect_all_local_artifacts(max_jobs: int = 50, max_images: int = 500) -> dict[str, Any]:
+    jobs: list[dict[str, Any]] = []
+    if LOCAL_OUTPUT_ROOT.exists():
+        for job_root in LOCAL_OUTPUT_ROOT.glob("*/job_*"):
+            if not job_root.is_dir():
+                continue
+            images = collect_local_artifacts(job_root, AGENT_ARTIFACT_BASE_URL)
+            if not images:
+                continue
+            metadata: dict[str, Any] = {}
+            metadata_path = job_root / ".agent-job.json"
+            if metadata_path.exists():
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except Exception:
+                    metadata = {}
+            updated_at = max((path.stat().st_mtime for path in job_root.glob("generated_images/**/*") if path.is_file()), default=0)
+            jobs.append({
+                "job_id": job_root.name,
+                "batch": job_root.parent.name,
+                "run_ids": [str(item) for item in (metadata.get("run_ids") or [])],
+                "local_output_dir": str(job_root),
+                "updated_at": updated_at,
+                "images": images,
+            })
+    jobs.sort(key=lambda item: float(item.get("updated_at") or 0), reverse=True)
+    jobs = jobs[:max_jobs]
+    images: list[dict[str, Any]] = []
+    for job in jobs:
+        for image in job["images"]:
+            images.append({
+                **image,
+                "job_id": job["job_id"],
+                "batch": job["batch"],
+                "run_ids": job.get("run_ids") or [],
+            })
+            if len(images) >= max_images:
+                break
+        if len(images) >= max_images:
+            break
+    return {
+        "schema_version": 1,
+        "artifact_base_url": AGENT_ARTIFACT_BASE_URL,
+        "local_output_dir": str(LOCAL_OUTPUT_ROOT),
+        "jobs": jobs,
+        "images": images,
+    }
 
 
 class JobProgressReporter:
@@ -263,7 +354,6 @@ class JobProgressReporter:
                 images = collect_local_artifacts(self.artifact_root, AGENT_ARTIFACT_BASE_URL)
                 signature = tuple((str(item.get("url") or ""), int(item.get("bytes") or 0)) for item in images)
                 if signature != self._last_artifacts:
-                    self._last_artifacts = signature
                     artifacts_changed = True
                     payload["result"] = {
                         "local_output_dir": str(self.artifact_root),
@@ -272,7 +362,7 @@ class JobProgressReporter:
                     }
             if not artifacts_changed and (not progress or progress == self._last_progress):
                 continue
-            api_request(
+            acknowledged = api_request(
                 "POST",
                 f"/api/agents/jobs/{self.job_id}/progress",
                 payload,
@@ -280,7 +370,10 @@ class JobProgressReporter:
                 timeout=2,
                 quiet=True,
             )
-            self._last_progress = progress
+            if acknowledged is not None:
+                self._last_progress = progress
+                if artifacts_changed:
+                    self._last_artifacts = signature
 
 
 def _prepare_916_conversion_prompts(
@@ -629,6 +722,16 @@ def _run_chatgpt_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     input_dir = job_root / "input_images"
     out_45_dir = job_root / "generated_images" / batch_name / "4_5"
     out_916_dir = job_root / "generated_images" / batch_name / "9_16"
+    job_root.mkdir(parents=True, exist_ok=True)
+    (job_root / ".agent-job.json").write_text(
+        json.dumps({
+            "job_id": job_id,
+            "batch": batch_name,
+            "run_ids": [str(item) for item in (payload.get("run_ids") or [])],
+            "created_at": time.time(),
+        }, ensure_ascii=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     _write_text_bundle(prompt_45_dir, list(payload.get("prompts_45") or []))
     _write_text_bundle(prompt_916_dir, list(payload.get("prompts_916") or []))
@@ -765,10 +868,26 @@ def register_and_run(args: argparse.Namespace) -> None:
     print(f"[agent] Saving generated images under {LOCAL_OUTPUT_ROOT}")
     print(f"[agent] CDP status: {check_cdp()}")
 
+    last_heartbeat = 0.0
+    last_connection_warning = 0.0
+    connection_was_down = False
     while True:
         try:
-            api_request("POST", "/api/agents/heartbeat", token=AGENT_TOKEN)
-            jobs = api_request("GET", "/api/agents/jobs/poll", token=AGENT_TOKEN)
+            now = time.time()
+            if now - last_heartbeat >= 30:
+                api_request("POST", "/api/agents/heartbeat", token=AGENT_TOKEN, timeout=5, quiet=True)
+                last_heartbeat = now
+            jobs = api_request("GET", "/api/agents/jobs/poll", token=AGENT_TOKEN, timeout=5, quiet=True)
+            if jobs is None:
+                connection_was_down = True
+                if now - last_connection_warning >= 30:
+                    print("[agent] Render API temporarily unreachable; local images remain available at the artifact server. Retrying...", flush=True)
+                    last_connection_warning = now
+                time.sleep(POLL_INTERVAL)
+                continue
+            if connection_was_down:
+                print("[agent] Render API connection restored.", flush=True)
+                connection_was_down = False
             if jobs:
                 for job in jobs:
                     execute_job(job)

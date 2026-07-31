@@ -1611,6 +1611,7 @@ def test_local_agent_responsiveness_contract() -> int:
     chatgpt = (ROOT / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
     batch_routes = (ROOT / "dashboard" / "backend" / "routes" / "batch.py").read_text(encoding="utf-8")
     runs_js = (ROOT / "dashboard" / "frontend" / "js" / "runs.js").read_text(encoding="utf-8")
+    reference_flow_js = (ROOT / "dashboard" / "frontend" / "js" / "reference-flow.js").read_text(encoding="utf-8")
 
     failed += ok("class JobProgressReporter" in local_agent and "reporter.submit(clean)" in local_agent,
                  "terminal output is decoupled from Render progress requests")
@@ -1626,6 +1627,20 @@ def test_local_agent_responsiveness_contract() -> int:
                  "active job status includes incremental result artifacts")
     failed += ok("renderLocalAgentArtifacts(job);" in runs_js,
                  "dashboard renders artifacts for active jobs")
+    failed += ok('request_path == "/artifacts"' in local_agent and '"Access-Control-Allow-Private-Network", "true"' in local_agent,
+                 "local artifact server exposes a PNA-safe reload manifest")
+    failed += ok("requests.Session()" in local_agent and "_API_SESSIONS = threading.local()" in local_agent,
+                 "local agent reuses TLS connections per worker thread")
+    failed += ok("if acknowledged is not None:" in local_agent and "self._last_artifacts = signature" in local_agent,
+                 "failed artifact updates remain pending for retry")
+    failed += ok("adFactoryLocalArtifacts" in runs_js and "refreshLocalArtifactManifest" in runs_js,
+                 "dashboard restores and refreshes local artifacts after reload")
+    failed += ok("applyLocalArtifactsToRuns" in runs_js and "run.image_files.push(image.url)" in runs_js,
+                 "restored local artifacts are merged into matching run galleries")
+    failed += ok("applyLocalArtifactsToRuns();" in reference_flow_js,
+                 "workspace run reload preserves local artifact mappings")
+    failed += ok("runRenderVersion" in runs_js and "renderVersion !== runRenderVersion" in runs_js,
+                 "concurrent artifact and workspace refreshes cannot duplicate run cards")
 
     return failed
 

@@ -1,7 +1,7 @@
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 import { appendLog } from "./ui.js";
-import { renderRunCarousel } from "./runs.js";
+import { applyLocalArtifactsToRuns, renderRunCarousel } from "./runs.js";
 import { showPromptFullscreen } from "./images.js";
 
 const $ = (id) => document.getElementById(id);
@@ -40,6 +40,7 @@ async function loadWorkspaceRuns(mode = activeMode()) {
   try {
     const data = await fetchJSON(`/api/runs?flow=${mode}&t=${Date.now()}`);
     state.runsData = (data.runs || []).filter((run) => mode === "reference" ? run.flow_type === "reference_image" : run.flow_type !== "reference_image");
+    applyLocalArtifactsToRuns();
     state.currentRunIndex = 0;
     renderRunCarousel();
     populateBatchMenu();

@@ -11,6 +11,7 @@ const runNextEl = document.getElementById("runNext");
 const runIndexEl = document.getElementById("runIndex");
 
 let batchDropdownInitialized = false;
+let runRenderVersion = 0;
 
 function parsePromptPath(path) {
   const name = path.split("/").pop() || path;
@@ -191,6 +192,7 @@ function updateRunNav() {
 
 export async function renderRunCarousel() {
   if (!runsEl) return;
+  const renderVersion = ++runRenderVersion;
   runsEl.innerHTML = "";
   if (!state.runsData.length) {
     const empty = document.createElement("div");
@@ -203,7 +205,8 @@ export async function renderRunCarousel() {
   if (state.currentRunIndex < 0) state.currentRunIndex = 0;
   if (state.currentRunIndex >= state.runsData.length) state.currentRunIndex = state.runsData.length - 1;
   const runEl = await renderRun(state.runsData[state.currentRunIndex]);
-  runsEl.appendChild(runEl);
+  if (renderVersion !== runRenderVersion) return;
+  runsEl.replaceChildren(runEl);
   updateRunNav();
 }
 
@@ -283,6 +286,7 @@ export async function loadRuns() {
   try {
     const data = await fetchJSON("/api/runs");
     state.runsData = data.runs || [];
+    applyLocalArtifactsToRuns();
     state.currentRunIndex = 0;
     updatePreviousRunOptions();
 
@@ -370,7 +374,19 @@ document.getElementById("refreshRuns")?.addEventListener("click", () => {
 });
 
 const LOCAL_STORAGE_JOB_KEY = "adFactoryActiveJob";
+const LOCAL_ARTIFACT_CACHE_KEY = "adFactoryLocalArtifacts";
+const LOCAL_ARTIFACT_MANIFEST_URL = "http://127.0.0.1:8765/artifacts";
 let agentJobPollTimer = null;
+let localArtifactImages = [];
+let localArtifactSignature = "";
+let localManifestRefreshInFlight = false;
+
+function artifactSignature(images) {
+  return images.map((image) => {
+    const runIds = Array.isArray(image.run_ids) ? image.run_ids.join(",") : "";
+    return `${image.url || ""}:${image.bytes || 0}:${image.batch || ""}:${runIds}`;
+  }).join("|");
+}
 
 function appendGenerationResult(data, fallback) {
   if (data?.status === "queued_local_agent") {
@@ -427,11 +443,28 @@ function renderLocalAgentArtifacts(job) {
   const wrap = document.getElementById("localAgentArtifacts");
   if (!wrap) return;
   const result = job?.result || {};
-  const images = Array.isArray(result.images) ? result.images : [];
+  let images = Array.isArray(result.images) ? result.images : [];
   if (!images.length) {
-    wrap.classList.add("hidden");
-    wrap.innerHTML = "";
     return;
+  }
+  try {
+    const previous = JSON.parse(localStorage.getItem(LOCAL_ARTIFACT_CACHE_KEY) || "null");
+    const previousByUrl = new Map((previous?.images || []).map((image) => [image.url, image]));
+    images = images.map((image) => ({ ...(previousByUrl.get(image.url) || {}), ...image }));
+  } catch {
+    // Ignore malformed previous metadata and replace it below.
+  }
+  localArtifactImages = images;
+  localArtifactSignature = artifactSignature(images);
+  try {
+    localStorage.setItem(LOCAL_ARTIFACT_CACHE_KEY, JSON.stringify({
+      local_output_dir: result.local_output_dir || "",
+      artifact_base_url: result.artifact_base_url || "http://127.0.0.1:8765",
+      images: images.slice(0, 500),
+      cached_at: Date.now(),
+    }));
+  } catch {
+    // Local metadata is an optimization; image files remain on the agent machine.
   }
   wrap.classList.remove("hidden");
   const outputDir = result.local_output_dir || "local agent output";
@@ -452,6 +485,71 @@ function renderLocalAgentArtifacts(job) {
       `).join("")}
     </div>
   `;
+}
+
+export function applyLocalArtifactsToRuns() {
+  if (!localArtifactImages.length || !state.runsData.length) return;
+  localArtifactImages.forEach((image) => {
+    const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : [];
+    let targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
+    if (!targets.length && image.batch) {
+      const latestBatchRun = state.runsData.find((run) => run.batch === image.batch);
+      if (latestBatchRun) targets = [latestBatchRun];
+    }
+    targets.forEach((run) => {
+      if (!Array.isArray(run.image_files)) run.image_files = [];
+      if (!run.image_files.includes(image.url)) run.image_files.push(image.url);
+      run.image_generated = true;
+    });
+  });
+}
+
+function restoreCachedLocalArtifacts() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(LOCAL_ARTIFACT_CACHE_KEY) || "null");
+    if (cached?.images?.length) {
+      localArtifactImages = cached.images;
+      renderLocalAgentArtifacts({ result: cached });
+      applyLocalArtifactsToRuns();
+    }
+  } catch {
+    localStorage.removeItem(LOCAL_ARTIFACT_CACHE_KEY);
+  }
+}
+
+async function refreshLocalArtifactManifest() {
+  if (localManifestRefreshInFlight) return;
+  localManifestRefreshInFlight = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${LOCAL_ARTIFACT_MANIFEST_URL}?t=${Date.now()}`, {
+      cache: "no-store",
+      mode: "cors",
+      signal: controller.signal,
+    });
+    if (!response.ok) return;
+    const manifest = await response.json();
+    if (!Array.isArray(manifest.images) || !manifest.images.length) return;
+    const nextSignature = artifactSignature(manifest.images);
+    if (nextSignature === localArtifactSignature) return;
+    localArtifactImages = manifest.images;
+    localArtifactSignature = nextSignature;
+    renderLocalAgentArtifacts({
+      result: {
+        local_output_dir: manifest.local_output_dir,
+        artifact_base_url: manifest.artifact_base_url,
+        images: manifest.images,
+      },
+    });
+    applyLocalArtifactsToRuns();
+    if (state.runsData.length) renderRunCarousel().catch(() => {});
+  } catch {
+    // The local agent may be offline; keep the last cached metadata visible.
+  } finally {
+    clearTimeout(timeout);
+    localManifestRefreshInFlight = false;
+  }
 }
 
 function escapeHtml(value) {
@@ -527,6 +625,9 @@ function checkActiveAgentJob() {
   }
 }
 
+restoreCachedLocalArtifacts();
+refreshLocalArtifactManifest();
+setInterval(refreshLocalArtifactManifest, 2000);
 checkActiveAgentJob();
 fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   if (data?.job && !data.active && data.job.status === "completed") {
