@@ -506,6 +506,11 @@ async function runPipeline() {
           const data = await fetchJSON(`/api/runs/${run_id}`);
           clearInterval(state.runPollInterval);
           state.runPollInterval = null;
+          const promptFiles = Array.isArray(data.prompt_files) ? data.prompt_files : [];
+          const imageFiles = Array.isArray(data.image_files) ? data.image_files : [];
+          if (!promptFiles.length || !data.batch || !data.llm_mode) {
+            throw new Error("Run manifest is not ready yet");
+          }
           const fallbackLine = data.copy_generation_failures
             ? `\nCopy failures: ${data.copy_generation_failures} ad(s)`
             : "";
@@ -519,7 +524,7 @@ async function runPipeline() {
             ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
             : "";
           const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
-          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${failedAdsLine}${warningLine}${noteLine}\nPrompts: ${data.prompt_files.length}\nImages: ${data.image_files.length}`);
+          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${failedAdsLine}${warningLine}${noteLine}\nPrompts: ${promptFiles.length}\nImages: ${imageFiles.length}`);
           fetchJSON("/api/defaults")
             .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
             .catch(() => {});

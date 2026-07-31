@@ -178,22 +178,34 @@ body::before {
 
 .layout-columns {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
+  grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
   gap: 14px;
-  align-items: flex-start;
+  align-items: start;
 }
 
 .column {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
+  align-items: start;
+  min-width: 0;
 }
 
-.column-left { min-width: 0; }
-.column-right { min-width: 0; }
+.column > .card { grid-column: 1 / -1; }
+
+.column-right > .card { grid-column: 1 / -1; }
+
+.card-input-prompts,
+.card-hypothesis { grid-column: span 5; }
+
+.card-images,
+.card-execution { grid-column: span 7; }
+
+.card-files { grid-column: 1 / -1; }
 
 /* ── Cards ────────────────────────────────────────────────────────────────── */
 .card {
+  min-width: 0;
   background: linear-gradient(170deg, var(--surface), color-mix(in srgb, var(--surface) 88%, var(--surface-2)));
   border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
   border-radius: var(--radius-lg);
@@ -887,7 +899,7 @@ button.is-loading::after {
 
 .input-image-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 8px;
   margin-top: 10px;
   overflow-x: hidden;
@@ -898,7 +910,7 @@ button.is-loading::after {
 }
 
 .input-image-card .image-wrap {
-  height: 120px;
+  height: 136px;
   aspect-ratio: auto;
   position: relative;
   overflow: hidden;
@@ -1614,7 +1626,7 @@ button.is-loading::after {
 
 .input-prompts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
 }
 
@@ -1993,6 +2005,11 @@ button.is-loading::after {
   .image-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
   .prompt-file-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
   .format-pattern-grid { grid-template-columns: 1fr; }
+  .column { grid-template-columns: 1fr; }
+  .card-input-prompts,
+  .card-images,
+  .card-execution,
+  .card-hypothesis { grid-column: 1 / -1; }
   .runs-toolbar { gap: 6px; }
   .ghost-btn { padding: 5px 8px; font-size: 11px; }
 }

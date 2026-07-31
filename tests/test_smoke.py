@@ -1629,6 +1629,7 @@ def test_local_agent_responsiveness_contract() -> int:
     state_js = (ROOT / "dashboard" / "frontend" / "js" / "state.js").read_text(encoding="utf-8")
     api_js = (ROOT / "dashboard" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     run_routes = (ROOT / "dashboard" / "backend" / "routes" / "runs.py").read_text(encoding="utf-8")
+    app_py = (ROOT / "dashboard" / "backend" / "app.py").read_text(encoding="utf-8")
     index_html = (ROOT / "dashboard" / "frontend" / "index.html").read_text(encoding="utf-8")
     styles_css = (ROOT / "dashboard" / "frontend" / "styles.css").read_text(encoding="utf-8")
 
@@ -1684,6 +1685,12 @@ def test_local_agent_responsiveness_contract() -> int:
                  "duplicate startup GET requests share in-flight promises")
     failed += ok("60000" in reference_flow_js and "Promise.all" in reference_flow_js,
                  "reference persona refresh is parallel and no longer runs every five seconds")
+    failed += ok("doc and _mongo_run_has_dashboard_manifest(doc)" in app_py,
+                 "run detail does not treat Mongo owner stubs as completed manifests")
+    failed += ok("Run manifest is not ready yet" in (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(encoding="utf-8"),
+                 "frontend keeps polling until batch, llm_mode, and prompt files are ready")
+    failed += ok(".card-input-prompts," in styles_css and ".card-images," in styles_css and "grid-column: span 7" in styles_css,
+                 "structured dashboard uses a denser bento card grid")
 
     return failed
 

@@ -4923,7 +4923,7 @@ def load_manifest_for_run(run_id: str) -> tuple[Path | None, dict[str, Any], boo
         from dashboard.backend.db.client import get_sync_db
         from dashboard.backend.db.collections import COLL_RUNS
         doc = get_sync_db()[COLL_RUNS].find_one({"run_id": run_id}, sort=[("updated_at", -1)])
-        if doc:
+        if doc and _mongo_run_has_dashboard_manifest(doc):
             return None, _mongo_run_to_manifest(doc), False
     except Exception:
         pass
@@ -5089,7 +5089,7 @@ def api_run(run_id: str, user_id: str = "") -> dict[str, Any]:
         doc = get_sync_db()[COLL_RUNS].find_one(
             {"user_id": user_id, "run_id": run_id},
         )
-        if doc:
+        if doc and _mongo_run_has_dashboard_manifest(doc):
             return enrich_manifest_for_dashboard(_mongo_run_to_manifest(doc))
     except Exception:
         pass
