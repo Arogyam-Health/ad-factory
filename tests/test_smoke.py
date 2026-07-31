@@ -1679,8 +1679,12 @@ def test_local_agent_responsiveness_contract() -> int:
                  "image revision queue and status routes are registered")
     failed += ok("queueRevision" in image_comments_js and '`${origin}/revisions`' in image_comments_js,
                  "localhost image comments use the local agent revision worker")
-    failed += ok("Promise.allSettled" in state_js and 'fetchJSON("/api/defaults")' in state_js and 'fetchJSON("/api/config/effective")' in state_js,
-                 "defaults and effective persona config load concurrently")
+    failed += ok("Promise.allSettled" in state_js and 'fetchJSON("/api/defaults")' in state_js and 'fetchJSON("/api/config/persona-summary")' in state_js,
+                 "defaults and persona summary config load concurrently")
+    failed += ok('if (user_id):' not in app_py and 'if user_id:' in app_py and 'return {"runs": runs}' in app_py,
+                 "authenticated run listing returns before filesystem backfill")
+    failed += ok('run.batch === image.batch' not in runs_js and 'explicitRunIds.includes(run.run_id)' in runs_js,
+                 "local artifacts attach only by explicit run_ids, not batch name")
     failed += ok("const inflight = new Map()" in api_js and "inflight.has(key)" in api_js,
                  "duplicate startup GET requests share in-flight promises")
     failed += ok("60000" in reference_flow_js and "Promise.all" in reference_flow_js,

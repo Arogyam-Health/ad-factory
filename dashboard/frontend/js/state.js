@@ -68,28 +68,21 @@ export function getHypothesisConfig() {
 export async function loadDefaults() {
   state.isPersonasLoading = true;
   try {
-    const [defaultsResult, configResult] = await Promise.allSettled([
+    const [defaultsResult, personaResult] = await Promise.allSettled([
       fetchJSON("/api/defaults"),
-      fetchJSON("/api/config/effective"),
+      fetchJSON("/api/config/persona-summary"),
     ]);
     if (defaultsResult.status !== "fulfilled") throw defaultsResult.reason;
     state.defaultData = defaultsResult.value;
 
     // Overlay user's custom persona seeds from MongoDB config
     try {
-      const cfg = configResult.status === "fulfilled" ? configResult.value : null;
-      const rawSeeds = cfg?.config?.persona_seeds;
-      if (rawSeeds) {
-        const seeds = typeof rawSeeds === "string" ? JSON.parse(rawSeeds) : rawSeeds;
-        if (Array.isArray(seeds) && seeds.length) {
-          const userPersonas = seeds.map(e => ({
-            number: parseInt(e.persona_number || e.number, 10),
-            name: String(e.persona_name || e.name || `Persona ${e.persona_number || e.number}`),
-          })).filter(p => p.number);
-          if (userPersonas.length) {
-            state.defaultData.personas = userPersonas;
-          }
-        }
+      const personas = personaResult.status === "fulfilled" ? personaResult.value?.personas : null;
+      if (Array.isArray(personas) && personas.length) {
+        state.defaultData.personas = personas.map((persona) => ({
+          number: Number(persona.number),
+          name: String(persona.name || `Persona ${persona.number}`),
+        })).filter((persona) => persona.number);
       }
     } catch {}
 

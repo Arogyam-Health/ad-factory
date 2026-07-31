@@ -2003,22 +2003,21 @@ def _bundle_text_file(path: Path, *, root: Path | None = None) -> dict[str, str]
 
 
 def _load_prompt_text_for_generation(user_id: str, run_id: str, rel_path: str) -> str | None:
+    if user_id and run_id:
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_PROMPTS
+            doc = get_sync_db()[COLL_PROMPTS].find_one({"user_id": user_id, "run_id": run_id, "file_path": rel_path})
+            if doc and str(doc.get("content") or "").strip():
+                return str(doc.get("content") or "")
+        except Exception:
+            pass
     src = Path(rel_path)
     if not src.is_absolute():
         src = ROOT / src
     src = src.resolve()
     if src.exists() and src.is_file():
         return src.read_text(encoding="utf-8", errors="replace")
-    if not user_id or not run_id:
-        return None
-    try:
-        from dashboard.backend.db.client import get_sync_db
-        from dashboard.backend.db.collections import COLL_PROMPTS
-        doc = get_sync_db()[COLL_PROMPTS].find_one({"user_id": user_id, "run_id": run_id, "file_path": rel_path})
-        if doc and str(doc.get("content") or "").strip():
-            return str(doc.get("content") or "")
-    except Exception:
-        pass
     return None
 
 
@@ -4911,7 +4910,9 @@ def _build_backfill_manifest(run_id: str, batch: str) -> dict[str, Any]:
     }
 
 
-def load_manifest_for_run(run_id: str) -> tuple[Path | None, dict[str, Any], bool]:
+def load_manifest_for_run(run_id: str, user_id: str = "") -> tuple[Path | None, dict[str, Any], bool]:
+    if user_id:
+        _check_ownership(run_id, user_id)
     run_dir = RUNS_ROOT / run_id
     manifest_path = run_dir / "manifest.json"
     if manifest_path.exists():
@@ -4922,7 +4923,10 @@ def load_manifest_for_run(run_id: str) -> tuple[Path | None, dict[str, Any], boo
     try:
         from dashboard.backend.db.client import get_sync_db
         from dashboard.backend.db.collections import COLL_RUNS
-        doc = get_sync_db()[COLL_RUNS].find_one({"run_id": run_id}, sort=[("updated_at", -1)])
+        query = {"run_id": run_id}
+        if user_id:
+            query["user_id"] = user_id
+        doc = get_sync_db()[COLL_RUNS].find_one(query, sort=[("updated_at", -1)])
         if doc and _mongo_run_has_dashboard_manifest(doc):
             return None, _mongo_run_to_manifest(doc), False
     except Exception:
@@ -4973,11 +4977,42 @@ def _mongo_run_has_dashboard_manifest(doc: dict[str, Any]) -> bool:
         for key in ("prompt_files", "image_files", "llm_mode", "copy_source", "local_artifacts")
     )
 
+
+def _dashboard_run_sort_key(run: dict[str, Any]) -> tuple[int, float]:
+    batch = str(run.get("batch") or "").strip().lower()
+    match = re.match(r"^v(\d+)$", batch)
+    batch_num = int(match.group(1)) if match else -1
+    updated = str(run.get("updated_at") or "")
+    ts = 0.0
+    if updated:
+        try:
+            ts = datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            ts = 0.0
+    return (batch_num, ts)
+
+
 def api_runs(user_id: str = "") -> dict[str, Any]:
     ensure_dirs()
     runs: list[dict[str, Any]] = []
     seen_run_ids: set[str] = set()
     seen_batches: set[str] = set()
+    if user_id:
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_RUNS
+            docs = list(
+                get_sync_db()[COLL_RUNS]
+                .find({"user_id": user_id})
+                .sort("updated_at", -1)
+                .limit(50)
+            )
+        except Exception:
+            docs = []
+        runs = [enrich_manifest_for_dashboard(_mongo_run_to_manifest(doc)) for doc in docs]
+        runs.sort(key=_dashboard_run_sort_key, reverse=True)
+        return {"runs": runs}
+
     for run_dir in sorted(RUNS_ROOT.glob("run_*"), reverse=True):
         manifest = run_dir / "manifest.json"
         if manifest.exists():
@@ -5048,20 +5083,7 @@ def api_runs(user_id: str = "") -> dict[str, Any]:
         except Exception:
             pass
 
-    def batch_sort_key(run: dict[str, Any]) -> tuple[int, float]:
-        batch = str(run.get("batch") or "").strip().lower()
-        match = re.match(r"^v(\d+)$", batch)
-        batch_num = int(match.group(1)) if match else -1
-        updated = str(run.get("updated_at") or "")
-        ts = 0.0
-        if updated:
-            try:
-                ts = datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp()
-            except Exception:
-                ts = 0.0
-        return (batch_num, ts)
-
-    runs.sort(key=batch_sort_key, reverse=True)
+    runs.sort(key=_dashboard_run_sort_key, reverse=True)
     return {"runs": runs}
 
 
@@ -5075,10 +5097,15 @@ def api_run(run_id: str, user_id: str = "") -> dict[str, Any]:
             )
             if doc and _mongo_run_has_dashboard_manifest(doc):
                 return enrich_manifest_for_dashboard(_mongo_run_to_manifest(doc))
+            if not doc:
+                raise HTTPException(status_code=404, detail="Run not found")
+        except HTTPException:
+            raise
         except Exception:
-            pass
+            if app_settings.is_production:
+                raise
     try:
-        _run_dir, manifest, _has_storage_manifest = load_manifest_for_run(run_id)
+        _run_dir, manifest, _has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
         return enrich_manifest_for_dashboard(manifest)
     except HTTPException:
         if not user_id:
@@ -5111,7 +5138,44 @@ def api_run_partial(run_id: str) -> dict[str, Any]:
     return ads
 
 
-def api_run_prompt_copies(run_id: str) -> dict[str, Any]:
+def _prompt_copy_records_from_mongo(user_id: str, run_id: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    if not user_id:
+        return records
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_PROMPTS
+        docs = list(
+            get_sync_db()[COLL_PROMPTS]
+            .find({"user_id": user_id, "run_id": run_id})
+            .sort("created_at", 1)
+        )
+    except Exception:
+        return records
+    for doc in docs:
+        rel_path = str(doc.get("file_path") or "")
+        text = str(doc.get("content") or "")
+        parsed_name = parse_prompt_filename(rel_path)
+        persona_number = parsed_name[2] if parsed_name else None
+        if persona_number is None:
+            persona_number = parse_persona_number_from_prompt(text)
+        records.append({
+            "prompt_file": rel_path,
+            "format": parsed_name[0] if parsed_name else doc.get("format", ""),
+            "language": parsed_name[1] if parsed_name else doc.get("language", ""),
+            "persona_number": persona_number,
+            "review_url": f"/api/files/download/prompt/{doc.get('prompt_id')}",
+            "copy_lines": extract_on_image_copy_lines(text),
+        })
+    return records
+
+
+def api_run_prompt_copies(run_id: str, user_id: str = "") -> dict[str, Any]:
+    if user_id:
+        _check_ownership(run_id, user_id)
+        manifest = api_run(run_id, user_id=user_id)
+        return {"run_id": run_id, "batch": manifest.get("batch"), "prompts": _prompt_copy_records_from_mongo(user_id, run_id)}
+
     _run_dir, manifest, _has_storage_manifest = load_manifest_for_run(run_id)
     prompt_files_all = manifest.get("prompt_files") or []
     prompt_files = [path for path in prompt_files_all if "/45/" in str(path)] or prompt_files_all
@@ -5139,31 +5203,7 @@ def api_run_prompt_copies(run_id: str) -> dict[str, Any]:
     if not records:
         user_id = _get_run_owner(run_id) or ""
         if user_id:
-            try:
-                from dashboard.backend.db.client import get_sync_db
-                from dashboard.backend.db.collections import COLL_PROMPTS
-                docs = list(
-                    get_sync_db()[COLL_PROMPTS]
-                    .find({"user_id": user_id, "run_id": run_id})
-                    .sort("created_at", 1)
-                )
-                for doc in docs:
-                    rel_path = str(doc.get("file_path") or "")
-                    text = str(doc.get("content") or "")
-                    parsed_name = parse_prompt_filename(rel_path)
-                    persona_number = parsed_name[2] if parsed_name else None
-                    if persona_number is None:
-                        persona_number = parse_persona_number_from_prompt(text)
-                    records.append({
-                        "prompt_file": rel_path,
-                        "format": parsed_name[0] if parsed_name else doc.get("format", ""),
-                        "language": parsed_name[1] if parsed_name else doc.get("language", ""),
-                        "persona_number": persona_number,
-                        "review_url": f"/api/files/download/prompt/{doc.get('prompt_id')}",
-                        "copy_lines": extract_on_image_copy_lines(text),
-                    })
-            except Exception:
-                pass
+            records.extend(_prompt_copy_records_from_mongo(user_id, run_id))
 
     return {"run_id": run_id, "batch": manifest.get("batch"), "prompts": records}
 
@@ -6016,7 +6056,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     primary_run_dir: Path | None = None
     for run_id in run_ids:
         try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
+            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
         except HTTPException:
             continue
         batch = str(manifest.get("batch") or "").strip()
@@ -6172,7 +6212,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     primary_run_dir: Path | None = None
     for run_id in run_ids:
         try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
+            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
         except HTTPException:
             continue
         batch = str(manifest.get("batch") or "").strip()
@@ -6280,7 +6320,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     batch_to_run_dir: dict[str, Path | None] = {}
     for run_id in run_ids:
         try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
+            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
         except HTTPException:
             continue
         batch = str(manifest.get("batch") or "").strip()
@@ -6581,7 +6621,7 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
     batch_to_run_dir: dict[str, Path | None] = {}
     for run_id in run_ids:
         try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
+            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
         except HTTPException:
             continue
         batch = str(manifest.get("batch") or "").strip()
@@ -6837,8 +6877,27 @@ def _list_output_batches() -> list[int]:
     return sorted(out)
 
 
-def _reserve_batch_name() -> str:
-    batches = _list_output_batches()
+def _list_user_mongo_batches(user_id: str) -> list[int]:
+    if not user_id:
+        return []
+    try:
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_RUNS
+        docs = get_sync_db()[COLL_RUNS].find({"user_id": user_id, "batch": {"$regex": r"^v\d+$"}}, {"batch": 1})
+        batches: list[int] = []
+        for doc in docs:
+            match = re.match(r"^v(\d+)$", str(doc.get("batch") or ""), flags=re.IGNORECASE)
+            if match:
+                batches.append(int(match.group(1)))
+        return sorted(batches)
+    except Exception:
+        return []
+
+
+def _reserve_batch_name(user_id: str = "") -> str:
+    batches = _list_user_mongo_batches(user_id)
+    if not batches and not app_settings.is_production:
+        batches = _list_output_batches()
     return "v1" if not batches else f"v{batches[-1] + 1}"
 
 
@@ -6860,7 +6919,8 @@ def _run_pipeline_background(
     try:
         print(f"[PIPELINE] Starting background pipeline for run {run_id}", file=sys.stderr)
         # Reserve batch number early so incremental assembler runs write to the same batch dir
-        reserved_batch = _reserve_batch_name()
+        reserved_batch = _reserve_batch_name(user_id)
+        _update_run_status_db(run_id, "running", user_id=user_id, extra={"batch": reserved_batch})
         language_mode = assembler_language_mode(cfg)
         provider = (cfg.get("provider") or "").strip().lower()
         if provider == "google":
@@ -7257,13 +7317,38 @@ def api_stop_generation() -> dict[str, Any]:
     return {"status": "killed", **counts}
 
 
-def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
     """Edit a prompt file in-place, replacing only the EXACT ON-IMAGE COPY block."""
-    run_dir = RUNS_ROOT / run_id
     prompt_path = payload.get("prompt_file", "")
     new_text = payload.get("text", "")
     if not prompt_path or not new_text:
         raise HTTPException(status_code=400, detail="prompt_file and text are required")
+
+    if user_id:
+        _check_ownership(run_id, user_id)
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_PROMPTS
+            db = get_sync_db()
+            doc = db[COLL_PROMPTS].find_one({"user_id": user_id, "run_id": run_id, "file_path": prompt_path})
+            if not doc:
+                raise HTTPException(status_code=404, detail="Prompt not found")
+            old_text = str(doc.get("content") or "")
+            updated_text = _replace_exact_copy_block(old_text, new_text)
+            if updated_text is None:
+                raise HTTPException(status_code=400, detail="No EXACT ON-IMAGE COPY block found in prompt file")
+            db[COLL_PROMPTS].update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"content": updated_text, "updated_at": time.time()}},
+            )
+            full_path = ROOT / prompt_path
+            if full_path.exists() and full_path.is_file():
+                full_path.write_text(updated_text, encoding="utf-8")
+            return {"status": "saved", "prompt_file": prompt_path}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not edit prompt: {exc}") from exc
 
     full_path = ROOT / prompt_path
     if not full_path.exists():
@@ -7277,24 +7362,57 @@ def api_edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[st
     return {"status": "saved", "prompt_file": prompt_path}
 
 
-def api_delete_run(run_id: str) -> dict[str, Any]:
+def api_delete_run(run_id: str, user_id: str = "") -> dict[str, Any]:
+    if user_id:
+        _check_ownership(run_id, user_id)
     run_dir = RUNS_ROOT / run_id
-    if not run_dir.exists():
+    mongo_run: dict[str, Any] | None = None
+    if user_id:
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_RUNS
+            mongo_run = get_sync_db()[COLL_RUNS].find_one({"user_id": user_id, "run_id": run_id})
+        except Exception:
+            mongo_run = None
+    if not run_dir.exists() and not mongo_run:
         raise HTTPException(status_code=404, detail="Run not found")
 
     manifest_path = run_dir / "manifest.json"
-    batch = None
+    batch = mongo_run.get("batch") if mongo_run else None
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        batch = manifest.get("batch")
+        batch = batch or manifest.get("batch")
 
     import shutil
-    shutil.rmtree(run_dir)
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+
+    mongo_deleted = False
+    if user_id:
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_IMAGES, COLL_FILE_MAP, COLL_AGENT_JOBS
+            db = get_sync_db()
+            db[COLL_RUNS].delete_one({"user_id": user_id, "run_id": run_id})
+            db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
+            db[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
+            db[COLL_FILE_MAP].delete_many({"user_id": user_id, "run_id": run_id})
+            db[COLL_AGENT_JOBS].delete_many({"user_id": user_id, "payload.run_ids": run_id})
+            mongo_deleted = True
+        except Exception:
+            mongo_deleted = False
 
     deleted_images = False
     deleted_prompts = False
     if batch:
         other_runs_with_same_batch = False
+        if user_id:
+            try:
+                from dashboard.backend.db.client import get_sync_db
+                from dashboard.backend.db.collections import COLL_RUNS
+                other_runs_with_same_batch = bool(get_sync_db()[COLL_RUNS].find_one({"batch": batch, "run_id": {"$ne": run_id}}))
+            except Exception:
+                other_runs_with_same_batch = False
         for d in RUNS_ROOT.glob("run_*"):
             if d.name == run_id:
                 continue
@@ -7319,16 +7437,36 @@ def api_delete_run(run_id: str) -> dict[str, Any]:
                 shutil.rmtree(batch_prompts_dir)
                 deleted_prompts = True
 
-    return {"status": "deleted", "run_id": run_id, "batch": batch, "deleted_images": deleted_images, "deleted_prompts": deleted_prompts}
+    return {"status": "deleted", "run_id": run_id, "batch": batch, "deleted_images": deleted_images, "deleted_prompts": deleted_prompts, "mongo_deleted": mongo_deleted}
 
 
-def api_delete_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_delete_prompt(run_id: str, payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
     """Delete a prompt file and remove it from the run manifest."""
+    if user_id:
+        _check_ownership(run_id, user_id)
     run_dir = RUNS_ROOT / run_id
     manifest_path = run_dir / "manifest.json"
     prompt_path = payload.get("prompt_file", "")
     if not prompt_path:
         raise HTTPException(status_code=400, detail="prompt_file is required")
+
+    if user_id:
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_FILE_MAP
+            db = get_sync_db()
+            result = db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id, "file_path": prompt_path})
+            db[COLL_FILE_MAP].delete_many({"user_id": user_id, "run_id": run_id, "file_path": prompt_path})
+            db[COLL_RUNS].update_one(
+                {"user_id": user_id, "run_id": run_id},
+                {"$pull": {"prompt_files": prompt_path}, "$set": {"updated_at": time.time()}},
+            )
+            if result.deleted_count == 0:
+                raise HTTPException(status_code=404, detail="Prompt not found")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not delete prompt: {exc}") from exc
 
     full_path = ROOT / prompt_path
     if full_path.exists():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,6 +40,33 @@ from dashboard.backend.services.user_config import (
 )
 
 router = APIRouter()
+
+
+def _persona_summary_from_config(config: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = config.get("persona_seeds") if isinstance(config, dict) else None
+    if not raw:
+        return []
+    try:
+        seeds = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return []
+    if not isinstance(seeds, list):
+        return []
+    personas: list[dict[str, Any]] = []
+    for entry in seeds:
+        if not isinstance(entry, dict):
+            continue
+        number = entry.get("persona_number") or entry.get("number")
+        try:
+            number_int = int(number)
+        except Exception:
+            continue
+        personas.append({
+            "number": number_int,
+            "name": str(entry.get("persona_name") or entry.get("name") or f"Persona {number_int}"),
+            "core_pattern": str(entry.get("core_pattern") or entry.get("description") or ""),
+        })
+    return personas
 
 
 def _json_safe(d: dict | None) -> dict | None:
@@ -602,6 +630,33 @@ def get_config_sources(
 
 
 # ─── Effective config endpoint ─────────────────────────────────────────────
+
+
+@router.get("/api/config/persona-summary")
+def get_persona_summary(
+    org_id: str | None = None,
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    user_id = user["user_id"]
+    if org_id:
+        org = _get_active_org(org_id)
+        membership = require_org_member(user_id, org_id)
+        config = resolve_effective_config(user_id, org_id)
+        return {
+            "personas": _persona_summary_from_config(config),
+            "source": "org_shared" if org.get("config_mode", "shared_org_config") == "shared_org_config" else "user_personal",
+            "owner_type": "org" if org.get("config_mode", "shared_org_config") == "shared_org_config" else "user",
+            "owner_id": org_id if org.get("config_mode", "shared_org_config") == "shared_org_config" else user_id,
+            "membership": _json_safe(membership),
+        }
+
+    config = resolve_effective_config_for_user(user_id)
+    return {
+        "personas": _persona_summary_from_config(config),
+        "source": "user_personal",
+        "owner_type": "user",
+        "owner_id": user_id,
+    }
 
 
 @router.get("/api/config/effective")

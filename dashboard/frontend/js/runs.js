@@ -4,6 +4,7 @@ import { fetchJSON, invalidateRuns } from "./api.js";
 import { buildImageGallery, showPromptFullscreen } from "./images.js";
 import { buildPromptEditor } from "./prompts.js";
 import { refreshSelect } from "./custom-select.js";
+import { getAuthUser } from "./auth.js";
 
 const runsEl = document.getElementById("runs");
 const runPrevEl = document.getElementById("runPrev");
@@ -74,14 +75,14 @@ function buildPromptFileSummary(runId, promptFiles, promptsData) {
     card.title = path;
     card.innerHTML = `<span class="prompt-file-aspect">${parsed.aspect}</span><strong>${parsed.format} ${parsed.persona}</strong><span>${parsed.creative} · ${parsed.lang}${parsed.conceptAngle ? ` · <em>${parsed.conceptAngle}</em>` : ''}</span>`;
     card.addEventListener("click", () => {
-      const opts = promptDoc?.prompt_id ? {
+      if (!promptDoc?.prompt_id) {
+        appendLog(`Prompt metadata is not available for ${path}. Refresh runs after regeneration.`);
+        return;
+      }
+      const opts = {
         fetchUrl: `/api/runs/${encodeURIComponent(runId)}/prompts/${encodeURIComponent(promptDoc.prompt_id)}/content`,
         saveUrl: `/api/runs/${encodeURIComponent(runId)}/prompts/${encodeURIComponent(promptDoc.prompt_id)}/content`,
         saveBody: (text) => ({ content: text }),
-      } : {
-        fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(path)}`,
-        saveUrl: "/api/prompt-file-content",
-        saveBody: (text) => ({ prompt_path: path, content: text }),
       };
       showPromptFullscreen(Path(path).name || path, "", opts);
     });
@@ -381,6 +382,19 @@ let localArtifactImages = [];
 let localArtifactSignature = "";
 let localManifestRefreshInFlight = false;
 
+function scopedStorageKey(baseKey) {
+  const userId = getAuthUser()?.user_id || "anonymous";
+  return `${baseKey}:${userId}`;
+}
+
+function currentArtifactCacheKey() {
+  return scopedStorageKey(LOCAL_ARTIFACT_CACHE_KEY);
+}
+
+function currentJobStorageKey() {
+  return scopedStorageKey(LOCAL_STORAGE_JOB_KEY);
+}
+
 function artifactSignature(images) {
   return images.map((image) => {
     const runIds = Array.isArray(image.run_ids) ? image.run_ids.join(",") : "";
@@ -391,7 +405,7 @@ function artifactSignature(images) {
 function appendGenerationResult(data, fallback) {
   if (data?.status === "queued_local_agent") {
     appendLog(`Queued local agent job ${data.job_id} on ${data.agent_name || data.agent_id}. Images will save on the local agent machine.`);
-    localStorage.setItem(LOCAL_STORAGE_JOB_KEY, JSON.stringify({
+    localStorage.setItem(currentJobStorageKey(), JSON.stringify({
       job_id: data.job_id,
       agent_name: data.agent_name || data.agent_id,
       mode: data.mode || "both",
@@ -445,7 +459,7 @@ function syncLocalAgentArtifacts(job, { authoritative = false } = {}) {
   if (!images.length && !authoritative) return false;
   if (!authoritative) {
     try {
-      const previous = JSON.parse(localStorage.getItem(LOCAL_ARTIFACT_CACHE_KEY) || "null");
+      const previous = JSON.parse(localStorage.getItem(currentArtifactCacheKey()) || "null");
       const previousByUrl = new Map((previous?.images || []).map((image) => [image.url, image]));
       images = images.map((image) => ({ ...(previousByUrl.get(image.url) || {}), ...image }));
     } catch {
@@ -458,14 +472,14 @@ function syncLocalAgentArtifacts(job, { authoritative = false } = {}) {
   localArtifactSignature = nextSignature;
   try {
     if (images.length) {
-      localStorage.setItem(LOCAL_ARTIFACT_CACHE_KEY, JSON.stringify({
+      localStorage.setItem(currentArtifactCacheKey(), JSON.stringify({
         local_output_dir: result.local_output_dir || "",
         artifact_base_url: result.artifact_base_url || "http://127.0.0.1:8765",
         images: images.slice(0, 500),
         cached_at: Date.now(),
       }));
     } else {
-      localStorage.removeItem(LOCAL_ARTIFACT_CACHE_KEY);
+      localStorage.removeItem(currentArtifactCacheKey());
     }
   } catch {
     // Local metadata is an optimization; image files remain on the agent machine.
@@ -483,10 +497,6 @@ export function applyLocalArtifactsToRuns() {
   localArtifactImages.forEach((image) => {
     const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : [];
     let targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
-    if (!targets.length && image.batch) {
-      const latestBatchRun = state.runsData.find((run) => run.batch === image.batch);
-      if (latestBatchRun) targets = [latestBatchRun];
-    }
     targets.forEach((run) => {
       if (!Array.isArray(run.image_files)) run.image_files = [];
       if (!run.image_files.includes(image.url)) run.image_files.push(image.url);
@@ -497,14 +507,14 @@ export function applyLocalArtifactsToRuns() {
 
 function restoreCachedLocalArtifacts() {
   try {
-    const cached = JSON.parse(localStorage.getItem(LOCAL_ARTIFACT_CACHE_KEY) || "null");
+    const cached = JSON.parse(localStorage.getItem(currentArtifactCacheKey()) || "null");
     if (cached?.images?.length) {
       localArtifactImages = cached.images;
       syncLocalAgentArtifacts({ result: cached });
       applyLocalArtifactsToRuns();
     }
   } catch {
-    localStorage.removeItem(LOCAL_ARTIFACT_CACHE_KEY);
+    localStorage.removeItem(currentArtifactCacheKey());
   }
 }
 
@@ -556,7 +566,7 @@ function selectedOrCurrentRuns() {
 function hideAgentJobBar() {
   const bar = document.getElementById("agentJobBar");
   if (bar) bar.classList.add("hidden");
-  localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+  localStorage.removeItem(currentJobStorageKey());
   if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
 }
 
@@ -578,7 +588,7 @@ function startAgentJobPolling() {
           const warningText = Array.isArray(job.result?.warnings) && job.result.warnings.length ? ` ${job.result.warnings[0]}` : "";
           showAgentJobBar(`Agent job completed. ${job.result?.images?.length || 0} local image(s) ready.${warningText}`, false);
           syncLocalAgentArtifacts(job);
-          localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+          localStorage.removeItem(currentJobStorageKey());
           if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
           return;
         }
@@ -589,7 +599,7 @@ function startAgentJobPolling() {
           return;
         }
         showAgentJobBar(`Agent job failed: ${job.error || "unknown error"}`, false, job);
-        localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+        localStorage.removeItem(currentJobStorageKey());
         if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
         return;
       }
@@ -606,17 +616,17 @@ function startAgentJobPolling() {
 }
 
 function checkActiveAgentJob() {
-  const raw = localStorage.getItem(LOCAL_STORAGE_JOB_KEY);
+  const raw = localStorage.getItem(currentJobStorageKey());
   if (!raw) return;
   try {
     const saved = JSON.parse(raw);
     if (!saved || !saved.job_id || (Date.now() - saved.timestamp > 7200000)) {
-      localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+      localStorage.removeItem(currentJobStorageKey());
       return;
     }
     startAgentJobPolling();
   } catch {
-    localStorage.removeItem(LOCAL_STORAGE_JOB_KEY);
+    localStorage.removeItem(currentJobStorageKey());
   }
 }
 
@@ -626,7 +636,7 @@ setInterval(refreshLocalArtifactManifest, 2000);
 checkActiveAgentJob();
 fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   if (data?.active && data.job?.job_id) {
-    localStorage.setItem(LOCAL_STORAGE_JOB_KEY, JSON.stringify({ job_id: data.job.job_id, timestamp: Date.now() }));
+    localStorage.setItem(currentJobStorageKey(), JSON.stringify({ job_id: data.job.job_id, timestamp: Date.now() }));
     startAgentJobPolling();
     return;
   }
@@ -730,7 +740,14 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
   if (!selectedBatches.length) { appendLog("Select at least one batch from the dropdown."); return; }
   appendLog(`Preparing download for ${selectedBatches.length} batch(es)...`);
   try {
-    const localBatches = new Set(localArtifactImages.map((image) => image.batch).filter(Boolean));
+    const selectedRunIdsByBatch = new Map();
+    state.runsData.forEach((run) => {
+      if (run.batch) selectedRunIdsByBatch.set(run.batch, run.run_id);
+    });
+    const localBatches = new Set(localArtifactImages.filter((image) => {
+      const runId = selectedRunIdsByBatch.get(image.batch);
+      return runId && Array.isArray(image.run_ids) && image.run_ids.includes(runId);
+    }).map((image) => image.batch).filter(Boolean));
     const selectedLocalBatches = selectedBatches.filter((batch) => localBatches.has(batch));
     if (selectedLocalBatches.length) {
       const params = new URLSearchParams();

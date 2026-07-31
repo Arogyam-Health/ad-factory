@@ -48,25 +48,31 @@ def _run(run_id: str, request: Request) -> dict[str, Any]:
 def _run_partial(run_id: str) -> dict[str, Any]:
     return api_run_partial(run_id)
 
+def _request_user_id(request: Request) -> str:
+    if hasattr(request, "state") and getattr(request.state, "user", None):
+        return request.state.user.get("user_id", "")
+    return ""
+
+
 @router.delete("/api/runs/{run_id}")
-def _delete_run(run_id: str) -> dict[str, Any]:
-    return api_delete_run(run_id)
+def _delete_run(run_id: str, request: Request) -> dict[str, Any]:
+    return api_delete_run(run_id, user_id=_request_user_id(request))
 
 @router.get("/api/runs/{run_id}/prompt-copies")
-def _prompt_copies(run_id: str) -> dict[str, Any]:
-    return api_run_prompt_copies(run_id)
+def _prompt_copies(run_id: str, request: Request) -> dict[str, Any]:
+    return api_run_prompt_copies(run_id, user_id=_request_user_id(request))
 
 @router.post("/api/runs/{run_id}/prompt-copies")
 def _update_prompt_copies(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return api_run_update_prompt_copies(run_id, payload)
 
 @router.post("/api/runs/{run_id}/edit-prompt")
-def _edit_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_edit_prompt(run_id, payload)
+def _edit_prompt(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return api_edit_prompt(run_id, payload, user_id=_request_user_id(request))
 
 @router.post("/api/runs/{run_id}/delete-prompt")
-def _delete_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_delete_prompt(run_id, payload)
+def _delete_prompt(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return api_delete_prompt(run_id, payload, user_id=_request_user_id(request))
 
 @router.post("/api/runs/{run_id}/delete-image")
 def _delete_image(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:

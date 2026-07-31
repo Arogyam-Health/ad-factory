@@ -1,6 +1,6 @@
 import time
 from typing import Any, Optional
-from fastapi import APIRouter, Body, Cookie, Request
+from fastapi import APIRouter, Body, Cookie, HTTPException, Request
 
 from dashboard.backend.app import (
     api_batch_generate_images_45,
@@ -19,9 +19,12 @@ router = APIRouter()
 def _resolve_user_id(request: Request, session: Optional[str]) -> str:
     try:
         user = get_current_user_from_cookie(session)
-        return user.get("user_id", "") if user else ""
+        user_id = user.get("user_id", "") if user else ""
     except Exception:
-        return ""
+        user_id = ""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user_id
 
 
 @router.post("/api/batch/generate-images-45")

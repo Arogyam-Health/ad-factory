@@ -279,22 +279,19 @@ async function initStudioSourceSelector({ reloadInitialPersona = true } = {}) {
   // Reload persona seeds for the initial active source
   async function reloadPersonaSeeds() {
     try {
-      const cfg = await fetchJSON(studioCurrentOrgId
-        ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
-        : "/api/config/effective");
-      const rawSeeds = cfg?.config?.persona_seeds;
-      if (rawSeeds) {
-        const seeds = typeof rawSeeds === "string" ? JSON.parse(rawSeeds) : rawSeeds;
-        if (Array.isArray(seeds) && seeds.length) {
-          const userPersonas = seeds.map(e => ({
-            number: parseInt(e.persona_number || e.number, 10),
-            name: String(e.persona_name || e.name || `Persona ${e.persona_number || e.number}`),
-          })).filter(p => p.number);
-          if (userPersonas.length) {
-            state.defaultData.personas = userPersonas;
-            initPersonaState(userPersonas);
-            renderPersonas();
-          }
+      const summary = await fetchJSON(studioCurrentOrgId
+        ? `/api/config/persona-summary?org_id=${encodeURIComponent(studioCurrentOrgId)}`
+        : "/api/config/persona-summary");
+      const personas = summary?.personas;
+      if (Array.isArray(personas) && personas.length) {
+        const userPersonas = personas.map((persona) => ({
+          number: Number(persona.number),
+          name: String(persona.name || `Persona ${persona.number}`),
+        })).filter((persona) => persona.number);
+        if (userPersonas.length) {
+          state.defaultData.personas = userPersonas;
+          initPersonaState(userPersonas);
+          renderPersonas();
         }
       }
     } catch {}
