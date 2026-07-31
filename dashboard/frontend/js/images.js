@@ -14,6 +14,10 @@ function imageUrl(item, path) {
   return `/generated_images/${cleanPath}`;
 }
 
+function isLocalArtifactUrl(path) {
+  return /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/files\//i.test(String(path || ""));
+}
+
 export function buildImageGallery(run, imagesData) {
   const activeImageFiles = run.image_files || [];
   const queuedImageFiles = run.regeneration_queue_files || [];
@@ -68,7 +72,12 @@ export function buildImageGallery(run, imagesData) {
   regenerateNowBtn.className = "ghost-btn";
   regenerateNowBtn.textContent = "Regenerate selected";
 
-  regenBar.append(selectedCount, selectVisibleBtn, clearSelectionBtn, markBtn, regenerateNowBtn);
+  const reviseCommentedBtn = document.createElement("button");
+  reviseCommentedBtn.type = "button";
+  reviseCommentedBtn.className = "ghost-btn revise-commented-btn";
+  reviseCommentedBtn.textContent = "Revise all commented";
+
+  regenBar.append(selectedCount, selectVisibleBtn, clearSelectionBtn, markBtn, regenerateNowBtn, reviseCommentedBtn);
   gal.appendChild(regenBar);
 
   const allCount = activeImageFiles.length;
@@ -136,6 +145,16 @@ export function buildImageGallery(run, imagesData) {
     grid.querySelectorAll(".image-select-checkbox").forEach((checkbox) => { checkbox.checked = false; });
     grid.querySelectorAll(".image-card").forEach((card) => card.classList.remove("selected-for-regeneration"));
     updateSelectedCount();
+  });
+
+  reviseCommentedBtn.addEventListener("click", async () => {
+    reviseCommentedBtn.disabled = true;
+    try {
+      const { submitAllRevisions } = await import("./image-comments.js");
+      await submitAllRevisions(run.run_id);
+    } finally {
+      reviseCommentedBtn.disabled = false;
+    }
   });
 
   markBtn.addEventListener("click", async () => {
@@ -337,6 +356,12 @@ export function buildImageGallery(run, imagesData) {
       if (!confirm(`Delete image "${path.split("/").pop()}"?`)) return;
       imgDeleteBtn.disabled = true;
       try {
+        if (isLocalArtifactUrl(path)) {
+          const localResponse = await fetch(path, { method: "DELETE", mode: "cors" });
+          if (!localResponse.ok && localResponse.status !== 404) {
+            throw new Error(`Local artifact deletion failed (${localResponse.status})`);
+          }
+        }
         await fetchJSON(`/api/runs/${run.run_id}/delete-image`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -345,6 +370,7 @@ export function buildImageGallery(run, imagesData) {
         appendLog(`Deleted image: ${path.split("/").pop()}`);
         card.remove();
         invalidateRuns();
+        import("./runs.js").then((module) => module.refreshLocalArtifactManifest());
       } catch (err) {
         appendLog(`Delete error: ${String(err)}`);
         imgDeleteBtn.disabled = false;
@@ -353,7 +379,9 @@ export function buildImageGallery(run, imagesData) {
 
     imgDlBtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      const dlUrl = `/api/runs/${run.run_id}/download-image?image_file=${encodeURIComponent(path)}`;
+      const dlUrl = isLocalArtifactUrl(path)
+        ? path
+        : `/api/runs/${run.run_id}/download-image?image_file=${encodeURIComponent(path)}`;
       const a = document.createElement("a");
       a.href = dlUrl;
       a.download = "";

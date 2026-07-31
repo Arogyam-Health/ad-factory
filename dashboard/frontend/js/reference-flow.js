@@ -117,10 +117,24 @@ function renderPersonas(personas = state.defaultData?.personas || []) {
 
 async function refreshReferencePersonas({ silent = true } = {}) {
   try {
-    const data = await fetchJSON(`/api/defaults?t=${Date.now()}`);
-    state.defaultData = data;
-    renderPersonas(data.personas || []);
-    if (!silent) appendLog("Reference personas refreshed from persona_seeds.json.");
+    const [defaults, effective] = await Promise.all([
+      fetchJSON("/api/defaults"),
+      fetchJSON("/api/config/effective"),
+    ]);
+    let personas = defaults.personas || [];
+    const rawSeeds = effective?.config?.persona_seeds;
+    if (rawSeeds) {
+      const seeds = typeof rawSeeds === "string" ? JSON.parse(rawSeeds) : rawSeeds;
+      if (Array.isArray(seeds) && seeds.length) {
+        personas = seeds.map((entry) => ({
+          number: Number(entry.persona_number || entry.number),
+          name: String(entry.persona_name || entry.name || `Persona ${entry.persona_number || entry.number}`),
+          core_pattern: entry.core_pattern || entry.description || "",
+        })).filter((persona) => persona.number);
+      }
+    }
+    renderPersonas(personas);
+    if (!silent) appendLog("Reference personas refreshed from the effective config.");
   } catch (error) {
     if (!silent) appendLog(`Persona refresh failed: ${String(error)}`);
   }
@@ -130,7 +144,7 @@ function startPersonaSync() {
   stopPersonaSync();
   personaTimer = setInterval(() => {
     if (activeMode() === "reference" && !document.hidden) refreshReferencePersonas();
-  }, 5000);
+  }, 60000);
 }
 
 function stopPersonaSync() {

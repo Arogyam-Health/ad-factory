@@ -7342,7 +7342,7 @@ def api_delete_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[
     return {"status": "deleted", "prompt_file": prompt_path}
 
 
-def api_delete_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_delete_image(run_id: str, payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
     """Delete a generated image and its metadata JSON."""
     run_dir = RUNS_ROOT / run_id
     manifest_path = run_dir / "manifest.json"
@@ -7350,19 +7350,41 @@ def api_delete_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[s
     if not image_path:
         raise HTTPException(status_code=400, detail="image_file is required")
 
-    full_path = ROOT / image_path
-    if full_path.exists():
-        full_path.unlink()
+    if not str(image_path).startswith(("http://", "https://")):
+        full_path = ROOT / image_path
+        if full_path.exists():
+            full_path.unlink()
 
-    # Also delete companion JSON metadata if it exists
-    for json_path in (full_path.with_suffix(".json"), full_path.with_suffix(full_path.suffix + ".json")):
-        if json_path.exists():
-            json_path.unlink()
+        # Also delete companion JSON metadata if it exists
+        for json_path in (full_path.with_suffix(".json"), full_path.with_suffix(full_path.suffix + ".json")):
+            if json_path.exists():
+                json_path.unlink()
 
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["image_files"] = [p for p in manifest.get("image_files", []) if p != image_path]
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    if user_id:
+        try:
+            from dashboard.backend.db.client import get_sync_db
+            from dashboard.backend.db.collections import COLL_AGENT_JOBS, COLL_IMAGES, COLL_RUNS
+            db = get_sync_db()
+            db[COLL_RUNS].update_one(
+                {"user_id": user_id, "run_id": run_id},
+                {"$pull": {"image_files": image_path, "local_artifacts": {"url": image_path}}, "$set": {"updated_at": time.time()}},
+            )
+            db[COLL_IMAGES].delete_many({
+                "user_id": user_id,
+                "run_id": run_id,
+                "$or": [{"file_path": image_path}, {"local_path": image_path}, {"url": image_path}],
+            })
+            db[COLL_AGENT_JOBS].update_many(
+                {"user_id": user_id, "result.images.url": image_path},
+                {"$pull": {"result.images": {"url": image_path}}, "$set": {"updated_at": time.time()}},
+            )
+        except Exception:
+            pass
 
     return {"status": "deleted", "image_file": image_path}
 

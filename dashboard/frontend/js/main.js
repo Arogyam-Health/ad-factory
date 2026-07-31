@@ -117,12 +117,13 @@ async function initDefaults() {
     const imageCount = (data.input_images || []).length;
     defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}, input/images=${imageCount} file(s)`;
 
+    initStudioSourceSelector({ reloadInitialPersona: false }).catch(() => {});
+
     let opencode = data.opencode || {};
-    if (!Object.keys(opencode.models_by_provider || {}).length) {
-      try {
-        opencode = await fetchJSON("/api/opencode/catalog");
-      } catch {}
-    }
+    const catalogPromise = Object.keys(opencode.models_by_provider || {}).length
+      ? Promise.resolve(opencode)
+      : fetchJSON("/api/opencode/catalog").catch(() => opencode);
+    const providerConfigsPromise = loadProviderConfigsIntoFields();
 
     // Load provider config (may have saved URL/key)
     const pcfg = data.provider || {};
@@ -133,7 +134,8 @@ async function initDefaults() {
     populateGoogleModels(pcfg.google_models || [], pcfg.google_model || "");
     document.getElementById("googleApiKey").value = "";
 
-    const providerConfigs = await loadProviderConfigsIntoFields();
+    const [resolvedCatalog, providerConfigs] = await Promise.all([catalogPromise, providerConfigsPromise]);
+    opencode = resolvedCatalog;
 
     // Prefer the user's saved MongoDB OpenCode config over the global fallback catalog.
     if (providerConfigs.opencode?.api_url || providerConfigs.opencode?._has_keys) {
@@ -162,8 +164,6 @@ async function initDefaults() {
     setStatus(`Failed to load defaults: ${String(err)}`);
   }
 
-  // Load org sources for Studio source selector
-  await initStudioSourceSelector();
 }
 
 function populateGoogleModels(models, selectedModel) {
@@ -230,7 +230,7 @@ async function deleteAllCredentials() {
 // ── Studio Config Source Selector ───────────────────────────────────────────
 let studioCurrentOrgId = null;  // null = personal
 
-async function initStudioSourceSelector() {
+async function initStudioSourceSelector({ reloadInitialPersona = true } = {}) {
   const container = document.getElementById("studioSourceButtons");
   const labelEl = document.querySelector("#studioSourceSelector span");
   if (!container) return;
@@ -299,7 +299,7 @@ async function initStudioSourceSelector() {
       }
     } catch {}
   }
-  await reloadPersonaSeeds();
+  if (reloadInitialPersona) await reloadPersonaSeeds();
   // Click handler
   container.addEventListener("click", async (e) => {
     const btn = e.target.closest(".studio-source-btn");

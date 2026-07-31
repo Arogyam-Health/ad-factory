@@ -68,11 +68,16 @@ export function getHypothesisConfig() {
 export async function loadDefaults() {
   state.isPersonasLoading = true;
   try {
-    state.defaultData = await fetchJSON("/api/defaults");
+    const [defaultsResult, configResult] = await Promise.allSettled([
+      fetchJSON("/api/defaults"),
+      fetchJSON("/api/config/effective"),
+    ]);
+    if (defaultsResult.status !== "fulfilled") throw defaultsResult.reason;
+    state.defaultData = defaultsResult.value;
 
     // Overlay user's custom persona seeds from MongoDB config
     try {
-      const cfg = await fetchJSON("/api/config/effective");
+      const cfg = configResult.status === "fulfilled" ? configResult.value : null;
       const rawSeeds = cfg?.config?.persona_seeds;
       if (rawSeeds) {
         const seeds = typeof rawSeeds === "string" ? JSON.parse(rawSeeds) : rawSeeds;

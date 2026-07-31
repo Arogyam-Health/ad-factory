@@ -25,6 +25,7 @@ from dashboard.backend.app import (
     signal_cancel_run,
     signal_cancel_current_run,
 )
+from dashboard.backend.reference_flow import api_image_revision_status, api_revise_image_with_comment
 
 router = APIRouter()
 
@@ -68,8 +69,19 @@ def _delete_prompt(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str
     return api_delete_prompt(run_id, payload)
 
 @router.post("/api/runs/{run_id}/delete-image")
-def _delete_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_delete_image(run_id, payload)
+def _delete_image(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    user_id = request.state.user.get("user_id", "") if getattr(request.state, "user", None) else ""
+    return api_delete_image(run_id, payload, user_id=user_id)
+
+
+@router.post("/api/runs/{run_id}/revise-image")
+def _revise_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return api_revise_image_with_comment(run_id, payload)
+
+
+@router.get("/api/runs/{run_id}/revisions/{revision_id}")
+def _revision_status(run_id: str, revision_id: str) -> dict[str, Any]:
+    return api_image_revision_status(run_id, revision_id)
 
 @router.post("/api/runs/{run_id}/mark-images-to-regenerate")
 def _mark_images_to_regenerate(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:

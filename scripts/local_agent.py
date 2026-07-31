@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import io
 import mimetypes
 import json
 import os
@@ -20,6 +21,8 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
+import uuid
+import zipfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
@@ -38,6 +41,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
 ROOT = Path(__file__).resolve().parent.parent
 LOCAL_OUTPUT_ROOT = Path(os.getenv("AGENT_OUTPUT_DIR", str(Path.home() / "ad-factory-agent-output"))).expanduser()
 _API_SESSIONS = threading.local()
+_LOCAL_REVISIONS: dict[str, dict[str, Any]] = {}
+_LOCAL_REVISIONS_LOCK = threading.Lock()
 
 
 def _api_session() -> requests.Session:
@@ -180,8 +185,9 @@ class ArtifactHandler(SimpleHTTPRequestHandler):
 
     def _cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Expose-Headers", "Content-Disposition")
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Cache-Control", "no-store")
 
@@ -206,6 +212,36 @@ class ArtifactHandler(SimpleHTTPRequestHandler):
             body = json.dumps(collect_all_local_artifacts()).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if request_path.startswith("/revisions/"):
+            revision_id = request_path.rsplit("/", 1)[-1]
+            with _LOCAL_REVISIONS_LOCK:
+                payload = dict(_LOCAL_REVISIONS.get(revision_id) or {})
+            if not payload:
+                self.send_error(404, "Revision not found")
+                return
+            body = json.dumps(payload).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if request_path == "/download-batches":
+            batches = [value for value in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("batch", []) if value]
+            archive = build_local_batch_archive(batches)
+            if archive is None:
+                self.send_error(404, "No local files found for selected batches")
+                return
+            body, filename = archive
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Content-Length", str(len(body)))
             self._cors_headers()
             self.end_headers()
@@ -236,6 +272,50 @@ class ArtifactHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def do_POST(self) -> None:
+        request_path = urllib.parse.urlparse(self.path).path
+        if request_path != "/revisions":
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            revision = start_local_image_revision(payload)
+        except ValueError as exc:
+            self.send_error(400, str(exc))
+            return
+        body = json.dumps(revision).encode("utf-8")
+        self.send_response(202)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_DELETE(self) -> None:
+        request_path = urllib.parse.urlparse(self.path).path
+        if not request_path.startswith("/files/"):
+            self.send_error(404)
+            return
+        path = resolve_local_artifact_path(request_path)
+        if path is None:
+            self.send_error(400)
+            return
+        if not path.exists() or not path.is_file():
+            self.send_error(404)
+            return
+        path.unlink()
+        for metadata_path in (path.with_suffix(".json"), path.with_suffix(path.suffix + ".json")):
+            if metadata_path.exists() and metadata_path.is_file():
+                metadata_path.unlink()
+        body = json.dumps({"status": "deleted", "file": path.name}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
 
 def start_artifact_server(port: int) -> str:
     LOCAL_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -243,7 +323,7 @@ def start_artifact_server(port: int) -> str:
     try:
         with urllib.request.urlopen(f"{url}/artifacts", timeout=1) as resp:
             manifest = json.loads(resp.read())
-            if manifest.get("schema_version") == 1:
+            if manifest.get("schema_version") == 2:
                 print(f"[agent] Reusing local artifact server: {url}")
                 return url
     except Exception:
@@ -270,8 +350,123 @@ def collect_local_artifacts(job_root: Path, artifact_base_url: str) -> list[dict
             "path": rel_output,
             "url": f"{artifact_base_url.rstrip('/')}/files/{urllib.parse.quote(rel_server)}",
             "bytes": path.stat().st_size,
+            "modified_at": path.stat().st_mtime_ns,
         })
     return images
+
+
+def resolve_local_artifact_path(request_path: str) -> Path | None:
+    rel = urllib.parse.unquote(request_path.removeprefix("/files/"))
+    if not rel or ".." in Path(rel).parts:
+        return None
+    path = (LOCAL_OUTPUT_ROOT / rel).resolve()
+    try:
+        path.relative_to(LOCAL_OUTPUT_ROOT.resolve())
+    except ValueError:
+        return None
+    return path
+
+
+def build_local_batch_archive(batches: list[str]) -> tuple[bytes, str] | None:
+    selected = {str(batch).strip() for batch in batches if str(batch).strip()}
+    if not selected:
+        return None
+    buffer = io.BytesIO()
+    count = 0
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for batch in sorted(selected):
+            batch_root = (LOCAL_OUTPUT_ROOT / batch).resolve()
+            if not batch_root.exists() or not batch_root.is_dir():
+                continue
+            for path in sorted(batch_root.rglob("*")):
+                if not path.is_file() or any(part in {".browser_downloads", "debug"} for part in path.parts):
+                    continue
+                archive.write(path, arcname=f"{batch}/{path.relative_to(batch_root).as_posix()}")
+                count += 1
+    if not count:
+        return None
+    filename = f"ad_factory_{'_'.join(sorted(selected))}.zip"
+    return buffer.getvalue(), filename
+
+
+def start_local_image_revision(payload: dict[str, Any]) -> dict[str, Any]:
+    image_url = str(payload.get("image_file") or "")
+    comment = str(payload.get("comment") or "").strip()
+    engine = str(payload.get("engine") or "chatgpt").lower()
+    if not comment:
+        raise ValueError("Revision comment is required")
+    if engine != "chatgpt":
+        raise ValueError("Local image revisions currently require ChatGPT")
+    image_path = resolve_local_artifact_path(urllib.parse.urlparse(image_url).path)
+    if image_path is None or not image_path.exists() or not image_path.is_file():
+        raise ValueError("Local image file was not found")
+    revision_id = f"local_rev_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    status_url = f"{AGENT_ARTIFACT_BASE_URL}/revisions/{revision_id}"
+    with _LOCAL_REVISIONS_LOCK:
+        _LOCAL_REVISIONS[revision_id] = {
+            "revision_id": revision_id,
+            "status": "queued",
+            "message": "Local revision queued",
+            "status_url": status_url,
+        }
+    threading.Thread(
+        target=_run_local_image_revision,
+        args=(revision_id, image_path, comment),
+        daemon=True,
+    ).start()
+    return {"revision_id": revision_id, "status": "queued", "status_url": status_url}
+
+
+def _set_local_revision_status(revision_id: str, **updates: Any) -> None:
+    with _LOCAL_REVISIONS_LOCK:
+        current = _LOCAL_REVISIONS.setdefault(revision_id, {"revision_id": revision_id})
+        current.update(updates)
+
+
+def _run_local_image_revision(revision_id: str, image_path: Path, comment: str) -> None:
+    try:
+        _set_local_revision_status(revision_id, status="running", message="Generating local revision")
+        job_root = next((parent for parent in image_path.parents if parent.name.startswith("job_")), image_path.parent)
+        work_root = job_root / "revisions" / revision_id
+        prompt_dir = work_root / "prompts"
+        output_dir = work_root / "output"
+        prompt_dir.mkdir(parents=True, exist_ok=True)
+        source_file = work_root / "current_image.images.txt"
+        source_file.write_text(str(image_path.resolve()) + "\n", encoding="utf-8")
+        stem = re.sub(r"_(?:4_5|9_16)$", "", image_path.stem)
+        prompt_path = prompt_dir / f"{stem}.txt"
+        aspect_ratio = "9:16" if "/9_16/" in image_path.as_posix() else "4:5"
+        prompt_path.write_text(
+            f"Edit the uploaded current ad image in {aspect_ratio}. Apply this revision exactly while preserving everything not requested:\n\n{comment}\n\nReturn only the revised image.\n",
+            encoding="utf-8",
+        )
+        cmd = _chatgpt_cmd(
+            SCRIPT_DIR / "chatgpt_web_sutomation.py",
+            prompt_dir,
+            output_dir,
+            work_root / "unused_uploads",
+            {},
+            aspect_ratio,
+            prompt_glob=prompt_path.name,
+            image_source_file=source_file,
+        )
+        result = subprocess.run(cmd, cwd=str(ROOT), text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ChatGPT revision exited {result.returncode}")
+        candidates = [
+            path for path in output_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+            and not any(part in {"debug", ".browser_downloads"} for part in path.parts)
+        ]
+        if not candidates:
+            raise RuntimeError("Revised image was not produced")
+        backup_dir = job_root / "revision_history" / revision_id
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(image_path, backup_dir / image_path.name)
+        shutil.move(str(max(candidates, key=lambda path: path.stat().st_mtime_ns)), str(image_path))
+        _set_local_revision_status(revision_id, status="completed", message="Local image revision completed")
+    except Exception as exc:
+        _set_local_revision_status(revision_id, status="error", message=f"Revision failed: {exc}", error=str(exc))
 
 
 def collect_all_local_artifacts(max_jobs: int = 50, max_images: int = 500) -> dict[str, Any]:
@@ -315,7 +510,7 @@ def collect_all_local_artifacts(max_jobs: int = 50, max_images: int = 500) -> di
         if len(images) >= max_images:
             break
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "artifact_base_url": AGENT_ARTIFACT_BASE_URL,
         "local_output_dir": str(LOCAL_OUTPUT_ROOT),
         "jobs": jobs,

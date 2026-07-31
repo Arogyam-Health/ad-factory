@@ -1624,6 +1624,11 @@ def test_local_agent_responsiveness_contract() -> int:
     agent_service = (ROOT / "dashboard" / "backend" / "agent" / "service.py").read_text(encoding="utf-8")
     runs_js = (ROOT / "dashboard" / "frontend" / "js" / "runs.js").read_text(encoding="utf-8")
     reference_flow_js = (ROOT / "dashboard" / "frontend" / "js" / "reference-flow.js").read_text(encoding="utf-8")
+    images_js = (ROOT / "dashboard" / "frontend" / "js" / "images.js").read_text(encoding="utf-8")
+    image_comments_js = (ROOT / "dashboard" / "frontend" / "js" / "image-comments.js").read_text(encoding="utf-8")
+    state_js = (ROOT / "dashboard" / "frontend" / "js" / "state.js").read_text(encoding="utf-8")
+    api_js = (ROOT / "dashboard" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    run_routes = (ROOT / "dashboard" / "backend" / "routes" / "runs.py").read_text(encoding="utf-8")
     index_html = (ROOT / "dashboard" / "frontend" / "index.html").read_text(encoding="utf-8")
     styles_css = (ROOT / "dashboard" / "frontend" / "styles.css").read_text(encoding="utf-8")
 
@@ -1661,6 +1666,24 @@ def test_local_agent_responsiveness_contract() -> int:
                  "job-status polling finalizes jobs assigned to disconnected agents")
     failed += ok("transient Render error must not freeze" in runs_js,
                  "transient job-status failures do not stop dashboard polling")
+    failed += ok("def do_DELETE" in local_agent and "build_local_batch_archive" in local_agent,
+                 "local artifact server supports durable deletion and real batch ZIPs")
+    failed += ok('method: "DELETE", mode: "cors"' in images_js and "refreshLocalArtifactManifest" in images_js,
+                 "structured image deletion removes the local file and refreshes authoritative metadata")
+    failed += ok("download-batches" in runs_js and "selectedLocalBatches" in runs_js,
+                 "batch download uses the local artifact ZIP for local images")
+    failed += ok("Revise all commented" in images_js and "submitAllRevisions" in images_js,
+                 "structured gallery exposes mass revision for commented images")
+    failed += ok("/revise-image" in run_routes and "/revisions/{revision_id}" in run_routes,
+                 "image revision queue and status routes are registered")
+    failed += ok("queueRevision" in image_comments_js and '`${origin}/revisions`' in image_comments_js,
+                 "localhost image comments use the local agent revision worker")
+    failed += ok("Promise.allSettled" in state_js and 'fetchJSON("/api/defaults")' in state_js and 'fetchJSON("/api/config/effective")' in state_js,
+                 "defaults and effective persona config load concurrently")
+    failed += ok("const inflight = new Map()" in api_js and "inflight.has(key)" in api_js,
+                 "duplicate startup GET requests share in-flight promises")
+    failed += ok("60000" in reference_flow_js and "Promise.all" in reference_flow_js,
+                 "reference persona refresh is parallel and no longer runs every five seconds")
 
     return failed
 

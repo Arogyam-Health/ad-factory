@@ -384,7 +384,7 @@ let localManifestRefreshInFlight = false;
 function artifactSignature(images) {
   return images.map((image) => {
     const runIds = Array.isArray(image.run_ids) ? image.run_ids.join(",") : "";
-    return `${image.url || ""}:${image.bytes || 0}:${image.batch || ""}:${runIds}`;
+    return `${image.url || ""}:${image.bytes || 0}:${image.modified_at || 0}:${image.batch || ""}:${runIds}`;
   }).join("|");
 }
 
@@ -439,35 +439,47 @@ function showAgentJobBar(text, spinning = true, job = null) {
   };
 }
 
-function syncLocalAgentArtifacts(job) {
+function syncLocalAgentArtifacts(job, { authoritative = false } = {}) {
   const result = job?.result || {};
   let images = Array.isArray(result.images) ? result.images : [];
-  if (!images.length) {
-    return;
+  if (!images.length && !authoritative) return false;
+  if (!authoritative) {
+    try {
+      const previous = JSON.parse(localStorage.getItem(LOCAL_ARTIFACT_CACHE_KEY) || "null");
+      const previousByUrl = new Map((previous?.images || []).map((image) => [image.url, image]));
+      images = images.map((image) => ({ ...(previousByUrl.get(image.url) || {}), ...image }));
+    } catch {
+      // Ignore malformed previous metadata and replace it below.
+    }
   }
-  try {
-    const previous = JSON.parse(localStorage.getItem(LOCAL_ARTIFACT_CACHE_KEY) || "null");
-    const previousByUrl = new Map((previous?.images || []).map((image) => [image.url, image]));
-    images = images.map((image) => ({ ...(previousByUrl.get(image.url) || {}), ...image }));
-  } catch {
-    // Ignore malformed previous metadata and replace it below.
-  }
+  const nextSignature = artifactSignature(images);
+  const changed = nextSignature !== localArtifactSignature;
   localArtifactImages = images;
-  localArtifactSignature = artifactSignature(images);
+  localArtifactSignature = nextSignature;
   try {
-    localStorage.setItem(LOCAL_ARTIFACT_CACHE_KEY, JSON.stringify({
-      local_output_dir: result.local_output_dir || "",
-      artifact_base_url: result.artifact_base_url || "http://127.0.0.1:8765",
-      images: images.slice(0, 500),
-      cached_at: Date.now(),
-    }));
+    if (images.length) {
+      localStorage.setItem(LOCAL_ARTIFACT_CACHE_KEY, JSON.stringify({
+        local_output_dir: result.local_output_dir || "",
+        artifact_base_url: result.artifact_base_url || "http://127.0.0.1:8765",
+        images: images.slice(0, 500),
+        cached_at: Date.now(),
+      }));
+    } else {
+      localStorage.removeItem(LOCAL_ARTIFACT_CACHE_KEY);
+    }
   } catch {
     // Local metadata is an optimization; image files remain on the agent machine.
   }
+  return changed;
 }
 
 export function applyLocalArtifactsToRuns() {
-  if (!localArtifactImages.length || !state.runsData.length) return;
+  if (!state.runsData.length) return;
+  const validLocalUrls = new Set(localArtifactImages.map((image) => image.url));
+  state.runsData.forEach((run) => {
+    if (!Array.isArray(run.image_files)) run.image_files = [];
+    run.image_files = run.image_files.filter((path) => !String(path).startsWith("http://127.0.0.1:") || validLocalUrls.has(path));
+  });
   localArtifactImages.forEach((image) => {
     const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : [];
     let targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
@@ -496,7 +508,7 @@ function restoreCachedLocalArtifacts() {
   }
 }
 
-async function refreshLocalArtifactManifest() {
+export async function refreshLocalArtifactManifest() {
   if (localManifestRefreshInFlight) return;
   localManifestRefreshInFlight = true;
   const controller = new AbortController();
@@ -509,18 +521,15 @@ async function refreshLocalArtifactManifest() {
     });
     if (!response.ok) return;
     const manifest = await response.json();
-    if (!Array.isArray(manifest.images) || !manifest.images.length) return;
-    const nextSignature = artifactSignature(manifest.images);
-    if (nextSignature === localArtifactSignature) return;
-    localArtifactImages = manifest.images;
-    localArtifactSignature = nextSignature;
-    syncLocalAgentArtifacts({
+    if (!Array.isArray(manifest.images)) return;
+    const changed = syncLocalAgentArtifacts({
       result: {
         local_output_dir: manifest.local_output_dir,
         artifact_base_url: manifest.artifact_base_url,
         images: manifest.images,
       },
-    });
+    }, { authoritative: true });
+    if (!changed) return;
     applyLocalArtifactsToRuns();
     if (state.runsData.length) renderRunCarousel().catch(() => {});
   } catch {
@@ -715,31 +724,50 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
   if (!selectedBatches.length) { appendLog("Select at least one batch from the dropdown."); return; }
   appendLog(`Preparing download for ${selectedBatches.length} batch(es)...`);
   try {
+    const localBatches = new Set(localArtifactImages.map((image) => image.batch).filter(Boolean));
+    const selectedLocalBatches = selectedBatches.filter((batch) => localBatches.has(batch));
+    if (selectedLocalBatches.length) {
+      const params = new URLSearchParams();
+      selectedLocalBatches.forEach((batch) => params.append("batch", batch));
+      const localResponse = await fetch(`http://127.0.0.1:8765/download-batches?${params}`, { cache: "no-store", mode: "cors" });
+      if (!localResponse.ok) throw new Error(`Local batch download failed (${localResponse.status})`);
+      await downloadZipResponse(localResponse, `ad_factory_${selectedLocalBatches.join("_")}.zip`);
+      appendLog(`Downloaded ${selectedLocalBatches.length} local batch(es).`);
+      if (selectedLocalBatches.length === selectedBatches.length) return;
+    }
+
+    const serverBatches = selectedBatches.filter((batch) => !localBatches.has(batch));
+    if (!serverBatches.length) return;
     const res = await fetch("/api/runs/download-batches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ batch_ids: selectedBatches }),
+      body: JSON.stringify({ batch_ids: serverBatches }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       appendLog(`Download failed: ${err.detail || res.statusText}`);
       return;
     }
-    const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    const disposition = res.headers.get("Content-Disposition") || "";
-    const match = disposition.match(/filename="?(.+?)"?$/);
-    a.download = match ? match[1] : `${selectedBatches.join("_")}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(a.href);
+    await downloadZipResponse(res, `${serverBatches.join("_")}.zip`);
     appendLog("Batch download complete.");
   } catch (err) {
     appendLog(`Download error: ${String(err)}`);
   }
 });
+
+async function downloadZipResponse(response, fallbackName) {
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?(.+?)"?$/);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = match ? match[1] : fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
 
 function showEngineSelector(aspectLabel = "4:5") {
   return new Promise((resolve) => {

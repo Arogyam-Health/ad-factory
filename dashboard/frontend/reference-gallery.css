@@ -1,4 +1,12 @@
 /* Reference Flow generated-image gallery only. Structured Flow keeps its existing layout. */
+body:not(:has(#referenceFlowPanel:not(.hidden))) .card-runs .image-comment-controls {
+  grid-template-columns: 1fr;
+}
+
+body:not(:has(#referenceFlowPanel:not(.hidden))) .card-runs .image-comment-box {
+  margin: 8px 0 0;
+}
+
 body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-gallery {
   display: grid;
   gap: 14px;
