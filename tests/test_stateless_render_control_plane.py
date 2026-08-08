@@ -323,7 +323,7 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "| Operations documentation | Complete (repository) |  |",
+            "| Operations documentation | Complete (repository) | `1440df0` |",
             source,
         )
 

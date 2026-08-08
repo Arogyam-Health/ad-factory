@@ -910,7 +910,7 @@ Update this table during implementation. Include commit SHA and verification res
 | Stateless Render cleanup | Complete (repository) | `ae469c4` | 13 focused stateless/read-only boundary tests, 127 current regression tests, standalone smoke, backend `py_compile`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
 | Migration | Complete (repository) | `145d7fc` | 10 focused migration tests, 137 regression tests, 406 smoke assertions, `py_compile`, lints, `git diff --check`, and Graphify update pass | Dry-run-first, hash-verified migration committed |
 | Full verification | Complete (repository) | `1761077` | 78 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload, download, event reconnect, and reload coverage; 52 Structured/Reference/lifecycle tests pass with Render content directories read-only; 141 full regression tests and 406 smoke assertions pass | Automated boundary verification committed; live ChatGPT/Gemini sessions remain final external verification |
-| Operations documentation | Complete (repository) |  | Deployment, pairing, provider storage, migration, backup/restore, replication, outage recovery, deletion, troubleshooting, and external security actions documented | Commit pending parent |
+| Operations documentation | Complete (repository) | `1440df0` | Deployment, pairing, provider storage, migration, backup/restore, replication, outage recovery, deletion, troubleshooting, and external security actions documented | Operations runbook committed |
 
 Repository implementation and automated verification are complete. Final
 production sign-off requires these external actions, which cannot be performed
