@@ -898,9 +898,9 @@ Update this table during implementation. Include commit SHA and verification res
 
 | Phase | Status | Commit | Verification | Notes |
 |---|---|---|---|---|
-| Plan and boundary | Ready |  |  | This document created |
-| Security cleanup | Complete (repository) |  | Focused security tests pass; `git diff --check` clean | Rotate external credentials separately |
-| Local schema | Pending |  |  |  |
+| Plan and boundary | Complete | `09c48a4` | Plan and boundary committed | Authoritative implementation boundary recorded |
+| Security cleanup | Complete (repository) | `5191b7f` | 3 focused security tests pass | External credential and exposed-session rotation remain outstanding |
+| Local schema | Complete (repository) |  | 11 focused schema tests and 22 existing local-agent storage/migration/runtime tests pass (33 total); local-agent `py_compile` and `git diff --check` pass | Commit pending parent |
 | Local API | Pending |  |  |  |
 | Device pairing | Pending |  |  |  |
 | Direct browser uploads | Pending |  |  |  |
