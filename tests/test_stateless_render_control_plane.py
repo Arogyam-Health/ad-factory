@@ -246,7 +246,11 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "| Stateless Render cleanup | Complete (repository) |  |",
+            "| Stateless Render cleanup | Complete (repository) | `ae469c4` |",
+            source,
+        )
+        self.assertIn(
+            "| Migration | Complete (repository) |  |",
             source,
         )
 

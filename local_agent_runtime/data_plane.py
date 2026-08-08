@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import base64
 import cgi
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import tempfile
@@ -388,6 +390,7 @@ class LocalDataPlane:
                         "prompt-xlsx",
                         "backup-restore",
                         "encrypted-config-replication",
+                        "verified-migration-import",
                         "resumable-events",
                     ],
                 },
@@ -419,6 +422,12 @@ class LocalDataPlane:
         if path == "/v1/provider-configs" or path.startswith("/v1/provider-configs/"):
             self._provider_config_route(handler, path)
             return
+        if path in {
+            "/v1/migrations/content",
+            "/v1/migrations/provider-secret",
+        }:
+            self._migration_route(handler, path)
+            return
         if path == "/v1/runs" or path.startswith("/v1/runs/"):
             self._run_route(handler, path)
             return
@@ -441,6 +450,119 @@ class LocalDataPlane:
             self._events(handler)
             return
         raise APIError(404, "not_found", "Endpoint not found")
+
+    def _migration_route(self, handler: Any, path: str) -> None:
+        """Authenticated, hash-verified one-time imports without exposing content."""
+        session = self._session(handler, "documents:write")
+        if handler.command != "POST":
+            raise APIError(405, "method_not_allowed", "Method not allowed")
+        payload = self._json_body(handler, self.service.config.max_request_bytes)
+        operation_id = self._operation_id(handler, payload)
+        if path == "/v1/migrations/provider-secret":
+            from .structured_copy import LocalProviderStore
+
+            provider = str(payload.get("provider") or "")
+            config = payload.get("config")
+            expected = str(payload.get("expected_secret_sha256") or "")
+            if (
+                provider not in {"opencode", "google_gemini"}
+                or not isinstance(config, dict)
+                or not re.fullmatch(r"[0-9a-f]{64}", expected)
+            ):
+                raise APIError(400, "migration_invalid", "Provider migration request is invalid")
+            secrets_only = {
+                key: str(config[key])
+                for key in ("api_key", "client_secret")
+                if isinstance(config.get(key), str) and config[key]
+            }
+            actual = hashlib.sha256(
+                json.dumps(
+                    secrets_only,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if not hmac.compare_digest(actual, expected):
+                raise APIError(409, "hash_mismatch", "Provider secret hash verification failed")
+            store = LocalProviderStore(self.service.config.paths)
+            store.set(session.owner_key, provider, config)
+            stored = store.get(session.owner_key, provider)
+            stored_secrets = {
+                key: str(stored[key])
+                for key in ("api_key", "client_secret")
+                if isinstance(stored.get(key), str) and stored[key]
+            }
+            verified = hashlib.sha256(
+                json.dumps(
+                    stored_secrets,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if not hmac.compare_digest(verified, expected):
+                raise APIError(409, "hash_mismatch", "Stored provider secret verification failed")
+            self._json(
+                handler,
+                200,
+                {
+                    "provider": provider,
+                    "verified": True,
+                    "device_id": self.device_id,
+                    "operation_id": operation_id,
+                },
+            )
+            return
+
+        encoded = payload.get("content_base64")
+        expected = str(payload.get("expected_sha256") or "")
+        kind = self._safe_logical_key(str(payload.get("kind") or ""))
+        logical_key = self._safe_logical_key(str(payload.get("logical_key") or ""))
+        media_type = str(payload.get("media_type") or "application/octet-stream")[:128]
+        if not isinstance(encoded, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise APIError(400, "migration_invalid", "Content migration request is invalid")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise APIError(400, "migration_invalid", "Content encoding is invalid") from exc
+        if len(content) > self.service.config.max_upload_bytes:
+            raise APIError(413, "body_too_large", "Migration content exceeds the allowed limit")
+        digest = hashlib.sha256(content).hexdigest()
+        if not hmac.compare_digest(digest, expected):
+            raise APIError(409, "hash_mismatch", "Content hash verification failed")
+        temporary = self.service.config.paths.staging / f".migration-{uuid.uuid4().hex}.tmp"
+        temporary.write_bytes(content)
+        try:
+            existing = self._resource_record(
+                session.owner_key, kind=kind, logical_key=logical_key
+            )
+            version = self.state.put_resource(
+                source=temporary,
+                owner_key=session.owner_key,
+                kind=kind,
+                logical_key=logical_key,
+                resource_id=existing["resource_id"] if existing else None,
+                operation_id=operation_id,
+                media_type=media_type,
+                metadata={"migration_operation_id": operation_id},
+            )
+            stored_digest = hashlib.sha256(version.path.read_bytes()).hexdigest()
+            if not hmac.compare_digest(stored_digest, expected):
+                raise APIError(409, "hash_mismatch", "Stored content verification failed")
+        finally:
+            temporary.unlink(missing_ok=True)
+        self._json(
+            handler,
+            201,
+            {
+                "resource_id": version.resource_id,
+                "version": version.version,
+                "sha256": version.object_sha256,
+                "device_id": self.device_id,
+                "operation_id": operation_id,
+            },
+        )
 
     def _provider_config_route(self, handler: Any, path: str) -> None:
         from .structured_copy import LocalProviderStore
