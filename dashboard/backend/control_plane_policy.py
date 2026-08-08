@@ -18,10 +18,13 @@ _FORBIDDEN_FIELD_PARTS = frozenset(
         "content",
         "file_path",
         "files",
+        "browser_log",
         "local_path",
         "localhost_url",
+        "log_body",
         "payload",
         "prompt_text",
+        "raw_log",
         "request",
         "response",
         "secret",
@@ -146,7 +149,19 @@ def validate_metadata_document(
                 if (
                     key in _FORBIDDEN_FIELD_PARTS
                     or key in _SECRET_FIELD_PARTS
-                    or key.endswith(("_body", "_content", "_path", "_secret", "_url"))
+                    or key.endswith(
+                        (
+                            "_body",
+                            "_capability",
+                            "_content",
+                            "_log",
+                            "_path",
+                            "_request",
+                            "_response",
+                            "_secret",
+                            "_url",
+                        )
+                    )
                     or "base64" in key
                 ):
                     raise ValueError(

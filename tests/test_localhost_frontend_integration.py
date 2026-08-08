@@ -86,6 +86,20 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertNotIn("?token=", combined)
         self.assertNotIn("searchParams.set(\"token\"", combined)
 
+    def test_authenticated_local_event_stream_resumes_from_sequence(self) -> None:
+        client = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
+            encoding="utf-8"
+        )
+        runs = (ROOT / "dashboard/frontend/js/runs.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("async streamEvents({", client)
+        self.assertIn("/v1/events?after=", client)
+        self.assertIn("Authorization", client)
+        self.assertIn("cursor = Math.max", client)
+        self.assertIn("localDataPlane.streamEvents({", runs)
+        self.assertIn("localDataEventStreams", runs)
+
     def test_structured_run_stages_versioned_conversion_prompt_only_to_localhost(self) -> None:
         main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
         self.assertIn("conversionPromptResource", main)

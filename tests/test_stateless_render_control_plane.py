@@ -8,6 +8,56 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+LEGACY_CONTENT_REQUESTS = (
+    ("GET", "/api/defaults"),
+    ("GET", "/api/google/models"),
+    ("GET", "/api/input-images"),
+    ("GET", "/api/input-prompt"),
+    ("GET", "/api/opencode/catalog"),
+    ("GET", "/api/product-doc"),
+    ("GET", "/api/prompt-file-content"),
+    ("POST", "/api/runs/cancel-current"),
+    ("GET", "/api/runs/download-batches"),
+    ("POST", "/api/runs/execute"),
+    ("GET", "/api/storage/info"),
+    ("POST", "/api/upload-input-images"),
+    ("PUT", "/api/user/config"),
+    ("GET", "/api/user/json-blobs/bootstrap"),
+    ("GET", "/api/admin/configs"),
+    ("GET", "/api/admin/provider-configs"),
+    ("GET", "/api/config/example"),
+    ("GET", "/api/file-content/example"),
+    ("GET", "/api/files/download/image/example"),
+    ("GET", "/api/generic-config"),
+    ("GET", "/api/llm-traces/example"),
+    ("GET", "/api/reference-images"),
+    ("GET", "/api/reference-workspace"),
+    ("GET", "/api/seeds"),
+    ("GET", "/api/user/json-blobs/example"),
+    ("POST", "/api/batch/generate-images-both"),
+    ("PUT", "/api/user/provider-config/google"),
+    ("PUT", "/api/orgs/org_1/config"),
+    ("GET", "/api/orgs/org_1/configs/shared"),
+    ("POST", "/api/runs/execute-reference"),
+    ("GET", "/api/runs/run_1/content"),
+    ("DELETE", "/api/runs/run_1/delete-image"),
+    ("DELETE", "/api/runs/run_1/delete-prompt"),
+    ("GET", "/api/runs/run_1/download-batch"),
+    ("GET", "/api/runs/run_1/download-image"),
+    ("PUT", "/api/runs/run_1/edit-prompt"),
+    ("GET", "/api/runs/run_1/export-on-image-copy"),
+    ("POST", "/api/runs/run_1/generate-916"),
+    ("POST", "/api/runs/run_1/generate-916-selected"),
+    ("POST", "/api/runs/run_1/generate-images-45"),
+    ("POST", "/api/runs/run_1/generate-images-916-from-45"),
+    ("POST", "/api/runs/run_1/import-on-image-copy"),
+    ("POST", "/api/runs/run_1/mark-images-to-regenerate"),
+    ("GET", "/api/runs/run_1/prompt-copies"),
+    ("POST", "/api/runs/run_1/regenerate-queued-images"),
+    ("POST", "/api/runs/run_1/replace-image"),
+    ("POST", "/api/runs/run_1/restore-images-from-queue"),
+    ("POST", "/api/runs/run_1/revise-image"),
+)
 
 
 class StatelessRenderControlPlaneTests(unittest.TestCase):
@@ -38,17 +88,7 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
         policy = importlib.import_module(
             "dashboard.backend.control_plane_policy"
         )
-        blocked = (
-            ("POST", "/api/runs/execute"),
-            ("POST", "/api/batch/generate-images-both"),
-            ("POST", "/api/runs/run_1/generate-916-selected"),
-            ("PUT", "/api/user/config"),
-            ("PUT", "/api/user/json-blobs/persona_seeds"),
-            ("GET", "/api/files/download/image/image_1"),
-            ("POST", "/api/runs/run_1/replace-image"),
-            ("GET", "/api/generic-config"),
-        )
-        for method, path in blocked:
+        for method, path in LEGACY_CONTENT_REQUESTS:
             self.assertTrue(
                 policy.is_render_content_route(method, path),
                 f"{method} {path} must be blocked",
@@ -88,17 +128,7 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
                 client = TestClient(app_module.app)
                 self.assertEqual(client.get("/healthz").status_code, 200)
                 self.assertEqual(client.get("/api/version").status_code, 200)
-                requests = (
-                    ("POST", "/api/runs/execute"),
-                    ("POST", "/api/batch/generate-images-both"),
-                    ("POST", "/api/runs/run_1/generate-916-selected"),
-                    ("PUT", "/api/user/config"),
-                    ("PUT", "/api/user/json-blobs/persona_seeds"),
-                    ("GET", "/api/files/download/image/image_1"),
-                    ("POST", "/api/runs/run_1/replace-image"),
-                    ("GET", "/api/generic-config"),
-                )
-                for method, path in requests:
+                for method, path in LEGACY_CONTENT_REQUESTS:
                     response = client.request(
                         method,
                         path,
@@ -128,10 +158,36 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             {"local_path": "/tmp/output.png"},
             {"url": "http://127.0.0.1:8765/resource"},
             {"comment": "revision instruction"},
+            {"document_body": "full product document"},
+            {"config_body": "full user configuration"},
+            {"llm_request": {"messages": ["full request"]}},
+            {"llm_response": {"text": "full response"}},
+            {"local_capability": "permanent-local-capability"},
+            {"absolute_local_path": r"C:\Users\owner\output.png"},
+            {"browser_log": "raw browser console output"},
         )
         for document in forbidden:
             with self.assertRaises(ValueError):
                 policy.validate_metadata_document("runs", document)
+
+    def test_readyz_reports_no_control_plane_content_storage(self) -> None:
+        from unittest.mock import patch
+
+        from fastapi.testclient import TestClient
+        from dashboard.backend import control_app as app_module
+
+        class _DB:
+            @staticmethod
+            def command(name: str) -> dict[str, int]:
+                return {"ok": 1} if name == "ping" else {}
+
+        with patch("dashboard.backend.db.client.get_sync_db", return_value=_DB()):
+            response = TestClient(app_module.app).get("/api/readyz")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"status": "ready", "mongodb": True, "content_storage": False},
+        )
 
     def test_mongo_metadata_validator_accepts_target_projections(self) -> None:
         policy = importlib.import_module(
@@ -254,6 +310,7 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             source,
         )
         self.assertIn("| Full verification | Complete (repository) |  |", source)
+        self.assertIn("| Operations documentation | Pending |  |", source)
 
     def test_feature_parity_checklist_is_complete(self) -> None:
         source = (ROOT / "LOCAL_DATA_PLANE_IMPLEMENTATION.md").read_text(

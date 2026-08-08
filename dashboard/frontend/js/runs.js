@@ -410,6 +410,7 @@ let structuredLocalImages = [];
 let localArtifactSignature = "";
 let localManifestRefreshInFlight = false;
 let localArtifactEventSource = null;
+const localDataEventStreams = new Map();
 
 function displayBatch(run) {
   return run?.display_batch || (run?.run_number ? `v${run.run_number}` : run?.batch) || "-";
@@ -585,6 +586,15 @@ export function applyLocalArtifactsToRuns() {
 export async function refreshStructuredLocalOutputs() {
   const user = getAuthUser();
   if (!user?.user_id) return;
+  const activeDeviceIds = new Set(
+    state.runsData.map((run) => run?.device_id).filter(Boolean),
+  );
+  for (const [deviceId, stream] of localDataEventStreams) {
+    if (!activeDeviceIds.has(deviceId)) {
+      stream.controller.abort();
+      localDataEventStreams.delete(deviceId);
+    }
+  }
   const previous = new Map(
     structuredLocalImages.map((image) => [
       `${image.output_id}:${image.output_version}`,
@@ -606,6 +616,26 @@ export async function refreshStructuredLocalOutputs() {
         deviceId: run.device_id,
         agentId: run.agent_id,
       });
+      if (!localDataEventStreams.has(run.device_id)) {
+        const controller = new AbortController();
+        const stream = { controller, cursor: 0 };
+        localDataEventStreams.set(run.device_id, stream);
+        localDataPlane.streamEvents({
+          after: stream.cursor,
+          deviceId: run.device_id,
+          signal: controller.signal,
+          onEvent: async (event) => {
+            stream.cursor = Math.max(stream.cursor, Number(event.sequence) || 0);
+            await refreshStructuredLocalOutputs();
+          },
+        }).catch(() => {
+          // The authenticated stream reconnects internally; polling remains available.
+        }).finally(() => {
+          if (localDataEventStreams.get(run.device_id) === stream) {
+            localDataEventStreams.delete(run.device_id);
+          }
+        });
+      }
       const outputs = await localDataPlane.listOutputs(run.run_id, run.device_id);
       run.local_device_status = "online";
       for (const output of outputs) {

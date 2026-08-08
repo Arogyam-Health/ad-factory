@@ -61,7 +61,20 @@ try {{
     [new File([new Uint8Array([137,80,78,71,13,10,26,10,1,2,3])], "product.png", {{ type: "image/png" }})],
     {{ kind: "product_image", deviceId, operationId: "browser-e2e-upload" }},
   );
-  window.__result = {{ envelope, uploaded }};
+  const download = await client.downloadRun("run_browser_e2e", deviceId);
+  const events = [];
+  const controller = new AbortController();
+  await client.streamEvents({{
+    after: 0,
+    deviceId,
+    signal: controller.signal,
+    reconnectDelay: 1,
+    onEvent(event) {{
+      events.push(event);
+      if (events.length === 2) controller.abort();
+    }},
+  }});
+  window.__result = {{ envelope, uploaded, downloadBytes: download.size, events }};
 }} catch (error) {{
   window.__error = String(error?.stack || error);
 }}
@@ -110,6 +123,36 @@ class _LocalDataPlaneHandler(BaseHTTPRequestHandler):
             "Access-Control-Allow-Headers", "Authorization, Idempotency-Key"
         )
         self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        self.server.requests.append(
+            {"path": self.path, "headers": dict(self.headers), "body": b""}
+        )
+        if self.path == "/v1/runs/run_browser_e2e/download":
+            body = b"PK\x03\x04browser-e2e-zip"
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith("/v1/events?after="):
+            sequence = int(self.path.rsplit("=", 1)[-1]) + 1
+            body = (
+                f"id: {sequence}\n"
+                f"data: {{\"sequence\":{sequence},\"operation\":\"updated\"}}\n\n"
+            ).encode()
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self._cors()
         self.end_headers()
 
     def do_POST(self) -> None:
@@ -248,6 +291,15 @@ class BrowserLocalDataPlaneE2ETests(unittest.TestCase):
                             page.evaluate("window.__result.uploaded[0].resource_id"),
                             "res_browser_e2e",
                         )
+                        self.assertGreater(
+                            page.evaluate("window.__result.downloadBytes"), 4
+                        )
+                        self.assertEqual(
+                            page.evaluate(
+                                "window.__result.events.map((event) => event.sequence)"
+                            ),
+                            [1, 2],
+                        )
                     browser.close()
             finally:
                 dashboard.shutdown()
@@ -268,6 +320,20 @@ class BrowserLocalDataPlaneE2ETests(unittest.TestCase):
         ]
         self.assertEqual(len(render_posts), 2)
         self.assertEqual(len(local_posts), 2)
+        self.assertEqual(
+            len(
+                [
+                    request
+                    for request in local.requests
+                    if request["path"] == "/v1/runs/run_browser_e2e/download"
+                    and any(
+                        str(key).lower() == "authorization"
+                        for key in request["headers"]
+                    )
+                ]
+            ),
+            2,
+        )
         for request in render_posts:
             payload = json.loads(request["body"])
             serialized = json.dumps(payload).lower()

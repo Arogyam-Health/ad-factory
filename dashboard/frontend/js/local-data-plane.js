@@ -552,6 +552,58 @@ export class LocalDataPlaneClient {
     return response.blob();
   }
 
+  async streamEvents({
+    after = 0,
+    deviceId,
+    onEvent,
+    signal,
+    reconnectDelay = 1000,
+  } = {}) {
+    let cursor = Math.max(0, Number(after) || 0);
+    while (!signal?.aborted) {
+      try {
+        const response = await this.authorizedFetch(
+          `/v1/events?after=${encodeURIComponent(cursor)}`,
+          {
+            method: "GET",
+            cache: "no-store",
+            headers: { Accept: "text/event-stream" },
+            signal,
+          },
+          deviceId,
+        );
+        if (!response.ok) await readJson(response);
+        if (!response.body) throw new Error("Local event stream is unavailable");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!signal?.aborted) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+          const frames = buffer.split(/\r?\n\r?\n/);
+          buffer = frames.pop() || "";
+          for (const frame of frames) {
+            const data = frame
+              .split(/\r?\n/)
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.slice(5).trim())
+              .join("\n");
+            if (!data) continue;
+            const event = JSON.parse(data);
+            cursor = Math.max(cursor, Number(event.sequence) || cursor);
+            await onEvent?.(event);
+            if (signal?.aborted) return cursor;
+          }
+          if (done) break;
+        }
+      } catch (error) {
+        if (signal?.aborted || error?.name === "AbortError") return cursor;
+      }
+      if (!signal?.aborted) await delay(Math.max(0, reconnectDelay));
+    }
+    return cursor;
+  }
+
   async exportBackup(deviceId) {
     const response = await this.authorizedFetch("/v1/backup", { method: "GET" }, deviceId);
     if (!response.ok) await readJson(response);
