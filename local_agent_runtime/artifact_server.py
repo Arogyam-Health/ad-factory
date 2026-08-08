@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from .data_plane import LocalDataPlane
 from .storage import AgentPaths, AgentState, artifact_access_token
 
 
@@ -26,9 +27,11 @@ class ArtifactServerConfig:
     port: int = 8765
     allowed_origins: tuple[str, ...] = (
         "https://ad-factory-3rn5.onrender.com",
-        "http://localhost:4090",
-        "http://127.0.0.1:4090",
     )
+    max_upload_bytes: int = 25 * 1024 * 1024
+    max_request_bytes: int = 100 * 1024 * 1024
+    challenge_ttl_seconds: int = 120
+    session_ttl_seconds: int = 15 * 60
 
 
 class ArtifactServer:
@@ -39,6 +42,23 @@ class ArtifactServer:
         self.started_at = time.time()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self.data_plane = LocalDataPlane(self)
+
+    def approve_pairing_challenge(
+        self,
+        challenge_id: str,
+        challenge: str,
+        *,
+        owner_key: str,
+        scopes: list[str] | tuple[str, ...],
+    ) -> None:
+        """Accept an approval delivered by the authenticated agent channel."""
+        self.data_plane.approve_challenge(
+            challenge_id,
+            challenge,
+            owner_key=owner_key,
+            scopes=scopes,
+        )
 
     @property
     def url(self) -> str:
@@ -133,6 +153,8 @@ class ArtifactServer:
                 self._json(status, {"error": {"code": code, "message": message}})
 
             def do_OPTIONS(self) -> None:
+                if service.data_plane.dispatch(self):
+                    return
                 if not self._origin_allowed():
                     self._error(403, "origin_forbidden", "Origin is not allowed")
                     return
@@ -142,6 +164,8 @@ class ArtifactServer:
                 self.end_headers()
 
             def do_GET(self) -> None:
+                if service.data_plane.dispatch(self):
+                    return
                 if not self._origin_allowed():
                     self._error(403, "origin_forbidden", "Origin is not allowed")
                     return
@@ -271,6 +295,14 @@ class ArtifactServer:
                 self._error(404, "not_found", "Endpoint not found")
 
             def do_DELETE(self) -> None:
+                if service.data_plane.dispatch(self):
+                    return
+                self._error(
+                    405,
+                    "legacy_read_only",
+                    "Legacy artifact endpoints are read-only; use the scoped /v1 API",
+                )
+                return
                 if not self._origin_allowed():
                     self._error(403, "origin_forbidden", "Origin is not allowed")
                     return
@@ -294,6 +326,14 @@ class ArtifactServer:
                 self._json(200, {"status": "deleted", "artifact_id": artifact_id})
 
             def do_POST(self) -> None:
+                if service.data_plane.dispatch(self):
+                    return
+                self._error(
+                    405,
+                    "legacy_read_only",
+                    "Legacy artifact endpoints are read-only; use the scoped /v1 API",
+                )
+                return
                 if not self._origin_allowed():
                     self._error(403, "origin_forbidden", "Origin is not allowed")
                     return
@@ -333,6 +373,16 @@ class ArtifactServer:
                 })
                 revision["status_url"] = f"{service.url}/revisions/{revision['revision_id']}?{capability}"
                 self._json(202, revision)
+
+            def do_HEAD(self) -> None:
+                if service.data_plane.dispatch(self):
+                    return
+                self._error(404, "not_found", "Endpoint not found")
+
+            def do_PUT(self) -> None:
+                if service.data_plane.dispatch(self):
+                    return
+                self._error(404, "not_found", "Endpoint not found")
 
         return Handler
 

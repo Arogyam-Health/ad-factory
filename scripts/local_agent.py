@@ -1238,11 +1238,7 @@ def run_supervisor(args: argparse.Namespace) -> None:
         raise SystemExit(str(exc)) from exc
 
     origin = urllib.parse.urlparse(AGENT_API_BASE)
-    allowed_origins = tuple(dict.fromkeys([
-        f"{origin.scheme}://{origin.netloc}",
-        "http://localhost:4090",
-        "http://127.0.0.1:4090",
-    ]))
+    allowed_origins = (f"{origin.scheme}://{origin.netloc}",)
     context = multiprocessing.get_context("spawn")
     artifact_process = context.Process(
         target=run_artifact_server,

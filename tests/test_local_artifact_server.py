@@ -135,23 +135,26 @@ class LocalArtifactServerTests(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, 404)
 
-    def test_revision_request_is_durably_queued(self) -> None:
-        with self.post_json(
-            "/revisions",
-            {
-                "image_file": f"{self.server.url}/files/{self.artifact.artifact_id}",
-                "comment": "Make the headline larger",
-                "engine": "chatgpt",
-            },
-        ) as response:
-            queued = json.loads(response.read())
-        self.assertEqual(response.status, 202)
-        self.assertEqual(queued["status"], "queued")
-
-        with self.request(f"/revisions/{queued['revision_id']}") as response:
-            status = json.loads(response.read())
-        self.assertEqual(status["status"], "queued")
-        self.assertEqual(status["artifact_id"], self.artifact.artifact_id)
+    def test_legacy_revision_mutation_is_read_only(self) -> None:
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post_json(
+                "/revisions",
+                {
+                    "image_file": f"{self.server.url}/files/{self.artifact.artifact_id}",
+                    "comment": "Make the headline larger",
+                    "engine": "chatgpt",
+                },
+            )
+        self.assertEqual(caught.exception.code, 405)
+        request = urllib.request.Request(
+            self.server.url
+            + f"/files/{self.artifact.artifact_id}?"
+            + urllib.parse.urlencode({"owner": self.owner, "token": self.token}),
+            method="DELETE",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=3)
+        self.assertEqual(caught.exception.code, 405)
 
     def test_batch_download_streams_published_artifacts(self) -> None:
         with self.request("/download-batches?run_id=run-1") as response:
