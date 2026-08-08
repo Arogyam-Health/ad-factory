@@ -399,6 +399,25 @@ export class LocalDataPlaneClient {
       deviceId,
     ));
   }
+
+  async listOutputs(runId, deviceId) {
+    const payload = await readJson(await this.authorizedFetch(
+      `/v1/runs/${encodeURIComponent(runId)}/outputs`,
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    ));
+    return payload.items || [];
+  }
+
+  async outputObjectUrl(outputId, deviceId) {
+    const response = await this.authorizedFetch(
+      `/v1/outputs/${encodeURIComponent(outputId)}/content`,
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    );
+    if (!response.ok) await readJson(response);
+    return URL.createObjectURL(await response.blob());
+  }
 }
 
 export const localDataPlane = new LocalDataPlaneClient();
@@ -416,5 +435,7 @@ if (typeof window !== "undefined") {
     getProviderConfig: (...args) => localDataPlane.getProviderConfig(...args),
     putProviderConfig: (...args) => localDataPlane.putProviderConfig(...args),
     deleteProviderConfig: (...args) => localDataPlane.deleteProviderConfig(...args),
+    listOutputs: (...args) => localDataPlane.listOutputs(...args),
+    outputObjectUrl: (...args) => localDataPlane.outputObjectUrl(...args),
   });
 }

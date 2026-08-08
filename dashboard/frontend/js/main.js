@@ -517,6 +517,21 @@ async function runPipeline() {
       try { return JSON.parse(value || ""); } catch { return fallback; }
     };
     const personaSeeds = parseConfigJSON("persona_seeds", []);
+    const conversionPromptText = String(sourceConfig.conversion_916_prompt || "").trim();
+    if (!conversionPromptText) {
+      throw new Error("A local 9:16 conversion prompt is required before starting this run.");
+    }
+    const conversionPromptResource = await localDataPlane.putText(
+      "configs",
+      `${envelope.run_id}-conversion-916`,
+      conversionPromptText,
+      {
+        deviceId: structuredDeviceId,
+        operationId: `${envelope.run_id}-conversion-916`,
+        runId: envelope.run_id,
+        role: "conversion_prompt",
+      },
+    );
     const personaByNumber = new Map(
       (Array.isArray(personaSeeds) ? personaSeeds : Object.values(personaSeeds || {}))
         .map((persona) => [Number(persona.persona_number || persona.number), persona]),
@@ -570,6 +585,10 @@ async function runPipeline() {
           bytes: item.bytes,
           status: item.status,
         })),
+        "conversion_prompt": {
+          resource_id: conversionPromptResource.resource_id,
+          version: conversionPromptResource.version,
+        },
         planned_ads: plannedAds,
         prompt_assembler_templates: parseConfigJSON("prompt_assembler_templates", {}),
         source_config: {

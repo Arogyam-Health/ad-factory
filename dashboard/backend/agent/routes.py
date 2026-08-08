@@ -318,7 +318,7 @@ def report_progress(
 
 
 @router.post("/api/agents/jobs/{job_id}/projection")
-def record_structured_copy_projection(
+def record_local_generation_projection(
     job_id: str,
     payload: dict[str, Any] = Body(...),
     agent: dict[str, Any] = Depends(_get_agent_from_header),
@@ -353,6 +353,15 @@ def record_structured_copy_projection(
         "settings_resource_version",
         "product_document_resource_id",
         "product_document_version",
+        "engine",
+        "mode",
+        "total_count",
+        "completed_count",
+        "output_count",
+        "retry_count",
+        "latest_output_id",
+        "latest_output_version",
+        "latest_output_sha256",
         "error_code",
     }
     if not isinstance(projection, dict) or set(projection) - allowed:
@@ -380,11 +389,17 @@ def record_structured_copy_projection(
             or any(not isinstance(value, str) or not identifier.fullmatch(value) for value in values)
         ):
             raise HTTPException(status_code=400, detail="Projection IDs are invalid")
-    for key in ("request_sha256", "response_sha256", "copy_sha256"):
+    for key in (
+        "request_sha256",
+        "response_sha256",
+        "copy_sha256",
+        "latest_output_sha256",
+    ):
         value = projection.get(key)
         if value is not None and not re.fullmatch(r"[a-f0-9]{64}", str(value)):
             raise HTTPException(status_code=400, detail="Projection hash is invalid")
     if projection.get("job_id") != job_id or projection.get("status") not in {
+        "running",
         "completed",
         "failed",
     }:
@@ -402,18 +417,28 @@ def record_structured_copy_projection(
     )
     if not job or str(job.get("run_id") or "") != str(projection.get("run_id") or ""):
         raise HTTPException(status_code=409, detail="Stale or invalid projection")
+    projection_field = (
+        "image_generation"
+        if any(
+            key in projection
+            for key in ("output_count", "completed_count", "latest_output_id")
+        )
+        else "copy_generation"
+    )
+    updates: dict[str, Any] = {
+        projection_field: {
+            **projection,
+            "event_id": str(payload.get("event_id") or "")[:80],
+        },
+        "updated_at": time.time(),
+    }
+    if projection_field == "image_generation":
+        updates["image_count"] = int(projection.get("completed_count") or 0)
+    else:
+        updates["prompt_count"] = int(projection.get("prompt_count") or 0)
     db[COLL_RUNS].update_one(
         {"run_id": projection["run_id"]},
-        {
-            "$set": {
-                "copy_generation": {
-                    **projection,
-                    "event_id": str(payload.get("event_id") or "")[:80],
-                },
-                "prompt_count": int(projection.get("prompt_count") or 0),
-                "updated_at": time.time(),
-            }
-        },
+        {"$set": updates},
     )
     return {"status": "accepted"}
 

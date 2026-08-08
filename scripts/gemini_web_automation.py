@@ -99,6 +99,16 @@ def parse_args() -> argparse.Namespace:
         help="Starter prompt prepended to each prompt before sending. Use an empty value to disable.",
     )
     parser.add_argument("--image-source-file", default="")
+    parser.add_argument(
+        "--upload-manifest",
+        default="",
+        help="Explicit ordered local JSON upload manifest. Takes precedence over legacy image sources.",
+    )
+    parser.add_argument(
+        "--result-manifest",
+        default="",
+        help="Optional local JSON file receiving the exact generated output path.",
+    )
     parser.add_argument("--upload-dir", default=str(Path.home() / "myspace/info/input/images"),
                         help="Directory containing reference images to upload")
     parser.add_argument("--logo-key", default="LIGHT_LOGO_URL")
@@ -490,6 +500,26 @@ def parse_image_source_file(path: Path, logo_key: str) -> list[str]:
         regular_sources.append(line)
     selected_logo = logo_map.get(logo_key, "")
     return ([selected_logo] + regular_sources) if selected_logo else regular_sources
+
+
+def parse_upload_manifest(path: Path) -> list[Path]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("Upload manifest requires ordered entries")
+    resolved: list[Path] = []
+    for expected_position, entry in enumerate(entries, start=1):
+        if (
+            not isinstance(entry, dict)
+            or int(entry.get("position") or 0) != expected_position
+            or entry.get("role") not in {"product", "logo", "reference", "source_creative", "replacement"}
+        ):
+            raise ValueError("Upload manifest entries are invalid or unordered")
+        image = Path(str(entry.get("path") or "")).expanduser()
+        if not image.is_absolute() or not image.is_file() or image.suffix.lower() not in IMAGE_EXTS:
+            raise ValueError("Upload manifest contains an invalid local image")
+        resolved.append(image.resolve())
+    return resolved
 
 
 def is_url(value: str) -> bool:
@@ -3538,7 +3568,11 @@ def run() -> None:
 
     with tempfile.TemporaryDirectory(prefix="gemini_uploads_") as tmp:
         temp_dir = Path(tmp)
-        if args.image_source_file:
+        if args.upload_manifest:
+            upload_paths = parse_upload_manifest(
+                Path(args.upload_manifest).expanduser().resolve()
+            )
+        elif args.image_source_file:
             source_file = Path(args.image_source_file).expanduser().resolve()
             image_sources = parse_image_source_file(source_file, args.logo_key)
             upload_paths = build_local_image_paths(image_sources, temp_dir)
@@ -3666,6 +3700,13 @@ def run() -> None:
                         log_progress("done", f"Job {idx} SUCCESS: {saved_path} ({saved_path.stat().st_size} bytes)")
                         print(f"  SUCCESS: saved {saved_path} ({saved_path.stat().st_size} bytes)")
                         results.append({"job": job.job_key, "status": "success", "file": str(saved_path)})
+                        if args.result_manifest:
+                            result_path = Path(args.result_manifest).expanduser().resolve()
+                            result_path.parent.mkdir(parents=True, exist_ok=True)
+                            result_path.write_text(
+                                json.dumps({"output_path": str(saved_path.resolve())}) + "\n",
+                                encoding="utf-8",
+                            )
                         if args.sleep_after_download > 0:
                             print(f"  Waiting {args.sleep_after_download:g}s before next prompt tab...")
                             time.sleep(args.sleep_after_download)

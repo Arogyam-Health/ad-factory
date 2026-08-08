@@ -905,8 +905,8 @@ Update this table during implementation. Include commit SHA and verification res
 | Device pairing | Complete (repository) | `9ade08a` | 8 focused pairing tests and 51 existing local-agent/API tests pass (59 total); `py_compile`, frontend `node --check`, and `git diff --check` pass | Committed by parent |
 | Direct browser uploads | Complete (repository) | `7250fd7` | 9 focused allocation/frontend/network-boundary tests and 35 relevant pairing/local-data-plane/transport tests pass (44 total); `py_compile`, edited frontend `node --check`, and `git diff --check` pass | Committed by parent |
 | Metadata-only jobs | Complete (repository) | `7ec1845` | 14 focused metadata-job tests and 58 existing agent/local-data-plane tests pass (72 total); `py_compile` passes | Committed by parent; full smoke has 3 pre-existing environment/startup failures with Mongo unavailable |
-| Local structured copy | Complete (repository) |  | 6 focused structured-copy tests and 71 existing agent/local-data-plane tests pass (77 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Commit pending parent |
-| Local structured images | Pending |  |  |  |
+| Local structured copy | Complete (repository) | `d736a89` | 6 focused structured-copy tests and 71 existing agent/local-data-plane tests pass (77 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
+| Local structured images | Complete (repository) |  | 8 focused deterministic browser tests and 55 structured/local-data-plane/control/frontend regressions pass (63 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Commit pending parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
 | Local reference flow | Pending |  |  |  |
 | Local lifecycle parity | Pending |  |  |  |
 | Stateless Render cleanup | Pending |  |  |  |

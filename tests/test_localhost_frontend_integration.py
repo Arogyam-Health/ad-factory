@@ -86,6 +86,23 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertNotIn("?token=", combined)
         self.assertNotIn("searchParams.set(\"token\"", combined)
 
+    def test_structured_run_stages_versioned_conversion_prompt_only_to_localhost(self) -> None:
+        main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
+        self.assertIn("conversionPromptResource", main)
+        self.assertIn('role: "conversion_prompt"', main)
+        self.assertIn('"conversion_prompt": {', main)
+        self.assertIn("resource_id: conversionPromptResource.resource_id", main)
+        self.assertIn("version: conversionPromptResource.version", main)
+        generation_clients = "\n".join(
+            (ROOT / relative).read_text(encoding="utf-8")
+            for relative in (
+                "dashboard/frontend/js/prompts.js",
+                "dashboard/frontend/js/runs.js",
+            )
+        )
+        self.assertNotIn("conversion_916_prompt", generation_clients)
+        self.assertNotIn("conversion_prompt_text", generation_clients)
+
     def test_browser_network_harness_keeps_bytes_local_and_render_metadata_only(self) -> None:
         module_uri = (
             ROOT / "dashboard/frontend/js/local-data-plane.js"

@@ -154,7 +154,7 @@ export function buildPromptEditor(run, container, promptsData) {
         clearBtn.onclick = () => items.forEach((it) => { it.checkbox.checked = false; });
 
         generate45Btn.onclick = async () => {
-          const selected = items.filter((it) => it.checkbox.checked).map((it) => it.promptFile);
+          const selected = items.filter((it) => it.checkbox.checked && it.promptId).map((it) => it.promptId);
           if (!selected.length) { appendLog("Select at least one prompt."); return; }
 
           const engine = await showEngineSelector("4:5");
@@ -167,7 +167,7 @@ export function buildPromptEditor(run, container, promptsData) {
             const data = await fetchJSON(`/api/runs/${run.run_id}/generate-images-45`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt_files: selected, headless: state.headlessModeEnabled, engine }),
+              body: JSON.stringify({ prompt_ids: selected, engine }),
             });
             const batchKey = data.batch || data.run_id || "";
             if (batchKey && state.headlessModeEnabled) {
@@ -183,7 +183,7 @@ export function buildPromptEditor(run, container, promptsData) {
         };
 
         generate916Btn.onclick = async () => {
-          const selected = items.filter((it) => it.checkbox.checked).map((it) => it.promptFile);
+          const selected = items.filter((it) => it.checkbox.checked && it.promptId).map((it) => it.promptId);
           if (!selected.length) { appendLog("Select at least one prompt."); return; }
           const engine = await showEngineSelector("9:16");
           if (!engine) return;
@@ -195,7 +195,7 @@ export function buildPromptEditor(run, container, promptsData) {
             const data = await fetchJSON(`/api/runs/${run.run_id}/generate-images-916-from-45`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt_files: selected, headless: state.headlessModeEnabled, engine }),
+              body: JSON.stringify({ prompt_ids: selected, engine }),
             });
             const batchKey = data.batch || data.run_id || "";
             if (batchKey && state.headlessModeEnabled) {
@@ -379,7 +379,12 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
     }
   };
 
-  items.push({ promptFile: prompt.prompt_file, personaNumber: prompt.persona_number, checkbox });
+  items.push({
+    promptFile: prompt.prompt_file,
+    promptId: pp?.prompt_id || prompt.prompt_id || "",
+    personaNumber: prompt.persona_number,
+    checkbox,
+  });
   return card;
 }
 

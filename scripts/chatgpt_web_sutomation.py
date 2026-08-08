@@ -201,6 +201,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--image-source-file", default="", help="Optional text file of image paths/URLs to upload")
     parser.add_argument(
+        "--upload-manifest",
+        default="",
+        help="Explicit ordered local JSON upload manifest. Takes precedence over legacy image sources.",
+    )
+    parser.add_argument(
+        "--result-manifest",
+        default="",
+        help="Optional local JSON file receiving the exact generated output path.",
+    )
+    parser.add_argument(
         "--upload-dir",
         default="",
         help="Optional directory of reference images to upload. If empty, no directory upload is used.",
@@ -593,6 +603,26 @@ def parse_image_source_file(path: Path) -> list[str]:
         if line:
             sources.append(line)
     return sources
+
+
+def parse_upload_manifest(path: Path) -> list[Path]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("Upload manifest requires ordered entries")
+    resolved: list[Path] = []
+    for expected_position, entry in enumerate(entries, start=1):
+        if (
+            not isinstance(entry, dict)
+            or int(entry.get("position") or 0) != expected_position
+            or entry.get("role") not in {"product", "logo", "reference", "source_creative", "replacement"}
+        ):
+            raise ValueError("Upload manifest entries are invalid or unordered")
+        image = Path(str(entry.get("path") or "")).expanduser()
+        if not image.is_absolute() or not image.is_file() or image.suffix.lower() not in IMAGE_EXTS:
+            raise ValueError("Upload manifest contains an invalid local image")
+        resolved.append(image.resolve())
+    return resolved
 
 
 def build_local_image_paths(sources: list[str], temp_dir: Path) -> list[Path]:
@@ -3075,7 +3105,11 @@ def run() -> None:
 
     with tempfile.TemporaryDirectory(prefix="chatgpt-auto-refs-") as tmp:
         temp_dir = Path(tmp)
-        upload_images_for_all_jobs = collect_upload_images(args.upload_dir, args.image_source_file, temp_dir)
+        upload_images_for_all_jobs = (
+            parse_upload_manifest(Path(args.upload_manifest).expanduser().resolve())
+            if args.upload_manifest
+            else collect_upload_images(args.upload_dir, args.image_source_file, temp_dir)
+        )
         if upload_images_for_all_jobs:
             print("\nReference images to upload for every prompt:")
             for pth in upload_images_for_all_jobs:
@@ -3180,6 +3214,13 @@ def run() -> None:
                             resize_to_ratio(saved_path, saved_path, target)
                         except Exception as exc:
                             print(f"  [crop] Failed (keeping original): {exc}")
+                        if args.result_manifest:
+                            result_path = Path(args.result_manifest).expanduser().resolve()
+                            result_path.parent.mkdir(parents=True, exist_ok=True)
+                            result_path.write_text(
+                                json.dumps({"output_path": str(saved_path.resolve())}) + "\n",
+                                encoding="utf-8",
+                            )
 
                         time.sleep(args.sleep_after_download)
                         break

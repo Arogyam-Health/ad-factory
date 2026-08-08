@@ -1097,6 +1097,7 @@ class AgentState:
         aspect_ratio: str,
         resource_id: str,
         resource_version: int,
+        source_output_version: int | None = None,
         operation_id: str,
     ) -> dict[str, Any]:
         with self._connect() as conn:
@@ -1116,9 +1117,19 @@ class AgentState:
                 INSERT INTO output_versions(
                     output_id, version, resource_id, resource_version,
                     source_output_version, revision_id, created_at
-                ) VALUES (?, 1, ?, ?, NULL, NULL, ?)
+                ) VALUES (?, 1, ?, ?, ?, NULL, ?)
                 """,
-                (output_id, resource_id, int(resource_version), now),
+                (
+                    output_id,
+                    resource_id,
+                    int(resource_version),
+                    (
+                        int(source_output_version)
+                        if source_output_version is not None
+                        else None
+                    ),
+                    now,
+                ),
             )
             result = {"output_id": output_id, "version": 1}
             self._record_change(

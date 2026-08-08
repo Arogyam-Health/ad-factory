@@ -5,6 +5,7 @@ import { buildImageGallery, showPromptFullscreen } from "./images.js";
 import { buildPromptEditor } from "./prompts.js";
 import { refreshSelect } from "./custom-select.js";
 import { getAuthUser } from "./auth.js";
+import { localDataPlane } from "./local-data-plane.js";
 
 const runsEl = document.getElementById("runs");
 const runPrevEl = document.getElementById("runPrev");
@@ -355,6 +356,7 @@ export async function loadRuns() {
 
     updateBatchDropdownButtonLabel();
     renderRunCarousel();
+    refreshStructuredLocalOutputs().catch(() => {});
   } finally {
     state.isRunsLoading = false;
   }
@@ -387,6 +389,7 @@ let localArtifactOrigin = LOCAL_ARTIFACT_ORIGIN;
 let localArtifactCapability = "";
 let agentJobPollTimer = null;
 let localArtifactImages = [];
+let structuredLocalImages = [];
 let localArtifactSignature = "";
 let localManifestRefreshInFlight = false;
 let localArtifactEventSource = null;
@@ -528,12 +531,13 @@ function syncLocalAgentArtifacts(job, { authoritative = false } = {}) {
 
 export function applyLocalArtifactsToRuns() {
   if (!state.runsData.length) return;
-  const validLocalUrls = new Set(localArtifactImages.map((image) => image.url));
+  const allImages = [...localArtifactImages, ...structuredLocalImages];
+  const validLocalUrls = new Set(allImages.map((image) => image.url));
   state.runsData.forEach((run) => {
     if (!Array.isArray(run.image_files)) run.image_files = [];
     run.image_files = run.image_files.filter((path) => !String(path).startsWith("http://127.0.0.1:") || validLocalUrls.has(path));
   });
-  localArtifactImages.forEach((image) => {
+  allImages.forEach((image) => {
     const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : (image.run_id ? [image.run_id] : []);
     let targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
     targets.forEach((run) => {
@@ -553,6 +557,61 @@ export function applyLocalArtifactsToRuns() {
       run.image_generated = true;
     });
   });
+}
+
+export async function refreshStructuredLocalOutputs() {
+  const user = getAuthUser();
+  if (!user?.user_id) return;
+  const previous = new Map(
+    structuredLocalImages.map((image) => [
+      `${image.output_id}:${image.output_version}`,
+      image,
+    ]),
+  );
+  const next = [];
+  for (const run of state.runsData) {
+    if (!run?.run_id || !run?.device_id || !run?.agent_id) continue;
+    try {
+      await localDataPlane.ensurePaired({
+        ownerType: run.owner_type || "user",
+        ownerId: run.owner_id || user.user_id,
+        deviceId: run.device_id,
+        agentId: run.agent_id,
+      });
+      const outputs = await localDataPlane.listOutputs(run.run_id, run.device_id);
+      for (const output of outputs) {
+        const key = `${output.output_id}:${output.current_version}`;
+        const cached = previous.get(key);
+        const url = cached?.url || await localDataPlane.outputObjectUrl(
+          output.output_id,
+          run.device_id,
+        );
+        next.push({
+          output_id: output.output_id,
+          output_version: output.current_version,
+          artifact_id: output.output_id,
+          run_id: run.run_id,
+          run_ids: [run.run_id],
+          prompt_id: output.prompt_id,
+          item_id: output.item_id,
+          aspect_ratio: output.aspect_ratio,
+          status: output.status,
+          url,
+        });
+      }
+    } catch {
+      // Preserve metadata from Render while the authoritative local device is offline.
+    }
+  }
+  const retained = new Set(next.map((image) => image.url));
+  structuredLocalImages.forEach((image) => {
+    if (!retained.has(image.url) && String(image.url).startsWith("blob:")) {
+      URL.revokeObjectURL(image.url);
+    }
+  });
+  structuredLocalImages = next;
+  applyLocalArtifactsToRuns();
+  if (state.runsData.length) renderRunCarousel().catch(() => {});
 }
 
 function startLocalArtifactEvents() {
@@ -698,8 +757,10 @@ function checkActiveAgentJob() {
 
 restoreCachedLocalArtifacts();
 refreshLocalArtifactManifest();
+refreshStructuredLocalOutputs().catch(() => {});
 startLocalArtifactEvents();
 setInterval(refreshLocalArtifactManifest, 10000);
+setInterval(() => refreshStructuredLocalOutputs().catch(() => {}), 10000);
 checkActiveAgentJob();
 fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   if (data?.active && data.job?.job_id) {

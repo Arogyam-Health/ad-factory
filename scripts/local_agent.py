@@ -240,7 +240,9 @@ def flush_terminal_outbox() -> None:
     for event in AGENT_STATE.pending_outbox():
         payload = event.get("payload") or {}
         job_id = str(payload.get("job_id") or "")
-        if str(event.get("event_type") or "").startswith("structured_copy_"):
+        if str(event.get("event_type") or "").startswith(
+            ("structured_copy_", "structured_images_")
+        ):
             if not job_id:
                 AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
                 continue
@@ -667,6 +669,24 @@ def execute_job(job: dict[str, Any]) -> None:
                     job_id,
                     "fail",
                     error_code=str(projection.get("error_code") or "local_copy_failed"),
+                )
+
+        elif job_type == "execute_run" and str(job.get("command") or "") == "generate_images":
+            if AGENT_STATE is None:
+                raise RuntimeError("Local agent state is unavailable")
+            from local_agent_runtime.structured_browser import StructuredBrowserExecutor
+
+            projection = StructuredBrowserExecutor(AGENT_STATE).execute(job_id)
+            flush_terminal_outbox()
+            if projection.get("status") == "completed":
+                report_job_terminal(job_id, "complete")
+            else:
+                report_job_terminal(
+                    job_id,
+                    "fail",
+                    error_code=str(
+                        projection.get("error_code") or "local_browser_generation_failed"
+                    ),
                 )
 
         elif job_type in {"run_chatgpt_batch", "run_browser_batch", "execute_run"}:

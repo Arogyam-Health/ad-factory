@@ -2148,13 +2148,23 @@ def _queue_local_chatgpt_job(user_id: str, payload: dict[str, Any]) -> dict[str,
     ]
     if not run_ids:
         raise HTTPException(status_code=400, detail="A local run ID is required")
+    prompt_ids = [
+        str(prompt_id)
+        for prompt_id in (payload.get("prompt_ids") or [])
+        if str(prompt_id).strip()
+    ]
     jobs: list[dict[str, Any]] = []
     base_operation_id = str(
         payload.get("client_operation_id")
         or payload.get("operation_id")
         or f"web:{uuid.uuid4().hex}"
     )
-    for index, run_id in enumerate(run_ids):
+    requests = [
+        (run_id, prompt_id)
+        for run_id in run_ids
+        for prompt_id in (prompt_ids or [""])
+    ]
+    for index, (run_id, prompt_id) in enumerate(requests):
         run = get_sync_db()[COLL_RUNS].find_one(
             {"run_id": run_id, "user_id": user_id},
             {
@@ -2184,6 +2194,7 @@ def _queue_local_chatgpt_job(user_id: str, payload: dict[str, Any]) -> dict[str,
                     "engine": str(payload.get("engine") or "chatgpt"),
                     "mode": str(payload.get("mode") or "45"),
                     "count": 1,
+                    **({"prompt_version_id": prompt_id} if prompt_id else {}),
                 },
                 client_operation_id=f"{base_operation_id}:{index}",
             )
@@ -2193,6 +2204,7 @@ def _queue_local_chatgpt_job(user_id: str, payload: dict[str, Any]) -> dict[str,
         "status": "queued_local_agent",
         "job_id": job["job_id"],
         "job_ids": [item["job_id"] for item in jobs],
+        "job_count": len(jobs),
         "agent_id": job["agent_id"],
         "device_id": job["device_id"],
         "message": "Queued for the run's authoritative local device.",
@@ -6104,7 +6116,32 @@ def filter_copy_json_for_selected_ads(copy_json: dict[str, Any], selected_keys: 
     return cloned
 
 
-def api_run_generate_images_45(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_run_generate_images_45(
+    run_id: str,
+    payload: dict[str, Any] = Body(...),
+    user_id: str = "",
+) -> dict[str, Any]:
+    prompt_ids = payload.get("prompt_ids")
+    if not isinstance(prompt_ids, list) or not prompt_ids:
+        raise HTTPException(status_code=400, detail="prompt_ids must be a non-empty array")
+    engine = str(payload.get("engine") or "gemini").strip().lower()
+    if engine not in {"gemini", "chatgpt"}:
+        raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
+    return _queue_local_chatgpt_job(
+        user_id,
+        {
+            "mode": "45",
+            "engine": engine,
+            "run_ids": [run_id],
+            "prompt_ids": prompt_ids,
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generate45selected:{uuid.uuid4().hex}"
+            ),
+        },
+    )
+
     run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
     batch = str(manifest.get("batch") or "").strip()
     if not batch:
@@ -6161,7 +6198,32 @@ def api_run_generate_images_45(run_id: str, payload: dict[str, Any] = Body(...))
     return merged
 
 
-def api_run_generate_images_916_from_45(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def api_run_generate_images_916_from_45(
+    run_id: str,
+    payload: dict[str, Any] = Body(...),
+    user_id: str = "",
+) -> dict[str, Any]:
+    prompt_ids = payload.get("prompt_ids")
+    if not isinstance(prompt_ids, list) or not prompt_ids:
+        raise HTTPException(status_code=400, detail="prompt_ids must be a non-empty array")
+    engine = str(payload.get("engine") or "gemini").strip().lower()
+    if engine not in {"gemini", "chatgpt"}:
+        raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
+    return _queue_local_chatgpt_job(
+        user_id,
+        {
+            "mode": "916",
+            "engine": engine,
+            "run_ids": [run_id],
+            "prompt_ids": prompt_ids,
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generate916selected:{uuid.uuid4().hex}"
+            ),
+        },
+    )
+
     run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
     batch = str(manifest.get("batch") or "").strip()
     if not batch:
@@ -6210,6 +6272,22 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     run_ids = payload.get("run_ids")
     if not isinstance(run_ids, list) or not run_ids:
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
+    engine = str(payload.get("engine") or "gemini").strip().lower()
+    if engine not in {"gemini", "chatgpt"}:
+        raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
+    return _queue_local_chatgpt_job(
+        user_id,
+        {
+            "mode": "45",
+            "engine": engine,
+            "run_ids": run_ids,
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generate45:{uuid.uuid4().hex}"
+            ),
+        },
+    )
 
     all_prompt_files: list[str] = []
     prompt_sources: list[dict[str, str]] = []
@@ -6363,6 +6441,19 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     engine = str(payload.get("engine") or "gemini").strip().lower()
     if engine not in {"gemini", "chatgpt"}:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
+    return _queue_local_chatgpt_job(
+        user_id,
+        {
+            "mode": "both",
+            "engine": engine,
+            "run_ids": run_ids,
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generateboth:{uuid.uuid4().hex}"
+            ),
+        },
+    )
     engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
 
     cdp_proxy_url = ""
@@ -6778,6 +6869,19 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
     engine = str(payload.get("engine") or "gemini").strip().lower()
     if engine not in {"gemini", "chatgpt"}:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
+    return _queue_local_chatgpt_job(
+        user_id,
+        {
+            "mode": "916",
+            "engine": engine,
+            "run_ids": run_ids,
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generate916:{uuid.uuid4().hex}"
+            ),
+        },
+    )
 
     cdp_proxy_url = ""
     if engine == "chatgpt" and not render_chatgpt_uses_local_agent() and extension_browser_required_for_chatgpt(visible):
