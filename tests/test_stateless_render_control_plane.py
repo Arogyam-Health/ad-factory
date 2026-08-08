@@ -318,8 +318,14 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             "| Migration | Complete (repository) | `145d7fc` |",
             source,
         )
-        self.assertIn("| Full verification | Complete (repository) |  |", source)
-        self.assertIn("| Operations documentation | Pending |  |", source)
+        self.assertIn(
+            "| Full verification | Complete (repository) | `1761077` |",
+            source,
+        )
+        self.assertIn(
+            "| Operations documentation | Complete (repository) |  |",
+            source,
+        )
 
     def test_feature_parity_checklist_is_complete(self) -> None:
         source = (ROOT / "LOCAL_DATA_PLANE_IMPLEMENTATION.md").read_text(

@@ -831,17 +831,12 @@ source .venv/bin/activate
 python -m py_compile \
   scripts/local_agent.py \
   local_agent_runtime/*.py \
-  dashboard/backend/app.py \
-  dashboard/backend/agent/*.py
+  dashboard/backend/control_app.py \
+  dashboard/backend/control_plane_policy.py \
+  dashboard/backend/agent/*.py \
+  scripts/migrate_content_to_local.py
 
-python -m unittest \
-  tests.test_local_data_plane_schema \
-  tests.test_local_data_plane_assets \
-  tests.test_local_data_plane_security \
-  tests.test_agent_metadata_jobs \
-  tests.test_structured_local_flow \
-  tests.test_reference_local_flow \
-  tests.test_local_output_lifecycle
+python -m unittest discover -s tests -p 'test_*.py'
 
 python tests/test_smoke.py
 
@@ -857,7 +852,10 @@ git diff --check
 graphify update .
 ```
 
-Add browser E2E coverage for HTTPS dashboard to HTTP loopback, local-network permission, uploads, reload, SSE/stream reconnect, and downloads.
+`tests/test_browser_local_data_plane_e2e.py` covers a real Chromium HTTPS
+dashboard origin calling HTTP loopback for authenticated uploads, downloads,
+reload, and resumable event-stream reconnect. Local API security tests cover
+exact-origin Private Network Access preflights.
 
 Real ChatGPT and Gemini smoke tests must be run manually after deterministic fake-engine tests pass.
 
@@ -911,8 +909,17 @@ Update this table during implementation. Include commit SHA and verification res
 | Local lifecycle parity | Complete (repository) | `5eac75f` | Focused lifecycle, config/org/offline, local-data-plane, metadata-boundary, and frontend regressions pass; full verification recorded by implementing agent | Committed by parent |
 | Stateless Render cleanup | Complete (repository) | `ae469c4` | 13 focused stateless/read-only boundary tests, 127 current regression tests, standalone smoke, backend `py_compile`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
 | Migration | Complete (repository) | `145d7fc` | 10 focused migration tests, 137 regression tests, 406 smoke assertions, `py_compile`, lints, `git diff --check`, and Graphify update pass | Dry-run-first, hash-verified migration committed |
-| Full verification | Complete (repository) |  | 75 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload and reload coverage; prior 137-test full regression and 406-assertion smoke suites pass | Commit pending parent; live ChatGPT/Gemini sessions remain final external verification |
-| Operations documentation | Pending |  |  |  |
+| Full verification | Complete (repository) | `1761077` | 78 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload, download, event reconnect, and reload coverage; 52 Structured/Reference/lifecycle tests pass with Render content directories read-only; 141 full regression tests and 406 smoke assertions pass | Automated boundary verification committed; live ChatGPT/Gemini sessions remain final external verification |
+| Operations documentation | Complete (repository) |  | Deployment, pairing, provider storage, migration, backup/restore, replication, outage recovery, deletion, troubleshooting, and external security actions documented | Commit pending parent |
+
+Repository implementation and automated verification are complete. Final
+production sign-off requires these external actions, which cannot be performed
+from the repository test environment:
+
+1. Rotate the previously exposed MongoDB password and update Render.
+2. Revoke the previously exposed dashboard session.
+3. Run one real ChatGPT and one real Gemini Structured and Reference smoke flow
+   using valid local browser sessions, including matching 4:5 and 9:16 outputs.
 
 ## Definition of Done
 

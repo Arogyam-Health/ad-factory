@@ -133,7 +133,13 @@ See `docs/HANDOVER.md` for the full pipeline reference, validation gates, and wh
 
 ## Cloud Deployment (Render)
 
-The dashboard can be deployed to Render as a multi-user cloud service, while browser automation stays on your local machine.
+The dashboard can be deployed to Render as a multi-user stateless control
+plane. Uploads, provider calls, prompt assembly, browser automation, and all
+content storage stay on the paired local machine.
+
+For production deployment, pairing, migration, backup/restore, organization
+replication, outage recovery, and security procedures, follow
+[`docs/LOCAL_FIRST_OPERATIONS.md`](docs/LOCAL_FIRST_OPERATIONS.md).
 
 ### Architecture
 
@@ -157,9 +163,11 @@ The dashboard can be deployed to Render as a multi-user cloud service, while bro
 1. **MongoDB Atlas** — Create a free cluster at https://mongodb.com, get your connection string
 2. **Google OAuth** — Create credentials at https://console.cloud.google.com/apis/credentials, configure redirect URI
 3. **Render** — Deploy from GitHub and set the authentication/control-plane env vars (see `.env.example`). Do not configure content storage.
-4. **Local agent** — Run on your machine:
+4. **Local agent** — Run on the same machine as the dashboard browser:
    ```bash
-   python scripts/local_agent.py --api-base https://your-app.onrender.com
+   python scripts/local_agent.py \
+     --api-base https://your-app.onrender.com \
+     --data-dir "$HOME/ad-factory-agent"
    ```
 
 ### Environment variables
@@ -171,7 +179,8 @@ See `.env.example` for all required env vars.
 Render does **not** launch Chrome. The local agent:
 - Connects to your Chrome at `http://127.0.0.1:9222` (start it with `--remote-debugging-port=9222`)
 - Polls the Render API for assigned jobs
-- Reports progress and results back to Render
+- Reports bounded progress and content references back to Render
+- Serves authenticated content to the paired browser at `http://127.0.0.1:8765`
 
 ### Local agent setup
 
@@ -203,3 +212,7 @@ revisions, exports, traces, and browser logs stay on the paired local device.
 MongoDB stores ownership, IDs, hashes, versions, counts, timestamps, job state,
 and availability metadata. Render has no content storage provider or persistent
 disk, and does not use Cloudinary, GridFS, or Redis.
+
+Provider credentials are encrypted inside the local data root and must not be
+configured on Render. Back up the local data root before migration or upgrades;
+see the operations guide for verified backup and restore commands.
