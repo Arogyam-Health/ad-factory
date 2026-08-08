@@ -967,6 +967,10 @@ class LocalDataPlane:
                     "backgrounds",
                     "source_config",
                     "conversion_prompt",
+                    "reference_settings",
+                    "reference_product_document",
+                    "reference_starting_prompt",
+                    "reference_persona_config",
                 }:
                     raise APIError(400, "invalid_role", "Run resource role is invalid")
                 with self.state._connect() as conn:

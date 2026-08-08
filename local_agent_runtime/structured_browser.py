@@ -147,10 +147,12 @@ class StructuredBrowserExecutor:
         *,
         browser: BrowserAutomation | None = None,
         max_attempts: int = 2,
+        workflow_prefix: str = "structured-browser",
     ) -> None:
         self.state = state
         self.browser = browser or LocalScriptBrowser()
         self.max_attempts = max(1, min(int(max_attempts), 3))
+        self.workflow_prefix = self._identifier(workflow_prefix)
 
     def _completed_result(self, job_id: str) -> dict[str, Any] | None:
         with self.state._connect() as conn:
@@ -324,7 +326,7 @@ class StructuredBrowserExecutor:
         phase = "916" if aspect_ratio == "9:16" else "45"
         root = (
             self.state.paths.staging
-            / "structured-browser"
+            / self.workflow_prefix
             / self._identifier(job_id)
             / self._identifier(prompt_id)
             / phase
@@ -374,7 +376,7 @@ class StructuredBrowserExecutor:
             phase=aspect_ratio,
             version=1,
             entries=state_entries,
-            operation_id=f"structured-browser:{job_id}:upload-set:{prompt_id}:{phase}",
+            operation_id=f"{self.workflow_prefix}:{job_id}:upload-set:{prompt_id}:{phase}",
         )
         return prompt_path, manifest_path, output, manifest
 
@@ -402,7 +404,7 @@ class StructuredBrowserExecutor:
                 owner_key=owner_key,
                 kind="output_image",
                 logical_key=f"{output_id}:v1",
-                operation_id=f"structured-browser:{job_id}:resource:{prompt_id}:{phase}",
+                operation_id=f"{self.workflow_prefix}:{job_id}:resource:{prompt_id}:{phase}",
                 metadata={
                     "run_id": run_id,
                     "prompt_id": prompt_id,
@@ -439,7 +441,7 @@ class StructuredBrowserExecutor:
             resource_id=resource.resource_id,
             resource_version=resource.version,
             source_output_version=source_output_version,
-            operation_id=f"structured-browser:{job_id}:output:{prompt_id}:{phase}",
+            operation_id=f"{self.workflow_prefix}:{job_id}:output:{prompt_id}:{phase}",
         )
         return {
             **output,

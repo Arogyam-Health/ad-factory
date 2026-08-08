@@ -241,7 +241,7 @@ def flush_terminal_outbox() -> None:
         payload = event.get("payload") or {}
         job_id = str(payload.get("job_id") or "")
         if str(event.get("event_type") or "").startswith(
-            ("structured_copy_", "structured_images_")
+            ("structured_copy_", "structured_images_", "reference_generation_")
         ):
             if not job_id:
                 AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
@@ -686,6 +686,24 @@ def execute_job(job: dict[str, Any]) -> None:
                     "fail",
                     error_code=str(
                         projection.get("error_code") or "local_browser_generation_failed"
+                    ),
+                )
+
+        elif job_type == "execute_run" and str(job.get("command") or "") == "generate_reference":
+            if AGENT_STATE is None:
+                raise RuntimeError("Local agent state is unavailable")
+            from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
+
+            projection = ReferenceWorkflowExecutor(AGENT_STATE).execute(job_id)
+            flush_terminal_outbox()
+            if projection.get("status") == "completed":
+                report_job_terminal(job_id, "complete")
+            else:
+                report_job_terminal(
+                    job_id,
+                    "fail",
+                    error_code=str(
+                        projection.get("error_code") or "local_reference_generation_failed"
                     ),
                 )
 

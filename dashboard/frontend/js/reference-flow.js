@@ -9,6 +9,7 @@ import { checkAuth, getAuthUser } from "./auth.js";
 const $ = (id) => document.getElementById(id);
 const selectedPersonas = new Set();
 const selectedReferences = new Set();
+const selectedProducts = new Set();
 const referenceComments = new Map();
 let referenceItems = [];
 let workspace = null;
@@ -17,8 +18,10 @@ let statusTimer = null;
 let personaTimer = null;
 let lastStatusSignature = "";
 let referenceDeviceId = "";
+let activeReferenceJobId = "";
 let referenceObjectUrls = [];
 let referenceProductObjectUrls = [];
+let referenceOutputObjectUrls = [];
 const REFERENCE_PRODUCT_IDS_KEY = "reference-workspace-product-assets";
 
 async function ensureReferenceLocal() {
@@ -81,11 +84,21 @@ function setWorkspaceMode(mode) {
 async function loadWorkspaceRuns(mode = activeMode()) {
   try {
     const data = await fetchJSON(`/api/runs?flow=${mode}&t=${Date.now()}`);
-    state.runsData = (data.runs || []).filter((run) => mode === "reference" ? run.flow_type === "reference_image" : run.flow_type !== "reference_image");
+    state.runsData = (data.runs || []).filter((run) => mode === "reference"
+      ? ["reference", "reference_image"].includes(run.flow_type)
+      : !["reference", "reference_image"].includes(run.flow_type));
     applyLocalArtifactsToRuns();
     state.currentRunIndex = 0;
     renderRunCarousel();
     populateBatchMenu();
+    if (mode === "reference" && !activeRunId) {
+      const active = state.runsData.find((run) => ["queued", "running"].includes(run.status));
+      if (active) {
+        activeRunId = active.run_id;
+        activeReferenceJobId = active.reference_job_id || "";
+        startPolling();
+      }
+    }
   } catch (error) {
     appendLog(`Could not load ${mode} runs: ${String(error)}`);
   }
@@ -328,6 +341,21 @@ function renderProductImages() {
   items.forEach((item) => {
     const card = document.createElement("article");
     card.className = "product-asset-slide";
+    card.classList.toggle("selected", selectedProducts.has(item.resource_id));
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "product-select-checkbox";
+    checkbox.checked = selectedProducts.has(item.resource_id);
+    checkbox.setAttribute("aria-label", "Select product image for this run");
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      checkbox.checked
+        ? selectedProducts.add(item.resource_id)
+        : selectedProducts.delete(item.resource_id);
+      card.classList.toggle("selected", checkbox.checked);
+      const summary = $("referenceProductImageSummary");
+      if (summary) summary.textContent = `${items.length} stored · ${selectedProducts.size} selected`;
+    });
     const img = document.createElement("img");
     img.src = item.object_url || "";
     img.alt = item.filename || "product image";
@@ -337,7 +365,7 @@ function renderProductImages() {
     strong.title = item.filename || item.resource_id;
     strong.textContent = item.filename || item.resource_id;
     label.appendChild(strong);
-    card.append(img, label);
+    card.append(checkbox, img, label);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "asset-remove";
@@ -346,16 +374,23 @@ function renderProductImages() {
     remove.addEventListener("click", async () => {
       if (!confirm(`Remove product image ${item.filename || item.resource_id}?`)) return;
       await localDataPlane.deleteAsset(item.resource_id, { deviceId: referenceDeviceId });
+      selectedProducts.delete(item.resource_id);
       await writeReferenceProductIds(items.filter((entry) => entry.resource_id !== item.resource_id).map((entry) => entry.resource_id));
       await loadReferenceWorkspace();
     });
     card.appendChild(remove);
-    card.addEventListener("dblclick", () => {
-      if (item.object_url) window.open(item.object_url, "_blank");
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button,input")) return;
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event("change"));
     });
     track.appendChild(card);
   });
-  if (!items.length) track.innerHTML = '<div class="empty-asset-state">Upload at least one product image. Every reference job will receive all stored product images.</div>';
+  if (!items.length) track.innerHTML = '<div class="empty-asset-state">Upload and select at least one product image.</div>';
+  const summary = $("referenceProductImageSummary");
+  if (summary) summary.textContent = items.length
+    ? `${items.length} stored · ${selectedProducts.size} selected`
+    : "No product images stored yet.";
   setupManualSwiper("referenceProductGallery", "productPrev", "productNext");
 }
 
@@ -364,15 +399,23 @@ async function loadReferenceWorkspace() {
     await ensureReferenceLocal();
     referenceProductObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     referenceProductObjectUrls = [];
-    const [allProducts, productIds, productDocument, startingPrompt, personaSeed] = await Promise.all([
+    const [allProducts, productIds, productDocument, startingPrompt, personaSeed, conversionPrompt] = await Promise.all([
       localDataPlane.listAssets({ kind: "product_image", deviceId: referenceDeviceId }),
       readReferenceProductIds(),
       readLocalText("documents", "reference-product-document"),
       readLocalText("configs", "reference-starting-prompt"),
       readLocalText("configs", "reference-persona-seed"),
+      readLocalText("configs", "reference-conversion-916-prompt"),
     ]);
     const productIdSet = new Set(productIds);
     const productImages = allProducts.filter((item) => productIdSet.has(item.resource_id));
+    const validProducts = new Set(productImages.map((item) => item.resource_id));
+    [...selectedProducts].forEach((id) => {
+      if (!validProducts.has(id)) selectedProducts.delete(id);
+    });
+    if (!selectedProducts.size) {
+      productImages.forEach((item) => selectedProducts.add(item.resource_id));
+    }
     await Promise.all(productImages.map(async (item) => {
       try {
         item.object_url = await localDataPlane.assetObjectUrl(item.resource_id, referenceDeviceId);
@@ -390,6 +433,7 @@ async function loadReferenceWorkspace() {
       },
       starting_prompt: { content: startingPrompt },
       persona_seed: { content: personaSeed },
+      conversion_prompt: { content: conversionPrompt },
     };
     renderProductImages();
     const doc = workspace.product_document || {};
@@ -455,7 +499,7 @@ function openWorkspaceText(kind) {
         workspace.persona_seed = { content };
       },
     });
-  } else {
+  } else if (kind === "starter") {
     showPromptFullscreen("Reference Flow starting prompt", workspace.starting_prompt?.content || "", {
       onSave: async (content) => {
         await localDataPlane.putText("configs", "reference-starting-prompt", content, {
@@ -464,13 +508,22 @@ function openWorkspaceText(kind) {
         workspace.starting_prompt = { content };
       },
     });
+  } else {
+    showPromptFullscreen("Reference 9:16 conversion prompt", workspace.conversion_prompt?.content || "", {
+      onSave: async (content) => {
+        await localDataPlane.putText("configs", "reference-conversion-916-prompt", content, {
+          deviceId: referenceDeviceId,
+        });
+        workspace.conversion_prompt = { content };
+      },
+    });
   }
 }
 
-function renderLiveGallery(imageFiles) {
+function renderLiveGallery(outputs) {
   const container = $("referenceLiveGallery");
   if (!container) return;
-  if (!imageFiles?.length) {
+  if (!outputs?.length) {
     container.classList.add("hidden");
     container.innerHTML = "";
     return;
@@ -479,17 +532,16 @@ function renderLiveGallery(imageFiles) {
   container.innerHTML = "";
   const header = document.createElement("div");
   header.className = "gallery-header";
-  header.innerHTML = `<strong>Generated so far (${imageFiles.length})</strong>`;
+  header.innerHTML = `<strong>Generated so far (${outputs.length})</strong>`;
   container.appendChild(header);
   const grid = document.createElement("div");
   grid.className = "image-grid";
-  imageFiles.forEach((path) => {
-    const cleanPath = path.replace(/^generated_images\//, "");
-    const url = `/generated_images/${cleanPath}`;
+  outputs.forEach((output) => {
+    const url = output.object_url || "";
     const card = document.createElement("div");
     card.className = "image-card";
-    card.dataset.path = path;
-    const is916 = path.includes("/9_16/");
+    card.dataset.outputId = output.output_id;
+    const is916 = output.aspect_ratio === "9:16";
     card.dataset.aspect = is916 ? "9_16" : "4_5";
     const imgWrap = document.createElement("div");
     imgWrap.className = "image-wrap";
@@ -497,7 +549,7 @@ function renderLiveGallery(imageFiles) {
     img.className = "gallery-thumb";
     img.loading = "lazy";
     img.src = url;
-    img.alt = path.split("/").pop() || "";
+    img.alt = output.output_id;
     imgWrap.appendChild(img);
     card.appendChild(imgWrap);
     const badge = document.createElement("span");
@@ -506,16 +558,35 @@ function renderLiveGallery(imageFiles) {
     card.appendChild(badge);
     const fname = document.createElement("div");
     fname.className = "image-filename";
-    fname.textContent = path.split("/").pop() || path;
-    fname.title = path;
+    fname.textContent = `${output.output_id} · v${output.current_version}`;
+    fname.title = output.output_id;
     card.appendChild(fname);
     card.addEventListener("click", (event) => {
       if (event.target.closest("button") || event.target.closest("input") || event.target.closest("details") || event.target.closest("label")) return;
-      window.open(url, "_blank");
+      if (url) window.open(url, "_blank");
     });
     grid.appendChild(card);
   });
   container.appendChild(grid);
+}
+
+async function loadLiveOutputs() {
+  if (!activeRunId || !referenceDeviceId) return [];
+  referenceOutputObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  referenceOutputObjectUrls = [];
+  const outputs = await localDataPlane.listOutputs(activeRunId, referenceDeviceId);
+  await Promise.all(outputs.map(async (output) => {
+    try {
+      output.object_url = await localDataPlane.outputObjectUrl(
+        output.output_id,
+        referenceDeviceId,
+      );
+      referenceOutputObjectUrls.push(output.object_url);
+    } catch {
+      output.object_url = "";
+    }
+  }));
+  return outputs;
 }
 
 function showStatus(payload) {
@@ -531,7 +602,6 @@ function showStatus(payload) {
     lastStatusSignature = signature;
     appendLog(`[Reference] ${payload.message || payload.phase || payload.status}`);
   }
-  renderLiveGallery(payload.partial_image_files);
 }
 
 function stopPolling() {
@@ -542,14 +612,26 @@ function stopPolling() {
 async function pollStatus() {
   if (!activeRunId) return;
   try {
-    const data = await fetchJSON(`/api/runs/${activeRunId}/reference-status?t=${Date.now()}`);
+    await ensureReferenceLocal();
+    const run = await fetchJSON(`/api/runs/${activeRunId}?t=${Date.now()}`);
+    const generation = run.image_generation || {};
+    const data = {
+      ...generation,
+      status: generation.status || run.status,
+      phase: generation.status === "running" ? "local generation" : generation.status,
+      completed_jobs: generation.completed_count || 0,
+      total_jobs: generation.total_count || 0,
+      failures: generation.status === "failed" ? 1 : 0,
+      message: generation.status === "completed"
+        ? "Reference generation completed"
+        : `Local Reference generation ${generation.completed_count || 0}/${generation.total_count || 0}`,
+    };
     showStatus(data);
-    if (["completed", "error", "cancelled"].includes(data.status)) {
+    renderLiveGallery(await loadLiveOutputs());
+    if (["completed", "failed", "canceled"].includes(data.status)) {
       stopPolling();
       $("referenceRunBtn").disabled = false;
       $("referenceCancelBtn").disabled = true;
-      $("referenceLiveGallery").classList.add("hidden");
-      $("referenceLiveGallery").innerHTML = "";
       invalidateRuns();
       await loadWorkspaceRuns("reference");
     }
@@ -558,16 +640,23 @@ async function pollStatus() {
   }
 }
 
+function startPolling() {
+  stopPolling();
+  pollStatus();
+  statusTimer = setInterval(pollStatus, 1500);
+}
+
 async function startRun() {
   await refreshReferencePersonas();
   await loadReferenceWorkspace();
   if (!selectedPersonas.size) return appendLog("Select at least one persona.");
   if (!selectedReferences.size) return appendLog("Select at least one reference image.");
-  if (!(workspace?.product_images || []).length) return appendLog("Upload at least one product image for Reference Image Flow.");
-  const comments = {};
-  for (const resourceId of selectedReferences) {
-    const value = referenceComments.get(resourceId)?.trim();
-    if (value) comments[resourceId] = value;
+  if (!selectedProducts.size) return appendLog("Select at least one product image for Reference Image Flow.");
+  if (!workspace?.product_document?.content?.trim()) return appendLog("Store a local Reference product document.");
+  if (!workspace?.starting_prompt?.content?.trim()) return appendLog("Store a local Reference starting prompt.");
+  if (!workspace?.persona_seed?.content?.trim()) return appendLog("Store a local Reference persona config.");
+  if ($("referenceGenerate916").checked && !workspace?.conversion_prompt?.content?.trim()) {
+    return appendLog("Store a local Reference 9:16 conversion prompt.");
   }
   $("referenceRunBtn").disabled = true;
   $("referenceCancelBtn").disabled = true;
@@ -584,31 +673,139 @@ async function startRun() {
         engine: $("referenceEngine").value,
         generate_916: $("referenceGenerate916").checked,
         headless: state.headlessModeEnabled,
-        selected_personas: [...selectedPersonas],
       },
     });
     referenceDeviceId = envelope.device_id;
+    const productDocument = await localDataPlane.putText(
+      "documents",
+      `${envelope.run_id}-reference-product-document`,
+      workspace.product_document.content,
+      {
+        deviceId: referenceDeviceId,
+        operationId: `${envelope.run_id}-product-document`,
+        runId: envelope.run_id,
+        role: "reference_product_document",
+      },
+    );
+    const startingPrompt = await localDataPlane.putText(
+      "configs",
+      `${envelope.run_id}-reference-starting-prompt`,
+      workspace.starting_prompt.content,
+      {
+        deviceId: referenceDeviceId,
+        operationId: `${envelope.run_id}-starting-prompt`,
+        runId: envelope.run_id,
+        role: "reference_starting_prompt",
+      },
+    );
+    const personaConfig = await localDataPlane.putText(
+      "configs",
+      `${envelope.run_id}-reference-personas`,
+      workspace.persona_seed.content,
+      {
+        deviceId: referenceDeviceId,
+        operationId: `${envelope.run_id}-persona-config`,
+        runId: envelope.run_id,
+        role: "reference_persona_config",
+      },
+    );
+    let conversionPrompt = null;
+    if ($("referenceGenerate916").checked) {
+      conversionPrompt = await localDataPlane.putText(
+        "configs",
+        `${envelope.run_id}-reference-conversion-916`,
+        workspace.conversion_prompt.content,
+        {
+          deviceId: referenceDeviceId,
+          operationId: `${envelope.run_id}-conversion-916`,
+          runId: envelope.run_id,
+          role: "conversion_prompt",
+        },
+      );
+    }
+    const selectedReferenceItems = referenceItems.filter((item) =>
+      selectedReferences.has(item.resource_id));
+    const selectedProductItems = (workspace.product_images || []).filter((item) =>
+      selectedProducts.has(item.resource_id));
+    const referenceDeclarations = [];
+    for (const item of selectedReferenceItems) {
+      const declaration = {
+        resource_id: item.resource_id,
+        version: item.version,
+      };
+      const comment = referenceComments.get(item.resource_id)?.trim();
+      if (comment) {
+        const savedComment = await localDataPlane.putText(
+          "configs",
+          `${envelope.run_id}-reference-comment-${item.resource_id}`,
+          comment,
+          {
+            deviceId: referenceDeviceId,
+            operationId: `${envelope.run_id}-comment-${item.resource_id}`,
+          },
+        );
+        declaration.comment_resource_id = savedComment.resource_id;
+        declaration.comment_version = savedComment.version;
+      }
+      referenceDeclarations.push(declaration);
+    }
     await localDataPlane.putText(
       "configs",
       `${envelope.run_id}-reference-settings`,
       JSON.stringify({
-        selected_personas: [...selectedPersonas],
-        reference_resource_ids: [...selectedReferences],
-        product_resource_ids: (workspace.product_images || []).map((item) => item.resource_id),
-        reference_comments: comments,
-        engine: $("referenceEngine").value,
-        generate_916: $("referenceGenerate916").checked,
-        headless: state.headlessModeEnabled,
+        references: referenceDeclarations,
+        products: selectedProductItems.map((item) => ({
+          resource_id: item.resource_id,
+          version: item.version,
+        })),
+        persona_ids: [...selectedPersonas].map(String),
+        product_document: {
+          resource_id: productDocument.resource_id,
+          version: productDocument.version,
+        },
+        starting_prompt: {
+          resource_id: startingPrompt.resource_id,
+          version: startingPrompt.version,
+        },
+        persona_config: {
+          resource_id: personaConfig.resource_id,
+          version: personaConfig.version,
+        },
+        ...(conversionPrompt ? {
+          conversion_prompt: {
+            resource_id: conversionPrompt.resource_id,
+            version: conversionPrompt.version,
+          },
+        } : {}),
       }),
-      { deviceId: referenceDeviceId, operationId: `${envelope.run_id}-settings` },
+      {
+        deviceId: referenceDeviceId,
+        operationId: `${envelope.run_id}-settings`,
+        runId: envelope.run_id,
+        role: "reference_settings",
+      },
+    );
+    const mode = $("referenceGenerate916").checked ? "both" : "45";
+    const queued = await fetchJSON(
+      `/api/runs/${encodeURIComponent(envelope.run_id)}/reference-generation`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operation_id: `${envelope.run_id}-reference-generation`,
+          engine: $("referenceEngine").value,
+          mode,
+        }),
+      },
     );
     activeRunId = envelope.run_id;
-    $("referenceProgressBar").style.width = "100%";
-    $("referenceProgressText").textContent = `Run ${envelope.display_batch} staged locally`;
-    appendLog(`Reference run ${envelope.run_id} staged on this device. Local generation is not enabled in this phase.`);
+    activeReferenceJobId = queued.job_id;
+    $("referenceCancelBtn").disabled = false;
+    $("referenceProgressText").textContent = `Run ${envelope.display_batch} queued locally`;
+    appendLog(`Reference run ${envelope.run_id} queued on this device.`);
+    startPolling();
     invalidateRuns();
     await loadWorkspaceRuns("reference");
-    $("referenceRunBtn").disabled = false;
   } catch (error) {
     $("referenceRunBtn").disabled = false;
     $("referenceCancelBtn").disabled = true;
@@ -621,7 +818,10 @@ async function cancelRun() {
   if (!activeRunId) return;
   $("referenceCancelBtn").disabled = true;
   try {
-    await fetchJSON(`/api/runs/${activeRunId}/cancel`, { method: "POST" });
+    if (!activeReferenceJobId) throw new Error("No active local Reference job");
+    await fetchJSON(`/api/agents/jobs/${encodeURIComponent(activeReferenceJobId)}/cancel`, {
+      method: "POST",
+    });
     appendLog(`Cancellation requested for ${activeRunId}.`);
   } catch (error) {
     appendLog(`Cancel error: ${String(error)}`);
@@ -638,6 +838,7 @@ $("referenceProductFile")?.addEventListener("change", (event) => uploadProductDo
 $("viewReferenceProductDoc")?.addEventListener("click", () => openWorkspaceText("doc"));
 $("viewReferencePersonaSeed")?.addEventListener("click", () => openWorkspaceText("persona"));
 $("editReferenceStartingPrompt")?.addEventListener("click", () => openWorkspaceText("starter"));
+$("editReferenceConversionPrompt")?.addEventListener("click", () => openWorkspaceText("conversion"));
 $("referenceRunBtn")?.addEventListener("click", startRun);
 $("referenceCancelBtn")?.addEventListener("click", cancelRun);
 $("refreshRuns")?.addEventListener("click", (event) => {

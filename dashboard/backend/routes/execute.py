@@ -1,30 +1,13 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
-from dashboard.backend.app import RUNS_ROOT, api_run_execute
+from dashboard.backend.app import api_run_execute
 from dashboard.backend.auth.service import get_current_user_from_cookie
 from dashboard.backend.chatgpt_runtime_patch import install_chatgpt_watchdog
 from dashboard.backend.db.settings import settings
-from dashboard.backend.reference_library import (
-    api_delete_reference_image,
-    api_reference_images,
-    api_upload_reference_images,
-)
-from dashboard.backend.reference_workspace import (
-    api_delete_reference_product_image,
-    api_save_reference_starting_prompt,
-    api_upload_reference_product_doc,
-    api_upload_reference_product_images,
-)
-from dashboard.backend.reference_workspace_v2 import (
-    api_reference_workspace_v2,
-    api_run_execute_reference_workspace_v2,
-)
 
 install_chatgpt_watchdog()
 router = APIRouter()
@@ -41,28 +24,6 @@ def _resolve_user_id(request: Request) -> str:
     if settings.is_production:
         return ""
     return "dev_user"
-
-
-def _latest_reference_job_error(run_id: str) -> str:
-    job_dir = RUNS_ROOT / run_id / "context" / "active_jobs"
-    if not job_dir.exists():
-        return ""
-    candidates = sorted(
-        job_dir.glob("*.result.json"),
-        key=lambda path: path.stat().st_mtime if path.exists() else 0,
-        reverse=True,
-    )
-    for path in candidates:
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-        except Exception:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        output = str(payload.get("stderr") or payload.get("stdout") or "").strip()
-        if output:
-            return output[-2400:]
-    return ""
 
 
 @router.post("/api/runs/execute")
@@ -91,87 +52,34 @@ async def _run_execute(
     )
 
 
-@router.get("/api/reference-images")
-def _reference_images(request: Request) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return api_reference_images()
-
-
-@router.post("/api/reference-images")
-async def _upload_reference_images(request: Request, files: list[UploadFile] = File(...)) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return await api_upload_reference_images(files)
-
-
-@router.delete("/api/reference-images")
-def _delete_reference_image(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return api_delete_reference_image(payload)
-
-
-@router.get("/api/reference-workspace")
-def _reference_workspace(request: Request) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return api_reference_workspace_v2()
-
-
-@router.post("/api/reference-workspace/product-images")
-async def _upload_reference_product_images(
-    request: Request,
-    files: list[UploadFile] = File(...),
-    replace: bool = Form(False),
-) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return await api_upload_reference_product_images(files, replace=replace)
-
-
-@router.delete("/api/reference-workspace/product-images")
-def _delete_reference_product_image(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return api_delete_reference_product_image(payload)
-
-
-@router.post("/api/reference-workspace/product-document")
-async def _upload_reference_product_document(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return await api_upload_reference_product_doc(file)
-
-
-@router.post("/api/reference-workspace/starting-prompt")
-def _save_reference_starting_prompt(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return api_save_reference_starting_prompt(payload)
-
-
-@router.post("/api/runs/execute-reference")
-async def _run_execute_reference(
-    request: Request,
-    config: str = Form(...),
-    reference_image_files: list[UploadFile] | None = File(None),
-    product_info_file: UploadFile | None = File(None),
-    input_image_files: list[UploadFile] | None = File(None),
-    clear_input_images: bool = Form(False),
-) -> dict[str, Any]:
-    _resolve_user_id(request)
-    return await api_run_execute_reference_workspace_v2(
-        config=config,
-        reference_image_files=reference_image_files,
-        product_info_file=product_info_file,
-        input_image_files=input_image_files,
-        clear_input_images=clear_input_images,
+def _reference_local_only() -> None:
+    raise HTTPException(
+        status_code=410,
+        detail="Reference content and execution are available only through the paired local agent",
     )
 
 
-@router.get("/api/runs/{run_id}/reference-status")
-def _reference_run_status(request: Request, run_id: str) -> dict[str, Any]:
-    _resolve_user_id(request)
-    from dashboard.backend.reference_flow import api_reference_run_status
+@router.api_route("/api/reference-images", methods=["GET", "POST", "DELETE"])
+def _disabled_reference_images() -> None:
+    _reference_local_only()
 
-    status = api_reference_run_status(run_id)
-    if status.get("status") == "error":
-        detail = _latest_reference_job_error(run_id)
-        if detail:
-            status["job_error"] = detail
-            status["error"] = detail
-            status["message"] = f"Reference job failed: {detail}"
-    return status
+
+@router.api_route("/api/reference-workspace", methods=["GET"])
+@router.api_route(
+    "/api/reference-workspace/{legacy_path:path}",
+    methods=["GET", "POST", "PUT", "DELETE"],
+)
+def _disabled_reference_workspace(legacy_path: str = "") -> None:
+    del legacy_path
+    _reference_local_only()
+
+
+@router.post("/api/runs/execute-reference")
+def _disabled_reference_execution() -> None:
+    _reference_local_only()
+
+
+@router.get("/api/runs/{run_id}/reference-status")
+def _disabled_reference_status(run_id: str) -> None:
+    del run_id
+    _reference_local_only()

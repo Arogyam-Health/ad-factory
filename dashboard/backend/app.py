@@ -260,6 +260,13 @@ def _manifest_fields_for_db(manifest: dict[str, Any]) -> dict[str, Any]:
         "local_agent_warnings",
         "run_number",
         "display_batch",
+        "flow_type",
+        "prompt_count",
+        "image_count",
+        "image_generation",
+        "device_id",
+        "agent_id",
+        "reference_job_id",
         "updated_at",
     }
     return {key: manifest.get(key) for key in fields if key in manifest}
@@ -5136,6 +5143,13 @@ def _mongo_run_to_manifest(doc: dict[str, Any]) -> dict[str, Any]:
         "image_files": list(doc.get("image_files") or []),
         "regeneration_queue_files": list(doc.get("regeneration_queue_files") or []),
         "image_generated": bool(doc.get("image_generated") or doc.get("image_files")),
+        "flow_type": doc.get("flow_type", ""),
+        "prompt_count": int(doc.get("prompt_count") or 0),
+        "image_count": int(doc.get("image_count") or 0),
+        "image_generation": dict(doc.get("image_generation") or {}),
+        "device_id": doc.get("device_id", ""),
+        "agent_id": doc.get("agent_id", ""),
+        "reference_job_id": doc.get("reference_job_id", ""),
         "updated_at": updated_at_value,
         "source": "mongodb",
     }
@@ -5146,9 +5160,16 @@ def _mongo_run_to_manifest(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def _mongo_run_has_dashboard_manifest(doc: dict[str, Any]) -> bool:
-    return any(
+    return doc.get("flow_type") in {"structured", "reference"} or any(
         doc.get(key)
-        for key in ("prompt_files", "image_files", "llm_mode", "copy_source", "local_artifacts")
+        for key in (
+            "prompt_files",
+            "image_files",
+            "llm_mode",
+            "copy_source",
+            "local_artifacts",
+            "image_generation",
+        )
     )
 
 

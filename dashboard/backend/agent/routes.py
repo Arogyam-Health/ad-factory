@@ -141,6 +141,72 @@ def queue_structured_copy(
     }
 
 
+@router.post("/api/runs/{run_id}/reference-generation")
+def queue_reference_generation(
+    run_id: str,
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_RUNS
+
+    run = get_sync_db()[COLL_RUNS].find_one(
+        {
+            "run_id": run_id,
+            "user_id": str(user["user_id"]),
+            "flow_type": "reference",
+        },
+        {
+            "_id": 0,
+            "agent_id": 1,
+            "device_id": 1,
+            "owner_type": 1,
+            "owner_id": 1,
+        },
+    )
+    if not run or not run.get("agent_id") or not run.get("device_id"):
+        raise HTTPException(status_code=409, detail="Run has no authoritative local device")
+    operation_id = str(payload.get("operation_id") or "")
+    engine = str(payload.get("engine") or "").lower()
+    mode = str(payload.get("mode") or "").lower()
+    if not operation_id:
+        raise HTTPException(status_code=400, detail="Operation ID is required")
+    if engine not in {"chatgpt", "gemini"} or mode not in {"45", "both", "916"}:
+        raise HTTPException(status_code=400, detail="Reference generation settings are invalid")
+    try:
+        job = create_job(
+            agent_id=str(run["agent_id"]),
+            device_id=str(run["device_id"]),
+            user_id=str(user["user_id"]),
+            owner_type=str(run.get("owner_type") or "user"),
+            owner_id=str(run.get("owner_id") or user["user_id"]),
+            run_id=run_id,
+            job_type="execute_run",
+            command="generate_reference",
+            parameters={"engine": engine, "mode": mode},
+            client_operation_id=operation_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    get_sync_db()[COLL_RUNS].update_one(
+        {"run_id": run_id, "user_id": str(user["user_id"])},
+        {
+            "$set": {
+                "status": "queued",
+                "updated_at": time.time(),
+                "reference_job_id": job["job_id"],
+            }
+        },
+    )
+    return {
+        "job_id": job["job_id"],
+        "run_id": run_id,
+        "status": job["status"],
+        "agent_id": job["agent_id"],
+        "device_id": job["device_id"],
+    }
+
+
 @router.post("/api/agents/heartbeat")
 def agent_heartbeat(
     agent: dict[str, Any] = Depends(_get_agent_from_header),
@@ -363,6 +429,9 @@ def record_local_generation_projection(
         "latest_output_version",
         "latest_output_sha256",
         "error_code",
+        "flow_type",
+        "reference_count",
+        "persona_count",
     }
     if not isinstance(projection, dict) or set(projection) - allowed:
         raise HTTPException(status_code=400, detail="Projection contains unsupported fields")
@@ -434,6 +503,11 @@ def record_local_generation_projection(
     }
     if projection_field == "image_generation":
         updates["image_count"] = int(projection.get("completed_count") or 0)
+        if "prompt_count" in projection:
+            updates["prompt_count"] = int(projection.get("prompt_count") or 0)
+        if projection.get("flow_type") == "reference":
+            updates["flow_type"] = "reference"
+            updates["status"] = projection["status"]
     else:
         updates["prompt_count"] = int(projection.get("prompt_count") or 0)
     db[COLL_RUNS].update_one(
