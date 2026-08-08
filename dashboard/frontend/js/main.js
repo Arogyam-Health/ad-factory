@@ -8,13 +8,35 @@ import { stopProgressPolling } from "./chrome.js";
 import { initTheme } from "./theme.js";
 import { fetchJSON, invalidateRuns, clearCache } from "./api.js";
 import { enhanceAllSelects, refreshSelect } from "./custom-select.js";
+import { localDataPlane } from "./local-data-plane.js";
+import { initAuth, getAuthUser } from "./auth.js";
 
 const modelSelectEl = document.getElementById("opencodeModel");
 const defaultsInfoEl = document.getElementById("defaultsInfo");
+let structuredDeviceId = "";
+let inputImageObjectUrls = [];
 
-function renderInputImages(images = []) {
+function structuredOwner() {
+  const user = getAuthUser();
+  return {
+    ownerType: studioCurrentOrgId ? "org" : "user",
+    ownerId: studioCurrentOrgId || user?.user_id || "",
+  };
+}
+
+async function ensureStructuredLocal() {
+  const owner = structuredOwner();
+  if (!owner.ownerId) throw new Error("Sign in before accessing local assets");
+  const paired = await localDataPlane.ensurePaired(owner);
+  structuredDeviceId = paired.info.device_id;
+  return { ...owner, ...paired };
+}
+
+async function renderInputImages(images = []) {
   const gallery = document.getElementById("inputImageGallery");
   if (!gallery) return;
+  inputImageObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  inputImageObjectUrls = [];
   gallery.innerHTML = "";
   if (!images.length) {
     const empty = document.createElement("p");
@@ -23,13 +45,19 @@ function renderInputImages(images = []) {
     gallery.appendChild(empty);
     return;
   }
-  images.forEach((path) => {
+  for (const item of images) {
+    const path = item.filename || item.resource_id;
     const card = document.createElement("div");
     card.className = "image-card input-image-card";
     card.dataset.aspect = "INPUT_IMAGE";
 
-    const cleanPath = path.replace(/^input\//, "");
-    const url = `/api/files/input/${cleanPath}`;
+    let url = "";
+    try {
+      url = await localDataPlane.assetObjectUrl(item.resource_id, structuredDeviceId);
+      inputImageObjectUrls.push(url);
+    } catch {
+      card.classList.add("local-content-unavailable");
+    }
     const imgWrap = document.createElement("div");
     imgWrap.className = "image-wrap";
 
@@ -63,11 +91,12 @@ function renderInputImages(images = []) {
 
     card.addEventListener("click", (event) => {
       if (event.target.closest(".image-delete-btn") || event.target.closest(".image-download-btn")) return;
-      window.open(url, "_blank");
+      if (url) window.open(url, "_blank");
     });
 
     downloadBtn.addEventListener("click", (event) => {
       event.stopPropagation();
+      if (!url) return;
       const a = document.createElement("a");
       a.href = url;
       a.download = path.split("/").pop() || "input-image";
@@ -81,11 +110,7 @@ function renderInputImages(images = []) {
       if (!confirm(`Delete input image "${path.split("/").pop()}"?`)) return;
       deleteBtn.disabled = true;
       try {
-        await fetchJSON("/api/input-images", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path }),
-        });
+        await localDataPlane.deleteAsset(item.resource_id, { deviceId: structuredDeviceId });
         card.remove();
       } catch (err) {
         setStatus(`Failed to delete input image: ${String(err)}`);
@@ -94,7 +119,24 @@ function renderInputImages(images = []) {
     });
 
     gallery.appendChild(card);
-  });
+  }
+}
+
+async function loadStructuredAssets({ silent = true } = {}) {
+  try {
+    await ensureStructuredLocal();
+    const images = await localDataPlane.listAssets({
+      kind: "product_image",
+      deviceId: structuredDeviceId,
+    });
+    await renderInputImages(images);
+    return images;
+  } catch (error) {
+    if (!silent) setStatus(`Local device unavailable: ${String(error)}`);
+    const gallery = document.getElementById("inputImageGallery");
+    if (gallery) gallery.innerHTML = '<p class="hint">Local assets unavailable. Start this device\'s local agent and retry.</p>';
+    return [];
+  }
 }
 
 function renderModelOptions(provider, preferredModel = "") {
@@ -112,10 +154,9 @@ async function initDefaults() {
     renderLanguageModes();
     renderFormatPatterns();
     renderHypothesisUI();
-    renderInputImages(data.input_images || []);
+    const localImages = await loadStructuredAssets();
 
-    const imageCount = (data.input_images || []).length;
-    defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}, input/images=${imageCount} file(s)`;
+    defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}, local product images=${localImages.length} file(s)`;
 
     initStudioSourceSelector({ reloadInitialPersona: false }).catch(() => {});
 
@@ -134,21 +175,8 @@ async function initDefaults() {
     populateGoogleModels(pcfg.google_models || [], pcfg.google_model || "");
     document.getElementById("googleApiKey").value = "";
 
-    const [resolvedCatalog, providerConfigs] = await Promise.all([catalogPromise, providerConfigsPromise]);
+    const [resolvedCatalog] = await Promise.all([catalogPromise, providerConfigsPromise]);
     opencode = resolvedCatalog;
-
-    // Prefer the user's saved MongoDB OpenCode config over the global fallback catalog.
-    if (providerConfigs.opencode?.api_url || providerConfigs.opencode?._has_keys) {
-      try {
-        opencode = await fetchJSON("/api/user/provider-config/opencode/catalog");
-      } catch (err) {
-        setStatus(`Failed to load saved OpenCode models: ${String(err)}`);
-      }
-    } else if (!Object.keys(opencode.models_by_provider || {}).length) {
-      try {
-        opencode = await fetchJSON("/api/user/provider-config/opencode/catalog");
-      } catch {}
-    }
 
     state.modelsByProvider = opencode.models_by_provider || {};
     const opencodeUrlField = document.getElementById("opencodeApiUrl");
@@ -183,14 +211,7 @@ function populateGoogleModels(models, selectedModel) {
 
 async function fetchGoogleModels(apiKey) {
   if (!apiKey) return;
-  try {
-    const models = await fetchJSON(`/api/google/models?api_key=${encodeURIComponent(apiKey)}`);
-    if (Array.isArray(models) && models.length) {
-      const sel = document.getElementById("googleModel");
-      const current = sel ? sel.value : "";
-      populateGoogleModels(models, current);
-    }
-  } catch {}
+  setStatus("Google credentials are stored locally and will be resolved by local execution.");
 }
 
 function toggleProviderConfig(provider) {
@@ -211,19 +232,26 @@ document.getElementById("llmProvider")?.addEventListener("change", (e) => {
 });
 
 async function saveProviderConfig(provider, config) {
-  return fetchJSON(`/api/user/provider-config/${encodeURIComponent(provider)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config }),
+  await ensureStructuredLocal();
+  let existing = {};
+  try {
+    existing = JSON.parse(await localDataPlane.getText("configs", `provider-${provider}`, structuredDeviceId));
+  } catch {}
+  return localDataPlane.putText("configs", `provider-${provider}`, JSON.stringify({
+    ...existing,
+    ...config,
+  }), {
+    deviceId: structuredDeviceId,
   });
 }
 
 async function deleteAllCredentials() {
   const providers = ["opencode", "google_gemini"];
   for (const p of providers) {
-    try {
-      await fetchJSON(`/api/user/provider-config/${encodeURIComponent(p)}`, { method: "DELETE" });
-    } catch {}
+    await ensureStructuredLocal();
+    await localDataPlane.putText("configs", `provider-${p}`, "{}", {
+      deviceId: structuredDeviceId,
+    });
   }
 }
 
@@ -311,26 +339,19 @@ async function initStudioSourceSelector({ reloadInitialPersona = true } = {}) {
 }
 
 async function refreshOpenCodeModels() {
-  try {
-    const catalog = await fetchJSON("/api/user/provider-config/opencode/catalog");
-    state.modelsByProvider = catalog.models_by_provider || {};
-    const defaultModel = catalog.default_model || "";
-    const defaultProvider = (catalog.providers || Object.keys(state.modelsByProvider))[0] || "";
-    const urlField = document.getElementById("opencodeApiUrl");
-    if (urlField && catalog.api_url) urlField.value = catalog.api_url;
-    renderModelOptions(defaultProvider, defaultModel);
-  } catch (err) {
-    setStatus(`Failed to load OpenCode models: ${String(err)}`);
-  }
+  const provider = Object.keys(state.modelsByProvider)[0] || "";
+  renderModelOptions(provider, document.getElementById("opencodeModel")?.value || "");
 }
 
 async function loadProviderConfigsIntoFields() {
   const saved = {};
   try {
-    const configs = await fetchJSON("/api/user/provider-config");
-    for (const entry of configs) {
-      const p = entry.provider;
-      const cfg = entry.config || {};
+    await ensureStructuredLocal();
+    for (const p of ["opencode", "google_gemini"]) {
+      let cfg = {};
+      try {
+        cfg = JSON.parse(await localDataPlane.getText("configs", `provider-${p}`, structuredDeviceId));
+      } catch {}
       saved[p] = cfg;
       if (p === "opencode") {
         if (cfg.api_url) document.getElementById("opencodeApiUrl").value = cfg.api_url;
@@ -348,7 +369,7 @@ async function loadProviderConfigsIntoFields() {
       }
     }
   } catch (err) {
-    setStatus(`Failed to load saved provider config: ${String(err)}`);
+    setStatus(`Local provider config unavailable: ${String(err)}`);
   }
   return saved;
 }
@@ -361,7 +382,7 @@ document.getElementById("saveGoogleKey")?.addEventListener("click", async () => 
     await saveProviderConfig("google_gemini", { api_key: key, default_model: model });
     document.getElementById("googleApiKey").value = "";
     document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
-    setStatus("Google API key saved to MongoDB");
+    setStatus("Google API key saved on this device");
     fetchGoogleModels(key);
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
@@ -372,7 +393,7 @@ document.getElementById("saveOpenCodeUrl")?.addEventListener("click", async () =
   try {
     await saveProviderConfig("opencode", { api_url: url });
     await refreshOpenCodeModels();
-    setStatus("OpenCode URL saved to MongoDB");
+    setStatus("OpenCode URL saved on this device");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
@@ -385,7 +406,7 @@ document.getElementById("saveOpenCodeKey")?.addEventListener("click", async () =
     document.getElementById("opencodeApiKey").value = "";
     document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
     await refreshOpenCodeModels();
-    setStatus("OpenCode API key saved to MongoDB");
+    setStatus("OpenCode API key saved on this device");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
@@ -445,28 +466,7 @@ async function runPipeline() {
     hypothesis: getHypothesisConfig(),
   };
 
-  const form = new FormData();
-  form.append("config", JSON.stringify(cfg));
-
-  const uploads = [
-    ["product_info_file", document.getElementById("productFile")],
-    ["image_source_file", document.getElementById("imageSourcesFile")],
-  ];
-  uploads.forEach(([name, input]) => {
-    if (input instanceof HTMLInputElement && input.files && input.files[0]) {
-      form.append(name, input.files[0]);
-    }
-  });
-
-  const inputImageFilesEl = document.getElementById("inputImageFiles");
-  const clearInputImagesEl = document.getElementById("clearInputImages");
-  if (inputImageFilesEl?.files?.length) {
-    [...inputImageFilesEl.files].forEach((file) => form.append("input_image_files", file));
-  }
-  form.append("clear_input_images", clearInputImagesEl?.checked ? "true" : "false");
-  form.append("org_id", studioCurrentOrgId || "");
-
-  setStatus("Running pipeline... this can take time.");
+  setStatus("Allocating a local run workspace...");
   if (runBtn) {
     runBtn.disabled = true;
     runBtn.classList.add("is-loading");
@@ -483,71 +483,62 @@ async function runPipeline() {
       clearInterval(state.runPollInterval);
       state.runPollInterval = null;
     }
-    const { run_id } = await fetchJSON("/api/runs/execute", { method: "POST", body: form });
-
-    // Poll for partial results and final completion
-    setStatus(`Pipeline started (run: ${run_id})`);
-    await new Promise((resolve) => {
-      state.runPollInterval = setInterval(async () => {
-        // Check partial results
-        try {
-          const partial = await fetchJSON(`/api/runs/${run_id}/partial`);
-          if (partial.ads && partial.ads.length > 0 && partial.progress) {
-            setStatus(`Run: ${run_id}\nCopy progress: ${partial.progress}\nAds generated: ${partial.ads.length}`);
-          }
-        } catch {
-          // Partial endpoint may 404, ignore
-        }
-        // Check if pipeline completed (manifest exists → main endpoint succeeds)
-        try {
-          const data = await fetchJSON(`/api/runs/${run_id}`);
-          clearInterval(state.runPollInterval);
-          state.runPollInterval = null;
-          const promptFiles = Array.isArray(data.prompt_files) ? data.prompt_files : [];
-          const imageFiles = Array.isArray(data.image_files) ? data.image_files : [];
-          if (!promptFiles.length || !data.batch || !data.llm_mode) {
-            throw new Error("Run manifest is not ready yet");
-          }
-          const fallbackLine = data.copy_generation_failures
-            ? `\nCopy failures: ${data.copy_generation_failures} ad(s)`
-            : "";
-          const failedAdsLine = data.failed_ads_count
-            ? `\nValidation failures: ${data.failed_ads_count} ad(s) excluded — see ${data.failed_ads_log || "run logs"}`
-            : "";
-          const warningLine = data.copy_generation_warnings
-            ? `\nCopy warnings: ${data.copy_generation_warnings}; log: ${data.copy_warning_log || "run logs"}`
-            : "";
-          const noteLine = Array.isArray(data.copy_generation_notes) && data.copy_generation_notes.length
-            ? `\nNotes:\n${data.copy_generation_notes.map((note) => `- ${note}`).join("\n")}`
-            : "";
-          const modelLine = data.opencode_model ? `\nModel: ${data.opencode_model}` : "";
-          setStatus(`Done\nRun: ${data.run_id}\nBatch: ${data.batch}\nLLM mode: ${data.llm_mode}${modelLine}\nCopy source: ${data.copy_source || data.llm_mode}${fallbackLine}${failedAdsLine}${warningLine}${noteLine}\nPrompts: ${promptFiles.length}\nImages: ${imageFiles.length}`);
-          fetchJSON("/api/defaults")
-            .then((freshDefaults) => renderInputImages(freshDefaults.input_images || []))
-            .catch(() => {});
-          invalidateRuns();
-          await loadAndRenderRuns();
-          resolve();
-        } catch {
-          // Check if pipeline errored (partial/error.txt exists but no manifest)
-          try {
-            const errResp = await fetch(`/api/runs/${run_id}/partial`);
-            if (errResp.ok) {
-              const partial = await errResp.json();
-              if (partial.error || partial.progress === "error") {
-                clearInterval(state.runPollInterval);
-                state.runPollInterval = null;
-                setStatus(`Pipeline failed: ${partial.error || "Unknown error"}`);
-                resolve();
-              }
-            }
-          } catch {
-            // ignore
-          }
-          // Pipeline still running, keep polling
-        }
-      }, 3000);
+    const owner = structuredOwner();
+    const envelope = await localDataPlane.allocateLocalRun({
+      ...owner,
+      flowType: "structured",
+      settings: {
+        ad_multiplier: cfg.multiplier,
+        batch_size: cfg.batch_size,
+        global_formats: cfg.global_formats,
+        language_mode: cfg.language_mode,
+        model: cfg.opencode_model || cfg.google_model,
+        provider: cfg.provider,
+        selected_personas: cfg.selected_personas,
+        server_type: cfg.server_type,
+        share_background_across_personas: cfg.share_background_across_personas,
+        hypothesis_type: cfg.hypothesis?.type || "",
+        hypothesis_variant: cfg.hypothesis?.variant || "",
+      },
     });
+    structuredDeviceId = envelope.device_id;
+    const productAssets = await localDataPlane.listAssets({
+      kind: "product_image",
+      deviceId: structuredDeviceId,
+    });
+    await localDataPlane.putText(
+      "configs",
+      `${envelope.run_id}-structured-settings`,
+      JSON.stringify({
+        execution: cfg,
+        product_assets: productAssets.map((item) => ({
+          resource_id: item.resource_id,
+          version: item.version,
+          sha256: item.sha256,
+          bytes: item.bytes,
+          status: item.status,
+        })),
+      }),
+      { deviceId: structuredDeviceId, operationId: `${envelope.run_id}-settings` },
+    );
+    const sourceUploads = [
+      ["product-document", document.getElementById("productFile")],
+      ["image-sources", document.getElementById("imageSourcesFile")],
+    ];
+    for (const [key, input] of sourceUploads) {
+      const file = input?.files?.[0];
+      if (file) {
+        await localDataPlane.putText(
+          "documents",
+          `${envelope.run_id}-${key}`,
+          await file.text(),
+          { deviceId: structuredDeviceId, operationId: `${envelope.run_id}-${key}` },
+        );
+      }
+    }
+    setStatus(`Run ${envelope.display_batch} staged on this device. Local copy execution is not enabled in this phase.`);
+    invalidateRuns();
+    await loadAndRenderRuns();
   } catch (err) {
     setStatus(`Failed: ${String(err)}`);
   } finally {
@@ -597,10 +588,9 @@ document.getElementById("saveProductDoc")?.addEventListener("click", async () =>
   if (!textarea) return;
   if (saveBtn) saveBtn.disabled = true;
   try {
-    const saved = await fetchJSON("/api/product-doc", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: textarea.value }),
+    await ensureStructuredLocal();
+    const saved = await localDataPlane.putText("documents", "structured-product-document", textarea.value, {
+      deviceId: structuredDeviceId,
     });
     renderProductDocInfo(saved);
     setStatus("Product doc saved.");
@@ -721,13 +711,10 @@ document.getElementById("productFile")?.addEventListener("change", async (event)
   if (!file) return;
   setStatus(`Uploading ${file.name}...`);
   try {
-    const text = await file.text();
-    await fetchJSON("/api/product-doc", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text }),
+    await ensureStructuredLocal();
+    const doc = await localDataPlane.putText("documents", "structured-product-document", await file.text(), {
+      deviceId: structuredDeviceId,
     });
-    const doc = await fetchJSON("/api/product-doc");
     renderProductDocInfo(doc);
     setStatus(`Uploaded ${file.name}`);
     event.target.value = "";
@@ -741,16 +728,21 @@ document.getElementById("inputImageFiles")?.addEventListener("change", async (ev
   const files = [...(event.target.files || [])];
   if (!files.length) return;
   const clearExisting = !!document.getElementById("clearInputImages")?.checked;
-  const form = new FormData();
-  files.forEach((f) => form.append("files", f));
-  form.append("clear_existing", clearExisting ? "true" : "false");
   setStatus(`Uploading ${files.length} image${files.length === 1 ? "" : "s"}...`);
   try {
-    const res = await fetch("/api/upload-input-images", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.detail || res.statusText);
-    renderInputImages(data.input_images || []);
-    setStatus(`Uploaded ${data.saved?.length || 0} image${data.saved?.length === 1 ? "" : "s"}`);
+    await ensureStructuredLocal();
+    if (clearExisting) {
+      const existing = await localDataPlane.listAssets({ kind: "product_image", deviceId: structuredDeviceId });
+      await Promise.all(existing.map((item) => localDataPlane.deleteAsset(item.resource_id, {
+        deviceId: structuredDeviceId,
+      })));
+    }
+    const saved = await localDataPlane.uploadAssets(files, {
+      kind: "product_image",
+      deviceId: structuredDeviceId,
+    });
+    await loadStructuredAssets({ silent: false });
+    setStatus(`Uploaded ${saved.length} image${saved.length === 1 ? "" : "s"} to this device`);
     event.target.value = "";
     const clearEl = document.getElementById("clearInputImages");
     if (clearEl) clearEl.checked = false;
@@ -764,11 +756,10 @@ initTheme();
 enhanceAllSelects();
 showRunsSkeletons();
 
-import { initAuth } from "./auth.js";
 import { initAgentStatus } from "./agents.js";
 
 
-initAuth().then(() => {
+initAuth().then(async () => {
   initAgentStatus();
   import("./config.js").then(mod => mod.renderConfigPanel());
   import("./auth.js").then(mod => {
@@ -791,6 +782,9 @@ initAuth().then(() => {
       import("./admin.js").then(mod => mod.renderAdminPanel());
     }
   });
+  await Promise.all([initDefaults(), loadAndRenderRuns()]);
+}).catch((err) => {
+  setStatus(String(err));
 });
 
 function togglePanel(panelId) {
@@ -841,25 +835,7 @@ window.addEventListener("hashchange", () => {
   }
 });
 
-Promise.all([initDefaults(), loadAndRenderRuns()]).catch((err) => setStatus(String(err)));
-
-// Load storage info
-fetch("/api/storage/info")
-  .then(r => r.json())
-  .then(info => {
-    const el = document.getElementById("storageInfo");
-    if (!el) return;
-    el.innerHTML = `
-      <p class="hint">All files are stored locally on the server filesystem.</p>
-      <table class="storage-paths">
-        <tr><td><strong>Generated Images</strong></td><td><code>${info.generated_images_dir}</code></td></tr>
-        <tr><td><strong>Output Files</strong></td><td><code>${info.output_dir}</code></td></tr>
-        <tr><td><strong>Run Data</strong></td><td><code>${info.runs_dir}</code></td></tr>
-      </table>
-      <p class="hint">You can access these directories directly on the server to view or download files.</p>
-    `;
-  })
-  .catch(() => {
-    const el = document.getElementById("storageInfo");
-    if (el) el.innerHTML = '<p class="hint">Could not load storage info.</p>';
-  });
+const storageInfo = document.getElementById("storageInfo");
+if (storageInfo) {
+  storageInfo.innerHTML = '<p class="hint">Content is stored on the paired local device. Render retains metadata only.</p>';
+}

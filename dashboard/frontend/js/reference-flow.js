@@ -3,6 +3,8 @@ import { state } from "./state.js";
 import { appendLog } from "./ui.js";
 import { applyLocalArtifactsToRuns, renderRunCarousel } from "./runs.js";
 import { showPromptFullscreen } from "./images.js";
+import { localDataPlane } from "./local-data-plane.js";
+import { checkAuth, getAuthUser } from "./auth.js";
 
 const $ = (id) => document.getElementById(id);
 const selectedPersonas = new Set();
@@ -14,6 +16,46 @@ let activeRunId = "";
 let statusTimer = null;
 let personaTimer = null;
 let lastStatusSignature = "";
+let referenceDeviceId = "";
+let referenceObjectUrls = [];
+let referenceProductObjectUrls = [];
+const REFERENCE_PRODUCT_IDS_KEY = "reference-workspace-product-assets";
+
+async function ensureReferenceLocal() {
+  const ownerId = getAuthUser()?.user_id || "";
+  if (!ownerId) throw new Error("Sign in before accessing local assets");
+  const paired = await localDataPlane.ensurePaired({
+    ownerType: "user",
+    ownerId,
+  });
+  referenceDeviceId = paired.info.device_id;
+  return paired;
+}
+
+async function readLocalText(collection, logicalKey, fallback = "") {
+  try {
+    return await localDataPlane.getText(collection, logicalKey, referenceDeviceId);
+  } catch (error) {
+    if (error.status === 404) return fallback;
+    throw error;
+  }
+}
+
+async function readReferenceProductIds() {
+  const raw = await readLocalText("configs", REFERENCE_PRODUCT_IDS_KEY, "[]");
+  try {
+    const ids = JSON.parse(raw);
+    return Array.isArray(ids) ? ids.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeReferenceProductIds(ids) {
+  await localDataPlane.putText("configs", REFERENCE_PRODUCT_IDS_KEY, JSON.stringify(ids), {
+    deviceId: referenceDeviceId,
+  });
+}
 
 function activeMode() {
   return localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured";
@@ -166,26 +208,26 @@ function renderReferenceLibrary() {
   referenceItems.forEach((item, index) => {
     const card = document.createElement("article");
     card.className = "reference-slide";
-    card.classList.toggle("selected", selectedReferences.has(item.path));
+    card.classList.toggle("selected", selectedReferences.has(item.resource_id));
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.className = "reference-select-checkbox";
-    checkbox.checked = selectedReferences.has(item.path);
+    checkbox.checked = selectedReferences.has(item.resource_id);
     const img = document.createElement("img");
-    img.src = item.url;
-    img.alt = item.name;
+    img.src = item.object_url || "";
+    img.alt = item.filename || "reference image";
     img.loading = "lazy";
     const body = document.createElement("div");
     body.className = "reference-slide-body";
     const title = document.createElement("div");
     title.className = "reference-slide-title";
-    title.innerHTML = `<strong>${index + 1}. ${item.name}</strong><span>${Math.max(1, Math.round((item.size_bytes || 0) / 1024))} KB</span>`;
+    title.innerHTML = `<strong>${index + 1}. ${item.filename || item.resource_id}</strong><span>${Math.max(1, Math.round((item.bytes || 0) / 1024))} KB</span>`;
     const comment = document.createElement("textarea");
     comment.placeholder = "Optional instruction for only this reference image…";
-    comment.value = referenceComments.get(item.path) || "";
+    comment.value = referenceComments.get(item.resource_id) || "";
     comment.addEventListener("input", () => {
-      if (comment.value.trim()) referenceComments.set(item.path, comment.value);
-      else referenceComments.delete(item.path);
+      if (comment.value.trim()) referenceComments.set(item.resource_id, comment.value);
+      else referenceComments.delete(item.resource_id);
     });
     const actions = document.createElement("div");
     actions.className = "reference-slide-actions";
@@ -193,18 +235,20 @@ function renderReferenceLibrary() {
     view.type = "button";
     view.className = "ghost-btn";
     view.textContent = "Open";
-    view.addEventListener("click", () => window.open(item.url, "_blank"));
+    view.addEventListener("click", () => {
+      if (item.object_url) window.open(item.object_url, "_blank");
+    });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "reference-remove-btn";
     remove.textContent = "Remove";
     remove.addEventListener("click", async () => {
-      if (!confirm(`Remove ${item.name}?`)) return;
+      if (!confirm(`Remove ${item.filename || item.resource_id}?`)) return;
       remove.disabled = true;
       try {
-        await fetchJSON("/api/reference-images", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: item.path }) });
-        selectedReferences.delete(item.path);
-        referenceComments.delete(item.path);
+        await localDataPlane.deleteAsset(item.resource_id, { deviceId: referenceDeviceId });
+        selectedReferences.delete(item.resource_id);
+        referenceComments.delete(item.resource_id);
         await loadReferenceLibrary();
       } catch (error) {
         appendLog(`Reference delete failed: ${String(error)}`);
@@ -212,7 +256,7 @@ function renderReferenceLibrary() {
       }
     });
     checkbox.addEventListener("change", () => {
-      checkbox.checked ? selectedReferences.add(item.path) : selectedReferences.delete(item.path);
+      checkbox.checked ? selectedReferences.add(item.resource_id) : selectedReferences.delete(item.resource_id);
       card.classList.toggle("selected", checkbox.checked);
       updateJobCount();
       updateReferenceSummary();
@@ -234,10 +278,23 @@ function updateReferenceSummary() {
 
 async function loadReferenceLibrary() {
   try {
-    const data = await fetchJSON(`/api/reference-images?t=${Date.now()}`);
-    referenceItems = data.items || [];
-    const valid = new Set(referenceItems.map((item) => item.path));
-    [...selectedReferences].forEach((path) => { if (!valid.has(path)) selectedReferences.delete(path); });
+    await ensureReferenceLocal();
+    referenceObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    referenceObjectUrls = [];
+    referenceItems = await localDataPlane.listAssets({
+      kind: "reference_image",
+      deviceId: referenceDeviceId,
+    });
+    await Promise.all(referenceItems.map(async (item) => {
+      try {
+        item.object_url = await localDataPlane.assetObjectUrl(item.resource_id, referenceDeviceId);
+        referenceObjectUrls.push(item.object_url);
+      } catch {
+        item.object_url = "";
+      }
+    }));
+    const valid = new Set(referenceItems.map((item) => item.resource_id));
+    [...selectedReferences].forEach((id) => { if (!valid.has(id)) selectedReferences.delete(id); });
     renderReferenceLibrary();
   } catch (error) {
     $("referenceImageSummary").textContent = `Could not load references: ${String(error)}`;
@@ -247,14 +304,16 @@ async function loadReferenceLibrary() {
 async function uploadReferences(files) {
   const images = [...(files || [])].filter((file) => file.type.startsWith("image/"));
   if (!images.length) return;
-  const form = new FormData();
-  images.forEach((file) => form.append("files", file, file.name));
   $("referenceImageSummary").textContent = `Uploading ${images.length} image(s)…`;
   try {
-    const data = await fetchJSON("/api/reference-images", { method: "POST", body: form });
-    (data.items || []).forEach((item) => selectedReferences.add(item.path));
+    await ensureReferenceLocal();
+    const items = await localDataPlane.uploadAssets(images, {
+      kind: "reference_image",
+      deviceId: referenceDeviceId,
+    });
+    items.forEach((item) => selectedReferences.add(item.resource_id));
     await loadReferenceLibrary();
-    appendLog(`Stored ${data.saved || 0} reference image(s).`);
+    appendLog(`Stored ${items.length} reference image(s) on this device.`);
   } catch (error) {
     appendLog(`Reference upload failed: ${String(error)}`);
     await loadReferenceLibrary();
@@ -269,19 +328,31 @@ function renderProductImages() {
   items.forEach((item) => {
     const card = document.createElement("article");
     card.className = "product-asset-slide";
-    card.innerHTML = `<img src="${item.url}" alt="${item.name}" loading="lazy"><div><strong title="${item.name}">${item.name}</strong></div>`;
+    const img = document.createElement("img");
+    img.src = item.object_url || "";
+    img.alt = item.filename || "product image";
+    img.loading = "lazy";
+    const label = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.title = item.filename || item.resource_id;
+    strong.textContent = item.filename || item.resource_id;
+    label.appendChild(strong);
+    card.append(img, label);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "asset-remove";
     remove.textContent = "×";
     remove.title = "Remove product image";
     remove.addEventListener("click", async () => {
-      if (!confirm(`Remove product image ${item.name}?`)) return;
-      await fetchJSON("/api/reference-workspace/product-images", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: item.path }) });
+      if (!confirm(`Remove product image ${item.filename || item.resource_id}?`)) return;
+      await localDataPlane.deleteAsset(item.resource_id, { deviceId: referenceDeviceId });
+      await writeReferenceProductIds(items.filter((entry) => entry.resource_id !== item.resource_id).map((entry) => entry.resource_id));
       await loadReferenceWorkspace();
     });
     card.appendChild(remove);
-    card.addEventListener("dblclick", () => window.open(item.url, "_blank"));
+    card.addEventListener("dblclick", () => {
+      if (item.object_url) window.open(item.object_url, "_blank");
+    });
     track.appendChild(card);
   });
   if (!items.length) track.innerHTML = '<div class="empty-asset-state">Upload at least one product image. Every reference job will receive all stored product images.</div>';
@@ -290,7 +361,36 @@ function renderProductImages() {
 
 async function loadReferenceWorkspace() {
   try {
-    workspace = await fetchJSON(`/api/reference-workspace?t=${Date.now()}`);
+    await ensureReferenceLocal();
+    referenceProductObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    referenceProductObjectUrls = [];
+    const [allProducts, productIds, productDocument, startingPrompt, personaSeed] = await Promise.all([
+      localDataPlane.listAssets({ kind: "product_image", deviceId: referenceDeviceId }),
+      readReferenceProductIds(),
+      readLocalText("documents", "reference-product-document"),
+      readLocalText("configs", "reference-starting-prompt"),
+      readLocalText("configs", "reference-persona-seed"),
+    ]);
+    const productIdSet = new Set(productIds);
+    const productImages = allProducts.filter((item) => productIdSet.has(item.resource_id));
+    await Promise.all(productImages.map(async (item) => {
+      try {
+        item.object_url = await localDataPlane.assetObjectUrl(item.resource_id, referenceDeviceId);
+        referenceProductObjectUrls.push(item.object_url);
+      } catch {
+        item.object_url = "";
+      }
+    }));
+    workspace = {
+      product_images: productImages,
+      product_document: {
+        name: "reference-product-document",
+        size_bytes: new Blob([productDocument]).size,
+        content: productDocument,
+      },
+      starting_prompt: { content: startingPrompt },
+      persona_seed: { content: personaSeed },
+    };
     renderProductImages();
     const doc = workspace.product_document || {};
     $("referenceProductDocMeta").textContent = `${doc.name || "product_document.txt"} · ${Math.max(0, Math.round((doc.size_bytes || 0) / 1024))} KB`;
@@ -302,11 +402,23 @@ async function loadReferenceWorkspace() {
 async function uploadProductImages(files) {
   const images = [...(files || [])].filter((file) => file.type.startsWith("image/"));
   if (!images.length) return;
-  const form = new FormData();
-  images.forEach((file) => form.append("files", file, file.name));
-  form.append("replace", String(Boolean($("referenceClearProductImages")?.checked)));
   try {
-    await fetchJSON("/api/reference-workspace/product-images", { method: "POST", body: form });
+    await ensureReferenceLocal();
+    const replace = Boolean($("referenceClearProductImages")?.checked);
+    const existingIds = await readReferenceProductIds();
+    if (replace) {
+      await Promise.all(existingIds.map((resourceId) => localDataPlane.deleteAsset(resourceId, {
+        deviceId: referenceDeviceId,
+      })));
+    }
+    const saved = await localDataPlane.uploadAssets(images, {
+      kind: "product_image",
+      deviceId: referenceDeviceId,
+    });
+    await writeReferenceProductIds([
+      ...(replace ? [] : existingIds),
+      ...saved.map((item) => item.resource_id),
+    ]);
     if ($("referenceClearProductImages")) $("referenceClearProductImages").checked = false;
     await loadReferenceWorkspace();
     appendLog(`Stored ${images.length} reference-flow product image(s).`);
@@ -317,10 +429,11 @@ async function uploadProductImages(files) {
 
 async function uploadProductDoc(file) {
   if (!file) return;
-  const form = new FormData();
-  form.append("file", file, file.name);
   try {
-    await fetchJSON("/api/reference-workspace/product-document", { method: "POST", body: form });
+    await ensureReferenceLocal();
+    await localDataPlane.putText("documents", "reference-product-document", await file.text(), {
+      deviceId: referenceDeviceId,
+    });
     await loadReferenceWorkspace();
     appendLog(`Reference product document updated: ${file.name}`);
   } catch (error) {
@@ -335,14 +448,21 @@ function openWorkspaceText(kind) {
   } else if (kind === "persona") {
     const persona = workspace.persona_seed;
     showPromptFullscreen("Persona seed (editable)", persona?.content || "", {
-      fetchUrl: persona?.path ? `/api/prompt-file-content?prompt_path=${encodeURIComponent(persona.path)}` : undefined,
-      saveUrl: "/api/prompt-file-content",
-      saveBody: (text) => ({ prompt_path: persona.path, content: text }),
+      onSave: async (content) => {
+        await localDataPlane.putText("configs", "reference-persona-seed", content, {
+          deviceId: referenceDeviceId,
+        });
+        workspace.persona_seed = { content };
+      },
     });
   } else {
     showPromptFullscreen("Reference Flow starting prompt", workspace.starting_prompt?.content || "", {
-      saveUrl: "/api/reference-workspace/starting-prompt",
-      saveBody: (content) => ({ content }),
+      onSave: async (content) => {
+        await localDataPlane.putText("configs", "reference-starting-prompt", content, {
+          deviceId: referenceDeviceId,
+        });
+        workspace.starting_prompt = { content };
+      },
     });
   }
 }
@@ -445,31 +565,50 @@ async function startRun() {
   if (!selectedReferences.size) return appendLog("Select at least one reference image.");
   if (!(workspace?.product_images || []).length) return appendLog("Upload at least one product image for Reference Image Flow.");
   const comments = {};
-  for (const path of selectedReferences) {
-    const value = referenceComments.get(path)?.trim();
-    if (value) comments[path] = value;
+  for (const resourceId of selectedReferences) {
+    const value = referenceComments.get(resourceId)?.trim();
+    if (value) comments[resourceId] = value;
   }
-  const form = new FormData();
-  form.append("config", JSON.stringify({
-    selected_personas: [...selectedPersonas],
-    reference_image_paths: [...selectedReferences],
-    reference_comments: comments,
-    engine: $("referenceEngine").value,
-    generate_916: $("referenceGenerate916").checked,
-    headless: state.headlessModeEnabled,
-  }));
   $("referenceRunBtn").disabled = true;
   $("referenceCancelBtn").disabled = true;
   $("referenceProgressBar").style.width = "2%";
   $("referenceProgressText").textContent = "Preparing reference run…";
   try {
-    const data = await fetchJSON("/api/runs/execute-reference", { method: "POST", body: form });
-    activeRunId = data.run_id;
-    $("referenceCancelBtn").disabled = false;
-    appendLog(`Reference flow started: ${data.run_id}, ${data.total_jobs} jobs.`);
-    stopPolling();
-    statusTimer = setInterval(pollStatus, 2000);
-    await pollStatus();
+    await ensureReferenceLocal();
+    const user = getAuthUser();
+    const envelope = await localDataPlane.allocateLocalRun({
+      ownerType: "user",
+      ownerId: user.user_id,
+      flowType: "reference",
+      settings: {
+        engine: $("referenceEngine").value,
+        generate_916: $("referenceGenerate916").checked,
+        headless: state.headlessModeEnabled,
+        selected_personas: [...selectedPersonas],
+      },
+    });
+    referenceDeviceId = envelope.device_id;
+    await localDataPlane.putText(
+      "configs",
+      `${envelope.run_id}-reference-settings`,
+      JSON.stringify({
+        selected_personas: [...selectedPersonas],
+        reference_resource_ids: [...selectedReferences],
+        product_resource_ids: (workspace.product_images || []).map((item) => item.resource_id),
+        reference_comments: comments,
+        engine: $("referenceEngine").value,
+        generate_916: $("referenceGenerate916").checked,
+        headless: state.headlessModeEnabled,
+      }),
+      { deviceId: referenceDeviceId, operationId: `${envelope.run_id}-settings` },
+    );
+    activeRunId = envelope.run_id;
+    $("referenceProgressBar").style.width = "100%";
+    $("referenceProgressText").textContent = `Run ${envelope.display_batch} staged locally`;
+    appendLog(`Reference run ${envelope.run_id} staged on this device. Local generation is not enabled in this phase.`);
+    invalidateRuns();
+    await loadWorkspaceRuns("reference");
+    $("referenceRunBtn").disabled = false;
   } catch (error) {
     $("referenceRunBtn").disabled = false;
     $("referenceCancelBtn").disabled = true;
@@ -509,4 +648,4 @@ $("refreshRuns")?.addEventListener("click", (event) => {
 window.addEventListener("focus", () => { if (activeMode() === "reference") refreshReferencePersonas(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && activeMode() === "reference") refreshReferencePersonas(); });
 
-setFlow(activeMode());
+checkAuth().then(() => setFlow(activeMode()));

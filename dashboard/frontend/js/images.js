@@ -702,7 +702,7 @@ export function buildImageGallery(run, imagesData) {
 }
 
 export function showPromptFullscreen(title, promptText, opts = {}) {
-  const { fetchUrl, saveUrl, saveBody } = opts;
+  const { fetchUrl, saveUrl, saveBody, onSave } = opts;
   const overlay = document.createElement("div");
   overlay.className = "prompt-fullscreen-overlay";
   overlay.innerHTML = `
@@ -742,16 +742,20 @@ export function showPromptFullscreen(title, promptText, opts = {}) {
   loadContent().then(() => textarea.focus());
 
   saveBtn.addEventListener("click", async () => {
-    if (!saveUrl) return;
+    if (!saveUrl && !onSave) return;
     saveBtn.disabled = true;
     try {
-      const body = saveBody ? saveBody(textarea.value) : { content: textarea.value };
-      const method = opts.saveMethod || "POST";
-      await fetchJSON(saveUrl, {
-        method: method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      if (onSave) {
+        await onSave(textarea.value);
+      } else {
+        const body = saveBody ? saveBody(textarea.value) : { content: textarea.value };
+        const method = opts.saveMethod || "POST";
+        await fetchJSON(saveUrl, {
+          method: method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
       appendLog("Saved.");
       if (opts.postSave) opts.postSave();
       close();

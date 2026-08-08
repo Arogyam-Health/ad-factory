@@ -1701,8 +1701,13 @@ def test_local_agent_responsiveness_contract() -> int:
                  "image-generation toolbar defaults to the visible run when no batch is selected")
     failed += ok("doc and _mongo_run_has_dashboard_manifest(doc)" in app_py,
                  "run detail does not treat Mongo owner stubs as completed manifests")
-    failed += ok("Run manifest is not ready yet" in (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(encoding="utf-8"),
-                 "frontend keeps polling until batch, llm_mode, and prompt files are ready")
+    main_js = (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(encoding="utf-8")
+    failed += ok(
+        'flowType: "structured"' in main_js
+        and "allocateLocalRun" in main_js
+        and 'fetchJSON("/api/runs/execute"' not in main_js,
+        "frontend allocates metadata then stages structured content locally",
+    )
     failed += ok(".card-input-prompts," in styles_css and ".card-images," in styles_css and "grid-column: span 7" in styles_css,
                  "structured dashboard uses a denser bento card grid")
 

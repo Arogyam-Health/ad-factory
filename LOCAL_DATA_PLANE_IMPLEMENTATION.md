@@ -902,8 +902,8 @@ Update this table during implementation. Include commit SHA and verification res
 | Security cleanup | Complete (repository) | `5191b7f` | 3 focused security tests pass | External credential and exposed-session rotation remain outstanding |
 | Local schema | Complete (repository) | `7156263` | 11 focused schema tests and 22 existing local-agent storage/migration/runtime tests pass (33 total); local-agent `py_compile` and `git diff --check` pass | Committed by parent |
 | Local API | Complete (repository) | `80c3665` | 16 focused API tests and 33 existing local-agent storage/migration/runtime tests pass (49 total); local-agent `py_compile` and `git diff --check` pass | Committed by parent |
-| Device pairing | Complete (repository) |  | 8 focused pairing tests and 51 existing local-agent/API tests pass (59 total); `py_compile`, frontend `node --check`, and `git diff --check` pass | Commit pending parent |
-| Direct browser uploads | Pending |  |  |  |
+| Device pairing | Complete (repository) | `9ade08a` | 8 focused pairing tests and 51 existing local-agent/API tests pass (59 total); `py_compile`, frontend `node --check`, and `git diff --check` pass | Committed by parent |
+| Direct browser uploads | Complete (repository) |  | 9 focused allocation/frontend/network-boundary tests and 35 relevant pairing/local-data-plane/transport tests pass (44 total); `py_compile`, edited frontend `node --check`, and `git diff --check` pass | Commit pending parent |
 | Metadata-only jobs | Pending |  |  |  |
 | Local structured copy | Pending |  |  |  |
 | Local structured images | Pending |  |  |  |

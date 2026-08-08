@@ -17,6 +17,7 @@ from dashboard.backend.db.collections import (
     COLL_RUNS,
 )
 from dashboard.backend.security.crypto import generate_token, hash_token
+from dashboard.backend.services.run_storage import reserve_run_number
 from pymongo.errors import DuplicateKeyError
 
 
@@ -35,6 +36,24 @@ PAIRING_SCOPES = frozenset(
 )
 _DEVICE_ID_RE = re.compile(r"^dev_[a-f0-9]{32}$")
 _CHALLENGE_ID_RE = re.compile(r"^pch_[A-Za-z0-9_-]{16,80}$")
+_RUN_SETTING_KEYS = frozenset(
+    {
+        "ad_multiplier",
+        "batch_size",
+        "engine",
+        "generate_916",
+        "global_formats",
+        "headless",
+        "hypothesis_type",
+        "hypothesis_variant",
+        "language_mode",
+        "model",
+        "provider",
+        "selected_personas",
+        "server_type",
+        "share_background_across_personas",
+    }
+)
 
 
 def _valid_device_id(device_id: str) -> bool:
@@ -155,6 +174,110 @@ def list_user_agents(user_id: str) -> list[dict[str, Any]]:
         }
         for d in docs
     ]
+
+
+def _bounded_run_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(settings, dict) or set(settings) - _RUN_SETTING_KEYS:
+        raise ValueError("Run settings contain unsupported fields")
+    bounded: dict[str, Any] = {}
+    for key, value in settings.items():
+        if isinstance(value, bool) or (
+            isinstance(value, int) and not isinstance(value, bool) and -1000 <= value <= 1000
+        ):
+            bounded[key] = value
+        elif isinstance(value, str) and len(value) <= 200:
+            bounded[key] = value
+        elif (
+            isinstance(value, list)
+            and len(value) <= 100
+            and all(
+                (isinstance(item, str) and len(item) <= 100)
+                or (isinstance(item, int) and not isinstance(item, bool) and -1000 <= item <= 1000)
+                for item in value
+            )
+        ):
+            bounded[key] = list(value)
+        else:
+            raise ValueError("Run settings must be bounded scalar metadata")
+    return bounded
+
+
+def allocate_run_envelope(
+    *,
+    user_id: str,
+    owner_type: str,
+    owner_id: str,
+    agent_id: str,
+    device_id: str,
+    flow_type: str,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    if (
+        owner_type not in {"user", "org"}
+        or not owner_id
+        or len(owner_id) > 200
+        or flow_type not in {"structured", "reference"}
+        or not agent_id
+        or len(agent_id) > 200
+        or not _valid_device_id(device_id)
+    ):
+        raise ValueError("Invalid run allocation")
+    bounded_settings = _bounded_run_settings(settings)
+    db = get_sync_db()
+    agent = db[COLL_AGENTS].find_one(
+        {
+            "agent_id": agent_id,
+            "user_id": user_id,
+            "device_id": device_id,
+            "is_active": True,
+            "protocol_version": "v1",
+            "supports_pairing": True,
+        }
+    )
+    if agent is None:
+        raise ValueError("Agent device does not belong to this user")
+    if owner_type == "user":
+        if owner_id != user_id:
+            raise ValueError("User owner does not match the authenticated user")
+    elif db[COLL_ORG_MEMBERS].find_one(
+        {"org_id": owner_id, "user_id": user_id, "status": "active"}
+    ) is None:
+        raise ValueError("Authenticated user is not an active organization member")
+
+    run_number = reserve_run_number(owner_type, owner_id)
+    run_id = "run_" + generate_token(16)
+    now = time.time()
+    doc = {
+        "run_id": run_id,
+        "user_id": user_id,
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "created_by_user_id": user_id,
+        "agent_id": agent_id,
+        "device_id": device_id,
+        "run_number": run_number,
+        "display_batch": f"v{run_number}",
+        "flow_type": flow_type,
+        "status": "allocated",
+        "settings": bounded_settings,
+        "created_at": now,
+        "updated_at": now,
+    }
+    db[COLL_RUNS].insert_one(doc)
+    return {
+        key: doc[key]
+        for key in (
+            "run_id",
+            "owner_type",
+            "owner_id",
+            "agent_id",
+            "device_id",
+            "run_number",
+            "display_batch",
+            "flow_type",
+            "status",
+        )
+    }
 
 
 def _safe_pairing_approval(doc: dict[str, Any]) -> dict[str, Any]:

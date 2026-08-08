@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from dashboard.backend.agent.service import (
     PAIRING_SCOPES,
     acknowledge_pairing_approval,
+    allocate_run_envelope,
     authenticate_agent,
     bind_agent_device,
     cancel_user_job,
@@ -69,6 +70,26 @@ def list_agents(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> list[dict[str, Any]]:
     return list_user_agents(user["user_id"])
+
+
+@router.post("/api/runs/allocate")
+def allocate_run(
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    try:
+        settings = payload.get("settings")
+        return allocate_run_envelope(
+            user_id=str(user["user_id"]),
+            owner_type=str(payload.get("owner_type") or "user"),
+            owner_id=str(payload.get("owner_id") or user["user_id"]),
+            agent_id=str(payload.get("agent_id") or ""),
+            device_id=str(payload.get("device_id") or ""),
+            flow_type=str(payload.get("flow_type") or ""),
+            settings=settings if isinstance(settings, dict) else {},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/agents/heartbeat")
