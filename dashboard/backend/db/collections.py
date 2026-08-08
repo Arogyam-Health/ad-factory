@@ -18,6 +18,7 @@ COLL_RUN_COUNTERS = "run_counters"
 COLL_BROWSER_SESSIONS = "browser_sessions"
 COLL_FILE_MAP = "file_map"
 COLL_USER_CONFIGS = "user_configs"
+COLL_LOCAL_CONFIG_REFERENCES = "local_config_references"
 
 # Organization collections
 COLL_ORGS = "orgs"

@@ -1,6 +1,7 @@
 import { appendLog } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
+import { localDataPlane } from "./local-data-plane.js";
 
 function imageUrl(item, path) {
   const directUrl = item?.url || item?.local_path || item?.file_path || path;
@@ -111,10 +112,10 @@ export function buildImageGallery(run, imagesData) {
   function updateSelectedCount() {
     selectedCount.textContent = `${selectedItems.size} selected`;
     const hasSelection = selectedItems.size > 0;
-    const hasLocalSelection = Array.from(selectedItems.values()).some((item) => isLocalArtifactUrl(item.path));
-    markBtn.disabled = !hasSelection || hasLocalSelection;
-    regenerateNowBtn.disabled = !hasSelection || hasLocalSelection;
-    const title = hasLocalSelection ? "Local images are revised through comments instead of the server regeneration queue." : "";
+    const hasLocalSelection = Array.from(selectedItems.values()).some((item) => item.is_local);
+    markBtn.disabled = !hasSelection;
+    regenerateNowBtn.disabled = !hasSelection;
+    const title = hasLocalSelection ? "Local images use immutable output versions on this device." : "";
     markBtn.title = title;
     regenerateNowBtn.title = title;
   }
@@ -125,8 +126,14 @@ export function buildImageGallery(run, imagesData) {
       appendLog("Select at least one image.");
       return null;
     }
-    if (imageFiles.some(isLocalArtifactUrl)) {
-      throw new Error("Local images cannot use the server regeneration queue. Add comments and use Revise all commented.");
+    const localItems = Array.from(selectedItems.values()).filter((item) => item.is_local);
+    if (localItems.length) {
+      await Promise.all(localItems.map((item) => localDataPlane.outputAction(
+        item.output_id,
+        "archive",
+        run.device_id,
+      )));
+      return { moved: localItems.map((item) => ({ archived_file: item.path })) };
     }
     return fetchJSON(`/api/runs/${run.run_id}/mark-images-to-regenerate`, {
       method: "POST",
@@ -190,6 +197,20 @@ export function buildImageGallery(run, imagesData) {
     markBtn.disabled = true;
     try {
       const archived = await archiveSelectedImages();
+      const localSelection = Array.from(selectedItems.values()).filter((item) => item.is_local);
+      if (localSelection.length) {
+        await Promise.all(localSelection.map((item) => localDataPlane.outputAction(
+          item.output_id,
+          "regenerate",
+          run.device_id,
+          { engine },
+        )));
+        appendLog(`Queued ${localSelection.length} local output regeneration(s).`);
+        selectedItems.clear();
+        invalidateRuns();
+        import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
+        return;
+      }
       const queuedFiles = (archived?.moved || [])
         .map((item) => item?.archived_file)
         .filter(Boolean);
@@ -228,6 +249,7 @@ export function buildImageGallery(run, imagesData) {
     const card = document.createElement("div");
     card.className = "image-card";
     card.dataset.path = path;
+    card.dataset.outputId = imageItem.output_id || "";
     if (imageItem.metadata?.regenerated) card.classList.add("image-card-regenerated");
 
     const is916 = imageItem.aspect_ratio === "9:16" || path.includes("/9_16/");
@@ -325,14 +347,29 @@ export function buildImageGallery(run, imagesData) {
     promptFullscreenBtn.addEventListener("click", (event) => {
       event.stopPropagation();
       const promptPath = imageItem.prompt_file || "";
+      const localPromptOptions = imageItem.is_local && imageItem.prompt_id ? {
+        loadContent: () => localDataPlane.promptContent(imageItem.prompt_id, run.device_id),
+        onSave: async (text) => {
+          const prompts = await localDataPlane.listPrompts(run.run_id, run.device_id);
+          const prompt = prompts.find((item) => item.prompt_id === imageItem.prompt_id);
+          if (!prompt) throw new Error("Local prompt is unavailable");
+          await localDataPlane.putPrompt(
+            imageItem.prompt_id,
+            run.run_id,
+            text,
+            prompt.resource_version,
+            run.device_id,
+          );
+        },
+      } : null;
       showPromptFullscreen(
         imageItem.prompt_file || "Prompt",
         imageItem.prompt_excerpt || "No prompt text available for this image.",
-        promptPath ? {
+        localPromptOptions || (promptPath ? {
           fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(promptPath)}`,
           saveUrl: "/api/prompt-file-content",
           saveBody: (text) => ({ prompt_path: promptPath, content: text }),
-        } : {}
+        } : {})
       );
     });
     promptBox.appendChild(promptFullscreenBtn);
@@ -363,17 +400,15 @@ export function buildImageGallery(run, imagesData) {
       if (!confirm(`Delete image "${path.split("/").pop()}"?`)) return;
       imgDeleteBtn.disabled = true;
       try {
-        if (isLocalArtifactUrl(path)) {
-          const localResponse = await fetch(path, { method: "DELETE", mode: "cors" });
-          if (!localResponse.ok && localResponse.status !== 404) {
-            throw new Error(`Local artifact deletion failed (${localResponse.status})`);
-          }
+        if (imageItem.is_local) {
+          await localDataPlane.deleteOutput(imageItem.output_id, run.device_id);
+        } else {
+          await fetchJSON(`/api/runs/${run.run_id}/delete-image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image_file: path }),
+          });
         }
-        await fetchJSON(`/api/runs/${run.run_id}/delete-image`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_file: path }),
-        });
         appendLog(`Deleted image: ${path.split("/").pop()}`);
         card.remove();
         invalidateRuns();
@@ -412,11 +447,17 @@ export function buildImageGallery(run, imagesData) {
       if (!file) return;
       imgReplaceBtn.disabled = true;
       try {
-        const form = new FormData();
-        form.append("image_file", path);
-        form.append("replacement_file", file);
-        await fetchJSON(`/api/runs/${run.run_id}/replace-image`, { method: "POST", body: form });
-        img.src = `${url}?t=${Date.now()}`;
+        if (imageItem.is_local) {
+          await localDataPlane.replaceOutput(imageItem.output_id, file, run.device_id);
+          URL.revokeObjectURL(url);
+          img.src = await localDataPlane.outputObjectUrl(imageItem.output_id, run.device_id);
+        } else {
+          const form = new FormData();
+          form.append("image_file", path);
+          form.append("replacement_file", file);
+          await fetchJSON(`/api/runs/${run.run_id}/replace-image`, { method: "POST", body: form });
+          img.src = `${url}?t=${Date.now()}`;
+        }
         appendLog(`Replaced image: ${path.split("/").pop()}`);
         invalidateRuns();
       } catch (err) {
@@ -511,6 +552,19 @@ export function buildImageGallery(run, imagesData) {
       if (!engine) return;
       regenBtn.disabled = true;
       try {
+        const localItems = Array.from(queueSelectedItems.values()).filter((item) => item.is_local);
+        if (localItems.length) {
+          await Promise.all(localItems.map((item) => localDataPlane.outputAction(
+            item.output_id,
+            "regenerate",
+            run.device_id,
+            { engine },
+          )));
+          appendLog(`Queued ${localItems.length} local image regeneration(s).`);
+          invalidateRuns();
+          import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
+          return;
+        }
         appendLog(`Regenerating ${imageFiles.length} queued image(s) in queue...`);
         const data = await fetchJSON(`/api/runs/${run.run_id}/regenerate-queued-images`, {
           method: "POST",
@@ -537,6 +591,18 @@ export function buildImageGallery(run, imagesData) {
       restoreBtn.disabled = true;
       const imageFiles = Array.from(queueSelectedItems.keys());
       try {
+        const localItems = Array.from(queueSelectedItems.values()).filter((item) => item.is_local);
+        if (localItems.length) {
+          await Promise.all(localItems.map((item) => localDataPlane.outputAction(
+            item.output_id,
+            "restore",
+            run.device_id,
+          )));
+          appendLog(`Restored ${localItems.length} local image(s).`);
+          invalidateRuns();
+          import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
+          return;
+        }
         const data = await fetchJSON(`/api/runs/${run.run_id}/restore-images-from-queue`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -559,6 +625,7 @@ export function buildImageGallery(run, imagesData) {
       const card = document.createElement("div");
       card.className = "image-card regeneration-queue-card";
       card.dataset.path = path;
+      card.dataset.outputId = queueItem.output_id || "";
       if (queueItem.metadata?.regenerated) card.classList.add("image-card-regenerated");
 
       const is916 = path.includes("/9_16/");
@@ -638,14 +705,29 @@ export function buildImageGallery(run, imagesData) {
       promptFullscreenBtn.addEventListener("click", (event) => {
         event.stopPropagation();
         const promptPath = queueItem.prompt_file || "";
+        const localPromptOptions = queueItem.is_local && queueItem.prompt_id ? {
+          loadContent: () => localDataPlane.promptContent(queueItem.prompt_id, run.device_id),
+          onSave: async (text) => {
+            const prompts = await localDataPlane.listPrompts(run.run_id, run.device_id);
+            const prompt = prompts.find((item) => item.prompt_id === queueItem.prompt_id);
+            if (!prompt) throw new Error("Local prompt is unavailable");
+            await localDataPlane.putPrompt(
+              queueItem.prompt_id,
+              run.run_id,
+              text,
+              prompt.resource_version,
+              run.device_id,
+            );
+          },
+        } : null;
         showPromptFullscreen(
           queueItem.prompt_file || "Prompt",
           queueItem.prompt_excerpt || "No prompt text available.",
-          promptPath ? {
+          localPromptOptions || (promptPath ? {
             fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(promptPath)}`,
             saveUrl: "/api/prompt-file-content",
             saveBody: (text) => ({ prompt_path: promptPath, content: text }),
-          } : {}
+          } : {})
         );
       });
       promptBox.appendChild(promptFullscreenBtn);
@@ -702,7 +784,7 @@ export function buildImageGallery(run, imagesData) {
 }
 
 export function showPromptFullscreen(title, promptText, opts = {}) {
-  const { fetchUrl, saveUrl, saveBody, onSave } = opts;
+  const { fetchUrl, saveUrl, saveBody, onSave, loadContent: loadLocalContent } = opts;
   const overlay = document.createElement("div");
   overlay.className = "prompt-fullscreen-overlay";
   overlay.innerHTML = `
@@ -727,7 +809,13 @@ export function showPromptFullscreen(title, promptText, opts = {}) {
   document.body.appendChild(overlay);
 
   async function loadContent() {
-    if (fetchUrl) {
+    if (loadLocalContent) {
+      try {
+        textarea.value = await loadLocalContent();
+      } catch (err) {
+        appendLog(`Failed to load content: ${String(err)}`);
+      }
+    } else if (fetchUrl) {
       try {
         const data = await fetchJSON(fetchUrl);
         textarea.value = data.content || "";

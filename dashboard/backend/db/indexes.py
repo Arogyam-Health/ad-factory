@@ -101,6 +101,14 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
     COLL_RUN_COUNTERS: [
         IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING)], unique=True),
     ],
+    COLL_LOCAL_CONFIG_REFERENCES: [
+        IndexModel(
+            [("scope", ASCENDING), ("owner_id", ASCENDING), ("logical_key", ASCENDING)],
+            unique=True,
+        ),
+        IndexModel([("authority_device_id", ASCENDING)]),
+        IndexModel([("verified_replica_device_ids", ASCENDING)]),
+    ],
     COLL_BROWSER_SESSIONS: [
         IndexModel([(FIELD_USER_ID, ASCENDING)]),
         IndexModel([("domain", ASCENDING)]),

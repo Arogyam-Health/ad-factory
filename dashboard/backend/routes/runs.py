@@ -1,4 +1,6 @@
 from typing import Any
+import time
+import uuid
 from fastapi import APIRouter, Body, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -56,7 +58,72 @@ def _request_user_id(request: Request) -> str:
 
 @router.delete("/api/runs/{run_id}")
 def _delete_run(run_id: str, request: Request) -> dict[str, Any]:
-    return api_delete_run(run_id, user_id=_request_user_id(request))
+    user_id = _request_user_id(request)
+    from dashboard.backend.agent.service import create_job
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import (
+        COLL_IMAGES,
+        COLL_PROMPTS,
+        COLL_RUNS,
+    )
+
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one(
+        {"run_id": run_id, "user_id": user_id},
+        {
+            "_id": 0,
+            "agent_id": 1,
+            "device_id": 1,
+            "owner_type": 1,
+            "owner_id": 1,
+        },
+    )
+    if not run or not run.get("agent_id") or not run.get("device_id"):
+        return api_delete_run(run_id, user_id=user_id)
+    operation_id = "purge_" + uuid.uuid4().hex
+    now = time.time()
+    db[COLL_RUNS].update_one(
+        {"run_id": run_id, "user_id": user_id},
+        {
+            "$set": {
+                "status": "deleting",
+                "deletion_tombstone": {
+                    "operation_id": operation_id,
+                    "device_id": run["device_id"],
+                    "created_at": now,
+                    "acknowledged_at": None,
+                },
+                "updated_at": now,
+            },
+            "$unset": {
+                "prompt_files": "",
+                "image_files": "",
+                "image_items": "",
+                "regeneration_queue_files": "",
+                "regeneration_queue_items": "",
+            },
+        },
+    )
+    db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
+    db[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
+    job = create_job(
+        agent_id=str(run["agent_id"]),
+        device_id=str(run["device_id"]),
+        user_id=user_id,
+        owner_type=str(run.get("owner_type") or "user"),
+        owner_id=str(run.get("owner_id") or user_id),
+        run_id=run_id,
+        job_type="purge_run",
+        command="purge_run",
+        parameters={},
+        client_operation_id=operation_id,
+    )
+    return {
+        "status": "deleting",
+        "run_id": run_id,
+        "tombstone_operation_id": operation_id,
+        "purge_job_id": job["job_id"],
+    }
 
 @router.get("/api/runs/{run_id}/prompt-copies")
 def _prompt_copies(run_id: str, request: Request) -> dict[str, Any]:

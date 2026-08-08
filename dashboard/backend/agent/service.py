@@ -1028,7 +1028,7 @@ def complete_job(
     fence: int,
     event_id: str,
 ) -> bool:
-    return _terminal_job_update(
+    completed = _terminal_job_update(
         job_id=job_id,
         agent_id=agent_id,
         device_id=device_id,
@@ -1037,6 +1037,27 @@ def complete_job(
         status="completed",
         progress_code="completed",
     )
+    if completed:
+        db = get_sync_db()
+        job = db[COLL_AGENT_JOBS].find_one(
+            {"job_id": job_id, "agent_id": agent_id, "device_id": device_id},
+            {"_id": 0, "job_type": 1, "run_id": 1, "client_operation_id": 1},
+        )
+        if job and job.get("job_type") == "purge_run":
+            db[COLL_RUNS].update_one(
+                {
+                    "run_id": job.get("run_id"),
+                    "deletion_tombstone.operation_id": job.get("client_operation_id"),
+                },
+                {
+                    "$set": {
+                        "status": "deleted",
+                        "deletion_tombstone.acknowledged_at": time.time(),
+                        "updated_at": time.time(),
+                    }
+                },
+            )
+    return completed
 
 
 def fail_job(

@@ -907,8 +907,8 @@ Update this table during implementation. Include commit SHA and verification res
 | Metadata-only jobs | Complete (repository) | `7ec1845` | 14 focused metadata-job tests and 58 existing agent/local-data-plane tests pass (72 total); `py_compile` passes | Committed by parent; full smoke has 3 pre-existing environment/startup failures with Mongo unavailable |
 | Local structured copy | Complete (repository) | `d736a89` | 6 focused structured-copy tests and 71 existing agent/local-data-plane tests pass (77 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
 | Local structured images | Complete (repository) | `8af3035` | 8 focused deterministic browser tests and 55 structured/local-data-plane/control/frontend regressions pass (63 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
-| Local reference flow | Complete (repository) |  | 8 focused Reference tests and 63 local-data-plane/control/frontend regressions pass (71 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Commit pending parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
-| Local lifecycle parity | Pending |  |  |  |
+| Local reference flow | Complete (repository) | `29b0e6d` | 8 focused Reference tests and 63 local-data-plane/control/frontend regressions pass (71 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
+| Local lifecycle parity | Complete (repository) |  | Focused lifecycle, config/org/offline, local-data-plane, metadata-boundary, and frontend regressions pass; full verification recorded by implementing agent | Commit pending parent |
 | Stateless Render cleanup | Pending |  |  |  |
 | Migration | Pending |  |  |  |
 | Full verification | Pending |  |  |  |

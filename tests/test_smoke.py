@@ -1607,8 +1607,9 @@ def test_local_agent_916_template_flow() -> int:
                          "9:16 image source file points to the generated local 4:5 image")
 
     app_py = (ROOT / "dashboard" / "backend" / "app.py").read_text(encoding="utf-8")
-    failed += ok('"conversion_916_template"' in app_py,
-                 "local-agent payload includes conversion_916_template")
+    structured_browser = (ROOT / "local_agent_runtime" / "structured_browser.py").read_text(encoding="utf-8")
+    failed += ok('"conversion_916_template"' not in app_py and "conversion_prompt" in structured_browser,
+                 "9:16 conversion content resolves from a local versioned resource")
     failed += ok('mode = "both" if any' not in app_py,
                  "local-agent both mode no longer depends on pre-existing output/<batch>/96 prompt files")
 
@@ -1639,18 +1640,18 @@ def test_local_agent_responsiveness_contract() -> int:
 
     failed += ok("class JobProgressReporter" in local_agent and "reporter.submit(clean)" in local_agent,
                  "terminal output is decoupled from Render progress requests")
-    failed += ok('"result": {' in local_agent and "publish_local_artifacts" in local_agent,
-                 "local agent publishes artifacts while automation is running")
+    failed += ok("publish_local_artifacts" in local_agent and "queue_projection" in agent_storage,
+                 "local agent publishes metadata projections from durable local artifacts")
     failed += ok('parser.add_argument("--sleep-after-download", type=float, default=0.0)' in chatgpt,
                  "ChatGPT automation has no default post-download sleep")
     failed += ok("time.sleep(settle_wait)" not in chatgpt and "wait_for_composer_stability" in chatgpt,
                  "composer readiness uses UI stability checks instead of fixed sleep")
     failed += ok("wait_for_generated_image_stability" in chatgpt and "time.sleep(2.0)" not in chatgpt.split("def wait_for_generated_image(", 1)[1].split("def infer_ext_from_src", 1)[0],
                  "generated-image detection polls UI state without two-second fixed waits")
-    failed += ok('{"_id": 0, "payload": 0}' in batch_routes,
-                 "active job status includes incremental result artifacts")
-    failed += ok("syncLocalAgentArtifacts(job);" in runs_js,
-                 "dashboard syncs active-job artifacts into run data")
+    failed += ok('"job": {' in batch_routes and 'job.get("payload")' not in batch_routes,
+                 "active job status excludes local job payload content")
+    failed += ok("refreshStructuredLocalOutputs" in runs_js,
+                 "dashboard resolves active output metadata from localhost")
     failed += ok('request_path in {"/artifacts", "/manifest"}' in artifact_server and '"Access-Control-Allow-Private-Network", "true"' in artifact_server,
                  "separate local artifact server exposes a PNA-safe manifest")
     failed += ok("requests.Session()" in local_agent and "_API_SESSIONS = threading.local()" in local_agent,
@@ -1659,7 +1660,7 @@ def test_local_agent_responsiveness_contract() -> int:
                  "terminal updates remain pending in a durable outbox")
     failed += ok("adFactoryLocalArtifacts" in runs_js and "refreshLocalArtifactManifest" in runs_js,
                  "dashboard restores and refreshes local artifacts after reload")
-    failed += ok("applyLocalArtifactsToRuns" in runs_js and "run.image_files.push(image.url)" in runs_js,
+    failed += ok("applyLocalArtifactsToRuns" in runs_js and "run[filesKey].push(image.url)" in runs_js,
                  "restored local artifacts are merged into matching run galleries")
     failed += ok("applyLocalArtifactsToRuns();" in reference_flow_js,
                  "workspace run reload preserves local artifact mappings")
@@ -1677,7 +1678,7 @@ def test_local_agent_responsiveness_contract() -> int:
                  "agent uses WebSocket job notifications with HTTP fallback")
     failed += ok('request_path == "/events"' in artifact_server and "EventSource" in runs_js,
                  "dashboard receives local artifact changes over SSE")
-    failed += ok('method: "DELETE", mode: "cors"' in images_js and "refreshLocalArtifactManifest" in images_js,
+    failed += ok("localDataPlane.deleteOutput" in images_js and "refreshStructuredLocalOutputs" in images_js,
                  "structured image deletion removes the local file and refreshes authoritative metadata")
     failed += ok("download-batches" in runs_js and "selectedLocalBatches" in runs_js,
                  "batch download uses the local artifact ZIP for local images")

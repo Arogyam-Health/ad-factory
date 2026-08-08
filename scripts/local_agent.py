@@ -707,6 +707,20 @@ def execute_job(job: dict[str, Any]) -> None:
                     ),
                 )
 
+        elif job_type == "purge_run" and str(job.get("command") or "") == "purge_run":
+            if AGENT_STATE is None:
+                raise RuntimeError("Local agent state is unavailable")
+            try:
+                AGENT_STATE.delete_run(
+                    str(job.get("run_id") or ""),
+                    operation_id=str(job.get("client_operation_id") or job_id),
+                    purge_resources=True,
+                )
+            except ValueError as exc:
+                if str(exc) != "Run not found":
+                    raise
+            report_job_terminal(job_id, "complete")
+
         elif job_type in {"run_chatgpt_batch", "run_browser_batch", "execute_run"}:
             _run_browser_batch_job(job_id, parameters)
 
@@ -1194,6 +1208,96 @@ def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     shutil.rmtree(job_root, ignore_errors=True)
 
 
+def _execute_next_output_revision() -> bool:
+    if AGENT_STATE is None:
+        return False
+    revision = AGENT_STATE.claim_next_output_revision()
+    if revision is None:
+        return False
+    revision_id = str(revision["revision_id"])
+    work_root = AGENT_PATHS.staging / "revisions" / revision_id
+    try:
+        with AGENT_STATE._connect() as conn:
+            output = conn.execute(
+                """
+                SELECT out.aspect_ratio, ov.resource_id, ov.resource_version
+                FROM outputs out JOIN output_versions ov
+                  ON ov.output_id = out.output_id AND ov.version = ?
+                WHERE out.output_id = ?
+                """,
+                (revision["source_output_version"], revision["output_id"]),
+            ).fetchone()
+        if output is None:
+            raise RuntimeError("Revision source output is unavailable")
+        image_path = AGENT_STATE.resource_path(
+            str(output["resource_id"]), int(output["resource_version"])
+        )
+        prompt_source = AGENT_STATE.resource_path(
+            str(revision["prompt_resource_id"]),
+            int(revision["prompt_resource_version"]),
+        )
+        engine = str(revision["engine"]).lower()
+        if engine == "chatgpt" and not check_cdp().get("available"):
+            raise RuntimeError(f"No local Chrome CDP browser is available at {AGENT_CDP_URL}")
+        prompt_dir = work_root / "prompts"
+        output_dir = work_root / "output"
+        prompt_dir.mkdir(parents=True, exist_ok=True)
+        prompt_path = prompt_dir / "revision.txt"
+        shutil.copy2(prompt_source, prompt_path)
+        source_file = work_root / "source.images.txt"
+        source_file.write_text(str(image_path.resolve()) + "\n", encoding="utf-8")
+        script_path = SCRIPT_DIR / (
+            "gemini_web_automation.py"
+            if engine == "gemini"
+            else "chatgpt_web_sutomation.py"
+        )
+        command = _browser_automation_cmd(
+            engine,
+            script_path,
+            prompt_dir,
+            output_dir,
+            work_root,
+            {},
+            str(output["aspect_ratio"]),
+            prompt_glob=prompt_path.name,
+            image_source_file=source_file,
+        )
+        result = subprocess.run(
+            command,
+            cwd=str(ROOT),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=900,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"{engine} revision exited {result.returncode}")
+        candidates = [
+            path
+            for path in output_dir.rglob("*")
+            if path.is_file()
+            and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+            and not any(part in {"debug", ".browser_downloads"} for part in path.parts)
+        ]
+        if not candidates:
+            raise RuntimeError("Revision completed without producing an image")
+        generated = max(candidates, key=lambda path: path.stat().st_mtime_ns)
+        media_type = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }[generated.suffix.lower()]
+        AGENT_STATE.complete_output_revision(
+            revision_id, result_source=generated, media_type=media_type
+        )
+        shutil.rmtree(work_root, ignore_errors=True)
+    except Exception as exc:
+        AGENT_STATE.fail_output_revision(revision_id, str(exc))
+        print(f"  [agent] Output revision {revision_id} failed: {exc}", flush=True)
+    return True
+
+
 def _execute_next_local_revision() -> bool:
     if AGENT_STATE is None:
         return False
@@ -1384,7 +1488,7 @@ def register_and_run(args: argparse.Namespace) -> None:
     while True:
         try:
             signaled = JOB_SIGNAL.wait(1.0)
-            if _execute_next_local_revision():
+            if _execute_next_output_revision() or _execute_next_local_revision():
                 continue
             now = time.time()
             sync_pairing_approvals(fetch_remote=now >= next_pairing_poll)

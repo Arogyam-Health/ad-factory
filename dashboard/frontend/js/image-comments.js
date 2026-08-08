@@ -1,6 +1,7 @@
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 import { appendLog } from "./ui.js";
+import { localDataPlane } from "./local-data-plane.js";
 
 const runsRoot = document.getElementById("runs");
 
@@ -23,8 +24,19 @@ function isLocalArtifact(imageFile) {
   return /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/files\//i.test(imageFile);
 }
 
-async function queueRevision(runId, imageFile, comment, engine) {
+async function queueRevision(runId, imageFile, comment, engine, outputId = "") {
   const payload = { image_file: imageFile, comment, engine, headless: state.headlessModeEnabled };
+  const run = state.runsData.find((item) => item.run_id === runId);
+  if (outputId && run?.device_id) {
+    const result = await localDataPlane.outputAction(
+      outputId,
+      "revisions",
+      run.device_id,
+      { comment, engine },
+    );
+    result.device_id = run.device_id;
+    return result;
+  }
   if (isLocalArtifact(imageFile)) {
     const imageUrl = new URL(imageFile);
     const revisionUrl = new URL("/revisions", imageUrl.origin);
@@ -59,7 +71,7 @@ async function submitRevision(card, box) {
   }
   setRevisionState(box, "Queuing revision...", true);
   try {
-    const data = await queueRevision(runId, imageFile, comment, engine);
+    const data = await queueRevision(runId, imageFile, comment, engine, card.dataset.outputId);
     appendLog(`Image revision queued with ${engine === "chatgpt" ? "ChatGPT" : "Gemini"}: ${imageFile.split("/").pop()}`);
     const result = await waitForRevision(runId, data.revision_id, box, data.status_url);
     if (result.ok) {
@@ -134,6 +146,15 @@ function delay(ms) {
 
 async function waitForRevision(runId, revisionId, box, statusUrl = "") {
   for (;;) {
+    const run = state.runsData.find((item) => item.run_id === runId);
+    if (!statusUrl && run?.device_id) {
+      const data = await localDataPlane.revisionStatus(revisionId, run.device_id);
+      setRevisionState(box, data.status || "", !["completed", "error"].includes(data.status));
+      if (data.status === "completed") return { ok: true, message: "Completed" };
+      if (data.status === "error") return { ok: false, message: data.error || "Revision failed" };
+      await delay(2000);
+      continue;
+    }
     const rawUrl = statusUrl || `/api/runs/${runId}/revisions/${revisionId}`;
     const separator = rawUrl.includes("?") ? "&" : "?";
     const data = await fetchJSON(`${rawUrl}${separator}t=${Date.now()}`, { cache: "no-store" });
@@ -169,7 +190,13 @@ export async function submitAllRevisions(runId) {
     try {
       setRevisionState(box, "Queuing...", true);
       const imageFile = card.dataset.path || "";
-      const data = await queueRevision(runId, imageFile, comment, engine);
+      const data = await queueRevision(
+        runId,
+        imageFile,
+        comment,
+        engine,
+        card.dataset.outputId,
+      );
       appendLog(`Revision queued for: ${imageFile.split("/").pop()}`);
       const result = await waitForRevision(runId, data.revision_id, box, data.status_url);
       if (result.ok) {

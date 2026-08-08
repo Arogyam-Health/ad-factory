@@ -73,6 +73,126 @@ def list_agents(
     return list_user_agents(user["user_id"])
 
 
+def _config_reference_owner(user_id: str, scope: str, owner_id: str) -> str:
+    if scope == "personal":
+        if owner_id and owner_id != user_id:
+            raise HTTPException(status_code=403, detail="Personal config owner is invalid")
+        return user_id
+    if scope not in {"org_individual", "org_shared"} or not owner_id:
+        raise HTTPException(status_code=400, detail="Config reference scope is invalid")
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_ORG_MEMBERS
+
+    membership = get_sync_db()[COLL_ORG_MEMBERS].find_one(
+        {"org_id": owner_id, "user_id": user_id, "status": "active"},
+        {"_id": 1},
+    )
+    if membership is None:
+        raise HTTPException(status_code=403, detail="Organization access is required")
+    return owner_id if scope == "org_shared" else f"{owner_id}:{user_id}"
+
+
+@router.put("/api/local-config-references/{logical_key}")
+def put_local_config_reference(
+    logical_key: str,
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_LOCAL_CONFIG_REFERENCES
+
+    allowed = {
+        "scope",
+        "owner_id",
+        "resource_id",
+        "resource_version",
+        "authority_device_id",
+        "verified_replica_device_ids",
+        "sha256",
+    }
+    if set(payload) - allowed:
+        raise HTTPException(status_code=400, detail="Config references accept metadata only")
+    scope = str(payload.get("scope") or "")
+    owner_id = _config_reference_owner(
+        str(user["user_id"]), scope, str(payload.get("owner_id") or "")
+    )
+    resource_id = str(payload.get("resource_id") or "")
+    authority = str(payload.get("authority_device_id") or "")
+    replicas = payload.get("verified_replica_device_ids") or []
+    if (
+        not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", logical_key)
+        or not re.fullmatch(r"res_[A-Za-z0-9]{8,64}", resource_id)
+        or not re.fullmatch(r"dev_[A-Za-z0-9]{8,64}", authority)
+        or not isinstance(replicas, list)
+        or len(replicas) > 32
+        or any(not re.fullmatch(r"dev_[A-Za-z0-9]{8,64}", str(item)) for item in replicas)
+    ):
+        raise HTTPException(status_code=400, detail="Config reference metadata is invalid")
+    document = {
+        "scope": scope,
+        "owner_id": owner_id,
+        "logical_key": logical_key,
+        "resource_id": resource_id,
+        "resource_version": int(payload.get("resource_version") or 0),
+        "sha256": str(payload.get("sha256") or "")[:64],
+        "authority_device_id": authority,
+        "verified_replica_device_ids": sorted(set(map(str, replicas))),
+        "updated_at": time.time(),
+    }
+    get_sync_db()[COLL_LOCAL_CONFIG_REFERENCES].update_one(
+        {"scope": scope, "owner_id": owner_id, "logical_key": logical_key},
+        {"$set": document, "$setOnInsert": {"created_at": time.time()}},
+        upsert=True,
+    )
+    return {**document, "status": "referenced"}
+
+
+@router.get("/api/local-config-references")
+def list_local_config_references(
+    scope: str = Query(...),
+    owner_id: str = Query(""),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> list[dict[str, Any]]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_AGENTS, COLL_LOCAL_CONFIG_REFERENCES
+
+    resolved_owner = _config_reference_owner(str(user["user_id"]), scope, owner_id)
+    db = get_sync_db()
+    rows = list(
+        db[COLL_LOCAL_CONFIG_REFERENCES].find(
+            {"scope": scope, "owner_id": resolved_owner}, {"_id": 0}
+        )
+    )
+    devices = {
+        str(device)
+        for row in rows
+        for device in [
+            row.get("authority_device_id"),
+            *(row.get("verified_replica_device_ids") or []),
+        ]
+        if device
+    }
+    online = {
+        str(row["device_id"])
+        for row in db[COLL_AGENTS].find(
+            {
+                "device_id": {"$in": sorted(devices)},
+                "is_active": True,
+                "last_heartbeat_at": {"$gte": time.time() - 180},
+            },
+            {"_id": 0, "device_id": 1},
+        )
+    }
+    for row in rows:
+        candidates = {
+            str(row.get("authority_device_id") or ""),
+            *map(str, row.get("verified_replica_device_ids") or []),
+        }
+        row["status"] = "available" if candidates & online else "unavailable"
+        row["available_device_ids"] = sorted(candidates & online)
+    return rows
+
+
 @router.post("/api/runs/allocate")
 def allocate_run(
     payload: dict[str, Any] = Body(...),

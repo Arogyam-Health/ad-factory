@@ -409,6 +409,19 @@ export class LocalDataPlaneClient {
     return payload.items || [];
   }
 
+  async generateRun(runId, { engine, mode, count = 0 } = {}, deviceId) {
+    const requestOperationId = operationId("generation");
+    return readJson(await this.authorizedFetch(
+      `/v1/runs/${encodeURIComponent(runId)}/generations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": requestOperationId },
+        body: JSON.stringify({ engine, mode, count, operation_id: requestOperationId }),
+      },
+      deviceId,
+    ));
+  }
+
   async outputObjectUrl(outputId, deviceId) {
     const response = await this.authorizedFetch(
       `/v1/outputs/${encodeURIComponent(outputId)}/content`,
@@ -417,6 +430,182 @@ export class LocalDataPlaneClient {
     );
     if (!response.ok) await readJson(response);
     return URL.createObjectURL(await response.blob());
+  }
+
+  async listPrompts(runId, deviceId) {
+    const payload = await readJson(await this.authorizedFetch(
+      `/v1/runs/${encodeURIComponent(runId)}/prompts`,
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    ));
+    return payload.items || [];
+  }
+
+  async promptContent(promptId, deviceId) {
+    const response = await this.authorizedFetch(
+      `/v1/prompts/${encodeURIComponent(promptId)}/content`,
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    );
+    if (!response.ok) await readJson(response);
+    return response.text();
+  }
+
+  async putPrompt(promptId, runId, content, expectedVersion, deviceId) {
+    const requestOperationId = operationId("prompt");
+    return readJson(await this.authorizedFetch(
+      `/v1/prompts/${encodeURIComponent(promptId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": requestOperationId },
+        body: JSON.stringify({
+          run_id: runId,
+          content,
+          expected_version: expectedVersion,
+          operation_id: requestOperationId,
+        }),
+      },
+      deviceId,
+    ));
+  }
+
+  async exportPrompts(runId, deviceId) {
+    const response = await this.authorizedFetch(
+      `/v1/runs/${encodeURIComponent(runId)}/prompt-export`,
+      { method: "GET" },
+      deviceId,
+    );
+    if (!response.ok) await readJson(response);
+    return response.blob();
+  }
+
+  async importPrompts(runId, file, deviceId) {
+    const requestOperationId = operationId("prompt_import");
+    return readJson(await this.authorizedFetch(
+      `/v1/runs/${encodeURIComponent(runId)}/prompt-imports`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "X-Filename": file.name || "prompts.xlsx",
+          "Idempotency-Key": requestOperationId,
+        },
+        body: file,
+      },
+      deviceId,
+    ));
+  }
+
+  async outputAction(outputId, action, deviceId, payload = {}) {
+    const requestOperationId = operationId(action);
+    return readJson(await this.authorizedFetch(
+      `/v1/outputs/${encodeURIComponent(outputId)}/${action}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": requestOperationId },
+        body: JSON.stringify({ ...payload, operation_id: requestOperationId }),
+      },
+      deviceId,
+    ));
+  }
+
+  async revisionStatus(revisionId, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/revisions/${encodeURIComponent(revisionId)}`,
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    ));
+  }
+
+  async replaceOutput(outputId, file, deviceId) {
+    const requestOperationId = operationId("replacement");
+    return readJson(await this.authorizedFetch(
+      `/v1/outputs/${encodeURIComponent(outputId)}/replacements`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Filename": file.name || "replacement.png",
+          "Idempotency-Key": requestOperationId,
+        },
+        body: file,
+      },
+      deviceId,
+    ));
+  }
+
+  async deleteOutput(outputId, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/outputs/${encodeURIComponent(outputId)}`,
+      { method: "DELETE", headers: { "Idempotency-Key": operationId("delete_output") } },
+      deviceId,
+    ));
+  }
+
+  async downloadRun(runId, deviceId) {
+    const response = await this.authorizedFetch(
+      `/v1/runs/${encodeURIComponent(runId)}/download`,
+      { method: "GET" },
+      deviceId,
+    );
+    if (!response.ok) await readJson(response);
+    return response.blob();
+  }
+
+  async exportBackup(deviceId) {
+    const response = await this.authorizedFetch("/v1/backup", { method: "GET" }, deviceId);
+    if (!response.ok) await readJson(response);
+    return response.blob();
+  }
+
+  async restoreBackup(file, deviceId) {
+    const requestOperationId = operationId("restore");
+    return readJson(await this.authorizedFetch(
+      "/v1/restore",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/zip",
+          "X-Filename": file.name || "backup.zip",
+          "Idempotency-Key": requestOperationId,
+        },
+        body: file,
+      },
+      deviceId,
+    ));
+  }
+
+  async exportSharedConfig(logicalKey, approvedDeviceId, replicationSecret, deviceId) {
+    const response = await this.authorizedFetch(
+      `/v1/configs/${encodeURIComponent(logicalKey)}/replicas/export`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approved_device_id: approvedDeviceId,
+          replication_secret: replicationSecret,
+        }),
+      },
+      deviceId,
+    );
+    if (!response.ok) await readJson(response);
+    return response.blob();
+  }
+
+  async importSharedConfig(logicalKey, file, replicationSecret, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/configs/${encodeURIComponent(logicalKey)}/replicas/import`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/vnd.ad-factory.encrypted-config+json",
+          "X-Replication-Secret": replicationSecret,
+          "Idempotency-Key": operationId("config_replica"),
+        },
+        body: file,
+      },
+      deviceId,
+    ));
   }
 }
 
@@ -436,6 +625,21 @@ if (typeof window !== "undefined") {
     putProviderConfig: (...args) => localDataPlane.putProviderConfig(...args),
     deleteProviderConfig: (...args) => localDataPlane.deleteProviderConfig(...args),
     listOutputs: (...args) => localDataPlane.listOutputs(...args),
+    generateRun: (...args) => localDataPlane.generateRun(...args),
     outputObjectUrl: (...args) => localDataPlane.outputObjectUrl(...args),
+    listPrompts: (...args) => localDataPlane.listPrompts(...args),
+    promptContent: (...args) => localDataPlane.promptContent(...args),
+    putPrompt: (...args) => localDataPlane.putPrompt(...args),
+    exportPrompts: (...args) => localDataPlane.exportPrompts(...args),
+    importPrompts: (...args) => localDataPlane.importPrompts(...args),
+    outputAction: (...args) => localDataPlane.outputAction(...args),
+    revisionStatus: (...args) => localDataPlane.revisionStatus(...args),
+    replaceOutput: (...args) => localDataPlane.replaceOutput(...args),
+    deleteOutput: (...args) => localDataPlane.deleteOutput(...args),
+    downloadRun: (...args) => localDataPlane.downloadRun(...args),
+    exportBackup: (...args) => localDataPlane.exportBackup(...args),
+    restoreBackup: (...args) => localDataPlane.restoreBackup(...args),
+    exportSharedConfig: (...args) => localDataPlane.exportSharedConfig(...args),
+    importSharedConfig: (...args) => localDataPlane.importSharedConfig(...args),
   });
 }

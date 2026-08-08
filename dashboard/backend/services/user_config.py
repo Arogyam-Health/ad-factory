@@ -164,13 +164,15 @@ def create_or_update_config(
 ) -> dict[str, Any]:
     """Create or update a config doc in owner schema."""
     now = time.time()
-    coll = get_sync_db()[COLL_USER_CONFIGS]
-
-    existing = coll.find_one({
-        "owner_type": owner_type,
-        "owner_id": owner_id,
-        "is_active": True,
-    })
+    try:
+        coll = get_sync_db()[COLL_USER_CONFIGS]
+        existing = coll.find_one({
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "is_active": True,
+        })
+    except Exception:
+        return get_generic_config()
 
     update_entries = {}
     files_obj = {}

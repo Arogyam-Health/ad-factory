@@ -129,13 +129,30 @@ export async function renderRun(run) {
   const header = document.createElement("div");
   header.className = "run-header";
   header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${displayBatch(run)} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
+  if (run.device_id && run.local_device_status === "unavailable") {
+    const unavailable = document.createElement("span");
+    unavailable.className = "run-device-unavailable";
+    unavailable.textContent = "Authoritative device unavailable";
+    header.insertBefore(unavailable, header.querySelector(".run-delete-btn"));
+  }
   div.appendChild(header);
 
   header.querySelector(".run-delete-btn")?.addEventListener("click", async (e) => {
     e.stopPropagation();
     if (!confirm(`Delete entire run ${run.run_id} and all its images?`)) return;
     try {
-      await fetchJSON(`/api/runs/${run.run_id}`, { method: "DELETE" });
+      if (!run.device_id) throw new Error("Run has no authoritative local device");
+      await localDataPlane.authorizedFetch(
+        `/v1/runs/${encodeURIComponent(run.run_id)}`,
+        { method: "DELETE", headers: { "Idempotency-Key": `delete-${run.run_id}-${Date.now()}` } },
+        run.device_id,
+      ).then(async (response) => {
+        if (!response.ok) throw new Error(`Local deletion failed (${response.status})`);
+      });
+      await fetchJSON(`/api/runs/${run.run_id}`, {
+        method: "DELETE",
+        headers: { "X-Local-Deletion-Receipt": "pending-reconciliation" },
+      });
       appendLog(`Deleted run ${run.run_id}`);
       invalidateRuns();
       const { loadRuns } = await import("./runs.js");
@@ -541,19 +558,25 @@ export function applyLocalArtifactsToRuns() {
     const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : (image.run_id ? [image.run_id] : []);
     let targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
     targets.forEach((run) => {
-      if (!Array.isArray(run.image_files)) run.image_files = [];
-      if (!run.image_files.includes(image.url)) run.image_files.push(image.url);
-      if (!Array.isArray(run.image_items)) run.image_items = [];
-      const existingItem = run.image_items.find((item) => item.path === image.url);
+      const archived = image.status === "archived";
+      const filesKey = archived ? "regeneration_queue_files" : "image_files";
+      const itemsKey = archived ? "regeneration_queue_items" : "image_items";
+      if (!Array.isArray(run[filesKey])) run[filesKey] = [];
+      if (!run[filesKey].includes(image.url)) run[filesKey].push(image.url);
+      if (!Array.isArray(run[itemsKey])) run[itemsKey] = [];
+      const existingItem = run[itemsKey].find((item) => item.path === image.url);
       const localItem = {
         path: image.url,
         artifact_id: image.artifact_id || "",
+        output_id: image.output_id || "",
+        output_version: image.output_version || 0,
         prompt_id: image.prompt_id || "",
         aspect_ratio: image.aspect_ratio || "",
         is_local: true,
+        is_queued: archived,
       };
       if (existingItem) Object.assign(existingItem, localItem);
-      else run.image_items.push(localItem);
+      else run[itemsKey].push(localItem);
       run.image_generated = true;
     });
   });
@@ -571,6 +594,11 @@ export async function refreshStructuredLocalOutputs() {
   const next = [];
   for (const run of state.runsData) {
     if (!run?.run_id || !run?.device_id || !run?.agent_id) continue;
+    run.local_device_status = "unavailable";
+    run.image_files = [];
+    run.image_items = [];
+    run.regeneration_queue_files = [];
+    run.regeneration_queue_items = [];
     try {
       await localDataPlane.ensurePaired({
         ownerType: run.owner_type || "user",
@@ -579,6 +607,7 @@ export async function refreshStructuredLocalOutputs() {
         agentId: run.agent_id,
       });
       const outputs = await localDataPlane.listOutputs(run.run_id, run.device_id);
+      run.local_device_status = "online";
       for (const output of outputs) {
         const key = `${output.output_id}:${output.current_version}`;
         const cached = previous.get(key);
@@ -600,7 +629,7 @@ export async function refreshStructuredLocalOutputs() {
         });
       }
     } catch {
-      // Preserve metadata from Render while the authoritative local device is offline.
+      // Render metadata remains visible, but content URLs never fall back across devices.
     }
   }
   const retained = new Set(next.map((image) => image.url));

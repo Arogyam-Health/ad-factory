@@ -1,6 +1,7 @@
 import { appendLog } from "./ui.js";
 import { state } from "./state.js";
-import { fetchJSON, invalidateRuns } from "./api.js";
+import { invalidateRuns } from "./api.js";
+import { localDataPlane } from "./local-data-plane.js";
 
 function promptUrl(item, path) {
   if (item && item.prompt_id) {
@@ -30,7 +31,22 @@ export function buildPromptEditor(run, container, promptsData) {
   loadBtn.onclick = () => {
     loadBtn.disabled = true;
     loadHint.textContent = "Loading editable on-image copy...";
-    fetchJSON(`/api/runs/${run.run_id}/prompt-copies`)
+    localDataPlane.listPrompts(run.run_id, run.device_id)
+      .then(async (items) => ({
+        prompts: await Promise.all(items.map(async (item) => {
+          const content = await localDataPlane.promptContent(item.prompt_id, run.device_id);
+          const copyLines = content.split(/\r?\n/)
+            .map((line) => line.match(/^\s*-\s*([^:]+):\s*(.*)$/))
+            .filter(Boolean)
+            .map((match) => ({ label: match[1].trim(), value: match[2] }));
+          return {
+            ...item,
+            prompt_file: `${item.prompt_id}.txt`,
+            full_content: content,
+            copy_lines: copyLines,
+          };
+        })),
+      }))
       .then((data) => {
         const prompts = data.prompts || [];
         if (!prompts.length) {
@@ -60,12 +76,7 @@ export function buildPromptEditor(run, container, promptsData) {
           exportCopyBtn.disabled = true;
           try {
             appendLog(`Exporting EXACT ON-IMAGE COPY to XLSX for ${run.run_id}...`);
-            const res = await fetch(`/api/runs/${run.run_id}/export-on-image-copy`);
-            if (!res.ok) {
-              appendLog(`Export failed: ${await res.text() || res.statusText}`);
-              return;
-            }
-            const blob = await res.blob();
+            const blob = await localDataPlane.exportPrompts(run.run_id, run.device_id);
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
@@ -93,41 +104,11 @@ export function buildPromptEditor(run, container, promptsData) {
           previewEl.style.marginTop = "10px";
           importCopyBtn.disabled = true;
           try {
-            appendLog("Importing XLSX and generating preview...");
-            const fd = new FormData();
-            fd.append("file", file);
-            fd.append("confirm", "false");
-            const res = await fetch(`/api/runs/${run.run_id}/import-on-image-copy`, { method: "POST", body: fd });
-            let data = null;
-            try { data = await res.json(); } catch { data = { detail: await res.text() }; }
-            if (!res.ok) {
-              appendLog("Import validation failed");
-              previewEl.textContent = JSON.stringify(data.detail || data, null, 2);
-              container.appendChild(previewEl);
-              return;
-            }
-            previewEl.textContent =
-              `Preview ready for ${data.changed_rows_count} rows (skipped ${data.skipped_rows}):\n` +
-              (data.items || []).slice(0, 30).map((x) => `- ${x.prompt_id}: ${x.old_copy} => ${x.new_copy}`).join("\n") +
-              ((data.items || []).length > 30 ? `\n... (${(data.items || []).length - 30} more)` : "");
+            appendLog("Importing XLSX to the authoritative local device...");
+            const data = await localDataPlane.importPrompts(run.run_id, file, run.device_id);
+            previewEl.textContent = `Updated ${data.updated || 0} immutable prompt version(s).`;
             container.appendChild(previewEl);
-            if (!window.confirm(`Preview generated.\nApply changes for ${data.changed_rows_count} rows?`)) {
-              appendLog("Import canceled (no overwrite applied).");
-              return;
-            }
-            appendLog("Applying XLSX changes (exact-block overwrite only)...");
-            const fd2 = new FormData();
-            fd2.append("file", file);
-            fd2.append("confirm", "true");
-            const res2 = await fetch(`/api/runs/${run.run_id}/import-on-image-copy`, { method: "POST", body: fd2 });
-            let data2 = null;
-            try { data2 = await res2.json(); } catch { data2 = { detail: await res2.text() }; }
-            if (!res2.ok) {
-              appendLog("Import apply failed.");
-              previewEl.textContent = JSON.stringify(data2.detail || data2, null, 2);
-              return;
-            }
-            appendLog(`Import applied. Updated ${data2.changed_rows_count} rows. Skipped ${data2.skipped_rows}.`);
+            appendLog(`Import applied. Updated ${data.updated || 0} prompt(s).`);
             import("./runs.js").then((m) => m.loadRuns());
           } catch (err) {
             appendLog(String(err));
@@ -164,11 +145,11 @@ export function buildPromptEditor(run, container, promptsData) {
           const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
           appendLog(`Generating 4:5 images in ${engineLabel} for ${selected.length} selected prompt(s) from ${run.run_id}...`);
           try {
-            const data = await fetchJSON(`/api/runs/${run.run_id}/generate-images-45`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt_ids: selected, engine }),
-            });
+            const data = await localDataPlane.generateRun(
+              run.run_id,
+              { engine, mode: "45", count: selected.length },
+              run.device_id,
+            );
             const batchKey = data.batch || data.run_id || "";
             if (batchKey && state.headlessModeEnabled) {
               import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
@@ -192,11 +173,11 @@ export function buildPromptEditor(run, container, promptsData) {
           const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
           appendLog(`Generating 9:16 in ${engineLabel} from selected 4:5 image references for ${selected.length} prompt(s)...`);
           try {
-            const data = await fetchJSON(`/api/runs/${run.run_id}/generate-images-916-from-45`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt_ids: selected, engine }),
-            });
+            const data = await localDataPlane.generateRun(
+              run.run_id,
+              { engine, mode: "916", count: selected.length },
+              run.device_id,
+            );
             const batchKey = data.batch || data.run_id || "";
             if (batchKey && state.headlessModeEnabled) {
               import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
@@ -332,14 +313,7 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
     if (!confirm(`Delete prompt file "${prompt.prompt_file}"? This cannot be undone.`)) return;
     deleteBtn.disabled = true;
     try {
-      await fetchJSON(`/api/runs/${run.run_id}/delete-prompt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt_file: prompt.prompt_file }),
-      });
-      appendLog(`Deleted prompt: ${prompt.prompt_file}`);
-      card.remove();
-      invalidateRuns();
+      throw new Error("Prompt deletion is not part of the local lifecycle; edit or delete the run.");
     } catch (err) {
       appendLog(`Delete error: ${String(err)}`);
       deleteBtn.disabled = false;
@@ -356,11 +330,14 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
     if (!newText.trim()) { appendLog("Prompt text cannot be empty."); return; }
     saveBtn.disabled = true;
     try {
-      await fetchJSON(`/api/runs/${run.run_id}/edit-prompt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt_file: prompt.prompt_file, text: newText }),
-      });
+      const result = await localDataPlane.putPrompt(
+        prompt.prompt_id,
+        run.run_id,
+        newText,
+        prompt.resource_version,
+        run.device_id,
+      );
+      prompt.resource_version = result.version;
       appendLog(`Saved edits to: ${prompt.prompt_file}`);
       editing = false;
       linesDisplay.style.display = "";

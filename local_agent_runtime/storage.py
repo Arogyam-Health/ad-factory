@@ -916,6 +916,28 @@ class AgentState:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def resource_path(self, resource_id: str, version: int | None = None) -> Path:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT o.relative_path
+                FROM resources r
+                JOIN resource_versions rv
+                  ON rv.resource_id = r.resource_id
+                 AND rv.version = COALESCE(?, r.current_version)
+                JOIN objects o ON o.sha256 = rv.object_sha256
+                WHERE r.resource_id = ?
+                """,
+                (version, resource_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError("Resource version not found")
+        path = (self.paths.root / str(row["relative_path"])).resolve()
+        path.relative_to(self.paths.root.resolve())
+        if not path.is_file():
+            raise ValueError("Resource content not found")
+        return path
+
     def create_run(
         self,
         *,
@@ -1247,6 +1269,463 @@ class AgentState:
                 (output_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def output(self, output_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM outputs WHERE output_id = ?", (output_id,)).fetchone()
+        return dict(row) if row is not None else None
+
+    def replace_output(
+        self,
+        *,
+        output_id: str,
+        source_output_version: int,
+        source: Path,
+        operation_id: str,
+        media_type: str,
+    ) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT o.*, r.owner_key
+                FROM outputs o JOIN runs r ON r.run_id = o.run_id
+                WHERE o.output_id = ?
+                """,
+                (output_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Output not found")
+            owner_key = str(row["owner_key"])
+            prior = self._operation_result(conn, owner_key, operation_id)
+            if prior is not None:
+                return prior
+            if int(row["current_version"]) != int(source_output_version):
+                raise VersionConflictError("Output source version is not active")
+        resource = self.put_resource(
+            source=source,
+            owner_key=owner_key,
+            kind="output_image",
+            logical_key=f"{output_id}/replacement/{operation_id}",
+            operation_id=operation_id + ":resource",
+            media_type=media_type,
+            metadata={"output_id": output_id},
+        )
+        now = time.time()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            prior = self._operation_result(conn, owner_key, operation_id)
+            if prior is not None:
+                conn.commit()
+                return prior
+            current = conn.execute(
+                "SELECT current_version FROM outputs WHERE output_id = ?", (output_id,)
+            ).fetchone()
+            if current is None or int(current["current_version"]) != int(source_output_version):
+                conn.rollback()
+                raise VersionConflictError("Output source version is not active")
+            result_version = int(source_output_version) + 1
+            conn.execute(
+                """
+                INSERT INTO output_versions(
+                    output_id, version, resource_id, resource_version,
+                    source_output_version, revision_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, NULL, ?)
+                """,
+                (
+                    output_id,
+                    result_version,
+                    resource.resource_id,
+                    resource.version,
+                    int(source_output_version),
+                    now,
+                ),
+            )
+            conn.execute(
+                "UPDATE outputs SET current_version = ?, status = 'available', updated_at = ? "
+                "WHERE output_id = ?",
+                (result_version, now, output_id),
+            )
+            result = {
+                "output_id": output_id,
+                "source_output_version": int(source_output_version),
+                "result_output_version": result_version,
+                "resource_id": resource.resource_id,
+                "resource_version": resource.version,
+            }
+            self._record_change(
+                conn,
+                owner_key=owner_key,
+                resource_type="output",
+                resource_id=output_id,
+                version=result_version,
+                operation="replaced",
+            )
+            self._save_operation(conn, owner_key, operation_id, "replace_output", result)
+            conn.commit()
+        return result
+
+    def queue_output_revision(
+        self,
+        *,
+        output_id: str,
+        source_output_version: int,
+        comment: str,
+        engine: str,
+        operation_id: str,
+    ) -> dict[str, Any]:
+        comment = str(comment).strip()
+        if not comment:
+            raise ValueError("Revision comment is required")
+        if engine not in {"chatgpt", "gemini"}:
+            raise ValueError("Revision engine must be chatgpt or gemini")
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT o.current_version, o.prompt_id, r.owner_key, o.run_id
+                FROM outputs o JOIN runs r ON r.run_id = o.run_id
+                WHERE o.output_id = ?
+                """,
+                (output_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Output not found")
+            owner_key = str(row["owner_key"])
+            prior = self._operation_result(conn, owner_key, operation_id)
+            if prior is not None:
+                return prior
+            if int(row["current_version"]) != int(source_output_version):
+                raise VersionConflictError("Output source version is not active")
+            prompt = conn.execute(
+                """
+                SELECT re.resource_id, re.resource_version
+                FROM run_entries re JOIN resources r ON r.resource_id = re.resource_id
+                WHERE re.run_id = ? AND re.prompt_id = ? AND r.kind = 'prompt'
+                ORDER BY re.position LIMIT 1
+                """,
+                (row["run_id"], row["prompt_id"]),
+            ).fetchone()
+        original = ""
+        if prompt is not None:
+            original = self.resource_path(
+                str(prompt["resource_id"]), int(prompt["resource_version"])
+            ).read_text(encoding="utf-8")
+        full_prompt = (
+            "Edit the current ad image. Apply the requested revision exactly while preserving "
+            "everything not requested.\n\nREVISION REQUEST:\n"
+            + comment
+            + "\n\nORIGINAL GENERATION INSTRUCTIONS:\n"
+            + original
+            + "\n\nReturn only the revised image.\n"
+        )
+        temporary = self.paths.staging / f".revision-prompt-{uuid.uuid4().hex}.tmp"
+        temporary.write_text(full_prompt, encoding="utf-8")
+        try:
+            prompt_resource = self.put_resource(
+                source=temporary,
+                owner_key=owner_key,
+                kind="revision_prompt",
+                logical_key=f"{output_id}/{operation_id}",
+                operation_id=operation_id + ":prompt",
+                metadata={"output_id": output_id},
+                media_type="text/plain; charset=utf-8",
+            )
+        finally:
+            temporary.unlink(missing_ok=True)
+        revision_id = "rev_" + hashlib.sha256(
+            f"{owner_key}\0{operation_id}".encode("utf-8")
+        ).hexdigest()[:24]
+        now = time.time()
+        result = {
+            "revision_id": revision_id,
+            "output_id": output_id,
+            "source_output_version": int(source_output_version),
+            "status": "queued",
+        }
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            prior = self._operation_result(conn, owner_key, operation_id)
+            if prior is not None:
+                conn.commit()
+                return prior
+            conn.execute(
+                """
+                INSERT INTO revisions(
+                    revision_id, artifact_id, comment, output_id, source_output_version,
+                    result_output_version, prompt_resource_id, prompt_resource_version,
+                    engine, status, attempt, error, created_at, updated_at
+                ) VALUES (?, NULL, '', ?, ?, NULL, ?, ?, ?, 'queued', 1, NULL, ?, ?)
+                """,
+                (
+                    revision_id,
+                    output_id,
+                    int(source_output_version),
+                    prompt_resource.resource_id,
+                    prompt_resource.version,
+                    engine,
+                    now,
+                    now,
+                ),
+            )
+            self._record_change(
+                conn,
+                owner_key=owner_key,
+                resource_type="revision",
+                resource_id=revision_id,
+                version=None,
+                operation="queued",
+            )
+            self._save_operation(conn, owner_key, operation_id, "queue_output_revision", result)
+            conn.commit()
+        self.record_job(
+            revision_id,
+            owner_key,
+            "queued",
+            {
+                "output_id": output_id,
+                "command": "revision",
+                "source_output_version": int(source_output_version),
+                "prompt_resource_id": prompt_resource.resource_id,
+                "prompt_resource_version": prompt_resource.version,
+                "engine": engine,
+            },
+        )
+        return result
+
+    def claim_next_output_revision(self) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT * FROM revisions
+                WHERE output_id IS NOT NULL AND status = 'queued'
+                ORDER BY created_at LIMIT 1
+                """
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return None
+            conn.execute(
+                "UPDATE revisions SET status = 'running', updated_at = ? "
+                "WHERE revision_id = ? AND status = 'queued'",
+                (time.time(), row["revision_id"]),
+            )
+            conn.commit()
+        with self._connect() as conn:
+            claimed = conn.execute(
+                "SELECT * FROM revisions WHERE revision_id = ?", (row["revision_id"],)
+            ).fetchone()
+        return dict(claimed) if claimed is not None else None
+
+    def complete_output_revision(
+        self,
+        revision_id: str,
+        *,
+        result_source: Path,
+        media_type: str,
+    ) -> dict[str, Any]:
+        with self._connect() as conn:
+            revision = conn.execute(
+                """
+                SELECT rev.*, run.owner_key
+                FROM revisions rev
+                JOIN outputs out ON out.output_id = rev.output_id
+                JOIN runs run ON run.run_id = out.run_id
+                WHERE rev.revision_id = ? AND rev.status = 'running'
+                """,
+                (revision_id,),
+            ).fetchone()
+            if revision is None:
+                raise ValueError("Running output revision not found")
+        resource = self.put_resource(
+            source=result_source,
+            owner_key=str(revision["owner_key"]),
+            kind="output_image",
+            logical_key=f"{revision['output_id']}/revision/{revision_id}",
+            operation_id=f"{revision_id}:result",
+            metadata={"output_id": revision["output_id"], "revision_id": revision_id},
+            media_type=media_type,
+        )
+        now = time.time()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute(
+                "SELECT current_version FROM outputs WHERE output_id = ?",
+                (revision["output_id"],),
+            ).fetchone()
+            if current is None or int(current["current_version"]) != int(
+                revision["source_output_version"]
+            ):
+                conn.rollback()
+                raise VersionConflictError("Output changed while revision was running")
+            result_version = int(revision["source_output_version"]) + 1
+            conn.execute(
+                """
+                INSERT INTO output_versions(
+                    output_id, version, resource_id, resource_version,
+                    source_output_version, revision_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    revision["output_id"],
+                    result_version,
+                    resource.resource_id,
+                    resource.version,
+                    int(revision["source_output_version"]),
+                    revision_id,
+                    now,
+                ),
+            )
+            conn.execute(
+                "UPDATE outputs SET current_version = ?, status = 'available', updated_at = ? "
+                "WHERE output_id = ?",
+                (result_version, now, revision["output_id"]),
+            )
+            conn.execute(
+                """
+                UPDATE revisions
+                SET result_output_version = ?, status = 'completed', error = NULL, updated_at = ?
+                WHERE revision_id = ?
+                """,
+                (result_version, now, revision_id),
+            )
+            conn.execute(
+                "UPDATE jobs SET status = 'completed', updated_at = ? WHERE job_id = ?",
+                (now, revision_id),
+            )
+            self._record_change(
+                conn,
+                owner_key=str(revision["owner_key"]),
+                resource_type="revision",
+                resource_id=revision_id,
+                version=result_version,
+                operation="completed",
+            )
+            conn.commit()
+        return {
+            "revision_id": revision_id,
+            "output_id": revision["output_id"],
+            "source_output_version": int(revision["source_output_version"]),
+            "result_output_version": result_version,
+            "status": "completed",
+        }
+
+    def fail_output_revision(self, revision_id: str, error: str) -> None:
+        bounded = str(error).replace("\n", " ")[:512]
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE revisions SET status = 'error', error = ?, updated_at = ? "
+                "WHERE revision_id = ? AND output_id IS NOT NULL",
+                (bounded, time.time(), revision_id),
+            )
+            conn.execute(
+                "UPDATE jobs SET status = 'error', updated_at = ? WHERE job_id = ?",
+                (time.time(), revision_id),
+            )
+
+    def activate_output(self, output_id: str, version: int, *, operation_id: str) -> None:
+        self._mutate_output(output_id, operation_id, version=version)
+
+    def set_output_status(self, output_id: str, status: str, *, operation_id: str) -> None:
+        if status not in {"available", "archived"}:
+            raise ValueError("Invalid output status")
+        self._mutate_output(output_id, operation_id, status=status)
+
+    def _mutate_output(
+        self,
+        output_id: str,
+        operation_id: str,
+        *,
+        version: int | None = None,
+        status: str | None = None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT o.*, r.owner_key FROM outputs o
+                JOIN runs r ON r.run_id = o.run_id WHERE o.output_id = ?
+                """,
+                (output_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Output not found")
+            owner_key = str(row["owner_key"])
+            if self._operation_result(conn, owner_key, operation_id) is not None:
+                conn.commit()
+                return
+            target_version = int(version if version is not None else row["current_version"])
+            target_status = str(status or "available")
+            exists = conn.execute(
+                "SELECT 1 FROM output_versions WHERE output_id = ? AND version = ?",
+                (output_id, target_version),
+            ).fetchone()
+            if exists is None:
+                raise ValueError("Output version not found")
+            conn.execute(
+                "UPDATE outputs SET current_version = ?, status = ?, updated_at = ? "
+                "WHERE output_id = ?",
+                (target_version, target_status, time.time(), output_id),
+            )
+            result = {
+                "output_id": output_id,
+                "version": target_version,
+                "status": target_status,
+            }
+            self._record_change(
+                conn,
+                owner_key=owner_key,
+                resource_type="output",
+                resource_id=output_id,
+                version=target_version,
+                operation="activated" if version is not None else target_status,
+            )
+            self._save_operation(conn, owner_key, operation_id, "mutate_output", result)
+            conn.commit()
+
+    def delete_output(self, output_id: str, *, operation_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT o.*, r.owner_key FROM outputs o
+                JOIN runs r ON r.run_id = o.run_id WHERE o.output_id = ?
+                """,
+                (output_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Output not found")
+            owner_key = str(row["owner_key"])
+            prior = self._operation_result(conn, owner_key, operation_id)
+            if prior is not None:
+                conn.commit()
+                return prior
+            conn.execute(
+                "UPDATE outputs SET status = 'deleted', updated_at = ? WHERE output_id = ?",
+                (time.time(), output_id),
+            )
+            event_id = "evt_" + hashlib.sha256(
+                f"{owner_key}\0{operation_id}\0output.deleted".encode("utf-8")
+            ).hexdigest()[:32]
+            receipt = {"output_id": output_id, "status": "deleted", "event_id": event_id}
+            conn.execute(
+                """
+                INSERT INTO outbox(
+                    event_id, owner_key, operation_id, event_type, payload_json, created_at
+                ) VALUES (?, ?, ?, 'output.deleted', ?, ?)
+                """,
+                (event_id, owner_key, operation_id, json.dumps(receipt), time.time()),
+            )
+            self._record_change(
+                conn,
+                owner_key=owner_key,
+                resource_type="output",
+                resource_id=output_id,
+                version=int(row["current_version"]),
+                operation="deleted",
+            )
+            self._save_operation(conn, owner_key, operation_id, "delete_output", receipt)
+            conn.commit()
+        return receipt
 
     def changes(self, *, after: int = 0, limit: int = 100) -> list[dict[str, Any]]:
         with self._connect() as conn:

@@ -18,6 +18,15 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from .storage import AgentPaths, AgentState, VersionConflictError
+from .lifecycle import (
+    backup_local_data,
+    build_output_zip,
+    export_prompt_xlsx,
+    export_shared_config,
+    import_prompt_xlsx,
+    import_shared_config,
+    restore_local_data,
+)
 
 
 ALL_SCOPES = frozenset(
@@ -204,7 +213,7 @@ class LocalDataPlane:
         )
         handler.send_header(
             "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, Idempotency-Key, If-Match, Range, X-Filename",
+            "Authorization, Content-Type, Idempotency-Key, If-Match, Range, X-Filename, X-Replication-Secret",
         )
         handler.send_header(
             "Access-Control-Expose-Headers",
@@ -242,6 +251,27 @@ class LocalDataPlane:
             error.status,
             {"error": {"code": error.code, "message": error.message}},
         )
+
+    def _bytes(
+        self,
+        handler: Any,
+        status: int,
+        body: bytes,
+        media_type: str,
+        *,
+        filename: str | None = None,
+    ) -> None:
+        handler.send_response(status)
+        handler.send_header("Content-Type", media_type)
+        handler.send_header("Content-Length", str(len(body)))
+        if filename:
+            handler.send_header(
+                "Content-Disposition", f'attachment; filename="{Path(filename).name}"'
+            )
+        self._cors(handler)
+        handler.end_headers()
+        if handler.command != "HEAD":
+            handler.wfile.write(body)
 
     def _body(self, handler: Any, maximum: int = 256 * 1024) -> bytes:
         try:
@@ -315,6 +345,7 @@ class LocalDataPlane:
                     "if-match",
                     "range",
                     "x-filename",
+                    "x-replication-secret",
                 }
                 if not requested_headers.issubset(allowed_headers):
                     raise APIError(
@@ -354,6 +385,9 @@ class LocalDataPlane:
                         "prompts",
                         "outputs",
                         "range-downloads",
+                        "prompt-xlsx",
+                        "backup-restore",
+                        "encrypted-config-replication",
                         "resumable-events",
                     ],
                 },
@@ -393,6 +427,12 @@ class LocalDataPlane:
             return
         if path.startswith("/v1/outputs/"):
             self._output_route(handler, path)
+            return
+        if path.startswith("/v1/revisions/") and method == "GET":
+            self._revision_status(handler, path.removeprefix("/v1/revisions/"))
+            return
+        if path in {"/v1/backup", "/v1/restore"}:
+            self._backup_route(handler, path)
             return
         if path == "/v1/changes" and method == "GET":
             self._changes(handler)
@@ -893,6 +933,58 @@ class LocalDataPlane:
             return
         logical_key, separator, tail = suffix.partition("/")
         logical_key = self._safe_logical_key(logical_key)
+        if collection == "configs" and separator and tail == "replicas/export":
+            session = self._session(handler, "documents:write")
+            if handler.command != "POST":
+                raise APIError(405, "method_not_allowed", "Method not allowed")
+            payload = self._json_body(handler, 16 * 1024)
+            try:
+                secret = bytes.fromhex(str(payload.get("replication_secret") or ""))
+                package = export_shared_config(
+                    self.state,
+                    owner_key=session.owner_key,
+                    logical_key=logical_key,
+                    authority_device_id=self.device_id,
+                    approved_device_id=self._safe_logical_key(
+                        str(payload.get("approved_device_id") or "")
+                    ),
+                    replication_secret=secret,
+                )
+            except (ValueError, TypeError) as exc:
+                raise APIError(400, "replication_export_invalid", str(exc)) from exc
+            self._bytes(
+                handler,
+                200,
+                package,
+                "application/vnd.ad-factory.encrypted-config+json",
+                filename=f"{logical_key}.adconfig",
+            )
+            return
+        if collection == "configs" and separator and tail == "replicas/import":
+            session = self._session(handler, "documents:write")
+            if handler.command != "POST":
+                raise APIError(405, "method_not_allowed", "Method not allowed")
+            try:
+                secret = bytes.fromhex(
+                    str(handler.headers.get("X-Replication-Secret") or "")
+                )
+                result = import_shared_config(
+                    self.state,
+                    self._body(handler, self.service.config.max_upload_bytes),
+                    importing_device_id=self.device_id,
+                    replication_secret=secret,
+                    operation_id=self._operation_id(handler),
+                )
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+                raise APIError(400, "replication_import_invalid", str(exc)) from exc
+            if result["resource_id"] and logical_key:
+                record = self._resource_record(
+                    session.owner_key, resource_id=str(result["resource_id"])
+                )
+                if record is None or record["logical_key"] != logical_key:
+                    raise APIError(409, "replication_scope_mismatch", "Replica scope is invalid")
+            self._json(handler, 201, result)
+            return
         if separator and tail == "versions" and handler.command == "GET":
             session = self._session(handler, "manifest:read")
             record = self._resource_record(
@@ -1178,6 +1270,30 @@ class LocalDataPlane:
         suffix = path.removeprefix("/v1/prompts/")
         prompt_id, separator, action = suffix.partition("/")
         prompt_id = self._safe_logical_key(prompt_id)
+        if separator and action == "versions" and handler.command == "GET":
+            session = self._session(handler, "manifest:read")
+            record = self._resource_record(
+                session.owner_key, kind="prompt", logical_key=prompt_id
+            )
+            if record is None:
+                raise APIError(404, "prompt_not_found", "Prompt not found")
+            self._json(
+                handler,
+                200,
+                {
+                    "items": [
+                        {
+                            "resource_id": item["resource_id"],
+                            "version": int(item["version"]),
+                            "sha256": item["object_sha256"],
+                            "bytes": int(item["bytes"]),
+                            "created_at": item["created_at"],
+                        }
+                        for item in self.state.resource_versions(record["resource_id"])
+                    ]
+                },
+            )
+            return
         if separator and action == "content" and handler.command == "GET":
             session = self._session(handler, "content:read")
             record = self._resource_record(
@@ -1293,6 +1409,22 @@ class LocalDataPlane:
 
     def _prompt_import(self, handler: Any, owner_key: str, run_id: str) -> None:
         self._session(handler, "prompts:write")
+        content_type = str(handler.headers.get("Content-Type") or "")
+        if "spreadsheetml" in content_type or str(
+            handler.headers.get("X-Filename") or ""
+        ).lower().endswith(".xlsx"):
+            try:
+                result = import_prompt_xlsx(
+                    self.state,
+                    owner_key,
+                    run_id,
+                    self._body(handler, self.service.config.max_request_bytes),
+                    operation_id=self._operation_id(handler),
+                )
+            except ValueError as exc:
+                raise APIError(400, "invalid_prompt_workbook", str(exc)) from exc
+            self._json(handler, 200, result)
+            return
         payload = self._json_body(handler, self.service.config.max_request_bytes)
         items = payload.get("items")
         if not isinstance(items, list) or not items:
@@ -1341,18 +1473,13 @@ class LocalDataPlane:
 
     def _prompt_export(self, handler: Any, owner_key: str, run_id: str) -> None:
         self._session(handler, "content:read")
-        temporary = self._build_run_zip(owner_key, run_id, prompts_only=True)
-        try:
-            record = {
-                "relative_path": temporary.relative_to(
-                    self.service.config.paths.root
-                ).as_posix(),
-                "media_type": "application/zip",
-                "object_sha256": self._hash_file(temporary),
-            }
-            self._send_file(handler, record, attachment_name=f"{run_id}-prompts.zip")
-        finally:
-            temporary.unlink(missing_ok=True)
+        self._bytes(
+            handler,
+            200,
+            export_prompt_xlsx(self.state, owner_key, run_id),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=f"{run_id}-prompts.xlsx",
+        )
 
     def _output_route(self, handler: Any, path: str) -> None:
         suffix = path.removeprefix("/v1/outputs/")
@@ -1376,13 +1503,10 @@ class LocalDataPlane:
             self._json(handler, 200, self._safe_output(output))
             return
         if not separator and handler.command == "DELETE":
-            self._set_output_status(
-                session.owner_key,
-                output_id,
-                "deleted",
-                self._operation_id(handler),
+            result = self.state.delete_output(
+                output_id, operation_id=self._operation_id(handler)
             )
-            self._json(handler, 200, {"output_id": output_id, "status": "deleted"})
+            self._json(handler, 200, result)
             return
         if action == "content" and handler.command in {"GET", "HEAD"}:
             record = self._output_resource(session.owner_key, output_id)
@@ -1416,91 +1540,99 @@ class LocalDataPlane:
         if action in {"archive", "restore"} and handler.command == "POST":
             payload = self._json_body(handler)
             status = "archived" if action == "archive" else "available"
-            self._set_output_status(
-                session.owner_key,
-                output_id,
-                status,
-                self._operation_id(handler, payload),
+            self.state.set_output_status(
+                output_id, status, operation_id=self._operation_id(handler, payload)
             )
             self._json(handler, 200, {"output_id": output_id, "status": status})
             return
+        if action == "regenerate" and handler.command == "POST":
+            payload = self._json_body(handler)
+            try:
+                result = self.state.queue_output_revision(
+                    output_id=output_id,
+                    source_output_version=int(output["current_version"]),
+                    comment="Regenerate this output from its original instructions.",
+                    engine=str(payload.get("engine") or "chatgpt").lower(),
+                    operation_id=self._operation_id(handler, payload),
+                )
+            except ValueError as exc:
+                raise APIError(400, "regeneration_invalid", str(exc)) from exc
+            self._json(handler, 202, result)
+            return
         if action in {"replacements", "revisions"} and handler.command == "POST":
+            if action == "replacements":
+                if "application/json" in str(handler.headers.get("Content-Type") or ""):
+                    payload = self._json_body(handler)
+                    operation_id = self._operation_id(handler, payload)
+                    command_id, status, _stored = self._queue_command(
+                        session.owner_key,
+                        operation_id,
+                        "rep_",
+                        {
+                            "output_id": output_id,
+                            "command": "replacement",
+                            "source_output_version": int(output["current_version"]),
+                        },
+                    )
+                    self._json(
+                        handler,
+                        202,
+                        {
+                            "command_id": command_id,
+                            "output_id": output_id,
+                            "source_output_version": int(output["current_version"]),
+                            "status": status,
+                        },
+                    )
+                    return
+                operation_id = self._operation_id(handler)
+                try:
+                    length = int(handler.headers.get("Content-Length") or "0")
+                except ValueError as exc:
+                    raise APIError(400, "invalid_content_length", "Invalid Content-Length") from exc
+                filename = str(handler.headers.get("X-Filename") or "")
+                temporary, _digest, _size, media_type = self._stream_upload(
+                    handler.rfile, length, filename
+                )
+                try:
+                    result = self.state.replace_output(
+                        output_id=output_id,
+                        source_output_version=int(output["current_version"]),
+                        source=temporary,
+                        operation_id=operation_id,
+                        media_type=media_type,
+                    )
+                finally:
+                    temporary.unlink(missing_ok=True)
+                self._json(handler, 201, result)
+                return
             payload = self._json_body(handler)
             operation_id = self._operation_id(handler, payload)
-            parameters: dict[str, Any] = {
-                "output_id": output_id,
-                "command": action[:-1],
-                "source_output_version": int(output["current_version"]),
-            }
             if action == "revisions":
                 comment = payload.get("comment")
                 if not isinstance(comment, str) or not comment.strip():
                     raise APIError(400, "comment_required", "Revision comment is required")
                 if len(comment.encode("utf-8")) > 64 * 1024:
                     raise APIError(413, "comment_too_large", "Revision comment is too large")
-                temporary = (
-                    self.service.config.paths.staging / f".revision-{uuid.uuid4().hex}.tmp"
-                )
-                temporary.write_text(comment.strip(), encoding="utf-8")
                 try:
-                    prompt = self.state.put_resource(
-                        source=temporary,
-                        owner_key=session.owner_key,
-                        kind="revision_prompt",
-                        logical_key=f"{output_id}/{operation_id}",
-                        operation_id=operation_id + ":prompt",
-                        metadata={"output_id": output_id},
-                        media_type="text/plain; charset=utf-8",
+                    result = self.state.queue_output_revision(
+                        output_id=output_id,
+                        source_output_version=int(output["current_version"]),
+                        comment=comment,
+                        engine=str(payload.get("engine") or "chatgpt").lower(),
+                        operation_id=operation_id,
                     )
-                finally:
-                    temporary.unlink(missing_ok=True)
-                parameters.update(
-                    {
-                        "prompt_resource_id": prompt.resource_id,
-                        "prompt_resource_version": prompt.version,
-                    }
-                )
-            elif payload.get("resource_id") is not None:
-                replacement = self._resource_record(
-                    session.owner_key,
-                    resource_id=str(payload.get("resource_id")),
-                    version=int(payload.get("resource_version") or 1),
-                )
-                if replacement is None or replacement["kind"] != "output_image":
-                    raise APIError(
-                        404, "replacement_not_found", "Replacement resource not found"
-                    )
-                parameters.update(
-                    {
-                        "resource_id": replacement["resource_id"],
-                        "resource_version": int(replacement["version"]),
-                    }
-                )
-            command_id, status, stored = self._queue_command(
-                session.owner_key,
-                operation_id,
-                "rep_" if action == "replacements" else "rev_",
-                parameters,
-            )
-            self._json(
-                handler,
-                202,
-                {
-                    "command_id": command_id,
-                    "output_id": output_id,
-                    "source_output_version": int(stored["source_output_version"]),
-                    "status": status,
-                },
-            )
-            return
+                except ValueError as exc:
+                    raise APIError(400, "revision_invalid", str(exc)) from exc
+                self._json(handler, 202, result)
+                return
         if action.startswith("versions/") and action.endswith("/activate") and handler.command == "POST":
             raw_version = action.removeprefix("versions/").removesuffix("/activate")
             payload = self._json_body(handler)
-            self._activate_output(
-                session.owner_key,
+            self.state.activate_output(
                 output_id,
                 int(raw_version),
-                self._operation_id(handler, payload),
+                operation_id=self._operation_id(handler, payload),
             )
             self._json(
                 handler,
@@ -1520,6 +1652,26 @@ class LocalDataPlane:
                 (output_id, owner_key),
             ).fetchone()
         return dict(row) if row else None
+
+    def _revision_status(self, handler: Any, revision_id: str) -> None:
+        session = self._session(handler, "manifest:read")
+        revision_id = self._safe_logical_key(revision_id)
+        with self.state._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT rev.revision_id, rev.output_id, rev.source_output_version,
+                       rev.result_output_version, rev.engine, rev.status, rev.attempt,
+                       rev.error, rev.created_at, rev.updated_at
+                FROM revisions rev
+                JOIN outputs out ON out.output_id = rev.output_id
+                JOIN runs run ON run.run_id = out.run_id
+                WHERE rev.revision_id = ? AND run.owner_key = ?
+                """,
+                (revision_id, session.owner_key),
+            ).fetchone()
+        if row is None:
+            raise APIError(404, "revision_not_found", "Revision not found")
+        self._json(handler, 200, dict(row))
 
     def _queue_command(
         self,
@@ -1738,18 +1890,45 @@ class LocalDataPlane:
 
     def _run_download(self, handler: Any, owner_key: str, run_id: str) -> None:
         self._session(handler, "content:read")
-        temporary = self._build_run_zip(owner_key, run_id)
-        try:
-            record = {
-                "relative_path": temporary.relative_to(
-                    self.service.config.paths.root
-                ).as_posix(),
-                "media_type": "application/zip",
-                "object_sha256": self._hash_file(temporary),
-            }
-            self._send_file(handler, record, attachment_name=f"{run_id}.zip")
-        finally:
-            temporary.unlink(missing_ok=True)
+        self._bytes(
+            handler,
+            200,
+            build_output_zip(self.state, owner_key, run_id),
+            "application/zip",
+            filename=f"{run_id}.zip",
+        )
+
+    def _backup_route(self, handler: Any, path: str) -> None:
+        self._session(handler, "documents:write")
+        if path == "/v1/backup" and handler.command == "GET":
+            temporary = self.service.config.paths.staging / f".backup-{uuid.uuid4().hex}.zip"
+            try:
+                backup_local_data(self.service.config.paths, temporary)
+                self._bytes(
+                    handler,
+                    200,
+                    temporary.read_bytes(),
+                    "application/zip",
+                    filename="ad-factory-local-backup.zip",
+                )
+            finally:
+                temporary.unlink(missing_ok=True)
+            return
+        if path == "/v1/restore" and handler.command == "POST":
+            operation_id = self._operation_id(handler)
+            body = self._body(handler, max(self.service.config.max_request_bytes, 512 * 1024 * 1024))
+            temporary = self.service.config.paths.staging / f".restore-{uuid.uuid4().hex}.zip"
+            temporary.write_bytes(body)
+            try:
+                result = restore_local_data(self.service.config.paths, temporary)
+            except (ValueError, zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
+                raise APIError(400, "backup_invalid", str(exc)) from exc
+            finally:
+                temporary.unlink(missing_ok=True)
+            result["operation_id"] = operation_id
+            self._json(handler, 200, result)
+            return
+        raise APIError(405, "method_not_allowed", "Method not allowed")
 
     @staticmethod
     def _hash_file(path: Path) -> str:
