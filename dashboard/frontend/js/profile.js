@@ -1,6 +1,9 @@
 import { fetchJSON, clearCache } from "./api.js";
 import { getAuthUser, isAuthenticated } from "./auth.js";
 import { setStatus, showGlobalLoading, hideGlobalLoading } from "./ui.js";
+import { localDataPlane } from "./local-data-plane.js";
+
+let providerDeviceId = "";
 
 export async function renderProfilePanel() {
   const panel = document.getElementById("profilePanel");
@@ -14,9 +17,16 @@ export async function renderProfilePanel() {
 
   showGlobalLoading("Loading profile...");
   try {
+    const paired = await localDataPlane.ensurePaired({
+      ownerType: "user",
+      ownerId: user.user_id,
+    }).catch(() => null);
+    providerDeviceId = paired?.info?.device_id || "";
     const [orgData, providerConfigs] = await Promise.all([
       fetchJSON("/api/orgs/me").catch(() => null),
-      fetchJSON("/api/user/provider-config").catch(() => []),
+      providerDeviceId
+        ? localDataPlane.listProviderConfigs(providerDeviceId).catch(() => [])
+        : Promise.resolve([]),
     ]);
     renderProfile(panel, user, orgData, providerConfigs);
   } catch (err) {
@@ -135,7 +145,7 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
     const provider = pc.provider || "unknown";
     const providerName = PROVIDER_NAMES[provider] || provider;
     const fields = PROVIDER_FIELDS[provider] || [];
-    const config = pc.config || {};
+    const config = pc.config || pc || {};
 
     const card = document.createElement("div");
     card.className = "profile-pc-card";
@@ -143,10 +153,10 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
 
     let fieldsHtml = "";
     for (const field of fields) {
-      const val = config[field.key];
+      const val = field.is_secret ? config.has_secret : config[field.key];
       const hasVal = !!val;
       const displayVal = field.is_secret
-        ? (hasVal ? val : "Not set")
+        ? (hasVal ? "•••••••• (saved locally)" : "Not set")
         : (val || "Not set");
       const statusColor = hasVal ? "var(--accent-green)" : "var(--muted)";
 
@@ -157,7 +167,7 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
         </div>`;
     }
 
-    const hasAnyKey = fields.some(f => f.is_secret && config[f.key]);
+    const hasAnyKey = config.has_secret === true;
 
     card.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem">
@@ -182,7 +192,7 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
       if (!confirm(`Delete all saved credentials for ${PROVIDER_NAMES[prov] || prov}?`)) return;
       btn.disabled = true;
       try {
-        await fetchJSON(`/api/user/provider-config/${encodeURIComponent(prov)}`, { method: "DELETE" });
+        await localDataPlane.deleteProviderConfig(prov, providerDeviceId);
         await renderProfilePanel();
       } catch (err) {
         setStatus(`Delete failed: ${String(err)}`);

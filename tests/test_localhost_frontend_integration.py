@@ -70,7 +70,8 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertIn("/v1/assets", source)
         self.assertIn("authorizedFetch", source)
         main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
-        self.assertIn('putText("configs", `provider-${provider}`', main)
+        self.assertIn("putProviderConfig(provider, config", main)
+        self.assertIn("/v1/provider-configs", source)
 
     def test_images_use_authenticated_blob_urls_not_tokenized_urls(self) -> None:
         local_source = (

@@ -428,6 +428,7 @@ def render_prompt(
     seeded_sentence: str,
     visual_archetype: dict[str, Any],
     visual_lock: dict[str, Any] | None = None,
+    templates: dict[str, Any] | None = None,
 ) -> str:
     if fmt == "HERO":
         style = "HERO, polished enough for paid ad deployment."
@@ -466,7 +467,7 @@ def render_prompt(
 
     persona_number = require_int(persona, "number", "ads[].persona")
 
-    T = PROMPT_ASSEMBLER_TEMPLATES
+    T = templates if isinstance(templates, dict) else PROMPT_ASSEMBLER_TEMPLATES
 
     layout_lines = list(visual_archetype.get("layout_lines") or [])
     archetype_direction_lines = [str(line) for line in (visual_archetype.get("direction_lines") or []) if isinstance(line, str) and line.strip()]

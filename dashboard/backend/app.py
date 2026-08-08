@@ -6910,21 +6910,6 @@ async def api_run_execute(
     if str((cfg.get("server_type") or "opencode")).strip().lower() != "opencode":
         raise HTTPException(status_code=400, detail="Unsupported server type. Use OpenCode.")
 
-    if (cfg.get("provider") or "opencode").strip().lower() == "opencode":
-        try:
-            from dashboard.backend.services.provider_config import get_decrypted_provider_key, get_provider_config
-
-            saved = get_provider_config(user_id, "opencode") or {}
-            saved_cfg = saved.get("config", {}) if isinstance(saved, dict) else {}
-            if not (cfg.get("opencode_api_url") or "").strip() and saved_cfg.get("api_url"):
-                cfg["opencode_api_url"] = saved_cfg.get("api_url") or cfg.get("opencode_api_url") or ""
-            if not (cfg.get("opencode_api_key") or "").strip():
-                cfg["opencode_api_key"] = get_decrypted_provider_key(user_id, "opencode", "api_key") or ""
-            if not (cfg.get("opencode_model") or "").strip() and saved_cfg.get("default_model"):
-                cfg["opencode_model"] = saved_cfg.get("default_model") or cfg.get("opencode_model") or ""
-        except Exception as exc:
-            print(f"[api_run_execute] Provider config hydration skipped: {exc}", file=sys.stderr)
-
     run_id = make_run_id()
     run_dir = RUNS_ROOT / run_id
 

@@ -233,14 +233,7 @@ document.getElementById("llmProvider")?.addEventListener("change", (e) => {
 
 async function saveProviderConfig(provider, config) {
   await ensureStructuredLocal();
-  let existing = {};
-  try {
-    existing = JSON.parse(await localDataPlane.getText("configs", `provider-${provider}`, structuredDeviceId));
-  } catch {}
-  return localDataPlane.putText("configs", `provider-${provider}`, JSON.stringify({
-    ...existing,
-    ...config,
-  }), {
+  return localDataPlane.putProviderConfig(provider, config, {
     deviceId: structuredDeviceId,
   });
 }
@@ -249,9 +242,7 @@ async function deleteAllCredentials() {
   const providers = ["opencode", "google_gemini"];
   for (const p of providers) {
     await ensureStructuredLocal();
-    await localDataPlane.putText("configs", `provider-${p}`, "{}", {
-      deviceId: structuredDeviceId,
-    });
+    await localDataPlane.deleteProviderConfig(p, structuredDeviceId);
   }
 }
 
@@ -350,18 +341,18 @@ async function loadProviderConfigsIntoFields() {
     for (const p of ["opencode", "google_gemini"]) {
       let cfg = {};
       try {
-        cfg = JSON.parse(await localDataPlane.getText("configs", `provider-${p}`, structuredDeviceId));
+        cfg = await localDataPlane.getProviderConfig(p, structuredDeviceId);
       } catch {}
       saved[p] = cfg;
       if (p === "opencode") {
         if (cfg.api_url) document.getElementById("opencodeApiUrl").value = cfg.api_url;
-        if (cfg.api_key) document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
+        if (cfg.has_secret) document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved locally)";
         if (cfg.default_model) {
           const sel = document.getElementById("opencodeModel");
           if (sel) { sel.value = cfg.default_model; refreshSelect(sel); }
         }
       } else if (p === "google_gemini") {
-        if (cfg.api_key) document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
+        if (cfg.has_secret) document.getElementById("googleApiKey").placeholder = "•••••••• (saved locally)";
         if (cfg.default_model) {
           const sel = document.getElementById("googleModel");
           if (sel) { sel.value = cfg.default_model; refreshSelect(sel); }
@@ -459,9 +450,7 @@ async function runPipeline() {
     server_type: state.currentServerType,
     provider: document.getElementById("llmProvider").value,
     opencode_api_url: document.getElementById("opencodeApiUrl").value.trim(),
-    opencode_api_key: document.getElementById("opencodeApiKey").value.trim(),
     opencode_model: document.getElementById("llmProvider").value === "opencode" ? (modelSelectEl.value || "").trim() : "",
-    google_api_key: document.getElementById("googleApiKey").value.trim(),
     google_model: document.getElementById("googleModel").value,
     hypothesis: getHypothesisConfig(),
   };
@@ -502,15 +491,78 @@ async function runPipeline() {
       },
     });
     structuredDeviceId = envelope.device_id;
+    const providerName = cfg.provider === "google" ? "google_gemini" : "opencode";
+    await localDataPlane.putProviderConfig(providerName, providerName === "google_gemini" ? {
+      api_key: document.getElementById("googleApiKey").value.trim(),
+      default_model: cfg.google_model,
+    } : {
+      api_url: cfg.opencode_api_url,
+      api_key: document.getElementById("opencodeApiKey").value.trim(),
+      default_model: cfg.opencode_model,
+    }, { deviceId: structuredDeviceId });
+    document.getElementById("googleApiKey").value = "";
+    document.getElementById("opencodeApiKey").value = "";
+
     const productAssets = await localDataPlane.listAssets({
       kind: "product_image",
       deviceId: structuredDeviceId,
     });
+    const effective = await fetchJSON(studioCurrentOrgId
+      ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
+      : "/api/config/effective");
+    const sourceConfig = effective?.config || {};
+    const parseConfigJSON = (key, fallback) => {
+      const value = sourceConfig[key];
+      if (value && typeof value === "object") return value;
+      try { return JSON.parse(value || ""); } catch { return fallback; }
+    };
+    const personaSeeds = parseConfigJSON("persona_seeds", []);
+    const personaByNumber = new Map(
+      (Array.isArray(personaSeeds) ? personaSeeds : Object.values(personaSeeds || {}))
+        .map((persona) => [Number(persona.persona_number || persona.number), persona]),
+    );
+    const plannedAds = [];
+    for (const personaNumber of cfg.selected_personas) {
+      const source = personaByNumber.get(Number(personaNumber)) || {};
+      const formats = cfg.formats_by_persona[String(personaNumber)]?.length
+        ? cfg.formats_by_persona[String(personaNumber)]
+        : cfg.global_formats;
+      for (const format of formats) {
+        for (let creativeIndex = 1; creativeIndex <= cfg.multiplier; creativeIndex += 1) {
+          plannedAds.push({
+            format,
+            creative_index: creativeIndex,
+            creative_total: cfg.multiplier,
+            concept_angle: "desired_outcome",
+            persona: {
+              number: Number(personaNumber),
+              name: String(source.persona_name || source.name || `Persona ${personaNumber}`),
+              pain_en: String(source.core_pattern || "The current routine is difficult to sustain."),
+              desire_en: String(source.relevant_ok_kit_role || "A practical routine that fits daily life."),
+              friction_en: String(source.why_it_failed || "Past approaches felt difficult to maintain."),
+              proof_needed_en: String(source.guardrail || "Use verified product facts only."),
+              tone_cue_en: "Practical, empathetic, and confidence-building.",
+              pain_hi: "मौजूदा रूटीन को लगातार निभाना मुश्किल है।",
+              desire_hi: "रोज़मर्रा में फिट होने वाला आसान रूटीन चाहिए।",
+              friction_hi: "पुराने तरीके लगातार निभाना मुश्किल था।",
+              proof_needed_hi: "केवल सत्यापित प्रोडक्ट तथ्यों का उपयोग करें।",
+              tone_cue_hi: "सरल, भरोसेमंद और व्यावहारिक।",
+            },
+          });
+        }
+      }
+    }
     await localDataPlane.putText(
       "configs",
       `${envelope.run_id}-structured-settings`,
       JSON.stringify({
-        execution: cfg,
+        execution: {
+          provider: providerName,
+          model: cfg.opencode_model || cfg.google_model,
+          language_mode: cfg.language_mode,
+          seed: envelope.run_number,
+          max_repair_attempts: 1,
+        },
         product_assets: productAssets.map((item) => ({
           resource_id: item.resource_id,
           version: item.version,
@@ -518,8 +570,31 @@ async function runPipeline() {
           bytes: item.bytes,
           status: item.status,
         })),
+        planned_ads: plannedAds,
+        prompt_assembler_templates: parseConfigJSON("prompt_assembler_templates", {}),
+        source_config: {
+          config_id: effective?.config_id || "",
+          source: effective?.source || "",
+          version_id: effective?.version_id || "",
+        },
       }),
-      { deviceId: structuredDeviceId, operationId: `${envelope.run_id}-settings` },
+      {
+        deviceId: structuredDeviceId,
+        operationId: `${envelope.run_id}-settings`,
+        runId: envelope.run_id,
+        role: "structured_settings",
+      },
+    );
+    await localDataPlane.putText(
+      "configs",
+      `${envelope.run_id}-backgrounds`,
+      JSON.stringify(parseConfigJSON("background_variant", {})),
+      {
+        deviceId: structuredDeviceId,
+        operationId: `${envelope.run_id}-backgrounds`,
+        runId: envelope.run_id,
+        role: "backgrounds",
+      },
     );
     const sourceUploads = [
       ["product-document", document.getElementById("productFile")],
@@ -532,11 +607,40 @@ async function runPipeline() {
           "documents",
           `${envelope.run_id}-${key}`,
           await file.text(),
-          { deviceId: structuredDeviceId, operationId: `${envelope.run_id}-${key}` },
+          {
+            deviceId: structuredDeviceId,
+            operationId: `${envelope.run_id}-${key}`,
+            ...(key === "product-document"
+              ? { runId: envelope.run_id, role: "product_document" }
+              : {}),
+          },
         );
       }
     }
-    setStatus(`Run ${envelope.display_batch} staged on this device. Local copy execution is not enabled in this phase.`);
+    if (!document.getElementById("productFile")?.files?.[0]) {
+      const existingProductDoc = await localDataPlane.getText(
+        "documents",
+        "structured-product-document",
+        structuredDeviceId,
+      );
+      await localDataPlane.putText(
+        "documents",
+        `${envelope.run_id}-product-document`,
+        existingProductDoc,
+        {
+          deviceId: structuredDeviceId,
+          operationId: `${envelope.run_id}-product-document`,
+          runId: envelope.run_id,
+          role: "product_document",
+        },
+      );
+    }
+    const queued = await fetchJSON(`/api/runs/${encodeURIComponent(envelope.run_id)}/structured-copy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operation_id: `${envelope.run_id}-structured-copy` }),
+    });
+    setStatus(`Run ${envelope.display_batch} queued for local copy generation (${queued.job_id}).`);
     invalidateRuns();
     await loadAndRenderRuns();
   } catch (err) {

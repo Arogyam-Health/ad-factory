@@ -323,6 +323,8 @@ export class LocalDataPlaneClient {
   async putText(collection, logicalKey, content, {
     deviceId,
     expectedVersion,
+    runId,
+    role,
     operationId: requestOperationId = operationId("write"),
   } = {}) {
     if (!["documents", "configs"].includes(collection)) {
@@ -333,6 +335,8 @@ export class LocalDataPlaneClient {
       operation_id: requestOperationId,
     };
     if (Number.isInteger(expectedVersion)) payload.expected_version = expectedVersion;
+    if (runId) payload.run_id = runId;
+    if (role) payload.role = role;
     return readJson(await this.authorizedFetch(
       `/v1/${collection}/${encodeURIComponent(logicalKey)}`,
       {
@@ -356,6 +360,45 @@ export class LocalDataPlaneClient {
     if (!response.ok) await readJson(response);
     return response.text();
   }
+
+  async listProviderConfigs(deviceId) {
+    const payload = await readJson(await this.authorizedFetch(
+      "/v1/provider-configs",
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    ));
+    return payload.items || [];
+  }
+
+  async getProviderConfig(provider, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/provider-configs/${encodeURIComponent(provider)}`,
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    ));
+  }
+
+  async putProviderConfig(provider, config, {
+    deviceId,
+  } = {}) {
+    return readJson(await this.authorizedFetch(
+      `/v1/provider-configs/${encodeURIComponent(provider)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config }),
+      },
+      deviceId,
+    ));
+  }
+
+  async deleteProviderConfig(provider, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/provider-configs/${encodeURIComponent(provider)}`,
+      { method: "DELETE" },
+      deviceId,
+    ));
+  }
 }
 
 export const localDataPlane = new LocalDataPlaneClient();
@@ -369,5 +412,9 @@ if (typeof window !== "undefined") {
     assetObjectUrl: (...args) => localDataPlane.assetObjectUrl(...args),
     putText: (...args) => localDataPlane.putText(...args),
     getText: (...args) => localDataPlane.getText(...args),
+    listProviderConfigs: (...args) => localDataPlane.listProviderConfigs(...args),
+    getProviderConfig: (...args) => localDataPlane.getProviderConfig(...args),
+    putProviderConfig: (...args) => localDataPlane.putProviderConfig(...args),
+    deleteProviderConfig: (...args) => localDataPlane.deleteProviderConfig(...args),
   });
 }

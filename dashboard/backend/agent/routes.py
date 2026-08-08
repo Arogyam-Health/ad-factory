@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import json
+import re
 import time
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -90,6 +91,54 @@ def allocate_run(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/runs/{run_id}/structured-copy")
+def queue_structured_copy(
+    run_id: str,
+    payload: dict[str, Any] | None = Body(default=None),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_RUNS
+
+    run = get_sync_db()[COLL_RUNS].find_one(
+        {"run_id": run_id, "user_id": str(user["user_id"])},
+        {
+            "_id": 0,
+            "agent_id": 1,
+            "device_id": 1,
+            "owner_type": 1,
+            "owner_id": 1,
+        },
+    )
+    if not run or not run.get("agent_id") or not run.get("device_id"):
+        raise HTTPException(status_code=409, detail="Run has no authoritative local device")
+    operation_id = str((payload or {}).get("operation_id") or "")
+    if not operation_id:
+        raise HTTPException(status_code=400, detail="Operation ID is required")
+    try:
+        job = create_job(
+            agent_id=str(run["agent_id"]),
+            device_id=str(run["device_id"]),
+            user_id=str(user["user_id"]),
+            owner_type=str(run.get("owner_type") or "user"),
+            owner_id=str(run.get("owner_id") or user["user_id"]),
+            run_id=run_id,
+            job_type="execute_run",
+            command="generate_copy",
+            parameters={},
+            client_operation_id=operation_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "job_id": job["job_id"],
+        "run_id": run_id,
+        "status": job["status"],
+        "agent_id": job["agent_id"],
+        "device_id": job["device_id"],
+    }
 
 
 @router.post("/api/agents/heartbeat")
@@ -266,6 +315,107 @@ def report_progress(
     if not accepted:
         raise HTTPException(status_code=409, detail="Stale or invalid job progress update")
     return {"status": "ok"}
+
+
+@router.post("/api/agents/jobs/{job_id}/projection")
+def record_structured_copy_projection(
+    job_id: str,
+    payload: dict[str, Any] = Body(...),
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, str]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_AGENT_JOBS, COLL_RUNS
+
+    projection = payload.get("projection")
+    allowed = {
+        "job_id",
+        "run_id",
+        "status",
+        "provider",
+        "model",
+        "duration_ms",
+        "input_tokens",
+        "output_tokens",
+        "request_sha256",
+        "response_sha256",
+        "copy_sha256",
+        "copy_count",
+        "prompt_count",
+        "prompt_ids",
+        "prompt_resource_ids",
+        "asset_count",
+        "repair_count",
+        "copy_resource_id",
+        "copy_resource_version",
+        "trace_resource_id",
+        "trace_resource_version",
+        "settings_resource_id",
+        "settings_resource_version",
+        "product_document_resource_id",
+        "product_document_version",
+        "error_code",
+    }
+    if not isinstance(projection, dict) or set(projection) - allowed:
+        raise HTTPException(status_code=400, detail="Projection contains unsupported fields")
+    serialized = json.dumps(projection, separators=(",", ":"))
+    forbidden = (
+        "request_body",
+        "response_body",
+        "prompt_body",
+        "config_body",
+        "api_key",
+        "client_secret",
+        "localhost",
+        "127.0.0.1",
+        "file://",
+    )
+    if len(serialized) > 8192 or any(value in serialized.lower() for value in forbidden):
+        raise HTTPException(status_code=400, detail="Projection is not bounded metadata")
+    identifier = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$")
+    for key in ("prompt_ids", "prompt_resource_ids"):
+        values = projection.get(key, [])
+        if (
+            not isinstance(values, list)
+            or len(values) > 500
+            or any(not isinstance(value, str) or not identifier.fullmatch(value) for value in values)
+        ):
+            raise HTTPException(status_code=400, detail="Projection IDs are invalid")
+    for key in ("request_sha256", "response_sha256", "copy_sha256"):
+        value = projection.get(key)
+        if value is not None and not re.fullmatch(r"[a-f0-9]{64}", str(value)):
+            raise HTTPException(status_code=400, detail="Projection hash is invalid")
+    if projection.get("job_id") != job_id or projection.get("status") not in {
+        "completed",
+        "failed",
+    }:
+        raise HTTPException(status_code=400, detail="Projection identity is invalid")
+    db = get_sync_db()
+    job = db[COLL_AGENT_JOBS].find_one(
+        {
+            "job_id": job_id,
+            "agent_id": str(agent["agent_id"]),
+            "device_id": str(agent.get("device_id") or ""),
+            "fence": int(payload.get("fence") or 0),
+            "status": {"$in": ["running", "completed", "failed"]},
+        },
+        {"_id": 0, "run_id": 1},
+    )
+    if not job or str(job.get("run_id") or "") != str(projection.get("run_id") or ""):
+        raise HTTPException(status_code=409, detail="Stale or invalid projection")
+    db[COLL_RUNS].update_one(
+        {"run_id": projection["run_id"]},
+        {
+            "$set": {
+                "copy_generation": {
+                    **projection,
+                    "event_id": str(payload.get("event_id") or "")[:80],
+                },
+                "prompt_count": int(projection.get("prompt_count") or 0),
+                "updated_at": time.time(),
+            }
+        },
+    )
+    return {"status": "accepted"}
 
 
 @router.post("/api/agents/jobs/{job_id}/complete")

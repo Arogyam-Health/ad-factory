@@ -240,6 +240,26 @@ def flush_terminal_outbox() -> None:
     for event in AGENT_STATE.pending_outbox():
         payload = event.get("payload") or {}
         job_id = str(payload.get("job_id") or "")
+        if str(event.get("event_type") or "").startswith("structured_copy_"):
+            if not job_id:
+                AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
+                continue
+            acknowledged = api_request(
+                "POST",
+                f"/api/agents/jobs/{job_id}/projection",
+                {
+                    "event_id": str(event["event_id"]),
+                    "fence": ACTIVE_JOB_FENCES.get(job_id, 0),
+                    "projection": payload,
+                },
+                token=AGENT_TOKEN,
+                timeout=20,
+                quiet=True,
+            )
+            if acknowledged is None:
+                return
+            AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
+            continue
         body = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
         if not job_id:
             AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
@@ -633,6 +653,21 @@ def execute_job(job: dict[str, Any]) -> None:
 
         elif job_type == "run_chatgpt":
             _run_script_job(job_id, "chatgpt_web_sutomation.py", parameters)
+
+        elif job_type == "execute_run" and str(job.get("command") or "") == "generate_copy":
+            if AGENT_STATE is None:
+                raise RuntimeError("Local agent state is unavailable")
+            from local_agent_runtime.structured_copy import StructuredCopyExecutor
+
+            projection = StructuredCopyExecutor(AGENT_STATE).execute(job_id)
+            if projection.get("status") == "completed":
+                report_job_terminal(job_id, "complete")
+            else:
+                report_job_terminal(
+                    job_id,
+                    "fail",
+                    error_code=str(projection.get("error_code") or "local_copy_failed"),
+                )
 
         elif job_type in {"run_chatgpt_batch", "run_browser_batch", "execute_run"}:
             _run_browser_batch_job(job_id, parameters)

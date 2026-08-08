@@ -349,6 +349,7 @@ class LocalDataPlane:
                         "assets",
                         "documents",
                         "configs",
+                        "provider-configs",
                         "runs",
                         "prompts",
                         "outputs",
@@ -381,6 +382,9 @@ class LocalDataPlane:
         if path.startswith("/v1/documents") or path.startswith("/v1/configs"):
             self._document_route(handler, path)
             return
+        if path == "/v1/provider-configs" or path.startswith("/v1/provider-configs/"):
+            self._provider_config_route(handler, path)
+            return
         if path == "/v1/runs" or path.startswith("/v1/runs/"):
             self._run_route(handler, path)
             return
@@ -397,6 +401,40 @@ class LocalDataPlane:
             self._events(handler)
             return
         raise APIError(404, "not_found", "Endpoint not found")
+
+    def _provider_config_route(self, handler: Any, path: str) -> None:
+        from .structured_copy import LocalProviderStore
+
+        session = self._session(
+            handler, "manifest:read" if handler.command == "GET" else "documents:write"
+        )
+        store = LocalProviderStore(self.service.config.paths)
+        suffix = path.removeprefix("/v1/provider-configs").strip("/")
+        if not suffix:
+            if handler.command != "GET":
+                raise APIError(405, "method_not_allowed", "Method not allowed")
+            self._json(handler, 200, {"items": store.list_metadata(session.owner_key)})
+            return
+        provider = str(suffix)
+        if provider not in {"opencode", "google_gemini"}:
+            raise APIError(404, "provider_not_found", "Provider is not supported")
+        if handler.command == "GET":
+            metadata = store.metadata(session.owner_key, provider)
+            if metadata is None:
+                raise APIError(404, "provider_not_found", "Provider config is not available")
+            self._json(handler, 200, metadata)
+            return
+        if handler.command == "PUT":
+            payload = self._json_body(handler, 16 * 1024)
+            config = payload.get("config") if isinstance(payload.get("config"), dict) else payload
+            self._json(handler, 200, store.set(session.owner_key, provider, config))
+            return
+        if handler.command == "DELETE":
+            self._body(handler, 1024)
+            store.delete(session.owner_key, provider)
+            self._json(handler, 200, {"provider": provider, "status": "deleted"})
+            return
+        raise APIError(405, "method_not_allowed", "Method not allowed")
 
     def _create_challenge(self, handler: Any) -> None:
         self._body(handler, 1024)
@@ -917,6 +955,53 @@ class LocalDataPlane:
                 )
             finally:
                 path.unlink(missing_ok=True)
+            run_id_value = payload.get("run_id")
+            role_value = payload.get("role")
+            if isinstance(run_id_value, str) and isinstance(role_value, str):
+                run_id = self._safe_logical_key(run_id_value)
+                if self._run(session.owner_key, run_id) is None:
+                    raise APIError(404, "run_not_found", "Run not found")
+                if role_value not in {
+                    "product_document",
+                    "structured_settings",
+                    "backgrounds",
+                    "source_config",
+                }:
+                    raise APIError(400, "invalid_role", "Run resource role is invalid")
+                with self.state._connect() as conn:
+                    current = conn.execute(
+                        """
+                        SELECT entry_id FROM run_entries
+                        WHERE run_id = ? AND role = ?
+                        ORDER BY position LIMIT 1
+                        """,
+                        (run_id, role_value),
+                    ).fetchone()
+                    if current is not None:
+                        conn.execute(
+                            """
+                            UPDATE run_entries SET resource_id = ?, resource_version = ?
+                            WHERE run_id = ? AND entry_id = ?
+                            """,
+                            (version.resource_id, version.version, run_id, current["entry_id"]),
+                        )
+                    else:
+                        position = int(
+                            conn.execute(
+                                "SELECT COALESCE(MAX(position), 0) + 1 FROM run_entries WHERE run_id = ?",
+                                (run_id,),
+                            ).fetchone()[0]
+                        )
+                if current is None:
+                    self.state.add_run_entry(
+                        run_id=run_id,
+                        entry_id="ent_" + uuid.uuid4().hex,
+                        resource_id=version.resource_id,
+                        resource_version=version.version,
+                        role=role_value,
+                        position=position,
+                        operation_id=self._operation_id(handler, payload) + ":entry",
+                    )
             result = self._resource_record(session.owner_key, resource_id=version.resource_id)
             self._json(
                 handler,
