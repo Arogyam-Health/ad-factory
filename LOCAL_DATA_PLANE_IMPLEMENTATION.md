@@ -701,41 +701,41 @@ Update `render.yaml` so it no longer claims that generated content uses Render-l
 
 ## Feature-Parity Checklist
 
-- [ ] Structured run creation.
-- [ ] Structured copy generation.
-- [ ] Personal config.
-- [ ] Shared organization config references and local replication.
-- [ ] Individual organization config.
-- [ ] Product document editing.
-- [ ] Product image upload/list/delete.
-- [ ] Prompt listing and full-content viewing.
-- [ ] Prompt editing.
-- [ ] Prompt XLSX import/export.
-- [ ] Selected-prompt 4:5 generation.
-- [ ] Batch 4:5 generation.
-- [ ] Combined 4:5 and 9:16 generation.
-- [ ] Standalone 9:16 conversion.
-- [ ] Reference library upload/list/delete.
-- [ ] Reference product workspace.
-- [ ] Reference-specific comments.
-- [ ] Persona selection.
-- [ ] Reference 4:5 generation.
-- [ ] Reference 9:16 conversion.
-- [ ] ChatGPT engine.
-- [ ] Gemini engine.
-- [ ] Live progress.
-- [ ] Partial image gallery.
-- [ ] Dashboard reload and reconnect.
-- [ ] Image revision.
-- [ ] Image replacement.
-- [ ] Archive/regenerate/restore.
-- [ ] Individual image deletion.
-- [ ] Whole-run deletion.
-- [ ] Single image download.
-- [ ] Batch ZIP download.
-- [ ] Local backup and restore.
-- [ ] Metadata-only admin exports.
-- [ ] Offline-device UX.
+- [x] Structured run creation.
+- [x] Structured copy generation.
+- [x] Personal config.
+- [x] Shared organization config references and local replication.
+- [x] Individual organization config.
+- [x] Product document editing.
+- [x] Product image upload/list/delete.
+- [x] Prompt listing and full-content viewing.
+- [x] Prompt editing.
+- [x] Prompt XLSX import/export.
+- [x] Selected-prompt 4:5 generation.
+- [x] Batch 4:5 generation.
+- [x] Combined 4:5 and 9:16 generation.
+- [x] Standalone 9:16 conversion.
+- [x] Reference library upload/list/delete.
+- [x] Reference product workspace.
+- [x] Reference-specific comments.
+- [x] Persona selection.
+- [x] Reference 4:5 generation.
+- [x] Reference 9:16 conversion.
+- [x] ChatGPT engine.
+- [x] Gemini engine.
+- [x] Live progress.
+- [x] Partial image gallery.
+- [x] Dashboard reload and reconnect.
+- [x] Image revision.
+- [x] Image replacement.
+- [x] Archive/regenerate/restore.
+- [x] Individual image deletion.
+- [x] Whole-run deletion.
+- [x] Single image download.
+- [x] Batch ZIP download.
+- [x] Local backup and restore.
+- [x] Metadata-only admin exports.
+- [x] Offline-device UX.
 
 ## Required Test Suites
 
@@ -910,8 +910,8 @@ Update this table during implementation. Include commit SHA and verification res
 | Local reference flow | Complete (repository) | `29b0e6d` | 8 focused Reference tests and 63 local-data-plane/control/frontend regressions pass (71 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
 | Local lifecycle parity | Complete (repository) | `5eac75f` | Focused lifecycle, config/org/offline, local-data-plane, metadata-boundary, and frontend regressions pass; full verification recorded by implementing agent | Committed by parent |
 | Stateless Render cleanup | Complete (repository) | `ae469c4` | 13 focused stateless/read-only boundary tests, 127 current regression tests, standalone smoke, backend `py_compile`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
-| Migration | Complete (repository) |  | 10 focused migration tests, 137 regression tests, 406 smoke assertions, `py_compile`, lints, `git diff --check`, and Graphify update pass | Commit pending parent |
-| Full verification | Pending |  |  |  |
+| Migration | Complete (repository) | `145d7fc` | 10 focused migration tests, 137 regression tests, 406 smoke assertions, `py_compile`, lints, `git diff --check`, and Graphify update pass | Dry-run-first, hash-verified migration committed |
+| Full verification | Complete (repository) |  | 75 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload and reload coverage; prior 137-test full regression and 406-assertion smoke suites pass | Commit pending parent; live ChatGPT/Gemini sessions remain final external verification |
 | Operations documentation | Pending |  |  |  |
 
 ## Definition of Done
