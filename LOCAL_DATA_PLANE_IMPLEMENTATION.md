@@ -908,8 +908,8 @@ Update this table during implementation. Include commit SHA and verification res
 | Local structured copy | Complete (repository) | `d736a89` | 6 focused structured-copy tests and 71 existing agent/local-data-plane tests pass (77 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
 | Local structured images | Complete (repository) | `8af3035` | 8 focused deterministic browser tests and 55 structured/local-data-plane/control/frontend regressions pass (63 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
 | Local reference flow | Complete (repository) | `29b0e6d` | 8 focused Reference tests and 63 local-data-plane/control/frontend regressions pass (71 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
-| Local lifecycle parity | Complete (repository) |  | Focused lifecycle, config/org/offline, local-data-plane, metadata-boundary, and frontend regressions pass; full verification recorded by implementing agent | Commit pending parent |
-| Stateless Render cleanup | Pending |  |  |  |
+| Local lifecycle parity | Complete (repository) | `5eac75f` | Focused lifecycle, config/org/offline, local-data-plane, metadata-boundary, and frontend regressions pass; full verification recorded by implementing agent | Committed by parent |
+| Stateless Render cleanup | Complete (repository) |  | 13 focused stateless/read-only boundary tests, 127 current regression tests, standalone smoke, backend `py_compile`, lints, `git diff --check`, and Graphify update pass | Commit pending parent |
 | Migration | Pending |  |  |  |
 | Full verification | Pending |  |  |  |
 | Operations documentation | Pending |  |  |  |

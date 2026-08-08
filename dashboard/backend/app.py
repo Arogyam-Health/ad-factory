@@ -4850,6 +4850,8 @@ PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config", "/api/invites/")
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next) -> Response:
+    from dashboard.backend.control_plane_policy import is_render_content_route
+
     if app_settings.is_production:
         path = request.url.path
         if path.startswith("/api/") and not path.startswith(PUBLIC_API_PREFIXES):
@@ -4860,6 +4862,16 @@ async def auth_middleware(request: Request, call_next) -> Response:
             if user is None:
                 return JSONResponse({"detail": "Not authenticated"}, status_code=401)
             request.state.user = user
+    if is_render_content_route(request.method, request.url.path):
+        return JSONResponse(
+            {
+                "detail": (
+                    "Content operations are available only through the paired "
+                    "localhost data plane"
+                )
+            },
+            status_code=410,
+        )
     response = await call_next(request)
     return response
 
@@ -4891,7 +4903,6 @@ def _get_opencode_catalog():
 @app.on_event("startup")
 def startup() -> None:
     load_env_file(ENV_PATH)
-    ensure_dirs()
 
     # Validate production settings (exits if critical vars missing)
     validate_production_settings()
@@ -4910,9 +4921,6 @@ def startup() -> None:
             print(f"[startup] FATAL: MongoDB connection failed in production: {msg}", file=sys.stderr)
             sys.exit(1)
         print(f"[startup] MongoDB index init skipped (dev): {e}")
-
-    threading.Thread(target=_build_opencode_catalog_cached, daemon=True).start()
-
 
 def api_defaults() -> dict[str, Any]:
     personas = parse_persona_library()
@@ -9103,18 +9111,6 @@ def storage_info(request: Request) -> dict[str, Any]:
 
 
 INPUT_ROOT = ROOT / "input"
-
-# Mount static directories for serving generated images and output files
-# These are used in both dev and production; access control is enforced
-# by the /api/files/download/* endpoints for production use.
-GENERATED_IMAGES_ROOT.mkdir(parents=True, exist_ok=True)
-(ROOT / "output").mkdir(parents=True, exist_ok=True)
-STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_ROOT)), name="generated_images")
-app.mount("/output", StaticFiles(directory=str(ROOT / "output")), name="output")
-app.mount("/storage", StaticFiles(directory=str(STORAGE_ROOT)), name="storage")
-app.mount("/input", StaticFiles(directory=str(INPUT_ROOT)), name="input")
-
 
 @app.get("/api/seeds")
 def list_seed_files(request: Request) -> dict[str, list[dict[str, str]]]:

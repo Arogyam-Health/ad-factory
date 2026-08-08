@@ -162,18 +162,12 @@ def write_audit_event(
     metadata: Optional[dict[str, Any]] = None,
     request: Optional[Any] = None,
 ) -> None:
-    """Write an audit event to the audit_logs collection."""
+    """Write a bounded metadata-only audit event."""
+    from dashboard.backend.control_plane_policy import validate_metadata_document
+
     now = time.time()
     event_id = f"evt_{uuid.uuid4().hex}"
-    ip = None
-    user_agent = None
-
-    if request is not None:
-        try:
-            ip = request.client.host if request.client else None
-        except Exception:
-            pass
-        user_agent = getattr(request.headers, "get", lambda x: None)("user-agent")
+    del request
 
     doc = {
         "event_id": event_id,
@@ -184,12 +178,11 @@ def write_audit_event(
         "target_id": target_id,
         "org_id": org_id,
         "metadata": metadata or {},
-        "ip": ip,
-        "user_agent": user_agent,
         "created_at": now,
     }
 
     try:
+        validate_metadata_document("audit_logs", doc)
         get_sync_db()[COLL_AUDIT_LOGS].insert_one(doc)
     except Exception:
         pass

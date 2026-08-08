@@ -1,5 +1,7 @@
 # Ad Creative System
 
+**Interview prep:** see [`INTERVIEW_README.md`](INTERVIEW_README.md) for full architecture, auth, orgs, agents, admin, and Q&A.
+
 Structured-prompt generator for **Obesity Killer Kit** ad creatives. Produces 9-section image-generation prompts across 5 formats (HERO, BA, TEST, FEAT, UGC) and 3 languages (EN, HI, HINGLISH). The output is text — actual images are rendered downstream in Gemini Web / ChatGPT.
 
 The full system map and pipeline live in [`docs/HANDOVER.md`](docs/HANDOVER.md). Rules live in [`AD_CREATIVE_SYSTEM_PLAYBOOK.md`](AD_CREATIVE_SYSTEM_PLAYBOOK.md).
@@ -138,22 +140,23 @@ The dashboard can be deployed to Render as a multi-user cloud service, while bro
 ```
 [Render]
   ├── FastAPI backend + static frontend
-  ├── MongoDB Atlas (all persistent data)
+  ├── MongoDB Atlas (bounded control metadata only)
   ├── Google OAuth login
   └── REST API for local agent
 
 [Your Machine]
-  └── Local Playwright agent
+  └── Local data plane + Playwright agent
+      ├── Stores configs, prompts, uploads, outputs, logs, and revisions
       ├── Connects to Chrome at http://127.0.0.1:9222
       ├── Polls Render for jobs
-      └── Runs Gemini/ChatGPT automation scripts
+      └── Runs provider and browser workflows
 ```
 
 ### Setup
 
 1. **MongoDB Atlas** — Create a free cluster at https://mongodb.com, get your connection string
 2. **Google OAuth** — Create credentials at https://console.cloud.google.com/apis/credentials, configure redirect URI
-3. **Render** — Deploy from GitHub, set env vars (see `.env.example`). Must set `DEPLOYMENT_MODE=production` and `STORAGE_PROVIDER=cloudinary` with Cloudinary credentials.
+3. **Render** — Deploy from GitHub and set the authentication/control-plane env vars (see `.env.example`). Do not configure content storage.
 4. **Local agent** — Run on your machine:
    ```bash
    python scripts/local_agent.py --api-base https://your-app.onrender.com
@@ -190,60 +193,13 @@ Set `DEPLOYMENT_MODE=production` on Render. This enables:
 
 - **Auth middleware** — All `/api/*` routes (except `/api/auth/*`) require a valid session cookie. Returns 401 if missing.
 - **Startup validation** — App refuses to start if critical env vars are missing/default (MONGODB_URI, APP_SECRET_KEY, ENCRYPTION_KEY, GOOGLE OAuth, CORS)
-- **No public data mounts** — `/storage`, `/output`, `/generated_images` are NOT mounted in production. Use `/api/files/download/*` endpoints instead (authenticated, path-traversal protected)
+- **Stateless content boundary** — Render serves immutable frontend assets only. Content operations use the paired localhost data plane.
 - **Chrome routes disabled** — `/api/launch-visible-browser`, `/api/kill-chrome`, `/api/stop-generation` return 400 with "Use local agent"
 
-### Image storage backend
+### Content storage boundary
 
-Generated images must be served from a CDN in production, since there is no local filesystem on Render (or any ephemeral host).
-
-| Provider | `STORAGE_PROVIDER` | Status |
-|----------|--------------------|--------|
-| Local disk | `local` | Dev/internal only — images written to `generated_images/`, served via `localhost` |
-| Cloudinary | `cloudinary` | **Required for production** — uploaded on pipeline completion, served via CDN (`secure_url` redirect) |
-
-Set `STORAGE_PROVIDER=cloudinary` and provide `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in your Render env vars.
-
-Cloudinary uploads happen automatically in `_store_output_mapping` when the pipeline finishes — no manual step needed.
-
-> **⚠️ WARNING — Filesystem-backed core flows**
-> 
-> Run creation, prompt generation, image metadata, and manifest reads still use the **local filesystem** (`dashboard_storage/runs/`, `output/`, `generated_images/`).
-> **These are NOT safe for multi-user production use.** Only the auth layer, LLM traces, provider configs, agent dispatch, and JSON blobs have been migrated to MongoDB.
-> 
-> Until `api_run_execute` and all prompt/image/manifest storage are fully DB-backed, the deploy:
-> - Works correctly for **single-user / internal** use
-> - Is **not** safe for untrusted multi-user access
-> - Must run `DEPLOYMENT_MODE=development` (which disables auth) for any read/write of runs
-> 
-> See task 6 below for the integration path.
-
-### Current status (what's still local-only)
-
-The following operations still use the local filesystem, even with MongoDB available:
-
-| Area | Filesystem path | Status |
-|------|----------------|--------|
-| Run manifests, configs | `dashboard_storage/runs/` | Local-only |
-| Generated prompt files | `output/v{NN}/` | Local-only |
-| Generated images | `generated_images/` | Local-only |
-| Image metadata JSONs | Sidecar `.json` next to images | Local-only |
-| Input images | `input/images/` | Local-only |
-| LLM traces | `runtime/llm_traces/` | **Dual**: writes to MongoDB, reads from disk |
-| Product master doc | `input/docs/product master doc.txt` | Local-only |
-| Persona seeds | `persona_seeds.json` | Local-only |
-| Copy architecture | `dashboard/backend/copy_architecture.json` | Local-only |
-| Copy prompt templates | `dashboard/backend/copy_prompt_templates.json` | Local-only |
-| Google/Gemini provider config | `.env.dashboard` | Local-only |
-
-Full migration of these to MongoDB-backed services is ongoing.
-
-### Migration from local files
-
-```bash
-# Import existing local data into MongoDB
-python scripts/migrate_to_mongo.py --user-id <your-user-id>
-
-# See what would be imported first
-python scripts/migrate_to_mongo.py --user-id <your-user-id> --dry-run
-```
+User uploads, provider configuration, prompt/config bodies, generated images,
+revisions, exports, traces, and browser logs stay on the paired local device.
+MongoDB stores ownership, IDs, hashes, versions, counts, timestamps, job state,
+and availability metadata. Render has no content storage provider or persistent
+disk, and does not use Cloudinary, GridFS, or Redis.

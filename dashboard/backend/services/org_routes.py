@@ -138,30 +138,6 @@ def create_org(
     }
     db[COLL_ORG_MEMBERS].insert_one(membership)
 
-    # Copy creator's effective config to org config doc
-    from dashboard.backend.services.user_config import resolve_effective_config_for_user
-    creator_config = resolve_effective_config_for_user(user_id)
-    config_keys = {k: creator_config.get(k, "") for k in CONFIG_KEYS}
-    config_result = create_or_update_config(
-        owner_type="org",
-        owner_id=org_id,
-        files=config_keys,
-        actor_user_id=user_id,
-        config_scope="organization",
-        source="org_create_copy",
-    )
-
-    config_doc = get_sync_db()[COLL_USER_CONFIGS].find_one({
-        "owner_type": "org",
-        "owner_id": org_id,
-        "is_active": True,
-    })
-    if config_doc:
-        get_sync_db()[COLL_ORGS].update_one(
-            {"org_id": org_id},
-            {"$set": {"default_config_id": config_doc["config_id"], "updated_at": time.time()}},
-        )
-
     write_audit_event(
         event_type="org_created",
         actor_user_id=user_id,

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import time
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_PROVIDER_CONFIGS
-from dashboard.backend.security.crypto import decrypt_value, encrypt_value, mask_key
 
 
 PROVIDER_FIELDS = {
@@ -15,48 +13,23 @@ PROVIDER_FIELDS = {
 
 
 def get_provider_config(user_id: str, provider: str) -> Optional[dict[str, Any]]:
+    """Migration-window read only: never return legacy config bodies or secrets."""
     doc = get_sync_db()[COLL_PROVIDER_CONFIGS].find_one(
         {"user_id": user_id, "provider": provider},
+        {"_id": 0, "provider": 1, "updated_at": 1},
     )
     if doc is None:
         return None
-    config = {
+    return {
         "provider": doc["provider"],
-        "config": {},
+        "status": "migration_required",
+        "updated_at": doc.get("updated_at", 0),
     }
-    for key, value in doc.get("config", {}).items():
-        if key.endswith("_key") or key.endswith("_secret"):
-            config["config"][key] = mask_key(decrypt_value(value))
-        else:
-            config["config"][key] = value
-    config["config"]["_has_keys"] = any(
-        k.endswith("_key") or k.endswith("_secret") for k in doc.get("config", {})
-    )
-    return config
 
 
 def set_provider_config(user_id: str, provider: str, raw_config: dict[str, Any]) -> dict[str, Any]:
-    existing_doc = get_sync_db()[COLL_PROVIDER_CONFIGS].find_one(
-        {"user_id": user_id, "provider": provider},
-    )
-    existing_config = existing_doc.get("config", {}) if existing_doc else {}
-
-    merged_config = dict(existing_config)
-    for key, value in raw_config.items():
-        if key.endswith("_key") or key.endswith("_secret"):
-            merged_config[key] = encrypt_value(str(value))
-        else:
-            merged_config[key] = value
-
-    get_sync_db()[COLL_PROVIDER_CONFIGS].update_one(
-        {"user_id": user_id, "provider": provider},
-        {"$set": {
-            "config": merged_config,
-            "updated_at": time.time(),
-        }},
-        upsert=True,
-    )
-    return get_provider_config(user_id, provider)
+    del user_id, provider, raw_config
+    raise ValueError("Provider configuration must be written to localhost")
 
 
 def delete_provider_config(user_id: str, provider: str) -> None:
@@ -66,34 +39,20 @@ def delete_provider_config(user_id: str, provider: str) -> None:
 
 
 def get_decrypted_provider_key(user_id: str, provider: str, key_name: str) -> Optional[str]:
-    doc = get_sync_db()[COLL_PROVIDER_CONFIGS].find_one(
-        {"user_id": user_id, "provider": provider},
-    )
-    if doc is None:
-        return None
-    encrypted = doc.get("config", {}).get(key_name)
-    if encrypted is None:
-        return None
-    return decrypt_value(encrypted)
+    del user_id, provider, key_name
+    raise ValueError("Provider secrets are available only from localhost")
 
 
 def get_all_provider_configs(user_id: str) -> list[dict[str, Any]]:
     docs = get_sync_db()[COLL_PROVIDER_CONFIGS].find(
         {"user_id": user_id},
+        {"_id": 0, "provider": 1, "updated_at": 1},
     )
-    results = []
-    for doc in docs:
-        config = {}
-        for key, value in doc.get("config", {}).items():
-            if key.endswith("_key") or key.endswith("_secret"):
-                config[key] = mask_key(decrypt_value(value))
-            else:
-                config[key] = value
-        config["_has_keys"] = any(
-            k.endswith("_key") or k.endswith("_secret") for k in doc.get("config", {})
-        )
-        results.append({
+    return [
+        {
             "provider": doc["provider"],
-            "config": config,
-        })
-    return results
+            "status": "migration_required",
+            "updated_at": doc.get("updated_at", 0),
+        }
+        for doc in docs
+    ]

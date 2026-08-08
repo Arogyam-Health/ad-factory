@@ -1,45 +1,25 @@
 import time
 from typing import Any, Optional
-from fastapi import APIRouter, Body, Cookie, HTTPException, Query, Request
-
-from dashboard.backend.app import (
-    api_batch_generate_images_45,
-    api_batch_generate_images_916,
-    api_batch_generate_images_both,
-)
+from fastapi import APIRouter, Cookie, HTTPException, Query
 from dashboard.backend.auth.service import get_current_user_from_cookie
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_AGENT_JOBS
 from dashboard.backend.agent.service import finalize_disconnected_agent_jobs
-import dashboard.backend.services.cdp_proxy  # noqa: F401 — eager import to capture main event loop
 
 router = APIRouter()
 
 
-def _resolve_user_id(request: Request, session: Optional[str]) -> str:
-    try:
-        user = get_current_user_from_cookie(session)
-        user_id = user.get("user_id", "") if user else ""
-    except Exception:
-        user_id = ""
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return user_id
+def _local_only() -> None:
+    raise HTTPException(
+        status_code=410,
+        detail="Batch generation is available only through the paired localhost data plane",
+    )
 
 
-@router.post("/api/batch/generate-images-45")
-def _batch_generate_45(request: Request, payload: dict[str, Any] = Body(...), session: Optional[str] = Cookie(None)) -> dict[str, Any]:
-    return api_batch_generate_images_45(payload, user_id=_resolve_user_id(request, session))
-
-
-@router.post("/api/batch/generate-images-916")
-def _batch_generate_916(request: Request, payload: dict[str, Any] = Body(...), session: Optional[str] = Cookie(None)) -> dict[str, Any]:
-    return api_batch_generate_images_916(payload, user_id=_resolve_user_id(request, session))
-
-
-@router.post("/api/batch/generate-images-both")
-def _batch_generate_both(request: Request, payload: dict[str, Any] = Body(...), session: Optional[str] = Cookie(None)) -> dict[str, Any]:
-    return api_batch_generate_images_both(payload, user_id=_resolve_user_id(request, session))
+for _suffix in ("45", "916", "both"):
+    router.add_api_route(
+        f"/api/batch/generate-images-{_suffix}", _local_only, methods=["POST"]
+    )
 
 
 @router.get("/api/batch/job-status")

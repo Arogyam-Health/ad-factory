@@ -630,6 +630,9 @@ def record_local_generation_projection(
             updates["status"] = projection["status"]
     else:
         updates["prompt_count"] = int(projection.get("prompt_count") or 0)
+    from dashboard.backend.control_plane_policy import validate_metadata_document
+
+    validate_metadata_document("runs", updates)
     db[COLL_RUNS].update_one(
         {"run_id": projection["run_id"]},
         {"$set": updates},

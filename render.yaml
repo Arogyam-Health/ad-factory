@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install --no-cache-dir -r requirements-dashboard.txt
-    startCommand: uvicorn dashboard.backend.app:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn dashboard.backend.control_app:app --host 0.0.0.0 --port $PORT
     autoDeploy: true
     envVars:
       - key: DEPLOYMENT_MODE
@@ -31,7 +31,5 @@ services:
         sync: false
       - key: SESSION_EXPIRE_MINUTES
         value: "1440"
-      - key: STORAGE_PROVIDER
-        value: local
       - key: PYTHON_VERSION
         value: "3.11"

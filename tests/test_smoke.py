@@ -701,21 +701,15 @@ def test_config_system() -> int:
     else:
         print("  SKIP DB-dependent config tests (MongoDB not available)")
 
-    # 10. Public /api/generic-config returns generic only
+    # Generic config bodies live on the paired localhost data plane.
     resp = client.get("/api/generic-config")
-    failed += ok(resp.status_code == 200, "GET /api/generic-config returns 200")
-    data = resp.json()
-    failed += ok(sorted(data.keys()) == sorted(expected_keys), "/api/generic-config returns all 8 keys")
-    failed += ok(data.get("copy_prompt_templates", "") != "", "/api/generic-config has non-empty copy_prompt_templates")
+    failed += ok(resp.status_code == 410, "GET /api/generic-config is local-only")
 
-    # 11. Public /api/generic-config/{key} works for valid keys and 404s for invalid key
     resp = client.get("/api/generic-config/product_master_doc")
-    failed += ok(resp.status_code == 200, "GET /api/generic-config/product_master_doc returns 200")
-    data = resp.json()
-    failed += ok(data.get("key") == "product_master_doc", "Response has correct key")
-
-    resp = client.get("/api/generic-config/nonexistent_key")
-    failed += ok(resp.status_code == 404, "GET /api/generic-config/nonexistent_key returns 404")
+    failed += ok(
+        resp.status_code == 410,
+        "GET /api/generic-config/{key} is local-only",
+    )
 
     return failed
 
@@ -1684,8 +1678,10 @@ def test_local_agent_responsiveness_contract() -> int:
                  "batch download uses the local artifact ZIP for local images")
     failed += ok("Revise all commented" in images_js and "submitAllRevisions" in images_js,
                  "structured gallery exposes mass revision for commented images")
-    failed += ok("/revise-image" in run_routes and "/revisions/{revision_id}" in run_routes,
-                 "image revision queue and status routes are registered")
+    failed += ok(
+        '"revise-image"' in run_routes and '"revisions/{revision_id}"' in run_routes,
+        "legacy image revision routes are explicitly local-only",
+    )
     failed += ok("queueRevision" in image_comments_js and 'new URL("/revisions", imageUrl.origin)' in image_comments_js,
                  "localhost image comments use the local agent revision worker")
     failed += ok("Promise.allSettled" in state_js and 'fetchJSON("/api/defaults")' in state_js and 'fetchJSON("/api/config/persona-summary")' in state_js,
@@ -1778,7 +1774,7 @@ def test_admin_readiness_phase6() -> int:
         "metadata": {"api_key": "sk-leaked", "reason": "test"},
         "created_at": 1000,
     })
-    failed += ok(audit["metadata"].get("api_key") == "[REDACTED]", "safe_audit_log redacts api_key in metadata")
+    failed += ok("api_key" not in audit["metadata"], "safe_audit_log removes api_key metadata")
     failed += ok(audit["metadata"].get("reason") == "test", "safe_audit_log preserves non-sensitive metadata")
     failed += ok("token_hash" not in str(audit), "safe_audit_log avoids token_hash exposure")
 
@@ -1861,24 +1857,24 @@ def test_admin_readiness_phase6() -> int:
         routes_py = f.read()
     failed += ok('cfg.pop("files", None)' in routes_py, "config export strips files content")
 
-    # 14. safe_run redacts sensitive fields
+    # 14. safe_run allowlists bounded metadata
     run_doc = {
         "run_id": "run_1", "user_id": "usr_a", "status": "completed",
         "api_key": "sk-test", "token": "tok_secret", "prompt": "hello",
         "result": {"data": "ok"}, "created_at": 1000,
     }
     safe = safe_run(run_doc)
-    failed += ok(safe.get("api_key") == "[REDACTED]", "safe_run redacts api_key")
-    failed += ok(safe.get("token") == "[REDACTED]", "safe_run redacts token")
+    failed += ok("api_key" not in safe, "safe_run removes api_key")
+    failed += ok("token" not in safe, "safe_run removes token")
     failed += ok(safe.get("run_id") == "run_1", "safe_run keeps run_id")
     failed += ok(safe.get("user_id") == "usr_a", "safe_run keeps user_id")
     failed += ok(safe.get("status") == "completed", "safe_run keeps status")
-    failed += ok(safe.get("result") == {"data": "ok"}, "safe_run keeps operational nested data")
+    failed += ok("result" not in safe, "safe_run removes unbounded nested data")
     failed += ok("_id" not in safe, "safe_run removes _id")
     failed += ok("raw_token" not in str(safe), "safe_run avoids raw_token exposure")
     failed += ok("secret" not in str(safe), "safe_run avoids secret exposure")
 
-    # 15. safe_image redacts sensitive metadata
+    # 15. safe_image allowlists bounded metadata
     img_doc = {
         "image_id": "img_1", "user_id": "usr_b", "status": "ready",
         "url": "https://cdn.example.com/img.png",
@@ -1887,13 +1883,12 @@ def test_admin_readiness_phase6() -> int:
     }
     safe_img = safe_image(img_doc)
     failed += ok(safe_img.get("image_id") == "img_1", "safe_image keeps image_id")
-    failed += ok(safe_img.get("url") == "https://cdn.example.com/img.png", "safe_image keeps url")
-    failed += ok(safe_img["metadata"].get("secret") == "[REDACTED]", "safe_image redacts secret in metadata")
-    failed += ok(safe_img["metadata"].get("model") == "dalle3", "safe_image keeps model in metadata")
-    failed += ok(safe_img.get("encrypted_api_key") == "[REDACTED]", "safe_image redacts encrypted_api_key")
+    failed += ok("url" not in safe_img, "safe_image removes URL")
+    failed += ok("metadata" not in safe_img, "safe_image removes unbounded metadata")
+    failed += ok("encrypted_api_key" not in safe_img, "safe_image removes encrypted_api_key")
     failed += ok("_id" not in safe_img, "safe_image removes _id")
 
-    # 16. safe_prompt redacts sensitive fields
+    # 16. safe_prompt allowlists bounded metadata
     prompt_doc = {
         "prompt_id": "p_1", "user_id": "usr_c", "content": "Generate an ad",
         "model": "gpt-4", "provider": "opencode",
@@ -1902,11 +1897,11 @@ def test_admin_readiness_phase6() -> int:
     }
     safe_p = safe_prompt(prompt_doc)
     failed += ok(safe_p.get("prompt_id") == "p_1", "safe_prompt keeps prompt_id")
-    failed += ok(safe_p.get("content") == "Generate an ad", "safe_prompt keeps content")
-    failed += ok(safe_p.get("model") == "gpt-4", "safe_prompt keeps model")
-    failed += ok(safe_p.get("api_key") == "[REDACTED]", "safe_prompt redacts api_key")
-    failed += ok(safe_p.get("token_hash") == "[REDACTED]", "safe_prompt redacts token_hash")
-    failed += ok(safe_p.get("client_secret") == "[REDACTED]", "safe_prompt redacts client_secret")
+    failed += ok("content" not in safe_p, "safe_prompt removes content")
+    failed += ok("model" not in safe_p, "safe_prompt removes provider model")
+    failed += ok("api_key" not in safe_p, "safe_prompt removes api_key")
+    failed += ok("token_hash" not in safe_p, "safe_prompt removes token_hash")
+    failed += ok("client_secret" not in safe_p, "safe_prompt removes client_secret")
     failed += ok("_id" not in safe_p, "safe_prompt removes _id")
 
     # 17. Routes use safe_run

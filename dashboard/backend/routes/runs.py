@@ -1,72 +1,141 @@
-from typing import Any
+from __future__ import annotations
+
 import time
 import uuid
-from fastapi import APIRouter, Body, File, Form, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from typing import Any
 
-from dashboard.backend.app import (
-    api_runs,
-    api_run,
-    api_run_partial,
-    api_run_prompt_copies,
-    api_run_update_prompt_copies,
-    api_edit_prompt,
-    api_delete_prompt,
-    api_delete_image,
-    api_delete_run,
-    api_mark_images_to_regenerate,
-    api_restore_images_from_regeneration_queue,
-    api_regenerate_queued_images,
-    api_replace_image,
-    api_download_single_image,
-    api_download_batch_images,
-    api_download_batches,
-    api_llm_traces,
-    api_delete_llm_traces,
-    api_delete_llm_traces_by_files,
-    signal_cancel_run,
-    signal_cancel_current_run,
+from fastapi import APIRouter, HTTPException, Request
+
+from dashboard.backend.agent.service import cancel_user_job, create_job
+from dashboard.backend.db.client import get_sync_db
+from dashboard.backend.db.collections import (
+    COLL_AGENT_JOBS,
+    COLL_IMAGES,
+    COLL_PROMPTS,
+    COLL_RUNS,
 )
-from dashboard.backend.reference_flow import api_image_revision_status, api_revise_image_with_comment
 
 router = APIRouter()
 
+_RUN_PROJECTION = {
+    "_id": 0,
+    "run_id": 1,
+    "owner_type": 1,
+    "owner_id": 1,
+    "created_by_user_id": 1,
+    "agent_id": 1,
+    "device_id": 1,
+    "run_number": 1,
+    "display_batch": 1,
+    "flow_type": 1,
+    "status": 1,
+    "local_workspace_id": 1,
+    "local_manifest_resource_id": 1,
+    "local_manifest_version": 1,
+    "prompt_count": 1,
+    "image_count": 1,
+    "copy_generation": 1,
+    "image_generation": 1,
+    "deletion_tombstone": 1,
+    "created_at": 1,
+    "updated_at": 1,
+}
+
+
+def _user_id(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    user_id = str((user or {}).get("user_id") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user_id
+
+
 @router.get("/api/runs")
-def _runs(request: Request) -> dict[str, Any]:
-    user_id = ""
-    if hasattr(request.state, "user") and request.state.user:
-        user_id = request.state.user.get("user_id", "")
-    return api_runs(user_id=user_id)
+def list_runs(request: Request) -> dict[str, Any]:
+    user_id = _user_id(request)
+    rows = list(
+        get_sync_db()[COLL_RUNS]
+        .find({"user_id": user_id}, _RUN_PROJECTION)
+        .sort("created_at", -1)
+        .limit(200)
+    )
+    return {"runs": rows, "total": len(rows)}
+
 
 @router.get("/api/runs/{run_id}")
-def _run(run_id: str, request: Request) -> dict[str, Any]:
-    user_id = ""
-    if hasattr(request.state, "user") and request.state.user:
-        user_id = request.state.user.get("user_id", "")
-    return api_run(run_id, user_id=user_id)
+def get_run(run_id: str, request: Request) -> dict[str, Any]:
+    user_id = _user_id(request)
+    row = get_sync_db()[COLL_RUNS].find_one(
+        {"run_id": run_id, "user_id": user_id}, _RUN_PROJECTION
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return row
 
 
 @router.get("/api/runs/{run_id}/partial")
-def _run_partial(run_id: str) -> dict[str, Any]:
-    return api_run_partial(run_id)
+def get_partial_run(run_id: str, request: Request) -> dict[str, Any]:
+    return get_run(run_id, request)
 
-def _request_user_id(request: Request) -> str:
-    if hasattr(request, "state") and getattr(request.state, "user", None):
-        return request.state.user.get("user_id", "")
-    return ""
+
+@router.get("/api/runs/{run_id}/prompts")
+def list_run_prompts(run_id: str, request: Request) -> dict[str, Any]:
+    user_id = _user_id(request)
+    rows = list(
+        get_sync_db()[COLL_PROMPTS]
+        .find(
+            {"run_id": run_id, "user_id": user_id},
+            {
+                "_id": 0,
+                "prompt_id": 1,
+                "run_id": 1,
+                "resource_id": 1,
+                "resource_version": 1,
+                "sha256": 1,
+                "format": 1,
+                "persona": 1,
+                "language": 1,
+                "status": 1,
+            },
+        )
+        .sort("created_at", 1)
+        .limit(500)
+    )
+    return {"run_id": run_id, "prompts": rows, "total": len(rows)}
+
+
+@router.get("/api/runs/{run_id}/images")
+def list_run_images(run_id: str, request: Request) -> dict[str, Any]:
+    user_id = _user_id(request)
+    rows = list(
+        get_sync_db()[COLL_IMAGES]
+        .find(
+            {"run_id": run_id, "user_id": user_id},
+            {
+                "_id": 0,
+                "artifact_id": 1,
+                "run_id": 1,
+                "prompt_id": 1,
+                "resource_id": 1,
+                "resource_version": 1,
+                "device_id": 1,
+                "sha256": 1,
+                "bytes": 1,
+                "width": 1,
+                "height": 1,
+                "aspect_ratio": 1,
+                "status": 1,
+            },
+        )
+        .sort("created_at", 1)
+        .limit(500)
+    )
+    return {"run_id": run_id, "images": rows, "total": len(rows)}
 
 
 @router.delete("/api/runs/{run_id}")
-def _delete_run(run_id: str, request: Request) -> dict[str, Any]:
-    user_id = _request_user_id(request)
-    from dashboard.backend.agent.service import create_job
-    from dashboard.backend.db.client import get_sync_db
-    from dashboard.backend.db.collections import (
-        COLL_IMAGES,
-        COLL_PROMPTS,
-        COLL_RUNS,
-    )
-
+def delete_run(run_id: str, request: Request) -> dict[str, Any]:
+    user_id = _user_id(request)
     db = get_sync_db()
     run = db[COLL_RUNS].find_one(
         {"run_id": run_id, "user_id": user_id},
@@ -79,7 +148,9 @@ def _delete_run(run_id: str, request: Request) -> dict[str, Any]:
         },
     )
     if not run or not run.get("agent_id") or not run.get("device_id"):
-        return api_delete_run(run_id, user_id=user_id)
+        raise HTTPException(
+            status_code=409, detail="Run has no authoritative local device"
+        )
     operation_id = "purge_" + uuid.uuid4().hex
     now = time.time()
     db[COLL_RUNS].update_one(
@@ -94,14 +165,7 @@ def _delete_run(run_id: str, request: Request) -> dict[str, Any]:
                     "acknowledged_at": None,
                 },
                 "updated_at": now,
-            },
-            "$unset": {
-                "prompt_files": "",
-                "image_files": "",
-                "image_items": "",
-                "regeneration_queue_files": "",
-                "regeneration_queue_items": "",
-            },
+            }
         },
     )
     db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
@@ -125,93 +189,47 @@ def _delete_run(run_id: str, request: Request) -> dict[str, Any]:
         "purge_job_id": job["job_id"],
     }
 
-@router.get("/api/runs/{run_id}/prompt-copies")
-def _prompt_copies(run_id: str, request: Request) -> dict[str, Any]:
-    return api_run_prompt_copies(run_id, user_id=_request_user_id(request))
-
-@router.post("/api/runs/{run_id}/prompt-copies")
-def _update_prompt_copies(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_run_update_prompt_copies(run_id, payload)
-
-@router.post("/api/runs/{run_id}/edit-prompt")
-def _edit_prompt(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_edit_prompt(run_id, payload, user_id=_request_user_id(request))
-
-@router.post("/api/runs/{run_id}/delete-prompt")
-def _delete_prompt(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_delete_prompt(run_id, payload, user_id=_request_user_id(request))
-
-@router.post("/api/runs/{run_id}/delete-image")
-def _delete_image(run_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    user_id = request.state.user.get("user_id", "") if getattr(request.state, "user", None) else ""
-    return api_delete_image(run_id, payload, user_id=user_id)
-
-
-@router.post("/api/runs/{run_id}/revise-image")
-def _revise_image(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_revise_image_with_comment(run_id, payload)
-
-
-@router.get("/api/runs/{run_id}/revisions/{revision_id}")
-def _revision_status(run_id: str, revision_id: str) -> dict[str, Any]:
-    return api_image_revision_status(run_id, revision_id)
-
-@router.post("/api/runs/{run_id}/mark-images-to-regenerate")
-def _mark_images_to_regenerate(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_mark_images_to_regenerate(run_id, payload)
-
-@router.post("/api/runs/{run_id}/restore-images-from-queue")
-def _restore_images_from_queue(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_restore_images_from_regeneration_queue(run_id, payload)
-
-@router.post("/api/runs/{run_id}/regenerate-queued-images")
-def _regenerate_queued_images(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_regenerate_queued_images(run_id, payload)
-
-@router.post("/api/runs/{run_id}/replace-image")
-async def _replace_image(
-    run_id: str,
-    image_file: str = Form(...),
-    replacement_file: UploadFile = File(...),
-) -> dict[str, Any]:
-    return await api_replace_image(run_id, image_file, replacement_file)
-
-@router.get("/api/runs/{run_id}/download-image")
-def _download_single_image(run_id: str, image_file: str) -> StreamingResponse:
-    return api_download_single_image(run_id, image_file)
-
-@router.get("/api/runs/{run_id}/download-batch")
-def _download_batch_images(run_id: str) -> StreamingResponse:
-    return api_download_batch_images(run_id)
-
-
-@router.post("/api/runs/download-batches")
-def _download_batches(payload: dict[str, Any] = Body(...)) -> StreamingResponse:
-    return api_download_batches(payload.get("batch_ids", []))
-
 
 @router.post("/api/runs/{run_id}/cancel")
-def _cancel_run(run_id: str) -> dict[str, Any]:
-    signal_cancel_run(run_id)
-    return {"status": "ok", "run_id": run_id}
+def cancel_run(run_id: str, request: Request) -> dict[str, Any]:
+    user_id = _user_id(request)
+    job = get_sync_db()[COLL_AGENT_JOBS].find_one(
+        {
+            "run_id": run_id,
+            "user_id": user_id,
+            "status": {"$in": ["pending", "running", "cancel_requested"]},
+        },
+        {"_id": 0, "job_id": 1},
+        sort=[("created_at", -1)],
+    )
+    if job is None:
+        raise HTTPException(status_code=404, detail="Active run job not found")
+    canceled = cancel_user_job(user_id, str(job["job_id"]))
+    return {"status": str((canceled or {}).get("status") or ""), "run_id": run_id}
 
 
-@router.post("/api/runs/cancel-current")
-def _cancel_current_run() -> dict[str, Any]:
-    signal_cancel_current_run()
-    return {"status": "ok"}
+def _local_only(run_id: str) -> None:
+    del run_id
+    raise HTTPException(
+        status_code=410,
+        detail="Content lifecycle operations are available only through localhost",
+    )
 
 
-@router.get("/api/llm-traces")
-def _llm_traces(limit: int = 50, offset: int = 0, run_id: str | None = None) -> dict[str, Any]:
-    return api_llm_traces(limit=limit, offset=offset, run_id_filter=run_id)
-
-
-@router.delete("/api/llm-traces")
-def _delete_llm_traces(run_id: str | None = None, trace_files: str | None = None) -> dict[str, Any]:
-    files_list = trace_files.split(",") if trace_files else None
-    return api_delete_llm_traces(run_id_filter=run_id, trace_files=files_list)
-
-@router.post("/api/llm-traces/delete")
-def _delete_llm_traces_by_files(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_delete_llm_traces_by_files(payload.get("files", []))
+for _suffix, _methods in (
+    ("prompt-copies", ["GET", "POST"]),
+    ("edit-prompt", ["POST"]),
+    ("delete-prompt", ["POST"]),
+    ("delete-image", ["POST"]),
+    ("revise-image", ["POST"]),
+    ("revisions/{revision_id}", ["GET"]),
+    ("mark-images-to-regenerate", ["POST"]),
+    ("restore-images-from-queue", ["POST"]),
+    ("regenerate-queued-images", ["POST"]),
+    ("replace-image", ["POST"]),
+    ("download-image", ["GET"]),
+    ("download-batch", ["GET"]),
+):
+    router.add_api_route(
+        f"/api/runs/{{run_id}}/{_suffix}", _local_only, methods=_methods
+    )

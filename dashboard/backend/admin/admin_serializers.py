@@ -69,6 +69,21 @@ def safe_session(session: dict[str, Any]) -> dict[str, Any]:
 
 
 def safe_audit_log(event: dict[str, Any]) -> dict[str, Any]:
+    from dashboard.backend.control_plane_policy import validate_metadata_document
+
+    redacted = redact_sensitive(event.get("metadata", {}))
+    metadata: dict[str, Any] = {}
+    if isinstance(redacted, dict):
+        for key, value in redacted.items():
+            if value == "[REDACTED]":
+                continue
+            try:
+                validate_metadata_document(
+                    "audit_logs", {"metadata": {str(key): value}}
+                )
+            except ValueError:
+                continue
+            metadata[str(key)] = value
     return {
         "event_id": event.get("event_id", ""),
         "event_type": event.get("event_type", ""),
@@ -77,7 +92,7 @@ def safe_audit_log(event: dict[str, Any]) -> dict[str, Any]:
         "target_type": event.get("target_type", ""),
         "target_id": event.get("target_id", ""),
         "org_id": event.get("org_id"),
-        "metadata": redact_sensitive(event.get("metadata", {})),
+        "metadata": metadata,
         "created_at": event.get("created_at", 0),
     }
 
@@ -102,21 +117,33 @@ def safe_provider_config(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def safe_run(doc: dict[str, Any]) -> dict[str, Any]:
-    """Return safe view of a run doc with all sensitive fields redacted."""
-    result = redact_sensitive(copy.deepcopy(doc))
-    result.pop("_id", None)
-    return result
+    """Return a metadata-only run projection."""
+    keys = (
+        "run_id", "user_id", "owner_type", "owner_id", "created_by_user_id",
+        "agent_id", "device_id", "run_number", "display_batch", "flow_type",
+        "status", "local_workspace_id", "local_manifest_resource_id",
+        "local_manifest_version", "prompt_count", "image_count",
+        "copy_generation", "image_generation", "deletion_tombstone",
+        "created_at", "updated_at",
+    )
+    return redact_sensitive({key: copy.deepcopy(doc.get(key)) for key in keys if key in doc})
 
 
 def safe_image(doc: dict[str, Any]) -> dict[str, Any]:
-    """Return safe view of an image doc with all sensitive fields redacted."""
-    result = redact_sensitive(copy.deepcopy(doc))
-    result.pop("_id", None)
-    return result
+    """Return a metadata-only image projection."""
+    keys = (
+        "artifact_id", "image_id", "user_id", "run_id", "prompt_id",
+        "resource_id", "resource_version", "device_id", "sha256", "bytes",
+        "width", "height", "aspect_ratio", "status", "created_at", "updated_at",
+    )
+    return {key: copy.deepcopy(doc.get(key)) for key in keys if key in doc}
 
 
 def safe_prompt(doc: dict[str, Any]) -> dict[str, Any]:
-    """Return safe view of a prompt doc with all sensitive fields redacted."""
-    result = redact_sensitive(copy.deepcopy(doc))
-    result.pop("_id", None)
-    return result
+    """Return a metadata-only prompt projection."""
+    keys = (
+        "prompt_id", "user_id", "run_id", "resource_id", "resource_version",
+        "sha256", "format", "persona", "language", "status", "created_at",
+        "updated_at",
+    )
+    return {key: copy.deepcopy(doc.get(key)) for key in keys if key in doc}

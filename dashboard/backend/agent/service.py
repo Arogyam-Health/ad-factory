@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
+from dashboard.backend.control_plane_policy import validate_metadata_document
 from dashboard.backend.db.collections import (
     COLL_AGENTS,
     COLL_AGENT_JOBS,
@@ -409,6 +410,7 @@ def allocate_run_envelope(
         "created_at": now,
         "updated_at": now,
     }
+    validate_metadata_document("runs", doc)
     db[COLL_RUNS].insert_one(doc)
     return {
         key: doc[key]

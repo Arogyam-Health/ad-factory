@@ -6,7 +6,8 @@ import time
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_IMAGES, COLL_LLM_TRACES
+from dashboard.backend.control_plane_policy import validate_metadata_document
+from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_IMAGES
 
 
 def reserve_run_number(
@@ -78,7 +79,6 @@ def create_run(user_id: str, run_id: str, run_data: dict[str, Any]) -> dict[str,
     owner_id = str(run_data.get("owner_id") or user_id)
     run_number = int(run_data.get("run_number") or reserve_run_number(owner_type, owner_id))
     display_batch = str(run_data.get("display_batch") or f"v{run_number}")
-    batch = str(run_data.get("batch") or build_storage_batch(run_number, run_id))
     doc = {
         "user_id": user_id,
         "run_id": run_id,
@@ -87,11 +87,22 @@ def create_run(user_id: str, run_id: str, run_data: dict[str, Any]) -> dict[str,
         "run_number": run_number,
         "display_batch": display_batch,
         "status": run_data.get("status", "created"),
-        "batch": batch,
-        "config": run_data.get("config", {}),
+        "flow_type": str(run_data.get("flow_type") or "structured"),
+        "agent_id": str(run_data.get("agent_id") or ""),
+        "device_id": str(run_data.get("device_id") or ""),
+        "local_workspace_id": str(run_data.get("local_workspace_id") or ""),
+        "local_manifest_resource_id": str(
+            run_data.get("local_manifest_resource_id") or ""
+        ),
+        "local_manifest_version": int(
+            run_data.get("local_manifest_version") or 0
+        ),
+        "prompt_count": int(run_data.get("prompt_count") or 0),
+        "image_count": int(run_data.get("image_count") or 0),
         "created_at": now,
         "updated_at": now,
     }
+    validate_metadata_document("runs", doc)
     get_sync_db()[COLL_RUNS].insert_one(doc)
     return doc
 
@@ -103,7 +114,8 @@ def get_run(user_id: str, run_id: str) -> Optional[dict[str, Any]]:
 
 
 def update_run(user_id: str, run_id: str, updates: dict[str, Any]) -> None:
-    updates["updated_at"] = time.time()
+    updates = {**updates, "updated_at": time.time()}
+    validate_metadata_document("runs", updates)
     get_sync_db()[COLL_RUNS].update_one(
         {"user_id": user_id, "run_id": run_id},
         {"$set": updates},
@@ -132,16 +144,17 @@ def save_prompt(user_id: str, run_id: str, prompt_data: dict[str, Any]) -> dict[
         "user_id": user_id,
         "run_id": run_id,
         "prompt_id": prompt_data.get("prompt_id", f"p_{int(now)}"),
-        "batch": prompt_data.get("batch", ""),
+        "resource_id": prompt_data.get("resource_id", ""),
+        "resource_version": int(prompt_data.get("resource_version") or 0),
+        "sha256": prompt_data.get("sha256", ""),
         "format": prompt_data.get("format", ""),
         "persona": prompt_data.get("persona", ""),
         "language": prompt_data.get("language", ""),
-        "content": prompt_data.get("content", ""),
-        "filename": prompt_data.get("filename", ""),
         "status": prompt_data.get("status", "pending"),
         "created_at": now,
         "updated_at": now,
     }
+    validate_metadata_document("prompts", doc)
     get_sync_db()[COLL_PROMPTS].insert_one(doc)
     return doc
 
@@ -159,17 +172,23 @@ def save_image_metadata(user_id: str, run_id: str, image_data: dict[str, Any]) -
     doc = {
         "user_id": user_id,
         "run_id": run_id,
-        "image_id": image_data.get("image_id", f"img_{int(now)}"),
-        "batch": image_data.get("batch", ""),
-        "format": image_data.get("format", ""),
-        "filename": image_data.get("filename", ""),
-        "storage_url": image_data.get("storage_url", ""),
-        "local_path": image_data.get("local_path", ""),
+        "artifact_id": image_data.get(
+            "artifact_id", image_data.get("image_id", f"art_{int(now)}")
+        ),
+        "prompt_id": image_data.get("prompt_id", ""),
+        "resource_id": image_data.get("resource_id", ""),
+        "resource_version": int(image_data.get("resource_version") or 0),
+        "device_id": image_data.get("device_id", ""),
+        "sha256": image_data.get("sha256", ""),
+        "bytes": int(image_data.get("bytes") or 0),
+        "width": int(image_data.get("width") or 0),
+        "height": int(image_data.get("height") or 0),
+        "aspect_ratio": image_data.get("aspect_ratio", ""),
         "status": image_data.get("status", "pending"),
-        "metadata": image_data.get("metadata", {}),
         "created_at": now,
         "updated_at": now,
     }
+    validate_metadata_document("images", doc)
     get_sync_db()[COLL_IMAGES].insert_one(doc)
     return doc
 
@@ -182,56 +201,16 @@ def list_images(user_id: str, run_id: str) -> list[dict[str, Any]]:
     )
 
 
-MAX_TRACE_RUNS = 5
-
-
-def _enforce_trace_retention(user_id: str) -> None:
-    """Delete traces from runs older than the most recent MAX_TRACE_RUNS per user."""
-    coll = get_sync_db()[COLL_LLM_TRACES]
-    pipeline = [
-        {"$match": {"user_id": user_id}},
-        {"$group": {"_id": "$run_id", "latest": {"$max": "$created_at"}}},
-        {"$sort": {"latest": -1}},
-        {"$skip": MAX_TRACE_RUNS},
-    ]
-    old_run_ids = [doc["_id"] for doc in coll.aggregate(pipeline)]
-    if old_run_ids:
-        coll.delete_many({"user_id": user_id, "run_id": {"$in": old_run_ids}})
-
-
 def save_llm_trace(user_id: str, trace_data: dict[str, Any]) -> dict[str, Any]:
-    now = time.time()
-    doc = {
-        "user_id": user_id,
-        "run_id": trace_data.get("run_id", ""),
-        "batch": trace_data.get("batch", ""),
-        "provider": trace_data.get("provider", ""),
-        "model": trace_data.get("model", ""),
-        "prompt": trace_data.get("prompt", ""),
-        "response": trace_data.get("response", ""),
-        "duration_ms": trace_data.get("duration_ms", 0),
-        "token_count": trace_data.get("token_count", 0),
-        "status": trace_data.get("status", "completed"),
-        "created_at": now,
-    }
-    get_sync_db()[COLL_LLM_TRACES].insert_one(doc)
-    _enforce_trace_retention(user_id)
-    return doc
+    del user_id, trace_data
+    raise ValueError("Provider traces are stored only on the localhost data plane")
 
 
 def list_llm_traces(user_id: str, limit: int = 100, skip: int = 0) -> list[dict[str, Any]]:
-    return list(
-        get_sync_db()[COLL_LLM_TRACES]
-        .find({"user_id": user_id})
-        .sort("created_at", -1)
-        .skip(skip)
-        .limit(limit)
-    )
+    del user_id, limit, skip
+    return []
 
 
 def delete_llm_traces(user_id: str, trace_ids: Optional[list[str]] = None) -> int:
-    query: dict[str, Any] = {"user_id": user_id}
-    if trace_ids:
-        query["_id"] = {"$in": trace_ids}
-    result = get_sync_db()[COLL_LLM_TRACES].delete_many(query)
-    return result.deleted_count
+    del user_id, trace_ids
+    return 0

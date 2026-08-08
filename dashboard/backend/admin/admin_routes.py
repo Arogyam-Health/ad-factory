@@ -32,6 +32,9 @@ from dashboard.backend.db.collections import (
     COLL_IMAGES,
     COLL_PROMPTS,
     COLL_PROVIDER_CONFIGS,
+    COLL_AGENTS,
+    COLL_AGENT_JOBS,
+    COLL_LOCAL_CONFIG_REFERENCES,
 )
 from dashboard.backend.services.org_helper import write_audit_event
 
@@ -793,12 +796,20 @@ def admin_readiness(
 
     # 6. indexes
     try:
-        from dashboard.backend.db.indexes import ensure_indexes
-        ensure_indexes()
+        job_indexes = list(db[COLL_AGENT_JOBS].list_indexes()) if db_ok else []
+        has_ttl = any(
+            index.get("key") == {"purge_at": 1}
+            and index.get("expireAfterSeconds") == 0
+            for index in job_indexes
+        )
         checks.append({
             "key": "indexes",
-            "status": "ok",
-            "message": "Indexes verified/ensured",
+            "status": "ok" if has_ttl else "error",
+            "message": (
+                "Required control-plane indexes present"
+                if has_ttl
+                else "Terminal agent-job TTL index is missing"
+            ),
         })
     except Exception as exc:
         checks.append({
@@ -811,39 +822,33 @@ def admin_readiness(
     checks.append({
         "key": "storage",
         "status": "ok",
-        "message": "Storage provider: local (all files stored on server filesystem)",
+        "message": "Render is a stateless metadata-only control plane",
     })
 
     # 8. config_integrity
     if db_ok:
         try:
-            missing_files = db[COLL_USER_CONFIGS].count_documents({
-                "is_active": True,
-                "files": {"$exists": False},
-            })
-            dotted_keys = db[COLL_USER_CONFIGS].count_documents({
-                "is_active": True,
-                "files.product_master_doc": {"$exists": False},
+            content_configs = db[COLL_USER_CONFIGS].count_documents({
                 "$or": [
+                    {"files": {"$exists": True}},
                     {"product_master_doc": {"$exists": True}},
+                    {"starting_prompt": {"$exists": True}},
+                    {"config": {"$exists": True}},
                 ],
             })
-            warnings: list[str] = []
-            if missing_files:
-                warnings.append(f"{missing_files} config(s) without files object")
-            if dotted_keys:
-                warnings.append(f"{dotted_keys} config(s) with dotted top-level keys")
-            if warnings:
+            if content_configs:
                 checks.append({
                     "key": "config_integrity",
-                    "status": "warning",
-                    "message": "; ".join(warnings),
+                    "status": "error",
+                    "message": (
+                        f"{content_configs} legacy config document(s) still contain bodies"
+                    ),
                 })
             else:
                 checks.append({
                     "key": "config_integrity",
                     "status": "ok",
-                    "message": "No malformed config docs found",
+                    "message": "Config documents contain references and metadata only",
                 })
         except Exception as exc:
             checks.append({
@@ -907,20 +912,20 @@ def admin_readiness(
     # 10. provider_config_security
     if db_ok:
         try:
-            plaintext_api_keys = db[COLL_PROVIDER_CONFIGS].count_documents({
-                "api_key": {"$exists": True, "$ne": None, "$ne": ""},
-            })
-            if plaintext_api_keys:
+            provider_docs = db[COLL_PROVIDER_CONFIGS].count_documents({})
+            if provider_docs:
                 checks.append({
                     "key": "provider_config_security",
-                    "status": "warning",
-                    "message": f"{plaintext_api_keys} provider config(s) have plaintext api_key (should use encrypted_api_key)",
+                    "status": "error",
+                    "message": (
+                        f"{provider_docs} legacy provider config document(s) require migration"
+                    ),
                 })
             else:
                 checks.append({
                     "key": "provider_config_security",
                     "status": "ok",
-                    "message": "No plaintext api_key fields found in provider configs",
+                    "message": "No provider config bodies or secrets are stored in MongoDB",
                 })
         except Exception as exc:
             checks.append({
@@ -985,6 +990,182 @@ def admin_readiness(
             "status": "warning",
             "message": f"Could not verify admin routes: {exc}",
         })
+
+    # Stateless local-data-plane readiness
+    if db_ok:
+        try:
+            incompatible = db[COLL_AGENTS].count_documents({
+                "is_active": True,
+                "$or": [
+                    {"protocol_version": {"$ne": "v1"}},
+                    {"supports_pairing": {"$ne": True}},
+                    {"device_id": {"$in": [None, ""]}},
+                ],
+            })
+            checks.append({
+                "key": "protocol_compatibility",
+                "status": "ok" if incompatible == 0 else "error",
+                "message": (
+                    "All active devices support local-data-plane protocol v1"
+                    if incompatible == 0
+                    else f"{incompatible} active device(s) are protocol-incompatible"
+                ),
+            })
+        except Exception as exc:
+            checks.append({
+                "key": "protocol_compatibility",
+                "status": "warning",
+                "message": f"Could not verify device protocols: {exc}",
+            })
+
+        try:
+            forbidden_job_fields = [
+                "payload", "content", "prompt", "base64", "path", "url",
+                "comment", "api_key", "secret",
+            ]
+            unsafe_jobs = db[COLL_AGENT_JOBS].count_documents({
+                "$or": [
+                    {field: {"$exists": True}} for field in forbidden_job_fields
+                ]
+            })
+            checks.append({
+                "key": "metadata_only_jobs",
+                "status": "ok" if unsafe_jobs == 0 else "error",
+                "message": (
+                    "Agent jobs contain bounded metadata only"
+                    if unsafe_jobs == 0
+                    else f"{unsafe_jobs} agent job(s) contain prohibited fields"
+                ),
+            })
+        except Exception as exc:
+            checks.append({
+                "key": "metadata_only_jobs",
+                "status": "warning",
+                "message": f"Could not verify agent-job policy: {exc}",
+            })
+
+        try:
+            job_indexes = list(db[COLL_AGENT_JOBS].list_indexes())
+            ttl_ok = any(
+                dict(index.get("key", {})) == {"purge_at": 1}
+                and index.get("expireAfterSeconds") == 0
+                for index in job_indexes
+            )
+            checks.append({
+                "key": "ttl_indexes",
+                "status": "ok" if ttl_ok else "error",
+                "message": (
+                    "Terminal agent-job TTL index is present"
+                    if ttl_ok
+                    else "Terminal agent-job TTL index is missing"
+                ),
+            })
+        except Exception as exc:
+            checks.append({
+                "key": "ttl_indexes",
+                "status": "warning",
+                "message": f"Could not verify TTL indexes: {exc}",
+            })
+
+        try:
+            online_cutoff = time.time() - 180
+            online_rows = list(db[COLL_AGENTS].find(
+                {
+                    "is_active": True,
+                    "protocol_version": "v1",
+                    "last_heartbeat_at": {"$gte": online_cutoff},
+                },
+                {"_id": 0, "device_id": 1},
+            ))
+            online_ids = {
+                str(row.get("device_id") or "") for row in online_rows
+                if row.get("device_id")
+            }
+            checks.append({
+                "key": "online_devices",
+                "status": "ok" if online_ids else "warning",
+                "message": f"{len(online_ids)} compatible local device(s) online",
+            })
+
+            references = list(db[COLL_LOCAL_CONFIG_REFERENCES].find(
+                {},
+                {
+                    "_id": 0,
+                    "resource_id": 1,
+                    "authority_device_id": 1,
+                    "verified_replica_device_ids": 1,
+                },
+            ))
+            missing = 0
+            offline = 0
+            for reference in references:
+                if not reference.get("resource_id") or not reference.get(
+                    "authority_device_id"
+                ):
+                    missing += 1
+                    continue
+                candidates = {
+                    str(reference.get("authority_device_id") or ""),
+                    *map(str, reference.get("verified_replica_device_ids") or []),
+                }
+                if not candidates & online_ids:
+                    offline += 1
+            checks.append({
+                "key": "resource_references",
+                "status": "error" if missing else ("warning" if offline else "ok"),
+                "message": (
+                    f"{missing} missing and {offline} offline local resource reference(s)"
+                    if missing or offline
+                    else "All local resource references are complete and online"
+                ),
+            })
+        except Exception as exc:
+            checks.extend([
+                {
+                    "key": "online_devices",
+                    "status": "warning",
+                    "message": f"Could not count online devices: {exc}",
+                },
+                {
+                    "key": "resource_references",
+                    "status": "warning",
+                    "message": f"Could not verify local resource references: {exc}",
+                },
+            ])
+    else:
+        for key in (
+            "protocol_compatibility",
+            "metadata_only_jobs",
+            "ttl_indexes",
+            "online_devices",
+            "resource_references",
+        ):
+            checks.append({
+                "key": key,
+                "status": "warning",
+                "message": "Skipped (DB unavailable)",
+            })
+
+    storage_env_keys = (
+        "STORAGE_PROVIDER",
+        "CLOUDINARY_CLOUD_NAME",
+        "CLOUDINARY_API_KEY",
+        "CLOUDINARY_API_SECRET",
+        "REDIS_URL",
+        "GRIDFS_BUCKET",
+    )
+    configured_content_storage = [
+        key for key in storage_env_keys if os.environ.get(key, "").strip()
+    ]
+    checks.append({
+        "key": "content_storage_absent",
+        "status": "error" if configured_content_storage else "ok",
+        "message": (
+            "Render content-storage configuration must be removed"
+            if configured_content_storage
+            else "No cloud or Render-local content storage is configured"
+        ),
+    })
 
     ok_count = sum(1 for c in checks if c["status"] == "ok")
     warn_count = sum(1 for c in checks if c["status"] == "warning")
