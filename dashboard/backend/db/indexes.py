@@ -70,6 +70,19 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_STATUS, ASCENDING), ("updated_at", DESCENDING)]),
         IndexModel([("job_id", ASCENDING)], unique=True),
     ],
+    COLL_AGENT_PAIRINGS: [
+        IndexModel([("challenge_id", ASCENDING)], unique=True),
+        IndexModel([("challenge_hash", ASCENDING)], unique=True),
+        IndexModel(
+            [
+                (FIELD_AGENT_ID, ASCENDING),
+                ("device_id", ASCENDING),
+                (FIELD_STATUS, ASCENDING),
+                ("expires_at", ASCENDING),
+            ]
+        ),
+        IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
+    ],
     COLL_RUN_COUNTERS: [
         IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING)], unique=True),
     ],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 import threading
 import time
@@ -19,6 +20,7 @@ class JobSignal:
         self._available = threading.Event()
         self._lock = threading.Lock()
         self._canceled: set[str] = set()
+        self._pairing_approvals: deque[dict[str, Any]] = deque(maxlen=32)
 
     def handle(self, message: dict[str, Any]) -> None:
         message_type = str(message.get("type") or "")
@@ -29,6 +31,25 @@ class JobSignal:
             if job_id:
                 with self._lock:
                     self._canceled.add(job_id)
+        elif message_type == "pairing_approval":
+            required = (
+                "challenge_id",
+                "challenge_hash",
+                "agent_id",
+                "device_id",
+                "owner_key",
+                "expires_at",
+            )
+            if (
+                all(message.get(key) for key in required)
+                and len(str(message.get("challenge_hash"))) == 64
+                and isinstance(message.get("scopes"), list)
+                and len(message["scopes"]) <= 16
+                and len(json.dumps(message, separators=(",", ":"))) <= 8192
+            ):
+                with self._lock:
+                    self._pairing_approvals.append(dict(message))
+                self._available.set()
 
     def wait(self, timeout: float) -> bool:
         ready = self._available.wait(timeout)
@@ -42,6 +63,12 @@ class JobSignal:
                 return False
             self._canceled.remove(job_id)
             return True
+
+    def drain_pairing_approvals(self) -> list[dict[str, Any]]:
+        with self._lock:
+            approvals = list(self._pairing_approvals)
+            self._pairing_approvals.clear()
+        return approvals
 
 
 class AgentWebSocketClient:

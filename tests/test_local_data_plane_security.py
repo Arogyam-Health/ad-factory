@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import tempfile
 import unittest
 import urllib.error
@@ -169,6 +170,39 @@ class LocalDataPlaneSecurityTests(unittest.TestCase):
                 },
             )
         self.assertEqual(caught.exception.code, 401)
+
+    def test_pairing_approval_is_pinned_to_exact_agent_and_device(self) -> None:
+        with self.request("POST", "/v1/pairing/challenges", payload={}) as response:
+            challenge = json.loads(response.read())
+        digest = hashlib.sha256(challenge["challenge"].encode()).hexdigest()
+        with self.assertRaises(ValueError):
+            self.server.approve_pairing_challenge(
+                challenge["challenge_id"],
+                challenge_digest=digest,
+                owner_key="user:user-1",
+                scopes=["manifest:read"],
+                agent_id="agent-1",
+                device_id="dev_" + "f" * 32,
+            )
+        self.server.approve_pairing_challenge(
+            challenge["challenge_id"],
+            challenge_digest=digest,
+            owner_key="user:user-1",
+            scopes=["manifest:read"],
+            agent_id="agent-1",
+            device_id=challenge["device_id"],
+        )
+        with self.request(
+            "POST",
+            "/v1/pairing/sessions",
+            payload={
+                "challenge_id": challenge["challenge_id"],
+                "challenge": challenge["challenge"],
+            },
+        ) as response:
+            session = json.loads(response.read())
+        self.assertEqual(session["agent_id"], "agent-1")
+        self.assertEqual(session["device_id"], challenge["device_id"])
 
     def test_expired_bearer_session_is_rejected(self) -> None:
         token = self.pair(["manifest:read"])

@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .data_plane import LocalDataPlane
+from .data_plane import LocalDataPlane, load_or_create_internal_token
 from .storage import AgentPaths, AgentState, artifact_access_token
 
 
@@ -43,21 +43,28 @@ class ArtifactServer:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self.data_plane = LocalDataPlane(self)
+        self._runtime_token = load_or_create_internal_token(config.paths)
 
     def approve_pairing_challenge(
         self,
         challenge_id: str,
-        challenge: str,
+        challenge: str | None = None,
         *,
+        challenge_digest: str | None = None,
         owner_key: str,
         scopes: list[str] | tuple[str, ...],
+        agent_id: str = "",
+        device_id: str = "",
     ) -> None:
         """Accept an approval delivered by the authenticated agent channel."""
         self.data_plane.approve_challenge(
             challenge_id,
             challenge,
+            challenge_digest=challenge_digest,
             owner_key=owner_key,
             scopes=scopes,
+            agent_id=agent_id,
+            device_id=device_id,
         )
 
     @property
@@ -326,6 +333,35 @@ class ArtifactServer:
                 self._json(200, {"status": "deleted", "artifact_id": artifact_id})
 
             def do_POST(self) -> None:
+                if urllib.parse.urlparse(self.path).path == "/_agent/pairing/approvals":
+                    try:
+                        service.data_plane._validate_request_boundary(self)
+                        authorization = str(self.headers.get("Authorization") or "")
+                        supplied = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+                        if not supplied or not hmac.compare_digest(supplied, service._runtime_token):
+                            self._error(401, "authentication_required", "Runtime authentication required")
+                            return
+                        try:
+                            length = int(self.headers.get("Content-Length") or "0")
+                        except ValueError:
+                            length = 0
+                        if length <= 0 or length > 8192:
+                            self._error(413, "invalid_body_size", "Approval body is invalid")
+                            return
+                        payload = json.loads(self.rfile.read(length))
+                        service.approve_pairing_challenge(
+                            str(payload.get("challenge_id") or ""),
+                            challenge_digest=str(payload.get("challenge_hash") or ""),
+                            owner_key=str(payload.get("owner_key") or ""),
+                            scopes=list(payload.get("scopes") or []),
+                            agent_id=str(payload.get("agent_id") or ""),
+                            device_id=str(payload.get("device_id") or ""),
+                        )
+                    except (json.JSONDecodeError, ValueError):
+                        self._error(400, "invalid_approval", "Pairing approval is invalid")
+                        return
+                    self._json(200, {"status": "approved"})
+                    return
                 if service.data_plane.dispatch(self):
                     return
                 self._error(

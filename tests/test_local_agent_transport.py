@@ -26,6 +26,26 @@ class LocalAgentTransportTests(unittest.TestCase):
         self.assertTrue(signal.cancel_requested("job-1"))
         self.assertFalse(signal.cancel_requested("job-1"))
 
+    def test_job_signal_queues_bounded_pairing_approvals(self) -> None:
+        from local_agent_runtime.transport import JobSignal
+
+        signal = JobSignal()
+        approval = {
+            "type": "pairing_approval",
+            "challenge_id": "pch_1",
+            "challenge_hash": "a" * 64,
+            "agent_id": "agent-1",
+            "device_id": "dev_" + "b" * 32,
+            "owner_key": "user:user-1",
+            "scopes": ["manifest:read"],
+            "expires_at": 123.0,
+        }
+        signal.handle(approval)
+
+        self.assertTrue(signal.wait(0))
+        self.assertEqual(signal.drain_pairing_approvals(), [approval])
+        self.assertEqual(signal.drain_pairing_approvals(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

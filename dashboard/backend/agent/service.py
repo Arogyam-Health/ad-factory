@@ -2,15 +2,61 @@ from __future__ import annotations
 
 import json
 import hashlib
+import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_AGENTS, COLL_AGENT_JOBS, COLL_RUNS, COLL_IMAGES
+from dashboard.backend.db.collections import (
+    COLL_AGENTS,
+    COLL_AGENT_JOBS,
+    COLL_AGENT_PAIRINGS,
+    COLL_IMAGES,
+    COLL_ORG_MEMBERS,
+    COLL_RUNS,
+)
 from dashboard.backend.security.crypto import generate_token, hash_token
+from pymongo.errors import DuplicateKeyError
 
 
-def register_agent(user_id: str, agent_name: str, description: str = "") -> dict[str, Any]:
+PAIRING_SCOPES = frozenset(
+    {
+        "manifest:read",
+        "content:read",
+        "assets:write",
+        "documents:write",
+        "prompts:write",
+        "runs:execute",
+        "outputs:write",
+        "revisions:write",
+        "delete",
+    }
+)
+_DEVICE_ID_RE = re.compile(r"^dev_[a-f0-9]{32}$")
+_CHALLENGE_ID_RE = re.compile(r"^pch_[A-Za-z0-9_-]{16,80}$")
+
+
+def _valid_device_id(device_id: str) -> bool:
+    return bool(_DEVICE_ID_RE.fullmatch(str(device_id or "")))
+
+
+def register_agent(
+    user_id: str,
+    agent_name: str,
+    description: str = "",
+    *,
+    device_id: str = "",
+    protocol_version: str = "",
+    supports_pairing: bool = False,
+) -> dict[str, Any]:
+    agent_name = str(agent_name or "").strip()
+    if not agent_name or len(agent_name) > 100:
+        raise ValueError("Agent name must be between 1 and 100 characters")
+    if device_id and not _valid_device_id(device_id):
+        raise ValueError("Invalid device ID")
+    if protocol_version and protocol_version != "v1":
+        raise ValueError("Unsupported agent protocol")
     agent_id = "agent_" + generate_token(16)
     token = generate_token(48)
     token_hash = hash_token(token)
@@ -19,8 +65,10 @@ def register_agent(user_id: str, agent_name: str, description: str = "") -> dict
         "agent_id": agent_id,
         "user_id": user_id,
         "name": agent_name,
-        "description": description,
         "token_hash": token_hash,
+        "device_id": device_id,
+        "protocol_version": protocol_version,
+        "supports_pairing": bool(supports_pairing and device_id and protocol_version == "v1"),
         "is_active": True,
         "last_heartbeat_at": now,
         "created_at": now,
@@ -30,6 +78,9 @@ def register_agent(user_id: str, agent_name: str, description: str = "") -> dict
         "agent_id": agent_id,
         "token": token,
         "name": agent_name,
+        "device_id": device_id,
+        "protocol_version": protocol_version,
+        "supports_pairing": doc["supports_pairing"],
     }
 
 
@@ -43,6 +94,40 @@ def heartbeat_agent(agent_id: str) -> None:
         {"agent_id": agent_id},
         {"$set": {"last_heartbeat_at": time.time()}},
     )
+
+
+def bind_agent_device(
+    agent_id: str,
+    device_id: str,
+    protocol_version: str,
+    supports_pairing: bool,
+) -> dict[str, Any]:
+    if not _valid_device_id(device_id) or protocol_version != "v1":
+        raise ValueError("Invalid device protocol registration")
+    collection = get_sync_db()[COLL_AGENTS]
+    current = collection.find_one({"agent_id": agent_id, "is_active": True})
+    if current is None:
+        raise ValueError("Agent not found")
+    existing_device = str(current.get("device_id") or "")
+    if existing_device and existing_device != device_id:
+        raise ValueError("Agent credential is already bound to another device")
+    collection.update_one(
+        {"agent_id": agent_id, "is_active": True},
+        {
+            "$set": {
+                "device_id": device_id,
+                "protocol_version": protocol_version,
+                "supports_pairing": bool(supports_pairing),
+                "updated_at": time.time(),
+            }
+        },
+    )
+    return {
+        "agent_id": agent_id,
+        "device_id": device_id,
+        "protocol_version": protocol_version,
+        "supports_pairing": bool(supports_pairing),
+    }
 
 
 def deactivate_agent(agent_id: str) -> None:
@@ -64,9 +149,153 @@ def list_user_agents(user_id: str) -> list[dict[str, Any]]:
             "is_active": d.get("is_active", False),
             "last_heartbeat_at": d.get("last_heartbeat_at", 0),
             "created_at": d.get("created_at", 0),
+            "device_id": d.get("device_id", ""),
+            "protocol_version": d.get("protocol_version", ""),
+            "supports_pairing": bool(d.get("supports_pairing", False)),
         }
         for d in docs
     ]
+
+
+def _safe_pairing_approval(doc: dict[str, Any]) -> dict[str, Any]:
+    expiry = doc["expires_at"]
+    expires_at = expiry.timestamp() if isinstance(expiry, datetime) else float(expiry)
+    return {
+        "type": "pairing_approval",
+        "challenge_id": str(doc["challenge_id"]),
+        "challenge_hash": str(doc["challenge_hash"]),
+        "agent_id": str(doc["agent_id"]),
+        "device_id": str(doc["device_id"]),
+        "owner_key": str(doc["owner_key"]),
+        "scopes": list(doc["scopes"]),
+        "expires_at": expires_at,
+    }
+
+
+def request_pairing_approval(
+    *,
+    user_id: str,
+    owner_type: str,
+    owner_id: str,
+    agent_id: str,
+    device_id: str,
+    challenge_id: str,
+    challenge: str,
+    scopes: list[str],
+) -> dict[str, Any]:
+    if (
+        owner_type not in {"user", "org"}
+        or not owner_id
+        or len(owner_id) > 200
+        or not agent_id
+        or len(agent_id) > 200
+        or not _valid_device_id(device_id)
+        or not _CHALLENGE_ID_RE.fullmatch(challenge_id)
+        or not 32 <= len(challenge) <= 128
+    ):
+        raise ValueError("Invalid pairing request")
+    requested_scopes = frozenset(str(scope) for scope in scopes)
+    if (
+        not requested_scopes
+        or any(len(scope) > 64 for scope in requested_scopes)
+        or not requested_scopes.issubset(PAIRING_SCOPES)
+    ):
+        raise ValueError("Invalid pairing scopes")
+    db = get_sync_db()
+    agent = db[COLL_AGENTS].find_one(
+        {
+            "agent_id": agent_id,
+            "user_id": user_id,
+            "device_id": device_id,
+            "is_active": True,
+            "protocol_version": "v1",
+            "supports_pairing": True,
+        }
+    )
+    if agent is None:
+        raise ValueError("Agent device does not belong to this user")
+    if owner_type == "user":
+        if owner_id != user_id:
+            raise ValueError("User owner does not match the authenticated user")
+    elif db[COLL_ORG_MEMBERS].find_one(
+        {"org_id": owner_id, "user_id": user_id, "status": "active"}
+    ) is None:
+        raise ValueError("Authenticated user is not an active organization member")
+
+    digest = hashlib.sha256(challenge.encode("utf-8")).hexdigest()
+    pairings = db[COLL_AGENT_PAIRINGS]
+    if pairings.find_one({"challenge_id": challenge_id}) or pairings.find_one(
+        {"challenge_hash": digest}
+    ):
+        raise ValueError("Pairing challenge was already submitted")
+    now = time.time()
+    expires_at = datetime.fromtimestamp(now + 120, tz=timezone.utc)
+    doc = {
+        "challenge_id": challenge_id,
+        "challenge_hash": digest,
+        "user_id": user_id,
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "owner_key": f"{owner_type}:{owner_id}",
+        "agent_id": agent_id,
+        "device_id": device_id,
+        "scopes": sorted(requested_scopes),
+        "status": "pending",
+        "created_at": now,
+        "expires_at": expires_at,
+    }
+    try:
+        pairings.insert_one(doc)
+    except DuplicateKeyError as exc:
+        raise ValueError("Pairing challenge was already submitted") from exc
+    from dashboard.backend.agent.connections import agent_connections
+
+    agent_connections.notify_from_thread(
+        agent_id, _safe_pairing_approval(doc), device_id=device_id
+    )
+    return {
+        "challenge_id": challenge_id,
+        "agent_id": agent_id,
+        "device_id": device_id,
+        "status": "pending",
+        "expires_at": expires_at.timestamp(),
+    }
+
+
+def poll_pairing_approvals(agent_id: str, device_id: str) -> list[dict[str, Any]]:
+    if not _valid_device_id(device_id):
+        return []
+    docs = (
+        get_sync_db()[COLL_AGENT_PAIRINGS]
+        .find(
+            {
+                "agent_id": agent_id,
+                "device_id": device_id,
+                "status": "pending",
+                "expires_at": {"$gt": datetime.now(timezone.utc)},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", 1)
+        .limit(16)
+    )
+    return [_safe_pairing_approval(doc) for doc in docs]
+
+
+def acknowledge_pairing_approval(
+    challenge_id: str, agent_id: str, device_id: str
+) -> bool:
+    result = get_sync_db()[COLL_AGENT_PAIRINGS].update_one(
+        {
+            "challenge_id": challenge_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+            "status": "pending",
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+        },
+        {"$set": {"status": "delivered", "delivered_at": time.time()}},
+    )
+    return bool(result.modified_count)
 
 
 def get_recent_active_agent(user_id: str, max_age_seconds: int = 90) -> Optional[dict[str, Any]]:

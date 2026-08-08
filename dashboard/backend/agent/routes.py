@@ -9,7 +9,10 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, WebS
 from starlette.concurrency import run_in_threadpool
 
 from dashboard.backend.agent.service import (
+    PAIRING_SCOPES,
+    acknowledge_pairing_approval,
     authenticate_agent,
+    bind_agent_device,
     cancel_user_job,
     claim_job,
     complete_job,
@@ -19,7 +22,9 @@ from dashboard.backend.agent.service import (
     get_job_status_for_agent,
     list_user_agents,
     poll_jobs,
+    poll_pairing_approvals,
     register_agent,
+    request_pairing_approval,
     update_job_progress,
 )
 from dashboard.backend.auth.service import require_user_dependency
@@ -43,11 +48,20 @@ def register_agent_endpoint(
     payload: dict[str, Any] = Body(...),
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    return register_agent(
-        user["user_id"],
-        payload.get("name", "default-agent"),
-        payload.get("description", ""),
-    )
+    try:
+        device_id = str(payload.get("device_id") or "")
+        protocol_version = str(payload.get("protocol_version") or "")
+        if not device_id or not protocol_version:
+            raise ValueError("Device ID and protocol version are required")
+        return register_agent(
+            user["user_id"],
+            payload.get("name", "default-agent"),
+            device_id=device_id,
+            protocol_version=protocol_version,
+            supports_pairing=payload.get("supports_pairing") is True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/agents")
@@ -65,6 +79,64 @@ def agent_heartbeat(
     return {"status": "ok"}
 
 
+@router.post("/api/agents/device")
+def register_agent_device(
+    payload: dict[str, Any] = Body(...),
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, Any]:
+    try:
+        return bind_agent_device(
+            str(agent["agent_id"]),
+            str(payload.get("device_id") or ""),
+            str(payload.get("protocol_version") or ""),
+            payload.get("supports_pairing") is True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/api/agents/pairing/challenges")
+def approve_browser_pairing(
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    scopes = payload.get("scopes")
+    try:
+        return request_pairing_approval(
+            user_id=str(user["user_id"]),
+            owner_type=str(payload.get("owner_type") or "user"),
+            owner_id=str(payload.get("owner_id") or user["user_id"]),
+            agent_id=str(payload.get("agent_id") or ""),
+            device_id=str(payload.get("device_id") or ""),
+            challenge_id=str(payload.get("challenge_id") or ""),
+            challenge=str(payload.get("challenge") or ""),
+            scopes=list(scopes) if isinstance(scopes, list) else sorted(PAIRING_SCOPES),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/api/agents/pairing/approvals")
+def poll_browser_pairings(
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> list[dict[str, Any]]:
+    return poll_pairing_approvals(
+        str(agent["agent_id"]), str(agent.get("device_id") or "")
+    )
+
+
+@router.post("/api/agents/pairing/approvals/{challenge_id}/ack")
+def acknowledge_browser_pairing(
+    challenge_id: str,
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, str]:
+    if not acknowledge_pairing_approval(
+        challenge_id, str(agent["agent_id"]), str(agent.get("device_id") or "")
+    ):
+        raise HTTPException(status_code=404, detail="Pairing approval not found")
+    return {"challenge_id": challenge_id, "status": "delivered"}
+
+
 @router.websocket("/api/agent-runtime/ws")
 async def agent_runtime_websocket(websocket: WebSocket) -> None:
     authorization = str(websocket.headers.get("authorization") or "")
@@ -76,12 +148,19 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=4001, reason="Invalid agent token")
         return
     agent_id = str(agent["agent_id"])
+    device_id = str(agent.get("device_id") or "")
     await websocket.accept()
-    await agent_connections.register(agent_id, str(agent["user_id"]), websocket)
+    await agent_connections.register(
+        agent_id, str(agent["user_id"]), websocket, device_id=device_id
+    )
     await run_in_threadpool(heartbeat_agent, agent_id)
     await websocket.send_json({"type": "connected", "agent_id": agent_id, "heartbeat_seconds": 15})
     if await run_in_threadpool(poll_jobs, agent_id):
         await websocket.send_json({"type": "job_available"})
+    for approval in await run_in_threadpool(
+        poll_pairing_approvals, agent_id, device_id
+    ):
+        await websocket.send_json(approval)
     try:
         while True:
             raw = await websocket.receive_text()

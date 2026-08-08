@@ -32,6 +32,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from local_agent_runtime.artifact_server import run_artifact_server
+from local_agent_runtime.data_plane import (
+    load_or_create_device_id,
+    load_or_create_internal_token,
+)
 from local_agent_runtime.migration import format_inspection, inspect_legacy_root, migrate_legacy_root
 from local_agent_runtime.storage import (
     AgentPaths,
@@ -48,6 +52,7 @@ from local_agent_runtime.transport import AgentWebSocketClient, JobSignal
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "http://localhost:4090")
 POLL_INTERVAL = float(os.getenv("AGENT_POLL_INTERVAL", "5"))
 AGENT_TOKEN: str = ""
+AGENT_ID: str = ""
 AGENT_SESSION_COOKIE: str = ""
 AGENT_CDP_URL = os.getenv("AGENT_CDP_URL", "http://127.0.0.1:9222")
 AGENT_ARTIFACT_PORT = int(os.getenv("AGENT_ARTIFACT_PORT", "8765"))
@@ -120,6 +125,67 @@ def api_request_retry(
         if attempt < attempts:
             time.sleep(min(2.0, 0.5 * attempt))
     return None
+
+
+def _deliver_pairing_approval(approval: dict[str, Any]) -> bool:
+    if (
+        str(approval.get("agent_id") or "") != AGENT_ID
+        or str(approval.get("device_id") or "") != load_or_create_device_id(AGENT_PATHS)
+    ):
+        return False
+    try:
+        response = requests.post(
+            f"{AGENT_ARTIFACT_BASE_URL}/_agent/pairing/approvals",
+            headers={
+                "Authorization": f"Bearer {load_or_create_internal_token(AGENT_PATHS)}",
+                "Content-Type": "application/json",
+            },
+            json={
+                key: approval[key]
+                for key in (
+                    "challenge_id",
+                    "challenge_hash",
+                    "agent_id",
+                    "device_id",
+                    "owner_key",
+                    "scopes",
+                    "expires_at",
+                )
+            },
+            timeout=(2, 5),
+        )
+        return response.status_code == 200
+    except (KeyError, requests.RequestException):
+        return False
+
+
+def sync_pairing_approvals(*, fetch_remote: bool) -> None:
+    approvals = JOB_SIGNAL.drain_pairing_approvals()
+    if fetch_remote:
+        polled = api_request(
+            "GET",
+            "/api/agents/pairing/approvals",
+            token=AGENT_TOKEN,
+            timeout=10,
+            quiet=True,
+        )
+        if isinstance(polled, list):
+            approvals.extend(item for item in polled if isinstance(item, dict))
+    unique = {
+        str(item.get("challenge_id") or ""): item
+        for item in approvals
+        if str(item.get("challenge_id") or "")
+    }
+    for challenge_id, approval in unique.items():
+        if not _deliver_pairing_approval(approval):
+            continue
+        api_request(
+            "POST",
+            f"/api/agents/pairing/approvals/{urllib.parse.quote(challenge_id, safe='')}/ack",
+            token=AGENT_TOKEN,
+            timeout=10,
+            quiet=True,
+        )
 
 
 def report_job_terminal(job_id: str, action: str, payload: dict[str, Any]) -> bool:
@@ -1141,25 +1207,46 @@ def _save_agent_token(api_base: str, agent_id: str, token: str) -> None:
 
 
 def register_and_run(args: argparse.Namespace) -> None:
-    global AGENT_TOKEN, AGENT_SESSION_COOKIE, WS_CLIENT
+    global AGENT_ID, AGENT_TOKEN, AGENT_SESSION_COOKIE, WS_CLIENT
 
     _configure_runtime(args)
 
     saved_token = _load_saved_token(AGENT_API_BASE)
+    device_id = load_or_create_device_id(AGENT_PATHS)
     if args.token or saved_token:
         AGENT_TOKEN = args.token or saved_token
         print("[agent] Using saved agent credential")
     else:
         print(f"[agent] Registering agent with {AGENT_API_BASE}...")
         result = api_request("POST", "/api/agents/register",
-                            {"name": args.name, "description": f"Local agent on {socket.gethostname()}"})
+                            {
+                                "name": args.name,
+                                "device_id": device_id,
+                                "protocol_version": "v1",
+                                "supports_pairing": True,
+                            })
         if result is None:
             print("[agent] Failed to register. Pass --session-cookie once, or reuse a saved --token.")
             sys.exit(1)
         AGENT_TOKEN = result["token"]
+        AGENT_ID = str(result["agent_id"])
         print(f"[agent] Registered: {result['agent_id']}")
         _save_agent_token(AGENT_API_BASE, str(result["agent_id"]), AGENT_TOKEN)
         print(f"[agent] Credential saved to {_token_config_path()} (mode 0600)")
+    binding = api_request(
+        "POST",
+        "/api/agents/device",
+        {
+            "device_id": device_id,
+            "protocol_version": "v1",
+            "supports_pairing": True,
+        },
+        token=AGENT_TOKEN,
+        timeout=20,
+    )
+    if binding is None:
+        raise RuntimeError("Agent credential could not be bound to this local device")
+    AGENT_ID = str(binding["agent_id"])
     AGENT_SESSION_COOKIE = ""
 
     print(f"[agent] Render control plane: {AGENT_API_BASE}")
@@ -1179,12 +1266,16 @@ def register_and_run(args: argparse.Namespace) -> None:
     last_connection_warning = 0.0
     connection_was_down = False
     next_http_poll = 0.0
+    next_pairing_poll = 0.0
     while True:
         try:
             signaled = JOB_SIGNAL.wait(1.0)
             if _execute_next_local_revision():
                 continue
             now = time.time()
+            sync_pairing_approvals(fetch_remote=now >= next_pairing_poll)
+            if now >= next_pairing_poll:
+                next_pairing_poll = now + POLL_INTERVAL
             if not signaled and now < next_http_poll:
                 continue
             next_http_poll = now + POLL_INTERVAL
@@ -1314,7 +1405,7 @@ def main() -> None:
     parser.add_argument("--api-base", default=AGENT_API_BASE, help="Render backend URL")
     parser.add_argument("--token", default="", help="Existing agent token (skip registration)")
     parser.add_argument("--session-cookie", default=os.getenv("AD_FACTORY_SESSION", ""), help="Dashboard session cookie used only to register a new agent token")
-    parser.add_argument("--name", default=f"agent-{socket.gethostname()}", help="Agent name")
+    parser.add_argument("--name", default="local-agent", help="Agent name")
     parser.add_argument("--poll-interval", type=float, default=25.0, help="HTTP fallback interval when WebSocket notifications are unavailable")
     parser.add_argument("--data-dir", default=str(resolve_data_root()), help="Canonical local agent data root")
     parser.add_argument("--output-dir", default="", help=argparse.SUPPRESS)

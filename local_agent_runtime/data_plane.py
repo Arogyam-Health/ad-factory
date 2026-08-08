@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from .storage import AgentState, VersionConflictError
+from .storage import AgentPaths, AgentState, VersionConflictError
 
 
 ALL_SCOPES = frozenset(
@@ -52,6 +52,8 @@ class PairingChallenge:
     expires_at: float
     owner_key: str | None = None
     scopes: frozenset[str] = frozenset()
+    agent_id: str | None = None
+    device_id: str | None = None
     approved: bool = False
     consumed: bool = False
 
@@ -61,6 +63,8 @@ class LocalSession:
     owner_key: str
     scopes: frozenset[str]
     expires_at: float
+    agent_id: str
+    device_id: str
 
 
 class APIError(RuntimeError):
@@ -69,6 +73,34 @@ class APIError(RuntimeError):
         self.status = status
         self.code = code
         self.message = message
+
+
+def _load_or_create_local_secret(path: Path, prefix: str, byte_count: int) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(prefix + secrets.token_hex(byte_count) + "\n", encoding="ascii")
+        os.chmod(temporary, 0o600)
+        try:
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                pass
+        finally:
+            temporary.unlink(missing_ok=True)
+    os.chmod(path, 0o600)
+    value = path.read_text(encoding="ascii").strip()
+    if not value.startswith(prefix) or len(value) > 256:
+        raise RuntimeError(f"Invalid local identity file: {path.name}")
+    return value
+
+
+def load_or_create_device_id(paths: AgentPaths) -> str:
+    return _load_or_create_local_secret(paths.config / "device-id", "dev_", 16)
+
+
+def load_or_create_internal_token(paths: AgentPaths) -> str:
+    return _load_or_create_local_secret(paths.config / "runtime-token", "lrt_", 32)
 
 
 class LocalDataPlane:
@@ -80,30 +112,29 @@ class LocalDataPlane:
         self._lock = threading.Lock()
         self._challenges: dict[str, PairingChallenge] = {}
         self._sessions: dict[str, LocalSession] = {}
-        self.device_id = self._load_device_id()
-
-    def _load_device_id(self) -> str:
-        path = self.service.config.paths.config / "device-id"
-        if not path.exists():
-            temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-            temporary.write_text("dev_" + secrets.token_hex(16) + "\n", encoding="ascii")
-            os.chmod(temporary, 0o600)
-            try:
-                os.replace(temporary, path)
-            finally:
-                temporary.unlink(missing_ok=True)
-        return path.read_text(encoding="ascii").strip()
+        self.device_id = load_or_create_device_id(self.service.config.paths)
 
     def approve_challenge(
         self,
         challenge_id: str,
-        challenge: str,
+        challenge: str | None = None,
         *,
+        challenge_digest: str | None = None,
         owner_key: str,
         scopes: list[str] | tuple[str, ...],
+        agent_id: str = "",
+        device_id: str = "",
     ) -> None:
         requested = frozenset(scopes)
-        if not owner_key or not requested or not requested.issubset(ALL_SCOPES):
+        supplied_digest = challenge_digest or self._digest(str(challenge or ""))
+        effective_agent_id = agent_id or "legacy-local-agent"
+        if (
+            not owner_key
+            or not requested
+            or not requested.issubset(ALL_SCOPES)
+            or (device_id and device_id != self.device_id)
+            or (challenge_digest is not None and len(challenge_digest) != 64)
+        ):
             raise ValueError("Invalid pairing approval")
         with self._lock:
             item = self._challenges.get(challenge_id)
@@ -111,11 +142,20 @@ class LocalDataPlane:
                 item is None
                 or item.consumed
                 or item.expires_at <= time.time()
-                or not hmac.compare_digest(item.digest, self._digest(challenge))
+                or not hmac.compare_digest(item.digest, supplied_digest)
             ):
                 raise ValueError("Pairing challenge is invalid or expired")
+            if item.approved and (
+                item.owner_key != owner_key
+                or item.scopes != requested
+                or item.agent_id != effective_agent_id
+                or item.device_id != (device_id or self.device_id)
+            ):
+                raise ValueError("Pairing challenge authority cannot be changed")
             item.owner_key = owner_key
             item.scopes = requested
+            item.agent_id = effective_agent_id
+            item.device_id = device_id or self.device_id
             item.approved = True
 
     @staticmethod
@@ -365,6 +405,8 @@ class LocalDataPlane:
         expires_at = time.time() + self.service.config.challenge_ttl_seconds
         with self._lock:
             self._cleanup_auth()
+            if len(self._challenges) >= 256:
+                raise APIError(429, "pairing_busy", "Too many active pairing challenges")
             self._challenges[challenge_id] = PairingChallenge(
                 digest=self._digest(challenge), expires_at=expires_at
             )
@@ -393,15 +435,23 @@ class LocalDataPlane:
                 or item.expires_at <= time.time()
                 or not hmac.compare_digest(item.digest, self._digest(challenge))
                 or not item.owner_key
+                or not item.agent_id
+                or item.device_id != self.device_id
             ):
                 raise APIError(
                     401, "pairing_not_approved", "Pairing challenge is invalid or not approved"
                 )
+            if len(self._sessions) >= 256:
+                raise APIError(429, "pairing_busy", "Too many active local sessions")
             item.consumed = True
             token = secrets.token_urlsafe(32)
             expires_at = time.time() + self.service.config.session_ttl_seconds
             self._sessions[self._digest(token)] = LocalSession(
-                owner_key=item.owner_key, scopes=item.scopes, expires_at=expires_at
+                owner_key=item.owner_key,
+                scopes=item.scopes,
+                expires_at=expires_at,
+                agent_id=item.agent_id,
+                device_id=item.device_id,
             )
         self._json(
             handler,
@@ -412,6 +462,7 @@ class LocalDataPlane:
                 "expires_at": expires_at,
                 "scopes": sorted(item.scopes),
                 "device_id": self.device_id,
+                "agent_id": item.agent_id,
             },
         )
 
