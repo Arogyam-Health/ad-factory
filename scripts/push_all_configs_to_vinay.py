@@ -4,6 +4,7 @@ Push ALL config files (every JSON + text) to vinaysaini's user_config in MongoDB
 Also deletes the bad entry that used email as user_id.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -11,8 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pymongo import MongoClient
 
-MONGO_URI = "mongodb+srv://vinaysaini_db_user:jytQDmcPYtCk6O5F@adstorage.f7ahuc3.mongodb.net/ad_factory?retryWrites=true&w=majority&appName=adstorage"
-DB_NAME = "ad_factory"
 COLLECTION = "user_configs"
 
 VINAY_USER_ID = "usr_25068fa27b5a878e13c680da5aeda5f3"
@@ -40,9 +39,8 @@ def read_file(path: Path) -> str:
         return ""
 
 
-def main():
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    db = client[DB_NAME]
+def _push_config(client: MongoClient, db_name: str) -> None:
+    db = client[db_name]
     coll = db[COLLECTION]
 
     # 1. Delete the bad entry with email as user_id
@@ -79,8 +77,25 @@ def main():
     else:
         print("ERROR: Document not found after upsert!")
 
-    client.close()
+def main():
+    mongo_uri = os.environ.get("MONGODB_URI", "").strip()
+    if not mongo_uri:
+        print("ERROR: MONGODB_URI is required", file=sys.stderr)
+        return 1
+    db_name = os.environ.get("MONGODB_DB_NAME", "ad_factory").strip() or "ad_factory"
+
+    client = None
+    try:
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        _push_config(client, db_name)
+    except Exception:
+        print("ERROR: MongoDB operation failed", file=sys.stderr)
+        return 1
+    finally:
+        if client is not None:
+            client.close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

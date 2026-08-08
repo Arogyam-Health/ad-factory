@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 import uuid
@@ -26,8 +27,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pymongo import MongoClient
 
-MONGO_URI = "mongodb+srv://vinaysaini_db_user:jytQDmcPYtCk6O5F@adstorage.f7ahuc3.mongodb.net/ad_factory?retryWrites=true&w=majority&appName=adstorage"
-DB_NAME = "ad_factory"
 COLLECTION = "user_configs"
 
 CONFIG_KEYS = [
@@ -103,13 +102,26 @@ def main():
 
     if not args.dry_run and not args.apply:
         print("ERROR: Must specify --dry-run or --apply")
-        sys.exit(1)
+        return 1
 
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    db = client[DB_NAME]
-    coll = db[COLLECTION]
+    mongo_uri = os.environ.get("MONGODB_URI", "").strip()
+    if not mongo_uri:
+        print("ERROR: MONGODB_URI is required", file=sys.stderr)
+        return 1
+    db_name = os.environ.get("MONGODB_DB_NAME", "ad_factory").strip() or "ad_factory"
 
-    old_docs = list(coll.find({"owner_type": {"$exists": False}}))
+    client = None
+    try:
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        db = client[db_name]
+        coll = db[COLLECTION]
+        old_docs = list(coll.find({"owner_type": {"$exists": False}}))
+    except Exception:
+        print("ERROR: MongoDB operation failed", file=sys.stderr)
+        if client is not None:
+            client.close()
+        return 1
+
     found = len(old_docs)
     migrated = 0
     skipped = 0
@@ -152,8 +164,8 @@ def main():
                 print(f"  MIGRATED {user_id}")
                 migrated += 1
 
-        except Exception as e:
-            print(f"  ERROR {user_id}: {e}")
+        except Exception:
+            print(f"  ERROR {user_id}: MongoDB operation failed")
             errors += 1
 
     print(f"\nSummary:")
@@ -166,7 +178,8 @@ def main():
         print("\nThis was a dry run. Run with --apply to execute migration.")
 
     client.close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

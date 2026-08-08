@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import uuid
@@ -20,8 +21,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pymongo import MongoClient
 
-MONGO_URI = "mongodb+srv://vinaysaini_db_user:jytQDmcPYtCk6O5F@adstorage.f7ahuc3.mongodb.net/ad_factory?retryWrites=true&w=majority&appName=adstorage"
-DB_NAME = "ad_factory"
 COLLECTION = "user_configs"
 
 VINAY_USER_ID = "usr_25068fa27b5a878e13c680da5aeda5f3"
@@ -71,19 +70,8 @@ def read_file(path: Path) -> str:
         return ""
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Seed vinaysaini config")
-    parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
-    parser.add_argument("--apply", action="store_true", help="Apply seed")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing config")
-    args = parser.parse_args()
-
-    if not args.dry_run and not args.apply:
-        print("ERROR: Must specify --dry-run or --apply")
-        sys.exit(1)
-
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    db = client[DB_NAME]
+def _seed_config(client: MongoClient, db_name: str, args: argparse.Namespace) -> int:
+    db = client[db_name]
     coll = db[COLLECTION]
 
     # Verify user exists in users collection
@@ -93,7 +81,7 @@ def main():
         user = db["users"].find_one({"email": VINAY_EMAIL})
         if user is None:
             print(f"ERROR: User not found (user_id={VINAY_USER_ID}, email={VINAY_EMAIL})")
-            sys.exit(1)
+            return 1
         actual_user_id = user["user_id"]
         print(f"Found user by email: {actual_user_id}")
     else:
@@ -116,8 +104,7 @@ def main():
 
     if existing and not args.force:
         print(f"\nConfig already exists for {actual_user_id} (use --force to overwrite)")
-        client.close()
-        return
+        return 0
 
     now = time.time()
     file_entries = {}
@@ -134,8 +121,7 @@ def main():
         print(f"  config_scope: personal")
         print(f"  config_mode: full")
         print(f"  files: {len(CONFIG_KEYS)} keys")
-        client.close()
-        return
+        return 0
 
     if existing:
         coll.update_one(
@@ -183,8 +169,37 @@ def main():
     else:
         print("ERROR: Document not found after upsert!")
 
-    client.close()
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Seed vinaysaini config")
+    parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
+    parser.add_argument("--apply", action="store_true", help="Apply seed")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing config")
+    args = parser.parse_args()
+
+    if not args.dry_run and not args.apply:
+        print("ERROR: Must specify --dry-run or --apply")
+        return 1
+
+    mongo_uri = os.environ.get("MONGODB_URI", "").strip()
+    if not mongo_uri:
+        print("ERROR: MONGODB_URI is required", file=sys.stderr)
+        return 1
+    db_name = os.environ.get("MONGODB_DB_NAME", "ad_factory").strip() or "ad_factory"
+
+    client = None
+    try:
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        return _seed_config(client, db_name, args)
+    except Exception:
+        print("ERROR: MongoDB operation failed", file=sys.stderr)
+        return 1
+    finally:
+        if client is not None:
+            client.close()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
