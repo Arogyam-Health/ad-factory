@@ -127,7 +127,7 @@ export async function renderRun(run) {
 
   const header = document.createElement("div");
   header.className = "run-header";
-  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${run.batch} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
+  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${displayBatch(run)} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
   div.appendChild(header);
 
   header.querySelector(".run-delete-btn")?.addEventListener("click", async (e) => {
@@ -182,7 +182,7 @@ export async function renderRun(run) {
 
 function updateRunNav() {
   const total = state.runsData.length;
-  const latestBatch = total ? (state.runsData[0].batch || "-") : "-";
+  const latestBatch = total ? displayBatch(state.runsData[0]) : "-";
   if (runIndexEl) {
     const position = total ? `${state.currentRunIndex + 1}/${total}` : "0/0";
     runIndexEl.textContent = `${position} | latest batch ${latestBatch}`;
@@ -244,7 +244,7 @@ function updatePreviousRunOptions() {
     empty.textContent = placeholder;
     select.appendChild(empty);
     state.runsData.forEach((run) => {
-      const label = run.batch || run.run_id;
+      const label = displayBatch(run) || run.run_id;
       const opt = document.createElement("option");
       opt.value = run.run_id;
       opt.textContent = label;
@@ -295,11 +295,17 @@ export async function loadRuns() {
     batchMenu.innerHTML = "";
 
     const batches = new Set();
-    state.runsData.forEach((r) => { if (r.batch) batches.add(r.batch); });
+    const batchLabels = new Map();
+    state.runsData.forEach((r) => {
+      if (r.batch) {
+        batches.add(r.batch);
+        batchLabels.set(r.batch, displayBatch(r));
+      }
+    });
 
     const grid = document.createElement("div");
     grid.className = "batch-grid";
-    const batchList = Array.from(batches).sort(compareBatchesLatestFirst);
+    const batchList = Array.from(batches).sort((a, b) => compareBatchesLatestFirst(batchLabels.get(a), batchLabels.get(b)));
     const num = batchList.length;
     const cols = Math.max(1, Math.ceil(Math.sqrt(num)));
     const rows = Math.max(1, Math.ceil(num / cols));
@@ -316,7 +322,7 @@ export async function loadRuns() {
     cb.className = "batch-check";
     const labelSpan = document.createElement("span");
     labelSpan.className = "batch-label";
-    labelSpan.textContent = batch;
+    labelSpan.textContent = batchLabels.get(batch) || batch;
     cb.addEventListener("change", updateBatchDropdownButtonLabel);
     item.addEventListener("click", (event) => {
       if (event.target.closest("input[type='checkbox']")) return;
@@ -376,11 +382,18 @@ document.getElementById("refreshRuns")?.addEventListener("click", () => {
 
 const LOCAL_STORAGE_JOB_KEY = "adFactoryActiveJob";
 const LOCAL_ARTIFACT_CACHE_KEY = "adFactoryLocalArtifacts";
-const LOCAL_ARTIFACT_MANIFEST_URL = "http://127.0.0.1:8765/artifacts";
+const LOCAL_ARTIFACT_ORIGIN = "http://127.0.0.1:8765";
+let localArtifactOrigin = LOCAL_ARTIFACT_ORIGIN;
+let localArtifactCapability = "";
 let agentJobPollTimer = null;
 let localArtifactImages = [];
 let localArtifactSignature = "";
 let localManifestRefreshInFlight = false;
+let localArtifactEventSource = null;
+
+function displayBatch(run) {
+  return run?.display_batch || (run?.run_number ? `v${run.run_number}` : run?.batch) || "-";
+}
 
 function scopedStorageKey(baseKey) {
   const userId = getAuthUser()?.user_id || "anonymous";
@@ -398,8 +411,32 @@ function currentJobStorageKey() {
 function artifactSignature(images) {
   return images.map((image) => {
     const runIds = Array.isArray(image.run_ids) ? image.run_ids.join(",") : "";
-    return `${image.url || ""}:${image.bytes || 0}:${image.modified_at || 0}:${image.batch || ""}:${runIds}`;
+    return `${image.url || ""}:${image.bytes || 0}:${image.sha256 || ""}:${image.updated_at || image.modified_at || 0}:${image.batch || ""}:${runIds}`;
   }).join("|");
+}
+
+function setLocalArtifactAccess(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(parsed.hostname)) return;
+    const nextOrigin = parsed.origin;
+    const owner = parsed.searchParams.get("owner") || "";
+    const token = parsed.searchParams.get("token") || "";
+    const nextCapability = owner && token ? new URLSearchParams({ owner, token }).toString() : localArtifactCapability;
+    if (nextOrigin === localArtifactOrigin && nextCapability === localArtifactCapability) return;
+    localArtifactOrigin = nextOrigin;
+    localArtifactCapability = nextCapability;
+    localArtifactEventSource?.close();
+    localArtifactEventSource = null;
+    startLocalArtifactEvents();
+  } catch {
+    // Ignore malformed artifact origins received from stale job metadata.
+  }
+}
+
+function localArtifactUrl(path) {
+  const suffix = localArtifactCapability ? `?${localArtifactCapability}` : "";
+  return `${localArtifactOrigin}${path}${suffix}`;
 }
 
 function appendGenerationResult(data, fallback) {
@@ -456,6 +493,8 @@ function showAgentJobBar(text, spinning = true, job = null) {
 function syncLocalAgentArtifacts(job, { authoritative = false } = {}) {
   const result = job?.result || {};
   let images = Array.isArray(result.images) ? result.images : [];
+  const capabilityUrl = images.find((image) => image?.url)?.url || result.artifact_base_url;
+  if (capabilityUrl) setLocalArtifactAccess(capabilityUrl);
   if (!images.length && !authoritative) return false;
   if (!authoritative) {
     try {
@@ -495,14 +534,38 @@ export function applyLocalArtifactsToRuns() {
     run.image_files = run.image_files.filter((path) => !String(path).startsWith("http://127.0.0.1:") || validLocalUrls.has(path));
   });
   localArtifactImages.forEach((image) => {
-    const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : [];
+    const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : (image.run_id ? [image.run_id] : []);
     let targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
     targets.forEach((run) => {
       if (!Array.isArray(run.image_files)) run.image_files = [];
       if (!run.image_files.includes(image.url)) run.image_files.push(image.url);
+      if (!Array.isArray(run.image_items)) run.image_items = [];
+      const existingItem = run.image_items.find((item) => item.path === image.url);
+      const localItem = {
+        path: image.url,
+        artifact_id: image.artifact_id || "",
+        prompt_id: image.prompt_id || "",
+        aspect_ratio: image.aspect_ratio || "",
+        is_local: true,
+      };
+      if (existingItem) Object.assign(existingItem, localItem);
+      else run.image_items.push(localItem);
       run.image_generated = true;
     });
   });
+}
+
+function startLocalArtifactEvents() {
+  if (localArtifactEventSource || !localArtifactCapability || typeof EventSource === "undefined") return;
+  const source = new EventSource(localArtifactUrl("/events"));
+  localArtifactEventSource = source;
+  source.addEventListener("artifacts", () => refreshLocalArtifactManifest());
+  source.onerror = () => {
+    if (localArtifactEventSource !== source) return;
+    source.close();
+    localArtifactEventSource = null;
+    setTimeout(startLocalArtifactEvents, 3000);
+  };
 }
 
 function restoreCachedLocalArtifacts() {
@@ -519,12 +582,14 @@ function restoreCachedLocalArtifacts() {
 }
 
 export async function refreshLocalArtifactManifest() {
-  if (localManifestRefreshInFlight) return;
+  if (localManifestRefreshInFlight || !localArtifactCapability) return;
   localManifestRefreshInFlight = true;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2500);
   try {
-    const response = await fetch(`${LOCAL_ARTIFACT_MANIFEST_URL}?t=${Date.now()}`, {
+    const url = new URL(localArtifactUrl("/manifest"));
+    url.searchParams.set("t", String(Date.now()));
+    const response = await fetch(url, {
       cache: "no-store",
       mode: "cors",
       signal: controller.signal,
@@ -575,7 +640,9 @@ function startAgentJobPolling() {
   showAgentJobBar("Agent job in progress...");
   agentJobPollTimer = setInterval(async () => {
     try {
-      const data = await fetchJSON("/api/batch/job-status", { cache: "no-store" });
+      const saved = JSON.parse(localStorage.getItem(currentJobStorageKey()) || "null");
+      const query = saved?.job_id ? `?job_id=${encodeURIComponent(saved.job_id)}` : "";
+      const data = await fetchJSON(`/api/batch/job-status${query}`, { cache: "no-store" });
       if (!data || !data.job) {
         appendLog("No recent agent job found.");
         hideAgentJobBar();
@@ -612,7 +679,7 @@ function startAgentJobPolling() {
     } catch (err) {
       // Keep polling: a transient Render error must not freeze a stale Running/Canceling banner.
     }
-  }, 1000);
+  }, 5000);
 }
 
 function checkActiveAgentJob() {
@@ -632,7 +699,8 @@ function checkActiveAgentJob() {
 
 restoreCachedLocalArtifacts();
 refreshLocalArtifactManifest();
-setInterval(refreshLocalArtifactManifest, 2000);
+startLocalArtifactEvents();
+setInterval(refreshLocalArtifactManifest, 10000);
 checkActiveAgentJob();
 fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   if (data?.active && data.job?.job_id) {
@@ -740,26 +808,23 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
   if (!selectedBatches.length) { appendLog("Select at least one batch from the dropdown."); return; }
   appendLog(`Preparing download for ${selectedBatches.length} batch(es)...`);
   try {
-    const selectedRunIdsByBatch = new Map();
-    state.runsData.forEach((run) => {
-      if (run.batch) selectedRunIdsByBatch.set(run.batch, run.run_id);
-    });
-    const localBatches = new Set(localArtifactImages.filter((image) => {
-      const runId = selectedRunIdsByBatch.get(image.batch);
-      return runId && Array.isArray(image.run_ids) && image.run_ids.includes(runId);
-    }).map((image) => image.batch).filter(Boolean));
-    const selectedLocalBatches = selectedBatches.filter((batch) => localBatches.has(batch));
+    const selectedRuns = state.runsData.filter((run) => selectedBatches.includes(run.batch));
+    const localRunIds = new Set(localArtifactImages.flatMap((image) => image.run_ids || (image.run_id ? [image.run_id] : [])));
+    const selectedLocalRuns = selectedRuns.filter((run) => localRunIds.has(run.run_id));
+    const selectedLocalBatches = selectedLocalRuns.map((run) => run.batch);
     if (selectedLocalBatches.length) {
       const params = new URLSearchParams();
-      selectedLocalBatches.forEach((batch) => params.append("batch", batch));
-      const localResponse = await fetch(`http://127.0.0.1:8765/download-batches?${params}`, { cache: "no-store", mode: "cors" });
+      selectedLocalRuns.forEach((run) => params.append("run_id", run.run_id));
+      for (const [key, value] of new URLSearchParams(localArtifactCapability)) params.set(key, value);
+      const localResponse = await fetch(`${localArtifactOrigin}/download-batches?${params}`, { cache: "no-store", mode: "cors" });
       if (!localResponse.ok) throw new Error(`Local batch download failed (${localResponse.status})`);
       await downloadZipResponse(localResponse, `ad_factory_${selectedLocalBatches.join("_")}.zip`);
       appendLog(`Downloaded ${selectedLocalBatches.length} local batch(es).`);
       if (selectedLocalBatches.length === selectedBatches.length) return;
     }
 
-    const serverBatches = selectedBatches.filter((batch) => !localBatches.has(batch));
+    const localBatchSet = new Set(selectedLocalBatches);
+    const serverBatches = selectedBatches.filter((batch) => !localBatchSet.has(batch));
     if (!serverBatches.length) return;
     const res = await fetch("/api/runs/download-batches", {
       method: "POST",

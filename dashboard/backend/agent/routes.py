@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+import json
+import time
+
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from starlette.concurrency import run_in_threadpool
 
 from dashboard.backend.agent.service import (
     authenticate_agent,
@@ -19,6 +23,7 @@ from dashboard.backend.agent.service import (
     update_job_progress,
 )
 from dashboard.backend.auth.service import require_user_dependency
+from dashboard.backend.agent.connections import agent_connections
 
 router = APIRouter()
 
@@ -30,7 +35,6 @@ def _get_agent_from_header(authorization: str = Header("")) -> dict[str, Any]:
     agent = authenticate_agent(token)
     if agent is None:
         raise HTTPException(status_code=401, detail="Invalid agent token")
-    heartbeat_agent(agent["agent_id"])
     return agent
 
 
@@ -57,7 +61,45 @@ def list_agents(
 def agent_heartbeat(
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, str]:
+    heartbeat_agent(agent["agent_id"])
     return {"status": "ok"}
+
+
+@router.websocket("/api/agent-runtime/ws")
+async def agent_runtime_websocket(websocket: WebSocket) -> None:
+    authorization = str(websocket.headers.get("authorization") or "")
+    if not authorization.startswith("Bearer "):
+        await websocket.close(code=4001, reason="Missing agent token")
+        return
+    agent = await run_in_threadpool(authenticate_agent, authorization[7:])
+    if agent is None:
+        await websocket.close(code=4001, reason="Invalid agent token")
+        return
+    agent_id = str(agent["agent_id"])
+    await websocket.accept()
+    await agent_connections.register(agent_id, str(agent["user_id"]), websocket)
+    await run_in_threadpool(heartbeat_agent, agent_id)
+    await websocket.send_json({"type": "connected", "agent_id": agent_id, "heartbeat_seconds": 15})
+    if await run_in_threadpool(poll_jobs, agent_id):
+        await websocket.send_json({"type": "job_available"})
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "code": "invalid_json"})
+                continue
+            if message.get("type") in {"ping", "heartbeat"}:
+                await run_in_threadpool(heartbeat_agent, agent_id)
+                connection = agent_connections.get(agent_id)
+                if connection is not None:
+                    connection.last_seen_at = time.time()
+                await websocket.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await agent_connections.unregister(agent_id, websocket)
 
 
 @router.get("/api/agents/jobs/poll")
@@ -92,9 +134,10 @@ def cancel_agent_job(
 @router.post("/api/agents/jobs/{job_id}/claim")
 def claim_agent_job(
     job_id: str,
+    payload: dict[str, Any] | None = Body(default=None),
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, Any]:
-    job = claim_job(job_id, agent["agent_id"])
+    job = claim_job(job_id, agent["agent_id"], str((payload or {}).get("claim_id") or ""))
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found or already claimed")
     return job

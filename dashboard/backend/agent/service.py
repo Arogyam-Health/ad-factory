@@ -69,7 +69,7 @@ def list_user_agents(user_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def get_recent_active_agent(user_id: str, max_age_seconds: int = 60) -> Optional[dict[str, Any]]:
+def get_recent_active_agent(user_id: str, max_age_seconds: int = 90) -> Optional[dict[str, Any]]:
     return get_sync_db()[COLL_AGENTS].find_one(
         {
             "user_id": user_id,
@@ -81,7 +81,7 @@ def get_recent_active_agent(user_id: str, max_age_seconds: int = 60) -> Optional
     )
 
 
-def finalize_disconnected_agent_jobs(user_id: str, max_age_seconds: int = 30) -> int:
+def finalize_disconnected_agent_jobs(user_id: str, max_age_seconds: int = 90) -> int:
     db = get_sync_db()
     now = time.time()
     active_jobs = list(db[COLL_AGENT_JOBS].find(
@@ -101,7 +101,9 @@ def finalize_disconnected_agent_jobs(user_id: str, max_age_seconds: int = 30) ->
         if agent:
             continue
         previous_status = str(job.get("status") or "")
-        error = "Agent disconnected before cancellation completed" if previous_status == "cancel_requested" else "Agent disconnected"
+        if previous_status != "cancel_requested":
+            continue
+        error = "Agent disconnected before cancellation completed"
         result = db[COLL_AGENT_JOBS].update_one(
             {"job_id": job.get("job_id"), "status": previous_status},
             {"$set": {
@@ -135,13 +137,23 @@ def create_job(agent_id: str, user_id: str, job_type: str, payload: dict[str, An
         "completed_at": None,
     }
     get_sync_db()[COLL_AGENT_JOBS].insert_one(doc)
+    from dashboard.backend.agent.connections import agent_connections
+
+    agent_connections.notify_from_thread(agent_id, {"type": "job_available", "job_id": job_id})
     return doc
 
 
 def poll_jobs(agent_id: str) -> list[dict[str, Any]]:
+    now = time.time()
     return list(
         get_sync_db()[COLL_AGENT_JOBS]
-        .find({"agent_id": agent_id, "status": "pending"}, {"_id": 0})
+        .find({
+            "agent_id": agent_id,
+            "$or": [
+                {"status": "pending"},
+                {"status": "running", "lease_expires_at": {"$lte": now}},
+            ],
+        }, {"_id": 0})
         .sort("created_at", 1)
         .limit(5)
     )
@@ -189,15 +201,39 @@ def cancel_user_job(user_id: str, job_id: str) -> dict[str, Any] | None:
         {"user_id": user_id, "job_id": job_id},
         {"$set": update},
     )
+    from dashboard.backend.agent.connections import agent_connections
+
+    agent_connections.notify_from_thread(
+        str(job.get("agent_id") or ""),
+        {"type": "job_canceled", "job_id": job_id},
+    )
     return {**job, **update}
 
 
-def claim_job(job_id: str, agent_id: str) -> Optional[dict[str, Any]]:
+def claim_job(job_id: str, agent_id: str, claim_id: str = "") -> Optional[dict[str, Any]]:
+    from pymongo import ReturnDocument
+
     now = time.time()
+    claim_id = claim_id or f"legacy-{job_id}"
     result = get_sync_db()[COLL_AGENT_JOBS].find_one_and_update(
-        {"job_id": job_id, "agent_id": agent_id, "status": "pending"},
-        {"$set": {"status": "running", "started_at": now, "updated_at": now}},
+        {
+            "job_id": job_id,
+            "agent_id": agent_id,
+            "$or": [
+                {"status": "pending"},
+                {"status": "running", "claim_id": claim_id},
+                {"status": "running", "lease_expires_at": {"$lte": now}},
+            ],
+        },
+        {"$set": {
+            "status": "running",
+            "claim_id": claim_id,
+            "lease_expires_at": now + 120,
+            "started_at": now,
+            "updated_at": now,
+        }},
         projection={"_id": 0},
+        return_document=ReturnDocument.AFTER,
     )
     return result
 
@@ -205,11 +241,11 @@ def claim_job(job_id: str, agent_id: str) -> Optional[dict[str, Any]]:
 def update_job_progress(job_id: str, progress: str, agent_id: str, result: Any = None) -> None:
     now = time.time()
     db = get_sync_db()
-    update: dict[str, Any] = {"progress": progress, "updated_at": now}
+    update: dict[str, Any] = {"progress": progress, "updated_at": now, "lease_expires_at": now + 120}
     if isinstance(result, dict):
         update["result"] = result
     db[COLL_AGENT_JOBS].update_one(
-        {"job_id": job_id, "agent_id": agent_id},
+        {"job_id": job_id, "agent_id": agent_id, "status": "running"},
         {"$set": update},
     )
     if isinstance(result, dict):
@@ -230,7 +266,8 @@ def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
             {"$set": {"status": "canceled", "error": "Canceled by user", "completed_at": now, "updated_at": now}},
         )
         return
-    get_sync_db()[COLL_AGENT_JOBS].update_one(
+    _persist_local_agent_result(db, job, result, now, completed=True)
+    db[COLL_AGENT_JOBS].update_one(
         {"job_id": job_id, "agent_id": agent_id},
         {"$set": {
             "status": "completed",
@@ -239,14 +276,10 @@ def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
             "updated_at": now,
         }},
     )
-    try:
-        _persist_local_agent_result(db, job, result, now, completed=True)
-    except Exception:
-        pass
 
 
 def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: float, *, completed: bool) -> None:
-    if job.get("job_type") != "run_chatgpt_batch" or not isinstance(result, dict):
+    if job.get("job_type") not in {"run_chatgpt_batch", "run_browser_batch"} or not isinstance(result, dict):
         return
     payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
     user_id = str(job.get("user_id") or "")
@@ -256,36 +289,35 @@ def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: 
         return
 
     batch_name = str(payload.get("batch_name") or "")
-    image_urls = [str(img.get("url")) for img in images]
-    update = {
-        "image_generated": True,
-        "image_files": image_urls,
-        "local_artifacts": images,
-        "local_output_dir": str(result.get("local_output_dir") or ""),
-        "artifact_base_url": str(result.get("artifact_base_url") or ""),
-        "local_agent_warnings": result.get("warnings") or [],
-        "updated_at": now,
-    }
-    if completed:
-        update["status"] = "completed"
-    if batch_name:
-        update["batch"] = batch_name
-    update["manifest_summary"] = {
-        "batch": batch_name,
-        "image_count": len(image_urls),
-    }
-
     for run_id in run_ids:
+        run_images = [img for img in images if str(img.get("run_id") or "") == run_id]
+        if not run_images and len(run_ids) == 1:
+            run_images = images
+        if not run_images:
+            continue
+        image_urls = [str(img.get("url")) for img in run_images]
+        update = {
+            "image_generated": True,
+            "image_files": image_urls,
+            "local_artifacts": run_images,
+            "local_output_dir": str(result.get("local_output_dir") or ""),
+            "artifact_base_url": str(result.get("artifact_base_url") or ""),
+            "local_agent_warnings": result.get("warnings") or [],
+            "updated_at": now,
+            "manifest_summary": {"batch": batch_name, "image_count": len(image_urls)},
+        }
+        if completed:
+            update["status"] = "completed"
         db[COLL_RUNS].update_one(
             {"user_id": user_id, "run_id": run_id},
             {"$set": {**update, "run_id": run_id, "user_id": user_id}, "$setOnInsert": {"created_at": now, "config": {}}},
             upsert=True,
         )
-        for img in images:
+        for img in run_images:
             url = str(img.get("url") or "")
-            image_id = hashlib.sha256(f"{run_id}:{url}".encode()).hexdigest()[:16]
+            image_id = str(img.get("artifact_id") or hashlib.sha256(f"{run_id}:{url}".encode()).hexdigest()[:16])
             db[COLL_IMAGES].update_one(
-                {"image_id": image_id},
+                {"user_id": user_id, "run_id": run_id, "image_id": image_id},
                 {"$set": {
                     "user_id": user_id,
                     "run_id": run_id,
@@ -295,6 +327,9 @@ def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: 
                     "local_path": url,
                     "url": url,
                     "filename": str(img.get("name") or "image.png"),
+                    "prompt_id": str(img.get("prompt_id") or ""),
+                    "item_id": str(img.get("item_id") or ""),
+                    "aspect_ratio": str(img.get("aspect_ratio") or ""),
                     "bytes": int(img.get("bytes") or 0),
                     "status": "completed",
                     "storage_provider": "local_agent",

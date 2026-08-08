@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 import time
 from typing import Any, Optional
 
@@ -7,13 +9,85 @@ from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_IMAGES, COLL_LLM_TRACES
 
 
+def reserve_run_number(
+    owner_type: str,
+    owner_id: str,
+    *,
+    collection: Any | None = None,
+) -> int:
+    """Atomically reserve the next display number within an owner scope."""
+    if not owner_type or not owner_id:
+        raise ValueError("owner_type and owner_id are required")
+    if collection is None:
+        from pymongo import ReturnDocument
+        from dashboard.backend.db.collections import COLL_RUN_COUNTERS
+
+        db = get_sync_db()
+        collection = db[COLL_RUN_COUNTERS]
+        scope = {"owner_type": owner_type, "owner_id": owner_id}
+        if collection.find_one(scope, {"_id": 1}) is None:
+            latest = db[COLL_RUNS].find_one(
+                {**scope, "run_number": {"$exists": True}},
+                {"run_number": 1},
+                sort=[("run_number", -1)],
+            )
+            highest = int((latest or {}).get("run_number") or 0)
+            if owner_type == "user":
+                legacy_runs = db[COLL_RUNS].find(
+                    {"user_id": owner_id, "batch": {"$regex": r"^v\d+$"}},
+                    {"batch": 1},
+                )
+                for legacy in legacy_runs:
+                    match = re.fullmatch(r"v(\d+)", str(legacy.get("batch") or ""), flags=re.IGNORECASE)
+                    if match:
+                        highest = max(highest, int(match.group(1)))
+            collection.update_one(
+                scope,
+                {"$setOnInsert": {
+                    **scope,
+                    "value": highest,
+                    "created_at": time.time(),
+                }},
+                upsert=True,
+            )
+        return_document = ReturnDocument.AFTER
+    else:
+        return_document = True
+    doc = collection.find_one_and_update(
+        {"owner_type": owner_type, "owner_id": owner_id},
+        {
+            "$inc": {"value": 1},
+            "$setOnInsert": {"created_at": time.time()},
+            "$set": {"updated_at": time.time()},
+        },
+        upsert=True,
+        return_document=return_document,
+    )
+    return int(doc["value"])
+
+
+def build_storage_batch(run_number: int, run_id: str) -> str:
+    """Return a globally unique directory key while keeping vN as the display label."""
+    suffix = hashlib.sha256(run_id.encode()).hexdigest()[:12]
+    return f"v{int(run_number)}-{suffix}"
+
+
 def create_run(user_id: str, run_id: str, run_data: dict[str, Any]) -> dict[str, Any]:
     now = time.time()
+    owner_type = str(run_data.get("owner_type") or "user")
+    owner_id = str(run_data.get("owner_id") or user_id)
+    run_number = int(run_data.get("run_number") or reserve_run_number(owner_type, owner_id))
+    display_batch = str(run_data.get("display_batch") or f"v{run_number}")
+    batch = str(run_data.get("batch") or build_storage_batch(run_number, run_id))
     doc = {
         "user_id": user_id,
         "run_id": run_id,
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "run_number": run_number,
+        "display_batch": display_batch,
         "status": run_data.get("status", "created"),
-        "batch": run_data.get("batch", ""),
+        "batch": batch,
         "config": run_data.get("config", {}),
         "created_at": now,
         "updated_at": now,

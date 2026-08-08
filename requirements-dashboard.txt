@@ -10,6 +10,7 @@ Pillow==12.2.0
 playwright==1.59.0
 selenium==4.32.0
 requests>=2.31.0,<3
+websockets==16.0
 
 # Cloud / multi-user dependencies
 pymongo==4.11.3

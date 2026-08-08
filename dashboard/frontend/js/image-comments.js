@@ -26,8 +26,10 @@ function isLocalArtifact(imageFile) {
 async function queueRevision(runId, imageFile, comment, engine) {
   const payload = { image_file: imageFile, comment, engine, headless: state.headlessModeEnabled };
   if (isLocalArtifact(imageFile)) {
-    const origin = new URL(imageFile).origin;
-    return fetchJSON(`${origin}/revisions`, {
+    const imageUrl = new URL(imageFile);
+    const revisionUrl = new URL("/revisions", imageUrl.origin);
+    revisionUrl.search = imageUrl.search;
+    return fetchJSON(revisionUrl.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -132,8 +134,9 @@ function delay(ms) {
 
 async function waitForRevision(runId, revisionId, box, statusUrl = "") {
   for (;;) {
-    const url = statusUrl || `/api/runs/${runId}/revisions/${revisionId}`;
-    const data = await fetchJSON(`${url}?t=${Date.now()}`, { cache: "no-store" });
+    const rawUrl = statusUrl || `/api/runs/${runId}/revisions/${revisionId}`;
+    const separator = rawUrl.includes("?") ? "&" : "?";
+    const data = await fetchJSON(`${rawUrl}${separator}t=${Date.now()}`, { cache: "no-store" });
     setRevisionState(box, data.message || data.status || "", !["completed", "error"].includes(data.status));
     if (data.status === "completed") return { ok: true, message: data.message || "Completed" };
     if (data.status === "error") {

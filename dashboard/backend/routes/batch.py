@@ -1,6 +1,6 @@
 import time
 from typing import Any, Optional
-from fastapi import APIRouter, Body, Cookie, HTTPException, Request
+from fastapi import APIRouter, Body, Cookie, HTTPException, Query, Request
 
 from dashboard.backend.app import (
     api_batch_generate_images_45,
@@ -43,7 +43,10 @@ def _batch_generate_both(request: Request, payload: dict[str, Any] = Body(...), 
 
 
 @router.get("/api/batch/job-status")
-def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
+def _batch_job_status(
+    job_id: str = Query(""),
+    session: Optional[str] = Cookie(None),
+) -> dict[str, Any]:
     try:
         user = get_current_user_from_cookie(session)
         user_id = user.get("user_id", "") if user else ""
@@ -55,12 +58,18 @@ def _batch_job_status(session: Optional[str] = Cookie(None)) -> dict[str, Any]:
 
     db = get_sync_db()
     finalize_disconnected_agent_jobs(user_id)
-    job = db[COLL_AGENT_JOBS].find_one(
-        {"user_id": user_id, "status": {"$in": ["pending", "running", "cancel_requested"]}},
-        {"_id": 0, "payload": 0},
-        sort=[("created_at", -1)],
-    )
-    if not job:
+    if job_id:
+        job = db[COLL_AGENT_JOBS].find_one(
+            {"user_id": user_id, "job_id": job_id},
+            {"_id": 0, "payload": 0},
+        )
+    else:
+        job = db[COLL_AGENT_JOBS].find_one(
+            {"user_id": user_id, "status": {"$in": ["pending", "running", "cancel_requested"]}},
+            {"_id": 0, "payload": 0},
+            sort=[("created_at", -1)],
+        )
+    if not job and not job_id:
         job = db[COLL_AGENT_JOBS].find_one(
             {
                 "user_id": user_id,

@@ -111,8 +111,12 @@ export function buildImageGallery(run, imagesData) {
   function updateSelectedCount() {
     selectedCount.textContent = `${selectedItems.size} selected`;
     const hasSelection = selectedItems.size > 0;
-    markBtn.disabled = !hasSelection;
-    regenerateNowBtn.disabled = !hasSelection;
+    const hasLocalSelection = Array.from(selectedItems.values()).some((item) => isLocalArtifactUrl(item.path));
+    markBtn.disabled = !hasSelection || hasLocalSelection;
+    regenerateNowBtn.disabled = !hasSelection || hasLocalSelection;
+    const title = hasLocalSelection ? "Local images are revised through comments instead of the server regeneration queue." : "";
+    markBtn.title = title;
+    regenerateNowBtn.title = title;
   }
 
   async function archiveSelectedImages() {
@@ -120,6 +124,9 @@ export function buildImageGallery(run, imagesData) {
     if (!imageFiles.length) {
       appendLog("Select at least one image.");
       return null;
+    }
+    if (imageFiles.some(isLocalArtifactUrl)) {
+      throw new Error("Local images cannot use the server regeneration queue. Add comments and use Revise all commented.");
     }
     return fetchJSON(`/api/runs/${run.run_id}/mark-images-to-regenerate`, {
       method: "POST",
@@ -223,7 +230,7 @@ export function buildImageGallery(run, imagesData) {
     card.dataset.path = path;
     if (imageItem.metadata?.regenerated) card.classList.add("image-card-regenerated");
 
-    const is916 = path.includes("/9_16/");
+    const is916 = imageItem.aspect_ratio === "9:16" || path.includes("/9_16/");
     const arLabel = is916 ? "9:16" : "4:5";
     card.dataset.aspect = is916 ? "9_16" : "4_5";
     card.dataset.aspectLabel = arLabel;

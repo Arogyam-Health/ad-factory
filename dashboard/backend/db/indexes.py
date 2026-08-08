@@ -37,6 +37,11 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_CREATED_AT, DESCENDING)]),
         IndexModel([(FIELD_RUN_ID, ASCENDING)], unique=True),
         IndexModel([(FIELD_STATUS, ASCENDING)]),
+        IndexModel(
+            [("owner_type", ASCENDING), ("owner_id", ASCENDING), ("run_number", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"run_number": {"$exists": True}},
+        ),
     ],
     COLL_PROMPTS: [
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_RUN_ID, ASCENDING)]),
@@ -64,6 +69,9 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_STATUS, ASCENDING), (FIELD_CREATED_AT, DESCENDING)]),
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_STATUS, ASCENDING), ("updated_at", DESCENDING)]),
         IndexModel([("job_id", ASCENDING)], unique=True),
+    ],
+    COLL_RUN_COUNTERS: [
+        IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING)], unique=True),
     ],
     COLL_BROWSER_SESSIONS: [
         IndexModel([(FIELD_USER_ID, ASCENDING)]),

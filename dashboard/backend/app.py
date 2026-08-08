@@ -154,7 +154,33 @@ _run_owner_registry: dict[str, str] = {}
 _run_owner_registry_lock = threading.Lock()
 
 
-def _record_run_owner(run_id: str, user_id: str, config: dict[str, Any] | None = None) -> None:
+def _resolve_run_owner_scope(user_id: str, org_id: str = "") -> tuple[str, str]:
+    """Use the shared org as the run scope; individual org runs remain user-scoped."""
+    try:
+        from dashboard.backend.services.org_helper import (
+            get_org_by_id,
+            get_user_default_org,
+            get_user_org_membership,
+        )
+
+        target_org_id = org_id or str((get_user_default_org(user_id) or {}).get("org_id") or "")
+        if target_org_id and get_user_org_membership(user_id, target_org_id):
+            org = get_org_by_id(target_org_id)
+            if org and org.get("config_mode", "shared_org_config") == "shared_org_config":
+                return "org", target_org_id
+    except Exception:
+        pass
+    return "user", user_id
+
+
+def _record_run_owner(
+    run_id: str,
+    user_id: str,
+    config: dict[str, Any] | None = None,
+    *,
+    owner_type: str = "user",
+    owner_id: str = "",
+) -> None:
     """Record that a user owns a run, both in-memory and in MongoDB."""
     with _run_owner_registry_lock:
         _run_owner_registry[run_id] = user_id
@@ -164,7 +190,12 @@ def _record_run_owner(run_id: str, user_id: str, config: dict[str, Any] | None =
         if doc:
             update_run(user_id, run_id, {"status": "created"})
         else:
-            create_run(user_id, run_id, {"status": "created", "config": config or {}})
+            create_run(user_id, run_id, {
+                "status": "created",
+                "config": config or {},
+                "owner_type": owner_type,
+                "owner_id": owner_id or user_id,
+            })
     except Exception:
         pass
     try:
@@ -227,6 +258,8 @@ def _manifest_fields_for_db(manifest: dict[str, Any]) -> dict[str, Any]:
         "local_output_dir",
         "artifact_base_url",
         "local_agent_warnings",
+        "run_number",
+        "display_batch",
         "updated_at",
     }
     return {key: manifest.get(key) for key in fields if key in manifest}
@@ -2032,7 +2065,8 @@ def _write_generation_prompt(
     prompt_text = _load_prompt_text_for_generation(user_id, run_id, rel_path)
     if prompt_text is None:
         return None
-    name = Path(rel_path).name or f"prompt_{uuid.uuid4().hex[:8]}.txt"
+    original_name = Path(rel_path).name or f"prompt_{uuid.uuid4().hex[:8]}.txt"
+    name = _local_prompt_filename(run_id, original_name)
     dest = prompt_work_dir / name
     combined = f"{starting_prompt}\n\n{prompt_text.strip()}\n" if starting_prompt else prompt_text
     dest.write_text(combined, encoding="utf-8")
@@ -2042,8 +2076,27 @@ def _write_generation_prompt(
         src = ROOT / src
     sidecar = src.resolve().with_suffix(".json")
     if sidecar.exists() and sidecar.is_file():
-        (prompt_work_dir / sidecar.name).write_text(sidecar.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+        dest.with_suffix(".json").write_text(sidecar.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
     return str(dest)
+
+
+def _local_prompt_filename(run_id: str, original_name: str) -> str:
+    if not run_id:
+        return Path(original_name).name
+    scope = hashlib.sha256(run_id.encode()).hexdigest()[:12]
+    return f"run_{scope}__{Path(original_name).name}"
+
+
+def _local_prompt_item(run_id: str, rel_path: str, local_path: str, batch: str) -> dict[str, Any]:
+    match = re.match(r"^v(\d+)(?:-|$)", str(batch or ""), flags=re.IGNORECASE)
+    return {
+        "item_id": "item_" + hashlib.sha256(f"{run_id}:{rel_path}".encode()).hexdigest()[:20],
+        "run_id": run_id,
+        "run_number": int(match.group(1)) if match else 0,
+        "prompt_id": hashlib.sha256(str(rel_path).encode()).hexdigest()[:16],
+        "prompt_path": str(rel_path),
+        "name": Path(local_path).name,
+    }
 
 
 def _bundle_binary_file(path: Path, *, root: Path | None = None) -> dict[str, str]:
@@ -2087,7 +2140,7 @@ def _queue_local_chatgpt_job(user_id: str, payload: dict[str, Any]) -> dict[str,
     agent = _latest_online_agent_for_user(user_id)
     from dashboard.backend.agent.service import create_job
 
-    job = create_job(agent["agent_id"], user_id, "run_chatgpt_batch", payload)
+    job = create_job(agent["agent_id"], user_id, "run_browser_batch", {**payload, "owner_key": f"user-{user_id}"})
     return {
         "status": "queued_local_agent",
         "job_id": job["job_id"],
@@ -2097,23 +2150,54 @@ def _queue_local_chatgpt_job(user_id: str, payload: dict[str, Any]) -> dict[str,
     }
 
 
-def _bundle_916_prompt_files_for_batches(batch_names: list[str]) -> list[dict[str, str]]:
+def _bundle_916_prompt_files_for_batches(
+    batch_names: list[str],
+    run_id_by_batch: dict[str, str],
+) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
     bundled: list[dict[str, str]] = []
+    items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for batch in batch_names:
         prompt_dir = ROOT / "output" / batch / "96"
-        if not prompt_dir.exists():
-            continue
-        for path in sorted(prompt_dir.glob("*.txt")):
-            key = f"{batch}/96/{path.name}"
+        run_id = str(run_id_by_batch.get(batch) or "")
+        prompt_sources: list[tuple[str, str, str, Path | None]] = []
+        if prompt_dir.exists():
+            for path in sorted(prompt_dir.glob("*.txt")):
+                prompt_sources.append((
+                    path.name,
+                    path.read_text(encoding="utf-8", errors="replace"),
+                    str(path.relative_to(ROOT)),
+                    path.with_suffix(".json"),
+                ))
+        elif run_id:
+            try:
+                from dashboard.backend.db.client import get_sync_db
+                from dashboard.backend.db.collections import COLL_PROMPTS
+
+                docs = get_sync_db()[COLL_PROMPTS].find(
+                    {"run_id": run_id, "file_path": {"$regex": r"/(?:96|916)/"}},
+                    {"filename": 1, "file_path": 1, "content": 1},
+                )
+                for doc in docs:
+                    content = str(doc.get("content") or "")
+                    rel_path = str(doc.get("file_path") or "")
+                    name = str(doc.get("filename") or Path(rel_path).name)
+                    if name and content:
+                        prompt_sources.append((name, content, rel_path, None))
+            except Exception:
+                pass
+        for name, content, rel_path, sidecar in prompt_sources:
+            key = f"{batch}/96/{name}"
             if key in seen:
                 continue
             seen.add(key)
-            bundled.append({"name": path.name, "content": path.read_text(encoding="utf-8", errors="replace")})
-            sidecar = path.with_suffix(".json")
-            if sidecar.exists():
-                bundled.append({"name": sidecar.name, "content": sidecar.read_text(encoding="utf-8", errors="replace")})
-    return bundled
+            local_name = _local_prompt_filename(run_id, name)
+            bundled.append({"name": local_name, "content": content})
+            if run_id:
+                items.append(_local_prompt_item(run_id, rel_path, local_name, batch))
+            if sidecar is not None and sidecar.exists():
+                bundled.append({"name": str(Path(local_name).with_suffix(".json")), "content": sidecar.read_text(encoding="utf-8", errors="replace")})
+    return bundled, items
 
 
 def resolve_gemini_debugger_address() -> str:
@@ -4653,6 +4737,29 @@ def expand_plan_with_hypothesis(plan: list[dict[str, Any]], hypothesis_cfg: dict
 
 app = FastAPI(title="Ad Dashboard API", version="1.0.0")
 
+
+@app.get("/healthz")
+def healthz() -> dict[str, Any]:
+    return {"status": "ok", "service": "ad-factory"}
+
+
+@app.get("/api/version")
+def api_version() -> dict[str, Any]:
+    return {
+        "commit": str(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT") or "unknown"),
+        "branch": str(os.getenv("RENDER_GIT_BRANCH") or os.getenv("GIT_BRANCH") or "unknown"),
+        "agent_protocol": 1,
+        "artifact_schema": 3,
+    }
+
+
+@app.get("/api/readyz")
+def api_readyz() -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+
+    get_sync_db().command("ping")
+    return {"status": "ready", "mongodb": True}
+
 # Load settings-based CORS
 from dashboard.backend.db.settings import settings as app_settings, validate_production_settings
 
@@ -4667,6 +4774,8 @@ app.add_middleware(
 
 # ── Auth middleware (protects old routes without modifying them) ────────────
 from dashboard.backend.auth.service import get_current_user_from_cookie
+from dashboard.backend.agent.auth import is_agent_runtime_path
+from starlette.concurrency import run_in_threadpool
 
 PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config", "/api/invites/")
 
@@ -4676,8 +4785,10 @@ async def auth_middleware(request: Request, call_next) -> Response:
     if app_settings.is_production:
         path = request.url.path
         if path.startswith("/api/") and not path.startswith(PUBLIC_API_PREFIXES):
+            if is_agent_runtime_path(path) and request.headers.get("Authorization", "").startswith("Bearer "):
+                return await call_next(request)
             session_token = request.cookies.get("session")
-            user = get_current_user_from_cookie(session_token)
+            user = await run_in_threadpool(get_current_user_from_cookie, session_token)
             if user is None:
                 return JSONResponse({"detail": "Not authenticated"}, status_code=401)
             request.state.user = user
@@ -4957,6 +5068,8 @@ def _mongo_run_to_manifest(doc: dict[str, Any]) -> dict[str, Any]:
     manifest = {
         "run_id": doc.get("run_id", ""),
         "batch": doc.get("batch", ""),
+        "display_batch": doc.get("display_batch", ""),
+        "run_number": int(doc.get("run_number") or 0),
         "status": doc.get("status", ""),
         "prompt_files": list(doc.get("prompt_files") or []),
         "image_files": list(doc.get("image_files") or []),
@@ -4979,9 +5092,9 @@ def _mongo_run_has_dashboard_manifest(doc: dict[str, Any]) -> bool:
 
 
 def _dashboard_run_sort_key(run: dict[str, Any]) -> tuple[int, float]:
-    batch = str(run.get("batch") or "").strip().lower()
-    match = re.match(r"^v(\d+)$", batch)
-    batch_num = int(match.group(1)) if match else -1
+    batch = str(run.get("display_batch") or run.get("batch") or "").strip().lower()
+    match = re.match(r"^v(\d+)(?:-|$)", batch)
+    batch_num = int(run.get("run_number") or (match.group(1) if match else -1))
     updated = str(run.get("updated_at") or "")
     ts = 0.0
     if updated:
@@ -6091,6 +6204,7 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     if starting_prompt_path.exists():
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
     prompt_files_created: list[str] = []
+    prompt_items: list[dict[str, Any]] = []
     for item in prompt_sources:
         dest = _write_generation_prompt(
             user_id=user_id,
@@ -6101,6 +6215,8 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
         )
         if dest:
             prompt_files_created.append(dest)
+            batch = next((entry["batch"] for entry in run_info if entry["run_id"] == item["run_id"]), "")
+            prompt_items.append(_local_prompt_item(item["run_id"], item["path"], dest, batch))
     if not prompt_files_created:
         raise HTTPException(status_code=400, detail="No prompt content was available for the selected run(s). Try refreshing runs after deployment, or regenerate copy first.")
     headless = bool(payload.get("headless", False))
@@ -6108,13 +6224,15 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
     out_dir = GENERATED_IMAGES_ROOT / batch_name / "4_5"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if engine == "chatgpt" and render_chatgpt_uses_local_agent():
+    if engine in {"chatgpt", "gemini"} and render_chatgpt_uses_local_agent():
         return _queue_local_chatgpt_job(user_id, {
             "mode": "45",
+            "engine": engine,
             "run_ids": run_ids,
             "batch_name": batch_name,
             "headless": headless,
             "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
+            "prompt_items": prompt_items,
             "input_images": _bundle_input_images(),
             "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
             "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
@@ -6241,6 +6359,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     if starting_prompt_path.exists():
         starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
     prompt_files_created: list[str] = []
+    prompt_items: list[dict[str, Any]] = []
     for item in prompt_sources:
         dest = _write_generation_prompt(
             user_id=user_id,
@@ -6251,20 +6370,24 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
         )
         if dest:
             prompt_files_created.append(dest)
+            batch = next((entry["batch"] for entry in run_info if entry["run_id"] == item["run_id"]), "")
+            prompt_items.append(_local_prompt_item(item["run_id"], item["path"], dest, batch))
     if not prompt_files_created:
         raise HTTPException(status_code=400, detail="No prompt content was available for the selected run(s). Try refreshing runs after deployment, or regenerate copy first.")
 
     out_dir_45 = GENERATED_IMAGES_ROOT / batch_name / "4_5"
     out_dir_45.mkdir(parents=True, exist_ok=True)
 
-    if engine == "chatgpt" and render_chatgpt_uses_local_agent():
+    if engine in {"chatgpt", "gemini"} and render_chatgpt_uses_local_agent():
         org_id = str(payload.get("org_id") or "").strip() or None
         return _queue_local_chatgpt_job(user_id, {
             "mode": "both",
+            "engine": engine,
             "run_ids": run_ids,
             "batch_name": batch_name,
             "headless": headless,
             "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
+            "prompt_items": prompt_items,
             "prompts_916": [],
             "conversion_916_template": resolve_916_conversion_template_text(user_id, org_id=org_id),
             "warnings": [],
@@ -6318,6 +6441,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
     total_attempted = 0
     processed_batches: list[str] = []
     batch_to_run_dir: dict[str, Path | None] = {}
+    run_id_by_batch: dict[str, str] = {}
     for run_id in run_ids:
         try:
             run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
@@ -6330,6 +6454,7 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
             batch_to_run_dir[batch] = run_dir
         elif batch not in batch_to_run_dir:
             batch_to_run_dir[batch] = None
+        run_id_by_batch[batch] = str(run_id)
 
     for batch, run_dir in sorted(batch_to_run_dir.items()):
         try:
@@ -6619,6 +6744,7 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
         cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
 
     batch_to_run_dir: dict[str, Path | None] = {}
+    run_id_by_batch: dict[str, str] = {}
     for run_id in run_ids:
         try:
             run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
@@ -6631,19 +6757,23 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
             batch_to_run_dir[batch] = run_dir
         elif batch not in batch_to_run_dir:
             batch_to_run_dir[batch] = None
+        run_id_by_batch[batch] = str(run_id)
 
     if not batch_to_run_dir:
         raise HTTPException(status_code=400, detail="No valid batches found for selected runs")
 
-    if engine == "chatgpt" and render_chatgpt_uses_local_agent():
+    if engine in {"chatgpt", "gemini"} and render_chatgpt_uses_local_agent():
         batch_names = sorted(batch_to_run_dir)
         org_id = str(payload.get("org_id") or "").strip() or None
+        prompts_916, prompt_items = _bundle_916_prompt_files_for_batches(batch_names, run_id_by_batch)
         return _queue_local_chatgpt_job(user_id, {
             "mode": "916",
+            "engine": engine,
             "run_ids": run_ids,
             "batch_name": batch_names[0] if len(batch_names) == 1 else "_".join(batch_names),
             "headless": headless,
-            "prompts_916": _bundle_916_prompt_files_for_batches(batch_names),
+            "prompts_916": prompts_916,
+            "prompt_items": prompt_items,
             "conversion_916_template": resolve_916_conversion_template_text(user_id, org_id=org_id),
             "input_images": [],
             "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
@@ -6763,7 +6893,8 @@ async def api_run_execute(
     run_dir = RUNS_ROOT / run_id
 
     # Record ownership + run config in MongoDB
-    _record_run_owner(run_id, user_id, config=cfg)
+    owner_type, owner_id = _resolve_run_owner_scope(user_id, org_id)
+    _record_run_owner(run_id, user_id, config=cfg, owner_type=owner_type, owner_id=owner_id)
     (run_dir / "inputs").mkdir(parents=True, exist_ok=True)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     (run_dir / "context").mkdir(parents=True, exist_ok=True)
@@ -6919,7 +7050,11 @@ def _run_pipeline_background(
     try:
         print(f"[PIPELINE] Starting background pipeline for run {run_id}", file=sys.stderr)
         # Reserve batch number early so incremental assembler runs write to the same batch dir
-        reserved_batch = _reserve_batch_name(user_id)
+        from dashboard.backend.services.run_storage import get_run
+
+        run_doc = get_run(user_id, run_id) if user_id else None
+        fallback_batch = f"{_reserve_batch_name(user_id)}-{hashlib.sha256(run_id.encode()).hexdigest()[:12]}"
+        reserved_batch = str((run_doc or {}).get("batch") or fallback_batch)
         _update_run_status_db(run_id, "running", user_id=user_id, extra={"batch": reserved_batch})
         language_mode = assembler_language_mode(cfg)
         provider = (cfg.get("provider") or "").strip().lower()
@@ -6989,6 +7124,9 @@ def _run_pipeline_background(
         batch = reserved_batch
 
         manifest = collect_run_result(run_dir, batch, image_generated=False)
+        if run_doc:
+            manifest["run_number"] = int(run_doc.get("run_number") or 0)
+            manifest["display_batch"] = str(run_doc.get("display_batch") or "")
         manifest["llm_mode"] = llm_mode
         if llm_mode == "google_gemini":
             manifest["copy_source"] = f"google gemini — {execution_model}"

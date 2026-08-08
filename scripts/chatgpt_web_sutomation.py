@@ -303,7 +303,7 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
          ``HERO_stress_snacker_HI_desired_outcome_A01.txt``
     The persona slug is looked up in persona_seeds.json to recover the persona number.
     """
-    stem = path.stem
+    stem = re.sub(r"^run_[a-f0-9]{12}__", "", path.stem, flags=re.IGNORECASE)
     patterns = [
         r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
         r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
@@ -344,8 +344,10 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool,
     raw_jobs: list[PromptJob] = []
     for path in raw_paths:
         fmt, persona, lang, variant, concept_angle = _parse_prompt_name(path)
+        scope_match = re.match(r"^(run_[a-f0-9]{12}__)", path.stem, flags=re.IGNORECASE)
+        scope_prefix = scope_match.group(1) if scope_match else ""
         variant_suffix = f"_{variant}" if variant else ""
-        key = f"{fmt}_{persona}_{lang}{variant_suffix}"
+        key = f"{scope_prefix}{fmt}_{persona}_{lang}{variant_suffix}"
         if concept_angle and concept_angle not in key:
             key += f"_{concept_angle}"
 
@@ -354,9 +356,9 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool,
         # Append the aspect ratio folder name so 4:5 and 9:16 images have distinct
         # filenames (e.g. ..._pain_point_4_5.png vs ..._pain_point_9_16.png).
         if concept_angle:
-            safe_stem = f"{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
+            safe_stem = f"{scope_prefix}{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
         else:
-            safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}_{aspect_folder}"
+            safe_stem = f"{scope_prefix}chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}_{aspect_folder}"
 
         # If the angle wasn't in the filename, fall back to reading it from
         # the prompt body (legacy behavior, kept for safety).

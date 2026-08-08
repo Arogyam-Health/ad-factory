@@ -183,8 +183,9 @@ def test_agent_lifecycle() -> int:
         get_sync_db()[COLL_AGENTS].update_one({"agent_id": agent["agent_id"]}, {"$set": {"last_heartbeat_at": 0}})
         finalized = finalize_disconnected_agent_jobs("test-user", max_age_seconds=1)
         status = get_job_status_for_agent(disconnected_job["job_id"], agent["agent_id"])
-        failed += ok(finalized >= 1 and status is not None and status.get("status") == "canceled",
-                     "disconnected agent jobs are finalized automatically")
+        failed += ok(finalized == 0 and status is not None and status.get("status") == "running",
+                     "transient disconnect does not cancel a running browser job")
+        fail_job(disconnected_job["job_id"], agent["agent_id"], "test cleanup")
 
     return failed
 
@@ -1619,6 +1620,9 @@ def test_local_agent_responsiveness_contract() -> int:
     print("\n[Local Agent Responsiveness]")
 
     local_agent = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+    artifact_server = (ROOT / "local_agent_runtime" / "artifact_server.py").read_text(encoding="utf-8")
+    agent_storage = (ROOT / "local_agent_runtime" / "storage.py").read_text(encoding="utf-8")
+    agent_transport = (ROOT / "local_agent_runtime" / "transport.py").read_text(encoding="utf-8")
     chatgpt = (ROOT / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
     batch_routes = (ROOT / "dashboard" / "backend" / "routes" / "batch.py").read_text(encoding="utf-8")
     agent_service = (ROOT / "dashboard" / "backend" / "agent" / "service.py").read_text(encoding="utf-8")
@@ -1635,7 +1639,7 @@ def test_local_agent_responsiveness_contract() -> int:
 
     failed += ok("class JobProgressReporter" in local_agent and "reporter.submit(clean)" in local_agent,
                  "terminal output is decoupled from Render progress requests")
-    failed += ok('"result": {' in local_agent and "collect_local_artifacts" in local_agent,
+    failed += ok('"result": {' in local_agent and "publish_local_artifacts" in local_agent,
                  "local agent publishes artifacts while automation is running")
     failed += ok('parser.add_argument("--sleep-after-download", type=float, default=0.0)' in chatgpt,
                  "ChatGPT automation has no default post-download sleep")
@@ -1647,12 +1651,12 @@ def test_local_agent_responsiveness_contract() -> int:
                  "active job status includes incremental result artifacts")
     failed += ok("syncLocalAgentArtifacts(job);" in runs_js,
                  "dashboard syncs active-job artifacts into run data")
-    failed += ok('request_path == "/artifacts"' in local_agent and '"Access-Control-Allow-Private-Network", "true"' in local_agent,
-                 "local artifact server exposes a PNA-safe reload manifest")
+    failed += ok('request_path in {"/artifacts", "/manifest"}' in artifact_server and '"Access-Control-Allow-Private-Network", "true"' in artifact_server,
+                 "separate local artifact server exposes a PNA-safe manifest")
     failed += ok("requests.Session()" in local_agent and "_API_SESSIONS = threading.local()" in local_agent,
                  "local agent reuses TLS connections per worker thread")
-    failed += ok("if acknowledged is not None:" in local_agent and "self._last_artifacts = signature" in local_agent,
-                 "failed artifact updates remain pending for retry")
+    failed += ok("record_terminal_outbox" in local_agent and "pending_outbox" in agent_storage,
+                 "terminal updates remain pending in a durable outbox")
     failed += ok("adFactoryLocalArtifacts" in runs_js and "refreshLocalArtifactManifest" in runs_js,
                  "dashboard restores and refreshes local artifacts after reload")
     failed += ok("applyLocalArtifactsToRuns" in runs_js and "run.image_files.push(image.url)" in runs_js,
@@ -1663,12 +1667,16 @@ def test_local_agent_responsiveness_contract() -> int:
                  "concurrent artifact and workspace refreshes cannot duplicate run cards")
     failed += ok("localAgentArtifacts" not in index_html and ".local-agent-artifacts" not in styles_css,
                  "local images render only in run galleries, not a duplicate section")
-    failed += ok("finalize_disconnected_agent_jobs(user_id)" in batch_routes and "last_heartbeat_at" in agent_service,
-                 "job-status polling finalizes jobs assigned to disconnected agents")
+    failed += ok("finalize_disconnected_agent_jobs(user_id)" in batch_routes and 'previous_status != "cancel_requested"' in agent_service,
+                 "disconnect cleanup does not cancel healthy running jobs")
     failed += ok("transient Render error must not freeze" in runs_js,
                  "transient job-status failures do not stop dashboard polling")
-    failed += ok("def do_DELETE" in local_agent and "build_local_batch_archive" in local_agent,
-                 "local artifact server supports durable deletion and real batch ZIPs")
+    failed += ok("def do_DELETE" in artifact_server and 'request_path == "/download-batches"' in artifact_server,
+                 "separate artifact server supports durable deletion and streamed batch ZIPs")
+    failed += ok("AgentWebSocketClient" in local_agent and "job_available" in agent_transport,
+                 "agent uses WebSocket job notifications with HTTP fallback")
+    failed += ok('request_path == "/events"' in artifact_server and "EventSource" in runs_js,
+                 "dashboard receives local artifact changes over SSE")
     failed += ok('method: "DELETE", mode: "cors"' in images_js and "refreshLocalArtifactManifest" in images_js,
                  "structured image deletion removes the local file and refreshes authoritative metadata")
     failed += ok("download-batches" in runs_js and "selectedLocalBatches" in runs_js,
@@ -1677,7 +1685,7 @@ def test_local_agent_responsiveness_contract() -> int:
                  "structured gallery exposes mass revision for commented images")
     failed += ok("/revise-image" in run_routes and "/revisions/{revision_id}" in run_routes,
                  "image revision queue and status routes are registered")
-    failed += ok("queueRevision" in image_comments_js and '`${origin}/revisions`' in image_comments_js,
+    failed += ok("queueRevision" in image_comments_js and 'new URL("/revisions", imageUrl.origin)' in image_comments_js,
                  "localhost image comments use the local agent revision worker")
     failed += ok("Promise.allSettled" in state_js and 'fetchJSON("/api/defaults")' in state_js and 'fetchJSON("/api/config/persona-summary")' in state_js,
                  "defaults and persona summary config load concurrently")
