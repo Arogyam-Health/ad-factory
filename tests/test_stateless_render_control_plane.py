@@ -181,8 +181,17 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             def command(name: str) -> dict[str, int]:
                 return {"ok": 1} if name == "ping" else {}
 
-        with patch("dashboard.backend.db.client.get_sync_db", return_value=_DB()):
-            response = TestClient(app_module.app).get("/api/readyz")
+        with (
+            patch("dashboard.backend.db.client.get_sync_db", return_value=_DB()),
+            patch.object(
+                app_module,
+                "get_current_user_from_cookie",
+                return_value={"user_id": "usr_readyz"},
+            ),
+        ):
+            response = TestClient(app_module.app).get(
+                "/api/readyz", cookies={"session": "test"}
+            )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
