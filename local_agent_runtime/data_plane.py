@@ -1049,7 +1049,13 @@ class LocalDataPlane:
             operation_id = self._operation_id(handler, payload)
             bounded = {
                 key: payload[key]
-                for key in ("engine", "mode", "command")
+                for key in (
+                    "engine",
+                    "mode",
+                    "count",
+                    "manifest_version",
+                    "config_version_id",
+                )
                 if isinstance(payload.get(key), (str, int, float, bool))
             }
             command_id, status, _ = self._queue_command(

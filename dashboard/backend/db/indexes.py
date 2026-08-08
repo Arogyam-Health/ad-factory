@@ -63,12 +63,27 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([("last_heartbeat_at", DESCENDING)]),
     ],
     COLL_AGENT_JOBS: [
-        IndexModel([(FIELD_AGENT_ID, ASCENDING), (FIELD_STATUS, ASCENDING)]),
-        IndexModel([(FIELD_AGENT_ID, ASCENDING), (FIELD_STATUS, ASCENDING), (FIELD_CREATED_AT, ASCENDING)]),
+        IndexModel(
+            [
+                (FIELD_AGENT_ID, ASCENDING),
+                ("device_id", ASCENDING),
+                (FIELD_STATUS, ASCENDING),
+                (FIELD_CREATED_AT, ASCENDING),
+            ]
+        ),
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_CREATED_AT, DESCENDING)]),
-        IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_STATUS, ASCENDING), (FIELD_CREATED_AT, DESCENDING)]),
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_STATUS, ASCENDING), ("updated_at", DESCENDING)]),
         IndexModel([("job_id", ASCENDING)], unique=True),
+        IndexModel(
+            [
+                ("owner_type", ASCENDING),
+                ("owner_id", ASCENDING),
+                ("client_operation_id", ASCENDING),
+            ],
+            unique=True,
+        ),
+        IndexModel([("terminal_event_id", ASCENDING)], unique=True, sparse=True),
+        IndexModel([("purge_at", ASCENDING)], expireAfterSeconds=0),
     ],
     COLL_AGENT_PAIRINGS: [
         IndexModel([("challenge_id", ASCENDING)], unique=True),

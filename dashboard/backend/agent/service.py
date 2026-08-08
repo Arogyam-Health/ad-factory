@@ -4,7 +4,7 @@ import json
 import hashlib
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
@@ -12,7 +12,6 @@ from dashboard.backend.db.collections import (
     COLL_AGENTS,
     COLL_AGENT_JOBS,
     COLL_AGENT_PAIRINGS,
-    COLL_IMAGES,
     COLL_ORG_MEMBERS,
     COLL_RUNS,
 )
@@ -54,10 +53,157 @@ _RUN_SETTING_KEYS = frozenset(
         "share_background_across_personas",
     }
 )
+_JOB_PARAMETER_KEYS = frozenset(
+    {
+        "engine",
+        "mode",
+        "count",
+        "manifest_version",
+        "config_version_id",
+        "prompt_version_id",
+        "resource_version",
+        "upload_set_version",
+        "output_version",
+    }
+)
+_JOB_TOP_LEVEL_KEYS = frozenset(
+    {
+        "job_id",
+        "agent_id",
+        "device_id",
+        "user_id",
+        "owner_type",
+        "owner_id",
+        "run_id",
+        "job_type",
+        "command",
+        "parameters",
+        "client_operation_id",
+        "status",
+        "progress_code",
+        "error_code",
+        "error_message",
+        "created_at",
+        "updated_at",
+        "started_at",
+        "completed_at",
+        "lease_expires_at",
+        "claim_id",
+        "fence",
+        "terminal_event_id",
+        "purge_at",
+        "cancel_requested_at",
+    }
+)
+_JOB_STATUSES = frozenset(
+    {"pending", "running", "cancel_requested", "completed", "failed", "canceled"}
+)
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$")
+_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_WINDOWS_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+_TERMINAL_RETENTION_DAYS = 7
 
 
 def _valid_device_id(device_id: str) -> bool:
     return bool(_DEVICE_ID_RE.fullmatch(str(device_id or "")))
+
+
+def _bounded_identifier(value: Any, field: str, *, required: bool = True) -> str:
+    text = str(value or "")
+    if (required and not text) or (text and not _ID_RE.fullmatch(text)):
+        raise ValueError(f"Invalid {field}")
+    return text
+
+
+def _safe_parameter_value(key: str, value: Any) -> Any:
+    if isinstance(value, bool) or value is None:
+        raise ValueError("Job parameters must be bounded metadata")
+    if isinstance(value, int):
+        if not 0 <= value <= 10_000:
+            raise ValueError("Job parameter integer is out of bounds")
+        return value
+    if not isinstance(value, str) or not value or len(value) > 64:
+        raise ValueError("Job parameter string is out of bounds")
+    lowered_value = value.lower()
+    if (
+        "://" in lowered_value
+        or lowered_value.startswith(("data:", "file:", "/", "\\\\"))
+        or _WINDOWS_ABSOLUTE_RE.match(value)
+        or "\n" in value
+        or "\r" in value
+    ):
+        raise ValueError("Job parameters contain prohibited values")
+    return value
+
+
+def validate_job_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Return a bounded metadata-only job document or reject it."""
+    if not isinstance(envelope, dict) or set(envelope) - _JOB_TOP_LEVEL_KEYS:
+        raise ValueError("Job envelope contains unsupported fields")
+    required = {
+        "job_id",
+        "agent_id",
+        "device_id",
+        "user_id",
+        "owner_type",
+        "owner_id",
+        "run_id",
+        "job_type",
+        "command",
+        "parameters",
+        "client_operation_id",
+        "status",
+        "progress_code",
+        "created_at",
+        "updated_at",
+        "fence",
+    }
+    if required - set(envelope):
+        raise ValueError("Job envelope is incomplete")
+    clean = dict(envelope)
+    for field in (
+        "job_id",
+        "agent_id",
+        "user_id",
+        "owner_id",
+        "run_id",
+        "job_type",
+        "command",
+        "client_operation_id",
+    ):
+        clean[field] = _bounded_identifier(clean.get(field), field)
+    if not _valid_device_id(str(clean.get("device_id") or "")):
+        raise ValueError("Invalid device_id")
+    if clean.get("owner_type") not in {"user", "org"}:
+        raise ValueError("Invalid owner_type")
+    if clean.get("status") not in _JOB_STATUSES:
+        raise ValueError("Invalid job status")
+    for field in ("progress_code", "error_code"):
+        value = clean.get(field)
+        if value is not None and (not isinstance(value, str) or not _CODE_RE.fullmatch(value)):
+            raise ValueError(f"Invalid {field}")
+    error_message = clean.get("error_message")
+    if error_message is not None and (
+        not isinstance(error_message, str)
+        or len(error_message) > 512
+        or "\n" in error_message
+        or "\r" in error_message
+        or "://" in error_message
+        or error_message.startswith(("/", "\\\\", "data:", "file:"))
+        or bool(_WINDOWS_ABSOLUTE_RE.match(error_message))
+    ):
+        raise ValueError("Invalid error_message")
+    parameters = clean.get("parameters")
+    if not isinstance(parameters, dict) or set(parameters) - _JOB_PARAMETER_KEYS:
+        raise ValueError("Job parameters contain unsupported fields")
+    clean["parameters"] = {
+        key: _safe_parameter_value(key, value) for key, value in parameters.items()
+    }
+    if not isinstance(clean.get("fence"), int) or int(clean["fence"]) < 0:
+        raise ValueError("Invalid fence")
+    if len(json.dumps(clean, default=str, separators=(",", ":"))) > 8192:
+        raise ValueError("Job envelope is too large")
+    return clean
 
 
 def register_agent(
@@ -455,14 +601,16 @@ def finalize_disconnected_agent_jobs(user_id: str, max_age_seconds: int = 90) ->
         previous_status = str(job.get("status") or "")
         if previous_status != "cancel_requested":
             continue
-        error = "Agent disconnected before cancellation completed"
         result = db[COLL_AGENT_JOBS].update_one(
             {"job_id": job.get("job_id"), "status": previous_status},
             {"$set": {
                 "status": "canceled",
-                "progress": "agent disconnected",
-                "error": error,
+                "progress_code": "canceled",
+                "error_code": "agent_disconnected",
+                "error_message": "Agent disconnected before cancellation completed",
                 "completed_at": now,
+                "purge_at": datetime.now(timezone.utc)
+                + timedelta(days=_TERMINAL_RETENTION_DAYS),
                 "updated_at": now,
             }},
         )
@@ -470,37 +618,158 @@ def finalize_disconnected_agent_jobs(user_id: str, max_age_seconds: int = 90) ->
     return finalized
 
 
-def create_job(agent_id: str, user_id: str, job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+def create_job(
+    agent_id: str,
+    user_id: str,
+    job_type: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    device_id: str = "",
+    owner_type: str = "user",
+    owner_id: str = "",
+    run_id: str = "",
+    command: str = "",
+    parameters: dict[str, Any] | None = None,
+    client_operation_id: str = "",
+) -> dict[str, Any]:
+    """Create a metadata-only job pinned to one authorized agent device.
+
+    The positional payload form remains temporarily accepted for old callers,
+    but only allowlisted scalar metadata is retained.
+    """
+    db = get_sync_db()
+    agent = db[COLL_AGENTS].find_one(
+        {"agent_id": agent_id, "user_id": user_id, "is_active": True}
+    )
+    if agent is None:
+        raise ValueError("Agent does not belong to this user")
+    resolved_device = device_id or str(agent.get("device_id") or "")
+    if not _valid_device_id(resolved_device) or resolved_device != str(
+        agent.get("device_id") or ""
+    ):
+        raise ValueError("Job device does not match the agent device")
+
+    legacy = payload if isinstance(payload, dict) else {}
+    resolved_owner_id = owner_id or user_id
+    resolved_run_id = run_id or str(legacy.get("run_id") or "")
+    if not resolved_run_id:
+        legacy_run_ids = legacy.get("run_ids")
+        if isinstance(legacy_run_ids, list) and len(legacy_run_ids) == 1:
+            resolved_run_id = str(legacy_run_ids[0] or "")
+    # Old diagnostic jobs had no run. Keep them metadata-only during the
+    # compatibility window without granting access to another run.
+    resolved_run_id = resolved_run_id or f"control:{job_type}"
+    resolved_command = command or {
+        "run_browser_batch": "generate_images",
+        "run_chatgpt_batch": "generate_images",
+        "run_chatgpt": "generate_images",
+        "run_gemini": "generate_images",
+        "run_916_conversion": "convert_images",
+        "check_cdp": "check_browser",
+    }.get(job_type, job_type)
+    resolved_parameters = dict(parameters or {})
+    if not parameters:
+        for key in _JOB_PARAMETER_KEYS:
+            if key in legacy:
+                resolved_parameters[key] = legacy[key]
+
+    if resolved_run_id.startswith("run_") or resolved_run_id.startswith("run-"):
+        run = db[COLL_RUNS].find_one(
+            {
+                "run_id": resolved_run_id,
+                "user_id": user_id,
+                "owner_type": owner_type,
+                "owner_id": resolved_owner_id,
+                "agent_id": agent_id,
+                "device_id": resolved_device,
+            }
+        )
+        if run is None:
+            raise ValueError("Run is not authorized for this agent device")
+    if owner_type == "user":
+        if resolved_owner_id != user_id:
+            raise ValueError("Job owner does not match the authenticated user")
+    elif owner_type == "org":
+        if db[COLL_ORG_MEMBERS].find_one(
+            {"org_id": resolved_owner_id, "user_id": user_id, "status": "active"}
+        ) is None:
+            raise ValueError("Authenticated user is not an active organization member")
+    else:
+        raise ValueError("Invalid job owner")
+
+    operation_id = client_operation_id or str(
+        legacy.get("client_operation_id") or f"legacy:{generate_token(16)}"
+    )
+    existing = db[COLL_AGENT_JOBS].find_one(
+        {
+            "owner_type": owner_type,
+            "owner_id": resolved_owner_id,
+            "client_operation_id": operation_id,
+        },
+        {"_id": 0},
+    )
+    if existing is not None:
+        return existing
     job_id = "job_" + generate_token(16)
     now = time.time()
-    doc = {
+    doc = validate_job_envelope({
         "job_id": job_id,
         "agent_id": agent_id,
+        "device_id": resolved_device,
         "user_id": user_id,
+        "owner_type": owner_type,
+        "owner_id": resolved_owner_id,
+        "run_id": resolved_run_id,
         "job_type": job_type,
-        "payload": payload,
+        "command": resolved_command,
+        "parameters": resolved_parameters,
+        "client_operation_id": operation_id,
         "status": "pending",
-        "progress": "",
-        "result": None,
-        "error": None,
+        "progress_code": "queued",
         "created_at": now,
         "updated_at": now,
         "started_at": None,
         "completed_at": None,
-    }
-    get_sync_db()[COLL_AGENT_JOBS].insert_one(doc)
+        "lease_expires_at": None,
+        "fence": 0,
+        "purge_at": None,
+    })
+    try:
+        db[COLL_AGENT_JOBS].insert_one(doc)
+    except DuplicateKeyError:
+        existing = db[COLL_AGENT_JOBS].find_one(
+            {
+                "owner_type": owner_type,
+                "owner_id": resolved_owner_id,
+                "client_operation_id": operation_id,
+            },
+            {"_id": 0},
+        )
+        if existing is None:
+            raise
+        return existing
     from dashboard.backend.agent.connections import agent_connections
 
-    agent_connections.notify_from_thread(agent_id, {"type": "job_available", "job_id": job_id})
+    agent_connections.notify_from_thread(
+        agent_id,
+        {"type": "job_available", "job_id": job_id},
+        device_id=resolved_device,
+    )
     return doc
 
 
-def poll_jobs(agent_id: str) -> list[dict[str, Any]]:
+def poll_jobs(agent_id: str, device_id: str = "") -> list[dict[str, Any]]:
     now = time.time()
+    if not device_id:
+        agent = get_sync_db()[COLL_AGENTS].find_one({"agent_id": agent_id}) or {}
+        device_id = str(agent.get("device_id") or "")
+    if not _valid_device_id(device_id):
+        return []
     return list(
         get_sync_db()[COLL_AGENT_JOBS]
         .find({
             "agent_id": agent_id,
+            "device_id": device_id,
             "$or": [
                 {"status": "pending"},
                 {"status": "running", "lease_expires_at": {"$lte": now}},
@@ -511,10 +780,22 @@ def poll_jobs(agent_id: str) -> list[dict[str, Any]]:
     )
 
 
-def get_job_status_for_agent(job_id: str, agent_id: str) -> dict[str, Any] | None:
+def get_job_status_for_agent(
+    job_id: str, agent_id: str, device_id: str = ""
+) -> dict[str, Any] | None:
+    query: dict[str, Any] = {"job_id": job_id, "agent_id": agent_id}
+    if device_id:
+        query["device_id"] = device_id
     job = get_sync_db()[COLL_AGENT_JOBS].find_one(
-        {"job_id": job_id, "agent_id": agent_id},
-        {"_id": 0, "status": 1, "progress": 1, "updated_at": 1},
+        query,
+        {
+            "_id": 0,
+            "status": 1,
+            "progress_code": 1,
+            "error_code": 1,
+            "error_message": 1,
+            "updated_at": 1,
+        },
     )
     if not job:
         return None
@@ -542,13 +823,17 @@ def cancel_user_job(user_id: str, job_id: str) -> dict[str, Any] | None:
 
     update = {
         "status": new_status,
-        "error": "Canceled by user",
-        "progress": "cancel requested",
+        "error_code": "user_canceled",
+        "error_message": "Canceled by user",
+        "progress_code": "cancel_requested",
         "updated_at": now,
         "cancel_requested_at": now,
     }
     if completed_at is not None:
         update["completed_at"] = completed_at
+        update["purge_at"] = datetime.now(timezone.utc) + timedelta(
+            days=_TERMINAL_RETENTION_DAYS
+        )
     get_sync_db()[COLL_AGENT_JOBS].update_one(
         {"user_id": user_id, "job_id": job_id},
         {"$set": update},
@@ -558,156 +843,219 @@ def cancel_user_job(user_id: str, job_id: str) -> dict[str, Any] | None:
     agent_connections.notify_from_thread(
         str(job.get("agent_id") or ""),
         {"type": "job_canceled", "job_id": job_id},
+        device_id=str(job.get("device_id") or ""),
     )
     return {**job, **update}
 
 
-def claim_job(job_id: str, agent_id: str, claim_id: str = "") -> Optional[dict[str, Any]]:
+def claim_job(
+    job_id: str,
+    agent_id: str,
+    device_id: str = "",
+    claim_id: str = "",
+) -> Optional[dict[str, Any]]:
     from pymongo import ReturnDocument
 
     now = time.time()
+    if device_id and not _valid_device_id(device_id):
+        return None
+    if not device_id:
+        agent = get_sync_db()[COLL_AGENTS].find_one({"agent_id": agent_id}) or {}
+        device_id = str(agent.get("device_id") or "")
+    if not _valid_device_id(device_id):
+        return None
     claim_id = claim_id or f"legacy-{job_id}"
+    existing = get_sync_db()[COLL_AGENT_JOBS].find_one(
+        {
+            "job_id": job_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+            "status": "running",
+            "claim_id": claim_id,
+        },
+        {"_id": 0},
+    )
+    if existing is not None:
+        return existing
     result = get_sync_db()[COLL_AGENT_JOBS].find_one_and_update(
         {
             "job_id": job_id,
             "agent_id": agent_id,
+            "device_id": device_id,
             "$or": [
                 {"status": "pending"},
-                {"status": "running", "claim_id": claim_id},
                 {"status": "running", "lease_expires_at": {"$lte": now}},
             ],
         },
-        {"$set": {
-            "status": "running",
-            "claim_id": claim_id,
-            "lease_expires_at": now + 120,
-            "started_at": now,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "status": "running",
+                "progress_code": "claimed",
+                "claim_id": claim_id,
+                "lease_expires_at": now + 120,
+                "started_at": now,
+                "updated_at": now,
+            },
+            "$inc": {"fence": 1},
+        },
         projection={"_id": 0},
         return_document=ReturnDocument.AFTER,
     )
     return result
 
 
-def update_job_progress(job_id: str, progress: str, agent_id: str, result: Any = None) -> None:
+def update_job_progress(
+    job_id: str,
+    agent_id: str,
+    device_id: str,
+    fence: int,
+    progress_code: str,
+) -> bool:
+    if not _valid_device_id(device_id) or not _CODE_RE.fullmatch(
+        str(progress_code or "")
+    ):
+        return False
     now = time.time()
-    db = get_sync_db()
-    update: dict[str, Any] = {"progress": progress, "updated_at": now, "lease_expires_at": now + 120}
-    if isinstance(result, dict):
-        update["result"] = result
-    db[COLL_AGENT_JOBS].update_one(
-        {"job_id": job_id, "agent_id": agent_id, "status": "running"},
+    result = get_sync_db()[COLL_AGENT_JOBS].update_one(
+        {
+            "job_id": job_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+            "status": "running",
+            "fence": int(fence),
+        },
+        {
+            "$set": {
+                "progress_code": progress_code,
+                "updated_at": now,
+                "lease_expires_at": now + 120,
+            }
+        },
+    )
+    return bool(result.modified_count)
+
+
+def _terminal_job_update(
+    *,
+    job_id: str,
+    agent_id: str,
+    device_id: str,
+    fence: int,
+    event_id: str,
+    status: str,
+    progress_code: str,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> bool:
+    if (
+        not _valid_device_id(device_id)
+        or not _ID_RE.fullmatch(str(event_id or ""))
+        or not _CODE_RE.fullmatch(progress_code)
+        or (error_code is not None and not _CODE_RE.fullmatch(error_code))
+        or (
+            error_message is not None
+            and (
+                len(error_message) > 512
+                or "\n" in error_message
+                or "\r" in error_message
+                or "://" in error_message
+                or error_message.startswith(("/", "\\\\", "data:", "file:"))
+                or bool(_WINDOWS_ABSOLUTE_RE.match(error_message))
+            )
+        )
+    ):
+        return False
+    collection = get_sync_db()[COLL_AGENT_JOBS]
+    replay = collection.find_one(
+        {
+            "job_id": job_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+            "fence": int(fence),
+            "terminal_event_id": event_id,
+        }
+    )
+    if replay is not None:
+        return True
+    current = collection.find_one(
+        {
+            "job_id": job_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+            "fence": int(fence),
+            "status": {"$in": ["running", "cancel_requested"]},
+        }
+    )
+    if current is None:
+        return False
+    if current.get("status") == "cancel_requested":
+        status = "canceled"
+        progress_code = "canceled"
+        error_code = "user_canceled"
+        error_message = "Canceled by user"
+    now = time.time()
+    update: dict[str, Any] = {
+        "status": status,
+        "progress_code": progress_code,
+        "terminal_event_id": event_id,
+        "completed_at": now,
+        "updated_at": now,
+        "lease_expires_at": None,
+        "purge_at": datetime.now(timezone.utc)
+        + timedelta(days=_TERMINAL_RETENTION_DAYS),
+    }
+    if error_code:
+        update["error_code"] = error_code
+    if error_message:
+        update["error_message"] = error_message
+    result = collection.update_one(
+        {
+            "job_id": job_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+            "fence": int(fence),
+            "status": {"$in": ["running", "cancel_requested"]},
+        },
         {"$set": update},
     )
-    if isinstance(result, dict):
-        job = db[COLL_AGENT_JOBS].find_one({"job_id": job_id, "agent_id": agent_id}) or {}
-        try:
-            _persist_local_agent_result(db, job, result, now, completed=False)
-        except Exception:
-            pass
+    return bool(result.modified_count)
 
 
-def complete_job(job_id: str, agent_id: str, result: Any = None) -> None:
-    now = time.time()
-    db = get_sync_db()
-    job = db[COLL_AGENT_JOBS].find_one({"job_id": job_id, "agent_id": agent_id}) or {}
-    if job.get("status") in {"cancel_requested", "canceled"}:
-        db[COLL_AGENT_JOBS].update_one(
-            {"job_id": job_id, "agent_id": agent_id},
-            {"$set": {"status": "canceled", "error": "Canceled by user", "completed_at": now, "updated_at": now}},
-        )
-        return
-    _persist_local_agent_result(db, job, result, now, completed=True)
-    db[COLL_AGENT_JOBS].update_one(
-        {"job_id": job_id, "agent_id": agent_id},
-        {"$set": {
-            "status": "completed",
-            "result": result,
-            "completed_at": now,
-            "updated_at": now,
-        }},
+def complete_job(
+    job_id: str,
+    agent_id: str,
+    device_id: str,
+    fence: int,
+    event_id: str,
+) -> bool:
+    return _terminal_job_update(
+        job_id=job_id,
+        agent_id=agent_id,
+        device_id=device_id,
+        fence=fence,
+        event_id=event_id,
+        status="completed",
+        progress_code="completed",
     )
 
 
-def _persist_local_agent_result(db: Any, job: dict[str, Any], result: Any, now: float, *, completed: bool) -> None:
-    if job.get("job_type") not in {"run_chatgpt_batch", "run_browser_batch"} or not isinstance(result, dict):
-        return
-    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
-    user_id = str(job.get("user_id") or "")
-    run_ids = [str(rid) for rid in (payload.get("run_ids") or []) if str(rid).strip()]
-    images = [img for img in (result.get("images") or []) if isinstance(img, dict) and img.get("url")]
-    if not user_id or not run_ids or not images:
-        return
-
-    batch_name = str(payload.get("batch_name") or "")
-    for run_id in run_ids:
-        run_images = [img for img in images if str(img.get("run_id") or "") == run_id]
-        if not run_images and len(run_ids) == 1:
-            run_images = images
-        if not run_images:
-            continue
-        image_urls = [str(img.get("url")) for img in run_images]
-        update = {
-            "image_generated": True,
-            "image_files": image_urls,
-            "local_artifacts": run_images,
-            "local_output_dir": str(result.get("local_output_dir") or ""),
-            "artifact_base_url": str(result.get("artifact_base_url") or ""),
-            "local_agent_warnings": result.get("warnings") or [],
-            "updated_at": now,
-            "manifest_summary": {"batch": batch_name, "image_count": len(image_urls)},
-        }
-        if completed:
-            update["status"] = "completed"
-        db[COLL_RUNS].update_one(
-            {"user_id": user_id, "run_id": run_id},
-            {"$set": {**update, "run_id": run_id, "user_id": user_id}, "$setOnInsert": {"created_at": now, "config": {}}},
-            upsert=True,
-        )
-        for img in run_images:
-            url = str(img.get("url") or "")
-            image_id = str(img.get("artifact_id") or hashlib.sha256(f"{run_id}:{url}".encode()).hexdigest()[:16])
-            db[COLL_IMAGES].update_one(
-                {"user_id": user_id, "run_id": run_id, "image_id": image_id},
-                {"$set": {
-                    "user_id": user_id,
-                    "run_id": run_id,
-                    "image_id": image_id,
-                    "batch": batch_name,
-                    "file_path": url,
-                    "local_path": url,
-                    "url": url,
-                    "filename": str(img.get("name") or "image.png"),
-                    "prompt_id": str(img.get("prompt_id") or ""),
-                    "item_id": str(img.get("item_id") or ""),
-                    "aspect_ratio": str(img.get("aspect_ratio") or ""),
-                    "bytes": int(img.get("bytes") or 0),
-                    "status": "completed",
-                    "storage_provider": "local_agent",
-                    "created_at": now,
-                    "updated_at": now,
-                }},
-                upsert=True,
-            )
-
-
-def fail_job(job_id: str, agent_id: str, error: str) -> None:
-    now = time.time()
-    db = get_sync_db()
-    job = db[COLL_AGENT_JOBS].find_one({"job_id": job_id, "agent_id": agent_id}) or {}
-    if job.get("status") in {"cancel_requested", "canceled"}:
-        db[COLL_AGENT_JOBS].update_one(
-            {"job_id": job_id, "agent_id": agent_id},
-            {"$set": {"status": "canceled", "error": "Canceled by user", "completed_at": now, "updated_at": now}},
-        )
-        return
-    get_sync_db()[COLL_AGENT_JOBS].update_one(
-        {"job_id": job_id, "agent_id": agent_id},
-        {"$set": {
-            "status": "failed",
-            "error": error,
-            "completed_at": now,
-            "updated_at": now,
-        }},
+def fail_job(
+    job_id: str,
+    agent_id: str,
+    device_id: str,
+    fence: int,
+    event_id: str,
+    error_code: str,
+    error_message: str = "",
+) -> bool:
+    return _terminal_job_update(
+        job_id=job_id,
+        agent_id=agent_id,
+        device_id=device_id,
+        fence=fence,
+        event_id=event_id,
+        status="failed",
+        progress_code="failed",
+        error_code=error_code,
+        error_message=error_message or None,
     )

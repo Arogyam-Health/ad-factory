@@ -2137,16 +2137,65 @@ def _latest_online_agent_for_user(user_id: str) -> dict[str, Any]:
 
 
 def _queue_local_chatgpt_job(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    agent = _latest_online_agent_for_user(user_id)
     from dashboard.backend.agent.service import create_job
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_RUNS
 
-    job = create_job(agent["agent_id"], user_id, "run_browser_batch", {**payload, "owner_key": f"user-{user_id}"})
+    run_ids = [
+        str(run_id)
+        for run_id in (payload.get("run_ids") or [])
+        if str(run_id).strip()
+    ]
+    if not run_ids:
+        raise HTTPException(status_code=400, detail="A local run ID is required")
+    jobs: list[dict[str, Any]] = []
+    base_operation_id = str(
+        payload.get("client_operation_id")
+        or payload.get("operation_id")
+        or f"web:{uuid.uuid4().hex}"
+    )
+    for index, run_id in enumerate(run_ids):
+        run = get_sync_db()[COLL_RUNS].find_one(
+            {"run_id": run_id, "user_id": user_id},
+            {
+                "_id": 0,
+                "agent_id": 1,
+                "device_id": 1,
+                "owner_type": 1,
+                "owner_id": 1,
+            },
+        )
+        if not run or not run.get("agent_id") or not run.get("device_id"):
+            raise HTTPException(
+                status_code=409,
+                detail="Run is not pinned to an authorized local agent device",
+            )
+        jobs.append(
+            create_job(
+                agent_id=str(run["agent_id"]),
+                device_id=str(run["device_id"]),
+                user_id=user_id,
+                owner_type=str(run.get("owner_type") or "user"),
+                owner_id=str(run.get("owner_id") or user_id),
+                run_id=run_id,
+                job_type="execute_run",
+                command="generate_images",
+                parameters={
+                    "engine": str(payload.get("engine") or "chatgpt"),
+                    "mode": str(payload.get("mode") or "45"),
+                    "count": 1,
+                },
+                client_operation_id=f"{base_operation_id}:{index}",
+            )
+        )
+    job = jobs[0]
     return {
         "status": "queued_local_agent",
         "job_id": job["job_id"],
-        "agent_id": agent["agent_id"],
-        "agent_name": agent.get("name", "local-agent"),
-        "message": "Queued for local agent. Generated images will be saved on the machine running scripts/local_agent.py.",
+        "job_ids": [item["job_id"] for item in jobs],
+        "agent_id": job["agent_id"],
+        "device_id": job["device_id"],
+        "message": "Queued for the run's authoritative local device.",
     }
 
 
@@ -6229,14 +6278,11 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
             "mode": "45",
             "engine": engine,
             "run_ids": run_ids,
-            "batch_name": batch_name,
-            "headless": headless,
-            "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
-            "prompt_items": prompt_items,
-            "input_images": _bundle_input_images(),
-            "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
-            "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
-            "manual_login_timeout": int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180"),
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generate45:{uuid.uuid4().hex}"
+            ),
         })
 
     cdp_proxy_url = ""
@@ -6384,17 +6430,11 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
             "mode": "both",
             "engine": engine,
             "run_ids": run_ids,
-            "batch_name": batch_name,
-            "headless": headless,
-            "prompts_45": [_bundle_text_file(p, root=prompt_work_dir) for p in sorted(prompt_work_dir.iterdir()) if p.is_file()],
-            "prompt_items": prompt_items,
-            "prompts_916": [],
-            "conversion_916_template": resolve_916_conversion_template_text(user_id, org_id=org_id),
-            "warnings": [],
-            "input_images": _bundle_input_images(),
-            "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
-            "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
-            "manual_login_timeout": int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180"),
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generateboth:{uuid.uuid4().hex}"
+            ),
         })
 
     if engine == "chatgpt":
@@ -6770,15 +6810,11 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
             "mode": "916",
             "engine": engine,
             "run_ids": run_ids,
-            "batch_name": batch_names[0] if len(batch_names) == 1 else "_".join(batch_names),
-            "headless": headless,
-            "prompts_916": prompts_916,
-            "prompt_items": prompt_items,
-            "conversion_916_template": resolve_916_conversion_template_text(user_id, org_id=org_id),
-            "input_images": [],
-            "timeout": int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420"),
-            "download_timeout": int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90"),
-            "manual_login_timeout": int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180"),
+            "client_operation_id": str(
+                payload.get("client_operation_id")
+                or payload.get("operation_id")
+                or f"generate916:{uuid.uuid4().hex}"
+            ),
         })
 
     total_attempted = 0
@@ -7535,7 +7571,7 @@ def api_delete_run(run_id: str, user_id: str = "") -> dict[str, Any]:
             db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
             db[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
             db[COLL_FILE_MAP].delete_many({"user_id": user_id, "run_id": run_id})
-            db[COLL_AGENT_JOBS].delete_many({"user_id": user_id, "payload.run_ids": run_id})
+            db[COLL_AGENT_JOBS].delete_many({"user_id": user_id, "run_id": run_id})
             mongo_deleted = True
         except Exception:
             mongo_deleted = False
@@ -7644,7 +7680,7 @@ def api_delete_image(run_id: str, payload: dict[str, Any] = Body(...), user_id: 
     if user_id:
         try:
             from dashboard.backend.db.client import get_sync_db
-            from dashboard.backend.db.collections import COLL_AGENT_JOBS, COLL_IMAGES, COLL_RUNS
+            from dashboard.backend.db.collections import COLL_IMAGES, COLL_RUNS
             db = get_sync_db()
             db[COLL_RUNS].update_one(
                 {"user_id": user_id, "run_id": run_id},
@@ -7655,10 +7691,6 @@ def api_delete_image(run_id: str, payload: dict[str, Any] = Body(...), user_id: 
                 "run_id": run_id,
                 "$or": [{"file_path": image_path}, {"local_path": image_path}, {"url": image_path}],
             })
-            db[COLL_AGENT_JOBS].update_many(
-                {"user_id": user_id, "result.images.url": image_path},
-                {"$pull": {"result.images": {"url": image_path}}, "$set": {"updated_at": time.time()}},
-            )
         except Exception:
             pass
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 """Local Playwright agent that connects to Render backend and executes browser automation jobs."""
 
 import argparse
-import base64
 import hashlib
 import json
 import os
@@ -67,6 +66,7 @@ JOB_SIGNAL = JobSignal()
 WS_CLIENT: AgentWebSocketClient | None = None
 LAST_API_ERROR = ""
 _API_SESSIONS = threading.local()
+ACTIVE_JOB_FENCES: dict[str, int] = {}
 
 
 def _api_session() -> requests.Session:
@@ -188,11 +188,32 @@ def sync_pairing_approvals(*, fetch_remote: bool) -> None:
         )
 
 
-def report_job_terminal(job_id: str, action: str, payload: dict[str, Any]) -> bool:
+def _terminal_event_id(job_id: str, action: str, fence: int) -> str:
+    return "evt_" + hashlib.sha256(
+        f"{job_id}\0{action}\0{fence}".encode("utf-8")
+    ).hexdigest()[:32]
+
+
+def report_job_terminal(
+    job_id: str,
+    action: str,
+    *,
+    error_code: str = "",
+    error_message: str = "",
+) -> bool:
+    fence = int(ACTIVE_JOB_FENCES.get(job_id) or 0)
+    body: dict[str, Any] = {
+        "fence": fence,
+        "event_id": _terminal_event_id(job_id, action, fence),
+    }
+    if action == "fail":
+        body["error_code"] = error_code or "job_failed"
+        if error_message:
+            body["error_message"] = error_message[:512].replace("\n", " ")
     result = api_request_retry(
         "POST",
         f"/api/agents/jobs/{job_id}/{action}",
-        payload,
+        body,
         token=AGENT_TOKEN,
         attempts=3,
         timeout=20,
@@ -207,7 +228,7 @@ def report_job_terminal(job_id: str, action: str, payload: dict[str, Any]) -> bo
             job_id,
             status,
             action,
-            {"job_id": job_id, "payload": payload},
+            {"job_id": job_id, "payload": body},
         )
         print(f"  [agent] Render unavailable; queued durable {action} event for {job_id}", flush=True)
     return False
@@ -424,22 +445,11 @@ class JobProgressReporter:
         while not self._stop.wait(0.5):
             with self._lock:
                 progress = self._latest
-            payload: dict[str, Any] = {"progress": progress}
-            artifacts_changed = False
-            source_signature = self._last_artifact_sources
-            signature = self._last_artifacts
-            if self.artifact_root is not None:
-                source_signature = _generated_artifact_signature(self.artifact_root)
-                if source_signature != self._last_artifact_sources:
-                    images = publish_local_artifacts(self.artifact_root, self.payload, self.job_id)
-                    signature = tuple((str(item.get("url") or ""), int(item.get("modified_at") or 0)) for item in images)
-                    artifacts_changed = True
-                    payload["result"] = {
-                        "local_output_dir": str(self.artifact_root),
-                        "artifact_base_url": AGENT_ARTIFACT_BASE_URL,
-                        "images": images,
-                    }
-            if not artifacts_changed and (not progress or progress == self._last_progress) and time.time() - self._last_report_at < 30:
+            payload: dict[str, Any] = {
+                "progress_code": "running",
+                "fence": int(ACTIVE_JOB_FENCES.get(self.job_id) or 0),
+            }
+            if (not progress or progress == self._last_progress) and time.time() - self._last_report_at < 30:
                 continue
             acknowledged = api_request(
                 "POST",
@@ -452,9 +462,6 @@ class JobProgressReporter:
             if acknowledged is not None:
                 self._last_progress = progress
                 self._last_report_at = time.time()
-                if artifacts_changed:
-                    self._last_artifact_sources = source_signature
-                    self._last_artifacts = signature
 
 
 def _prepare_916_conversion_prompts(
@@ -584,12 +591,22 @@ def launch_browser_cdp(browser: str, port: int = 9222, profile_dir: Path | None 
 def execute_job(job: dict[str, Any]) -> None:
     job_id = job["job_id"]
     job_type = job["job_type"]
-    payload = job.get("payload", {})
+    parameters = (
+        dict(job.get("parameters"))
+        if isinstance(job.get("parameters"), dict)
+        else {}
+    )
+    owner_key = f"{job.get('owner_type')}:{job.get('owner_id')}"
+    local_payload = {
+        "run_id": str(job.get("run_id") or ""),
+        "command": str(job.get("command") or ""),
+        "parameters": parameters,
+    }
 
     print(f"  [agent] Executing job {job_id}: {job_type}")
 
     if AGENT_STATE is not None:
-        AGENT_STATE.record_job(job_id, str(payload.get("owner_key") or "local"), "pending", payload)
+        AGENT_STATE.record_job(job_id, owner_key, "pending", local_payload)
 
     claim_id = "claim_" + hashlib.sha256(f"{AGENT_PATHS.root}:{job_id}".encode()).hexdigest()[:24]
     claim_result = api_request(
@@ -602,41 +619,43 @@ def execute_job(job: dict[str, Any]) -> None:
     if claim_result is None:
         print(f"  [agent] Failed to claim job {job_id}")
         return
+    ACTIVE_JOB_FENCES[job_id] = int(claim_result.get("fence") or 0)
     if AGENT_STATE is not None:
         AGENT_STATE.update_job_status(job_id, "running")
 
     try:
         if job_type == "check_cdp":
-            result = check_cdp()
-            report_job_terminal(job_id, "complete", {"result": result})
+            check_cdp()
+            report_job_terminal(job_id, "complete")
 
         elif job_type == "run_gemini":
-            _run_script_job(job_id, "gemini_web_automation.py", payload)
+            _run_script_job(job_id, "gemini_web_automation.py", parameters)
 
         elif job_type == "run_chatgpt":
-            _run_script_job(job_id, "chatgpt_web_sutomation.py", payload)
+            _run_script_job(job_id, "chatgpt_web_sutomation.py", parameters)
 
-        elif job_type == "run_chatgpt_batch":
-            _run_browser_batch_job(job_id, payload)
-
-        elif job_type == "run_browser_batch":
-            _run_browser_batch_job(job_id, payload)
+        elif job_type in {"run_chatgpt_batch", "run_browser_batch", "execute_run"}:
+            _run_browser_batch_job(job_id, parameters)
 
         elif job_type == "run_916_conversion":
-            _run_script_job(job_id, "gemini_web_automation.py", {**payload, "aspect_ratio": "9:16"})
+            _run_script_job(
+                job_id,
+                "gemini_web_automation.py",
+                {**parameters, "aspect_ratio": "9:16"},
+            )
 
         else:
-            report_job_terminal(job_id, "fail", {"error": f"Unknown job type: {job_type}"})
+            report_job_terminal(job_id, "fail", error_code="unsupported_job_type")
 
     except Exception as e:
-        print(f"  [agent] Job {job_id} failed: {e}")
-        report_job_terminal(job_id, "fail", {"error": str(e)})
+        print(f"  [agent] Job {job_id} failed: {type(e).__name__}")
+        report_job_terminal(job_id, "fail", error_code="local_execution_failed")
 
 
 def _run_script_job(job_id: str, script_name: str, payload: dict[str, Any]) -> None:
     script_path = SCRIPT_DIR / script_name
     if not script_path.exists():
-        report_job_terminal(job_id, "fail", {"error": f"Script not found: {script_path}"})
+        report_job_terminal(job_id, "fail", error_code="automation_unavailable")
         return
 
     prompt_dir = payload.get("prompt_dir", "")
@@ -651,7 +670,7 @@ def _run_script_job(job_id: str, script_name: str, payload: dict[str, Any]) -> N
     cmd.extend(["--cdp-url", cdp_url])
 
     api_request("POST", f"/api/agents/jobs/{job_id}/progress",
-               {"progress": "starting"}, token=AGENT_TOKEN)
+               {"progress_code": "starting", "fence": ACTIVE_JOB_FENCES.get(job_id, 0)}, token=AGENT_TOKEN)
 
     try:
         proc = subprocess.Popen(
@@ -663,51 +682,14 @@ def _run_script_job(job_id: str, script_name: str, payload: dict[str, Any]) -> N
         for line in iter(proc.stdout.readline, ""):
             if line:
                 api_request("POST", f"/api/agents/jobs/{job_id}/progress",
-                           {"progress": line.strip()}, token=AGENT_TOKEN)
+                           {"progress_code": "running", "fence": ACTIVE_JOB_FENCES.get(job_id, 0)}, token=AGENT_TOKEN)
         stdout, stderr = proc.communicate()
         if proc.returncode == 0:
-            report_job_terminal(job_id, "complete", {"result": {"stdout": stdout[:5000]}})
+            report_job_terminal(job_id, "complete")
         else:
-            report_job_terminal(job_id, "fail", {"error": stderr[:5000]})
-    except Exception as e:
-        report_job_terminal(job_id, "fail", {"error": str(e)})
-
-
-def _write_text_bundle(root: Path, files: list[dict[str, str]]) -> None:
-    root.mkdir(parents=True, exist_ok=True)
-    for item in files:
-        name = str(item.get("name") or "").replace("\\", "/").lstrip("/")
-        if not name or ".." in Path(name).parts:
-            continue
-        path = root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(str(item.get("content") or ""), encoding="utf-8")
-
-
-def _write_binary_bundle(root: Path, files: list[dict[str, str]]) -> None:
-    root.mkdir(parents=True, exist_ok=True)
-    for item in files:
-        name = str(item.get("name") or "").replace("\\", "/").lstrip("/")
-        if not name or ".." in Path(name).parts:
-            continue
-        path = root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        decoded = base64.b64decode(item.get("base64") or "")
-        temporary = AGENT_PATHS.staging / f".input-{uuid.uuid4().hex}.tmp"
-        temporary.parent.mkdir(parents=True, exist_ok=True)
-        temporary.write_bytes(decoded)
-        try:
-            if CONTENT_STORE is None:
-                path.write_bytes(decoded)
-            else:
-                stored = CONTENT_STORE.put_file(temporary)
-                path.unlink(missing_ok=True)
-                try:
-                    os.link(stored.path, path)
-                except OSError:
-                    shutil.copy2(stored.path, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+            report_job_terminal(job_id, "fail", error_code="automation_failed")
+    except Exception:
+        report_job_terminal(job_id, "fail", error_code="automation_failed")
 
 
 def _run_and_stream(
@@ -788,7 +770,17 @@ def _watch_and_cancel_process(job_id: str, proc: subprocess.Popen, cancel_event:
             cancel_event.set()
             msg = "Cancel requested; killing local automation process now."
             print(f"  [agent] {msg}", flush=True)
-            api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": "canceling"}, token=AGENT_TOKEN, timeout=1, quiet=True)
+            api_request(
+                "POST",
+                f"/api/agents/jobs/{job_id}/progress",
+                {
+                    "progress_code": "canceling",
+                    "fence": ACTIVE_JOB_FENCES.get(job_id, 0),
+                },
+                token=AGENT_TOKEN,
+                timeout=1,
+                quiet=True,
+            )
             _terminate_process_tree(proc)
             return
         time.sleep(0.5)
@@ -931,6 +923,47 @@ def _browser_automation_cmd(
     )
 
 
+def _materialize_job_context(
+    job_id: str,
+    *,
+    prompt_45_dir: Path,
+    prompt_916_dir: Path,
+    input_dir: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if AGENT_STATE is None:
+        raise RuntimeError("Local agent state is unavailable")
+    context = AGENT_STATE.resolve_job_context(job_id)
+    run = context["run"]
+    prompt_items: list[dict[str, Any]] = []
+    for index, entry in enumerate(context["entries"], start=1):
+        source = Path(entry["local_path"])
+        kind = str(entry.get("kind") or "")
+        role = str(entry.get("role") or "")
+        aspect_ratio = str(entry.get("aspect_ratio") or "")
+        if kind in {"prompt", "revision_prompt"}:
+            target_root = prompt_916_dir if aspect_ratio == "9:16" else prompt_45_dir
+            prompt_id = str(entry.get("prompt_id") or entry.get("entry_id") or index)
+            filename = re.sub(r"[^A-Za-z0-9_.-]+", "_", prompt_id) + ".txt"
+            target = target_root / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            prompt_items.append(
+                {
+                    "item_id": str(entry.get("item_id") or entry.get("entry_id") or index),
+                    "run_id": str(run["run_id"]),
+                    "run_number": int(run["run_number"]),
+                    "prompt_id": prompt_id,
+                    "name": filename,
+                }
+            )
+        elif role in {"product", "logo", "reference", "source_creative", "replacement"}:
+            suffix = source.suffix if source.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} else ".bin"
+            target = input_dir / f"{index:04d}_{entry['resource_id']}{suffix}"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+    return run, prompt_items
+
+
 def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     engine = str(payload.get("engine") or "chatgpt").strip().lower()
     if engine not in {"chatgpt", "gemini"}:
@@ -938,7 +971,7 @@ def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
     engine_label = "Gemini" if engine == "gemini" else "ChatGPT"
     script_path = SCRIPT_DIR / ("gemini_web_automation.py" if engine == "gemini" else "chatgpt_web_sutomation.py")
     if not script_path.exists():
-        report_job_terminal(job_id, "fail", {"error": f"Script not found: {script_path}"})
+        report_job_terminal(job_id, "fail", error_code="automation_unavailable")
         return
 
     cdp = check_cdp()
@@ -948,42 +981,59 @@ def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
         time.sleep(1)
         cdp = check_cdp()
     if engine == "chatgpt" and not cdp.get("available"):
-        report_job_terminal(job_id, "fail", {"error": f"No local browser CDP found at {AGENT_CDP_URL}. Start Chrome/Brave with --remote-debugging-port=9222."})
+        report_job_terminal(job_id, "fail", error_code="browser_unavailable")
         return
 
-    batch_name = str(payload.get("batch_name") or job_id).replace("/", "_")
     mode = str(payload.get("mode") or "45")
     job_root = AGENT_PATHS.staging / "jobs" / job_id
     prompt_45_dir = job_root / "prompts_45"
     prompt_916_dir = job_root / "prompts_916"
     source_916_dir = job_root / "sources_916"
     input_dir = job_root / "input_images"
+    job_root.mkdir(parents=True, exist_ok=True)
+    run, prompt_items = _materialize_job_context(
+        job_id,
+        prompt_45_dir=prompt_45_dir,
+        prompt_916_dir=prompt_916_dir,
+        input_dir=input_dir,
+    )
+    batch_name = str(run.get("display_batch") or f"v{run.get('run_number')}").replace("/", "_")
     out_45_dir = job_root / "generated_images" / batch_name / "4_5"
     out_916_dir = job_root / "generated_images" / batch_name / "9_16"
-    job_root.mkdir(parents=True, exist_ok=True)
+    payload = {
+        **payload,
+        "owner_key": str(run["owner_key"]),
+        "run_ids": [str(run["run_id"])],
+        "batch_name": batch_name,
+        "prompt_items": prompt_items,
+    }
     (job_root / ".agent-job.json").write_text(
         json.dumps({
             "job_id": job_id,
             "batch": batch_name,
             "run_ids": [str(item) for item in (payload.get("run_ids") or [])],
             "owner_key": str(payload.get("owner_key") or "local"),
-            "prompt_items": payload.get("prompt_items") or [],
+            "prompt_items": prompt_items,
             "created_at": time.time(),
         }, ensure_ascii=True, indent=2) + "\n",
         encoding="utf-8",
     )
 
-    _write_text_bundle(prompt_45_dir, list(payload.get("prompts_45") or []))
-    _write_text_bundle(prompt_916_dir, list(payload.get("prompts_916") or []))
-    _write_binary_bundle(input_dir, list(payload.get("input_images") or []))
-
-    api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": f"local output: {job_root}"}, token=AGENT_TOKEN)
+    api_request(
+        "POST",
+        f"/api/agents/jobs/{job_id}/progress",
+        {
+            "progress_code": "starting",
+            "fence": ACTIVE_JOB_FENCES.get(job_id, 0),
+        },
+        token=AGENT_TOKEN,
+    )
 
     logs: list[str] = []
     warnings: list[str] = [str(item) for item in (payload.get("warnings") or []) if str(item).strip()]
     if mode in {"45", "both"}:
         if not any(prompt_45_dir.glob("*.txt")):
-            report_job_terminal(job_id, "fail", {"error": "No 4:5 prompt files were included in the local-agent job. Refresh the dashboard after deployment and try again."})
+            report_job_terminal(job_id, "fail", error_code="local_prompt_missing")
             return
         code, tail = _run_and_stream(
             job_id,
@@ -994,7 +1044,7 @@ def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
         )
         logs.append(tail)
         if code != 0:
-            report_job_terminal(job_id, "fail", {"error": tail or f"{engine_label} 4:5 exited {code}"})
+            report_job_terminal(job_id, "fail", error_code="automation_failed")
             return
 
     if mode in {"916", "both"}:
@@ -1012,18 +1062,18 @@ def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
             )
             if prepared_916:
                 msg = f"Prepared {len(prepared_916)} 9:16 conversion prompt(s) from local 4:5 output."
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": msg}, token=AGENT_TOKEN)
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress_code": "converting", "fence": ACTIVE_JOB_FENCES.get(job_id, 0)}, token=AGENT_TOKEN)
 
         if not any(prompt_916_dir.glob("*.txt")):
             if mode == "both":
                 warning = "Skipped 9:16 phase: no generated 4:5 images or conversion template were available."
                 warnings.append(warning)
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress": warning}, token=AGENT_TOKEN)
+                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress_code": "conversion_skipped", "fence": ACTIVE_JOB_FENCES.get(job_id, 0)}, token=AGENT_TOKEN)
             else:
-                report_job_terminal(job_id, "fail", {"error": "No 9:16 prompt files were included in the local-agent job"})
+                report_job_terminal(job_id, "fail", error_code="local_prompt_missing")
                 return
         elif mode == "916" and not prepared_916:
-            report_job_terminal(job_id, "fail", {"error": "No persisted local 4:5 artifacts matched the selected 9:16 prompts"})
+            report_job_terminal(job_id, "fail", error_code="local_source_missing")
             return
         elif prepared_916:
             for item in prepared_916:
@@ -1048,7 +1098,7 @@ def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
                 )
                 logs.append(tail)
                 if code != 0:
-                    report_job_terminal(job_id, "fail", {"error": tail or f"{engine_label} 9:16 exited {code}"})
+                    report_job_terminal(job_id, "fail", error_code="automation_failed")
                     return
         else:
             upload_dir = out_45_dir if out_45_dir.exists() else input_dir
@@ -1061,22 +1111,13 @@ def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
             )
             logs.append(tail)
             if code != 0:
-                report_job_terminal(job_id, "fail", {"error": tail or f"{engine_label} 9:16 exited {code}"})
+                report_job_terminal(job_id, "fail", error_code="automation_failed")
                 return
 
     log_tail = "\n".join(logs)[-4000:]
     (AGENT_PATHS.logs / f"{job_id}.log").write_text(log_tail + ("\n" if log_tail else ""), encoding="utf-8")
-    report_job_terminal(
-        job_id,
-        "complete",
-        {"result": {
-            "local_output_dir": str(AGENT_PATHS.artifacts),
-            "artifact_base_url": AGENT_ARTIFACT_BASE_URL,
-            "images": publish_local_artifacts(job_root, payload, job_id),
-            "warnings": warnings,
-            "log_tail": log_tail,
-        }},
-    )
+    publish_local_artifacts(job_root, payload, job_id)
+    report_job_terminal(job_id, "complete")
     shutil.rmtree(job_root, ignore_errors=True)
 
 

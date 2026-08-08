@@ -20,6 +20,115 @@ else:
 
 
 SCHEMA_VERSION = 2
+_LOCAL_JOB_KEYS = frozenset(
+    {
+        "run_id",
+        "command",
+        "parameters",
+        "output_id",
+        "source_output_version",
+        "prompt_resource_id",
+        "prompt_resource_version",
+        "resource_id",
+        "resource_version",
+        "engine",
+        "mode",
+    }
+)
+_LOCAL_JOB_PARAMETER_KEYS = frozenset(
+    {
+        "engine",
+        "mode",
+        "count",
+        "manifest_version",
+        "config_version_id",
+        "prompt_version_id",
+        "resource_version",
+        "upload_set_version",
+        "output_version",
+    }
+)
+_LOCAL_FORBIDDEN_PARTS = (
+    "base64",
+    "body",
+    "bytes",
+    "comment",
+    "content",
+    "credential",
+    "document",
+    "log",
+    "path",
+    "secret",
+    "token",
+    "trace",
+    "url",
+)
+
+
+def metadata_job_payload(payload: dict[str, Any], *, strict: bool = True) -> dict[str, Any]:
+    """Bound a local job row to IDs and scalar control metadata."""
+    if not isinstance(payload, dict):
+        raise ValueError("Job payload must be metadata")
+    clean: dict[str, Any] = {}
+    for key, value in payload.items():
+        lowered = str(key).lower()
+        allowed = key in _LOCAL_JOB_KEYS
+        prohibited = any(part in lowered for part in _LOCAL_FORBIDDEN_PARTS)
+        if prohibited or not allowed:
+            if strict:
+                raise ValueError("Local job payload contains prohibited fields")
+            continue
+        if key == "parameters":
+            if not isinstance(value, dict):
+                if strict:
+                    raise ValueError("Local job parameters must be metadata")
+                continue
+            parameters: dict[str, Any] = {}
+            for parameter_key, parameter_value in value.items():
+                if parameter_key not in _LOCAL_JOB_PARAMETER_KEYS:
+                    if strict:
+                        raise ValueError("Local job parameters contain unsupported fields")
+                    continue
+                if isinstance(parameter_value, bool) or not isinstance(
+                    parameter_value, (str, int)
+                ):
+                    if strict:
+                        raise ValueError("Local job parameters must be bounded scalars")
+                    continue
+                if isinstance(parameter_value, str) and (
+                    not parameter_value
+                    or len(parameter_value) > 64
+                    or "://" in parameter_value
+                    or parameter_value.startswith(("/", "\\\\", "data:", "file:"))
+                    or re.match(r"^[A-Za-z]:[\\/]", parameter_value)
+                ):
+                    if strict:
+                        raise ValueError("Local job parameter is prohibited")
+                    continue
+                if isinstance(parameter_value, int) and not 0 <= parameter_value <= 10_000:
+                    if strict:
+                        raise ValueError("Local job parameter is out of bounds")
+                    continue
+                parameters[parameter_key] = parameter_value
+            clean[key] = parameters
+            continue
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            if strict:
+                raise ValueError("Local job payload must use bounded scalars")
+            continue
+        if isinstance(value, str) and (
+            not value
+            or len(value) > 200
+            or "://" in value
+            or value.startswith(("/", "\\\\", "data:", "file:"))
+            or re.match(r"^[A-Za-z]:[\\/]", value)
+            or "\n" in value
+        ):
+            if strict:
+                raise ValueError("Local job payload contains prohibited values")
+            continue
+        clean[key] = value
+    return clean
 
 
 class SchemaMigrationError(RuntimeError):
@@ -345,6 +454,7 @@ class AgentState:
         return PublishedArtifact(artifact_id=artifact_id, path=destination, sha256=source_digest)
 
     def record_job(self, job_id: str, owner_key: str, status: str, payload: dict[str, Any]) -> None:
+        payload = metadata_job_payload(payload)
         now = time.time()
         with self._connect() as conn:
             conn.execute(
@@ -358,6 +468,53 @@ class AgentState:
                 """,
                 (job_id, owner_key, status, json.dumps(payload, ensure_ascii=True), now, now),
             )
+
+    def resolve_job_context(self, job_id: str) -> dict[str, Any]:
+        """Resolve job IDs to authoritative local manifest/resource records."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT owner_key, status, payload_json FROM jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Job not found")
+            payload = metadata_job_payload(json.loads(row["payload_json"]))
+            run_id = str(payload.get("run_id") or "")
+            run = conn.execute(
+                "SELECT * FROM runs WHERE run_id = ? AND owner_key = ?",
+                (run_id, row["owner_key"]),
+            ).fetchone()
+            if run is None:
+                raise ValueError("Local run manifest not found")
+            entries = conn.execute(
+                """
+                SELECT re.*, r.kind, o.relative_path, o.media_type, o.bytes
+                FROM run_entries re
+                JOIN resources r ON r.resource_id = re.resource_id
+                JOIN resource_versions rv
+                  ON rv.resource_id = re.resource_id
+                 AND rv.version = re.resource_version
+                JOIN objects o ON o.sha256 = rv.object_sha256
+                WHERE re.run_id = ?
+                ORDER BY re.position, re.entry_id
+                """,
+                (run_id,),
+            ).fetchall()
+        resolved_entries = []
+        for entry in entries:
+            item = dict(entry)
+            local_path = (self.paths.root / str(item.pop("relative_path"))).resolve()
+            local_path.relative_to(self.paths.root.resolve())
+            item["local_path"] = local_path
+            resolved_entries.append(item)
+        return {
+            "job_id": job_id,
+            "owner_key": str(row["owner_key"]),
+            "status": str(row["status"]),
+            "payload": payload,
+            "run": dict(run),
+            "entries": resolved_entries,
+        }
 
     def update_job_status(self, job_id: str, status: str) -> None:
         with self._connect() as conn:

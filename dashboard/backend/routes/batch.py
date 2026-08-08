@@ -61,12 +61,12 @@ def _batch_job_status(
     if job_id:
         job = db[COLL_AGENT_JOBS].find_one(
             {"user_id": user_id, "job_id": job_id},
-            {"_id": 0, "payload": 0},
+            {"_id": 0},
         )
     else:
         job = db[COLL_AGENT_JOBS].find_one(
             {"user_id": user_id, "status": {"$in": ["pending", "running", "cancel_requested"]}},
-            {"_id": 0, "payload": 0},
+            {"_id": 0},
             sort=[("created_at", -1)],
         )
     if not job and not job_id:
@@ -76,7 +76,7 @@ def _batch_job_status(
                 "status": {"$in": ["completed", "failed", "canceled"]},
                 "updated_at": {"$gte": time.time() - 6 * 60 * 60},
             },
-            {"_id": 0, "payload": 0},
+            {"_id": 0},
             sort=[("updated_at", -1)],
         )
     if not job:
@@ -89,11 +89,11 @@ def _batch_job_status(
         "job": {
             "job_id": job.get("job_id", ""),
             "status": job.get("status", ""),
-            "progress": job.get("progress", ""),
+            "progress_code": job.get("progress_code", ""),
             "job_type": job.get("job_type", ""),
             "created_at": job.get("created_at", 0),
             "updated_at": job.get("updated_at", 0),
-            "error": job.get("error"),
-            "result": job.get("result"),
+            "error_code": job.get("error_code"),
+            "error_message": job.get("error_message"),
         },
     }

@@ -652,30 +652,29 @@ function startAgentJobPolling() {
       const job = data.job || {};
       if (!data.active) {
         if (job.status === "completed") {
-          const warningText = Array.isArray(job.result?.warnings) && job.result.warnings.length ? ` ${job.result.warnings[0]}` : "";
-          showAgentJobBar(`Agent job completed. ${job.result?.images?.length || 0} local image(s) ready.${warningText}`, false);
-          syncLocalAgentArtifacts(job);
+          showAgentJobBar("Agent job completed. Refreshing local results.", false);
+          await refreshLocalArtifactManifest();
           localStorage.removeItem(currentJobStorageKey());
           if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
           return;
         }
         if (job.status === "canceled") {
-          appendLog(`Agent job canceled: ${job.error || "canceled"}`);
+          appendLog(`Agent job canceled: ${job.error_message || job.error_code || "canceled"}`);
           hideAgentJobBar();
           loadRuns();
           return;
         }
-        showAgentJobBar(`Agent job failed: ${job.error || "unknown error"}`, false, job);
+        showAgentJobBar(`Agent job failed: ${job.error_message || job.error_code || "unknown error"}`, false, job);
         localStorage.removeItem(currentJobStorageKey());
         if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
         return;
       }
-      const progress = job.progress || "";
+      const progress = job.progress_code || "";
       const status = job.status || "pending";
       const label = status === "cancel_requested" ? "Canceling" : (status === "running" ? "Running" : "Queued");
       const msg = `Agent job ${label}: ${progress || "waiting for pickup..."}`;
       showAgentJobBar(msg, status !== "cancel_requested", job);
-      syncLocalAgentArtifacts(job);
+      await refreshLocalArtifactManifest();
     } catch (err) {
       // Keep polling: a transient Render error must not freeze a stale Running/Canceling banner.
     }
@@ -709,9 +708,8 @@ fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
     return;
   }
   if (data?.job && !data.active && data.job.status === "completed") {
-    syncLocalAgentArtifacts(data.job);
-    const warningText = Array.isArray(data.job.result?.warnings) && data.job.result.warnings.length ? ` ${data.job.result.warnings[0]}` : "";
-    showAgentJobBar(`Last local agent job completed. ${data.job.result?.images?.length || 0} local image(s) ready.${warningText}`, false);
+    refreshLocalArtifactManifest();
+    showAgentJobBar("Last local agent job completed.", false);
   }
 }).catch(() => {});
 

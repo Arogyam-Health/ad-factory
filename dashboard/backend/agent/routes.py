@@ -176,7 +176,7 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
     )
     await run_in_threadpool(heartbeat_agent, agent_id)
     await websocket.send_json({"type": "connected", "agent_id": agent_id, "heartbeat_seconds": 15})
-    if await run_in_threadpool(poll_jobs, agent_id):
+    if await run_in_threadpool(poll_jobs, agent_id, device_id):
         await websocket.send_json({"type": "job_available"})
     for approval in await run_in_threadpool(
         poll_pairing_approvals, agent_id, device_id
@@ -206,7 +206,7 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
 def poll_for_jobs(
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> list[dict[str, Any]]:
-    return poll_jobs(agent["agent_id"])
+    return poll_jobs(str(agent["agent_id"]), str(agent.get("device_id") or ""))
 
 
 @router.get("/api/agents/jobs/{job_id}/status")
@@ -214,7 +214,9 @@ def get_agent_job_status(
     job_id: str,
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, Any]:
-    job = get_job_status_for_agent(job_id, agent["agent_id"])
+    job = get_job_status_for_agent(
+        job_id, str(agent["agent_id"]), str(agent.get("device_id") or "")
+    )
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -237,7 +239,12 @@ def claim_agent_job(
     payload: dict[str, Any] | None = Body(default=None),
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, Any]:
-    job = claim_job(job_id, agent["agent_id"], str((payload or {}).get("claim_id") or ""))
+    job = claim_job(
+        job_id,
+        str(agent["agent_id"]),
+        str(agent.get("device_id") or ""),
+        str((payload or {}).get("claim_id") or ""),
+    )
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found or already claimed")
     return job
@@ -249,7 +256,15 @@ def report_progress(
     payload: dict[str, Any] = Body(...),
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, str]:
-    update_job_progress(job_id, payload.get("progress", ""), agent["agent_id"], payload.get("result"))
+    accepted = update_job_progress(
+        job_id,
+        str(agent["agent_id"]),
+        str(agent.get("device_id") or ""),
+        int(payload.get("fence") or 0),
+        str(payload.get("progress_code") or ""),
+    )
+    if not accepted:
+        raise HTTPException(status_code=409, detail="Stale or invalid job progress update")
     return {"status": "ok"}
 
 
@@ -259,7 +274,15 @@ def complete_agent_job(
     payload: dict[str, Any] = Body(...),
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, str]:
-    complete_job(job_id, agent["agent_id"], payload.get("result"))
+    accepted = complete_job(
+        job_id,
+        str(agent["agent_id"]),
+        str(agent.get("device_id") or ""),
+        int(payload.get("fence") or 0),
+        str(payload.get("event_id") or ""),
+    )
+    if not accepted:
+        raise HTTPException(status_code=409, detail="Stale or invalid job completion")
     return {"status": "completed"}
 
 
@@ -269,5 +292,15 @@ def fail_agent_job(
     payload: dict[str, Any] = Body(...),
     agent: dict[str, Any] = Depends(_get_agent_from_header),
 ) -> dict[str, str]:
-    fail_job(job_id, agent["agent_id"], payload.get("error", "Unknown error"))
+    accepted = fail_job(
+        job_id,
+        str(agent["agent_id"]),
+        str(agent.get("device_id") or ""),
+        int(payload.get("fence") or 0),
+        str(payload.get("event_id") or ""),
+        str(payload.get("error_code") or "job_failed"),
+        str(payload.get("error_message") or ""),
+    )
+    if not accepted:
+        raise HTTPException(status_code=409, detail="Stale or invalid job failure")
     return {"status": "failed"}
