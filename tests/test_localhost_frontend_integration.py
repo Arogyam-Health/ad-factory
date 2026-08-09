@@ -196,6 +196,20 @@ console.log(JSON.stringify(simplified));
         self.assertNotIn("pp?.prompt_id", source)
         self.assertIn("promptId: prompt.prompt_id || \"\"", source)
 
+    def test_local_output_poll_preserves_expanded_prompt_editor(self) -> None:
+        runs = (ROOT / "dashboard/frontend/js/runs.js").read_text(
+            encoding="utf-8"
+        )
+        prompts = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("localOutputRenderSignature", runs)
+        self.assertIn(
+            "beforeRenderSignature !== afterRenderSignature",
+            runs,
+        )
+        self.assertIn("expandedPromptRunIds", prompts)
+
 
 if __name__ == "__main__":
     unittest.main()
