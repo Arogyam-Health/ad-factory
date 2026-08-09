@@ -104,6 +104,7 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
 
     def test_fresh_agent_preflight_hydrates_before_run_allocation(self) -> None:
         main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+        runs = (FRONTEND / "js" / "runs.js").read_text(encoding="utf-8")
         reference = (
             FRONTEND / "js" / "reference-flow.js"
         ).read_text(encoding="utf-8")
@@ -111,10 +112,14 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         allocation = main.index("localDataPlane.allocateLocalRun(")
         self.assertLess(main.index('kind: "product_image"', allocation - 5000), allocation)
         self.assertLess(main.index("/materialize", allocation - 5000), allocation)
-        self.assertIn("Add at least one product image", main)
+        self.assertNotIn("Add at least one product image", main)
+        self.assertIn("product_assets: productAssets.map", main)
         self.assertIn('fetchJSON("/api/config/effective")', reference)
         self.assertIn("`hydrate-${key}`", reference)
         self.assertIn("reconciledProductIds", reference)
+        self.assertIn("await localDataPlane.listRuns(", runs)
+        self.assertIn('fetchJSON("/api/runs/reconcile-local"', runs)
+        self.assertIn("localRunIds.has(run.run_id)", runs)
 
 
 if __name__ == "__main__":

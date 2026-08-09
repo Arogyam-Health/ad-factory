@@ -308,6 +308,14 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
             headers={"Idempotency-Key": "delete-prompt-2"},
         ) as response:
             self.assertEqual(json.loads(response.read())["status"], "already_deleted")
+        prompt_events = [
+            event
+            for event in self.server.state.pending_outbox()
+            if event["event_type"] == "prompt_deleted"
+        ]
+        self.assertEqual(len(prompt_events), 1)
+        self.assertEqual(prompt_events[0]["payload"]["run_id"], "run-1")
+        self.assertEqual(prompt_events[0]["payload"]["prompt_id"], "prompt-1")
 
     def test_changes_and_events_resume_after_sequence(self) -> None:
         before = self.server.state.change_sequence()

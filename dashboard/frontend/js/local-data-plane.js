@@ -254,6 +254,15 @@ export class LocalDataPlaneClient {
     }, deviceId));
   }
 
+  async listRuns(deviceId) {
+    const payload = await readJson(await this.authorizedFetch(
+      "/v1/runs",
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    ));
+    return payload.items || [];
+  }
+
   async allocateLocalRun({
     ownerType = "user",
     ownerId,

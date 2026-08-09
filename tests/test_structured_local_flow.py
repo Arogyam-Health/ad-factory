@@ -44,7 +44,9 @@ class StructuredLocalFlowTests(unittest.TestCase):
             media_type="application/json",
         )
 
-    def _stage_run(self, provider: str = "fake") -> None:
+    def _stage_run(
+        self, provider: str = "fake", *, include_product_asset: bool = True
+    ) -> None:
         document = self.paths.staging / "product.txt"
         document.write_text("A local product document with verified product facts.", encoding="utf-8")
         product_doc = self.state.put_resource(
@@ -55,16 +57,18 @@ class StructuredLocalFlowTests(unittest.TestCase):
             operation_id="put-document",
             media_type="text/plain",
         )
-        asset = self.paths.staging / "product.png"
-        asset.write_bytes(b"\x89PNG\r\n\x1a\nlocal-product")
-        product_asset = self.state.put_resource(
-            source=asset,
-            owner_key=self.owner,
-            kind="product_image",
-            logical_key="selected-product",
-            operation_id="put-asset",
-            media_type="image/png",
-        )
+        product_asset = None
+        if include_product_asset:
+            asset = self.paths.staging / "product.png"
+            asset.write_bytes(b"\x89PNG\r\n\x1a\nlocal-product")
+            product_asset = self.state.put_resource(
+                source=asset,
+                owner_key=self.owner,
+                kind="product_image",
+                logical_key="selected-product",
+                operation_id="put-asset",
+                media_type="image/png",
+            )
         settings = self._put_json(
             f"{self.run_id}-structured-settings",
             {
@@ -79,9 +83,16 @@ class StructuredLocalFlowTests(unittest.TestCase):
                     "resource_id": product_doc.resource_id,
                     "version": product_doc.version,
                 },
-                "product_assets": [
-                    {"resource_id": product_asset.resource_id, "version": product_asset.version}
-                ],
+                "product_assets": (
+                    [
+                        {
+                            "resource_id": product_asset.resource_id,
+                            "version": product_asset.version,
+                        }
+                    ]
+                    if product_asset
+                    else []
+                ),
                 "planned_ads": [
                     {
                         "format": "HERO",
@@ -138,13 +149,15 @@ class StructuredLocalFlowTests(unittest.TestCase):
             },
             "put-backgrounds",
         )
+        entries = [
+            (product_doc, "product_document"),
+            (settings, "structured_settings"),
+            (backgrounds, "backgrounds"),
+        ]
+        if product_asset:
+            entries.insert(1, (product_asset, "product"))
         for position, (resource, role) in enumerate(
-            (
-                (product_doc, "product_document"),
-                (product_asset, "product"),
-                (settings, "structured_settings"),
-                (backgrounds, "backgrounds"),
-            ),
+            entries,
             start=1,
         ):
             self.state.add_run_entry(
@@ -308,6 +321,32 @@ class StructuredLocalFlowTests(unittest.TestCase):
         self.assertEqual(projection["provider"], "fake")
         self.assertIn("request_sha256", projection)
         self.assertIn("response_sha256", projection)
+
+    def test_copy_generation_does_not_require_product_images(self) -> None:
+        from local_agent_runtime.structured_copy import (
+            DeterministicFakeProvider,
+            StructuredCopyExecutor,
+        )
+
+        self._stage_run(include_product_asset=False)
+        self.state.record_job(
+            "job-copy-without-images",
+            self.owner,
+            "pending",
+            {
+                "run_id": self.run_id,
+                "command": "generate_copy",
+                "parameters": {},
+            },
+        )
+        result = StructuredCopyExecutor(
+            self.state,
+            provider=DeterministicFakeProvider([self._valid_response()]),
+        ).execute("job-copy-without-images")
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["asset_count"], 0)
+        self.assertEqual(result["prompt_count"], 1)
 
     def test_invalid_copy_is_repaired_locally_and_trace_is_not_logged(self) -> None:
         from local_agent_runtime.structured_copy import DeterministicFakeProvider, StructuredCopyExecutor

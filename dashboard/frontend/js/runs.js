@@ -263,6 +263,62 @@ function updatePreviousRunOptions() {
   });
 }
 
+async function reconcileRunInventory(runs) {
+  const user = getAuthUser();
+  if (!user?.user_id) return { removed: 0, hidden: 0, runIds: null };
+  const owners = new Map([
+    ["user:" + user.user_id, { ownerType: "user", ownerId: user.user_id }],
+  ]);
+  for (const run of runs) {
+    const ownerType = run.owner_type || "user";
+    const ownerId = run.owner_id || user.user_id;
+    if (ownerType === "org" && ownerId) {
+      owners.set(`org:${ownerId}`, { ownerType, ownerId });
+    }
+  }
+  let removed = 0;
+  let onlineInventories = 0;
+  const localRunIds = new Set();
+  for (const owner of owners.values()) {
+    try {
+      const paired = await localDataPlane.ensurePaired(owner);
+      const localRuns = await localDataPlane.listRuns(paired.info.device_id);
+      onlineInventories += 1;
+      localRuns.forEach((run) => localRunIds.add(run.run_id));
+      const result = await fetchJSON("/api/runs/reconcile-local", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_id: paired.agent.agent_id,
+          device_id: paired.info.device_id,
+          owner_type: owner.ownerType,
+          owner_id: owner.ownerId,
+          local_run_ids: localRuns.map((run) => run.run_id),
+        }),
+      });
+      removed += Number(result.removed || 0);
+    } catch {
+      // Do not reconcile an owner scope unless its current local inventory is online.
+    }
+  }
+  if (!onlineInventories) return { removed, hidden: 0, runIds: null };
+  const recentCutoff = Date.now() / 1000 - 120;
+  const visibleIds = new Set(
+    runs
+      .filter((run) => (
+        localRunIds.has(run.run_id)
+        || Number(run.created_at || 0) >= recentCutoff
+        || ["queued", "running"].includes(run.status)
+      ))
+      .map((run) => run.run_id),
+  );
+  return {
+    removed,
+    hidden: Math.max(0, runs.length - visibleIds.size),
+    runIds: visibleIds,
+  };
+}
+
 function batchSortValue(batch) {
   const match = String(batch || "").trim().match(/^v(\d+)$/i);
   return match ? Number(match[1]) : -1;
@@ -291,8 +347,20 @@ export async function loadRuns() {
   if (state.isRunsLoading) return;
   state.isRunsLoading = true;
   try {
-    const data = await fetchJSON("/api/runs");
-    state.runsData = (data.runs || []).map(normalizeRun);
+    let data = await fetchJSON("/api/runs");
+    const inventory = await reconcileRunInventory(data.runs || []);
+    if (inventory.removed) {
+      invalidateRuns();
+      data = await fetchJSON("/api/runs", { noCache: true });
+      appendLog(`Removed ${inventory.removed} stale run record${inventory.removed === 1 ? "" : "s"} after local storage reconciliation.`);
+    }
+    const visibleRuns = inventory.runIds
+      ? (data.runs || []).filter((run) => inventory.runIds.has(run.run_id))
+      : (data.runs || []);
+    if (inventory.hidden) {
+      appendLog(`Hidden ${inventory.hidden} run record${inventory.hidden === 1 ? "" : "s"} that are absent from this machine's local storage.`);
+    }
+    state.runsData = visibleRuns.map(normalizeRun);
     applyLocalArtifactsToRuns();
     state.currentRunIndex = 0;
     updatePreviousRunOptions();

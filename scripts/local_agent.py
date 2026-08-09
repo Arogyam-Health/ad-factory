@@ -240,6 +240,24 @@ def flush_terminal_outbox() -> None:
     for event in AGENT_STATE.pending_outbox():
         payload = event.get("payload") or {}
         job_id = str(payload.get("job_id") or "")
+        if str(event.get("event_type") or "") == "prompt_deleted":
+            acknowledged = api_request(
+                "POST",
+                "/api/agents/reconciliation/prompt-deleted",
+                {
+                    "event_id": str(event["event_id"]),
+                    "run_id": str(payload.get("run_id") or ""),
+                    "prompt_id": str(payload.get("prompt_id") or ""),
+                    "resource_id": str(payload.get("resource_id") or ""),
+                },
+                token=AGENT_TOKEN,
+                timeout=20,
+                quiet=True,
+            )
+            if acknowledged is None:
+                return
+            AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
+            continue
         if str(event.get("event_type") or "").startswith(
             ("structured_copy_", "structured_images_", "reference_generation_")
         ):

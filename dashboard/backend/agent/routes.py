@@ -716,6 +716,53 @@ def record_local_generation_projection(
     return {"status": "accepted"}
 
 
+@router.post("/api/agents/reconciliation/prompt-deleted")
+def reconcile_deleted_prompt(
+    payload: dict[str, Any] = Body(...),
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_RUNS
+    from dashboard.backend.routes.runs import delete_prompt_metadata_record
+
+    run_id = str(payload.get("run_id") or "")
+    prompt_id = str(payload.get("prompt_id") or "")
+    resource_id = str(payload.get("resource_id") or "")
+    if not run_id or not prompt_id:
+        raise HTTPException(status_code=400, detail="Prompt identity is required")
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one(
+        {
+            "run_id": run_id,
+            "user_id": str(agent["user_id"]),
+            "agent_id": str(agent["agent_id"]),
+            "device_id": str(agent.get("device_id") or ""),
+        },
+        {
+            "_id": 0,
+            "run_id": 1,
+            "prompt_count": 1,
+            "copy_generation": 1,
+            "deleted_prompt_ids": 1,
+        },
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    deleted, prompt_count = delete_prompt_metadata_record(
+        db,
+        run=run,
+        user_id=str(agent["user_id"]),
+        run_id=run_id,
+        prompt_id=prompt_id,
+        resource_id=resource_id,
+    )
+    return {
+        "status": "accepted",
+        "deleted": deleted,
+        "prompt_count": prompt_count,
+    }
+
+
 @router.post("/api/agents/jobs/{job_id}/complete")
 def complete_agent_job(
     job_id: str,

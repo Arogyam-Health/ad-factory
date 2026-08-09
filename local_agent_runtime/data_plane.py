@@ -1529,6 +1529,7 @@ class LocalDataPlane:
                 session.owner_key, kind="prompt", logical_key=prompt_id
             )
             if record is not None:
+                metadata = json.loads(record.get("metadata_json") or "{}")
                 self._delete_resource(
                     session.owner_key,
                     str(record["resource_id"]),
@@ -1538,6 +1539,16 @@ class LocalDataPlane:
                     conn.execute(
                         "DELETE FROM run_entries WHERE resource_id = ? AND prompt_id = ?",
                         (record["resource_id"], prompt_id),
+                    )
+                run_id = str(metadata.get("run_id") or "")
+                if run_id:
+                    self.state.queue_outbox(
+                        "prompt_deleted",
+                        {
+                            "run_id": run_id,
+                            "prompt_id": prompt_id,
+                            "resource_id": str(record["resource_id"]),
+                        },
                     )
             self._json(
                 handler,

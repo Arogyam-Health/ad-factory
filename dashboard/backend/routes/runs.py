@@ -4,12 +4,13 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 
 from dashboard.backend.agent.service import cancel_user_job, create_job
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import (
     COLL_AGENT_JOBS,
+    COLL_AGENTS,
     COLL_IMAGES,
     COLL_PROMPTS,
     COLL_RUNS,
@@ -50,12 +51,68 @@ def _user_id(request: Request) -> str:
     return user_id
 
 
+def delete_prompt_metadata_record(
+    db: Any,
+    *,
+    run: dict[str, Any],
+    user_id: str,
+    run_id: str,
+    prompt_id: str,
+    resource_id: str = "",
+) -> tuple[int, int]:
+    deleted_ids = {
+        str(value)
+        for value in run.get("deleted_prompt_ids", [])
+        if isinstance(value, str)
+    }
+    result = db[COLL_PROMPTS].delete_one(
+        {
+            "user_id": user_id,
+            "run_id": run_id,
+            "prompt_id": prompt_id,
+        }
+    )
+    if prompt_id in deleted_ids:
+        return int(result.deleted_count), int(run.get("prompt_count") or 0)
+
+    copy_generation = run.get("copy_generation")
+    projected_ids = (
+        copy_generation.get("prompt_ids", [])
+        if isinstance(copy_generation, dict)
+        else []
+    )
+    if isinstance(projected_ids, list) and projected_ids:
+        prompt_count = sum(
+            1 for value in projected_ids if str(value) != prompt_id
+        )
+    else:
+        prompt_count = max(0, int(run.get("prompt_count") or 0) - 1)
+    pull: dict[str, Any] = {"copy_generation.prompt_ids": prompt_id}
+    if resource_id:
+        pull["copy_generation.prompt_resource_ids"] = resource_id
+    db[COLL_RUNS].update_one(
+        {"user_id": user_id, "run_id": run_id},
+        {
+            "$set": {"prompt_count": prompt_count, "updated_at": time.time()},
+            "$addToSet": {"deleted_prompt_ids": prompt_id},
+            "$pull": pull,
+        },
+    )
+    return int(result.deleted_count), prompt_count
+
+
 @router.get("/api/runs")
 def list_runs(request: Request) -> dict[str, Any]:
     user_id = _user_id(request)
     rows = list(
         get_sync_db()[COLL_RUNS]
-        .find({"user_id": user_id}, _RUN_PROJECTION)
+        .find(
+            {
+                "user_id": user_id,
+                "status": {"$nin": ["deleted", "deleting"]},
+            },
+            _RUN_PROJECTION,
+        )
         .sort("created_at", -1)
         .limit(200)
     )
@@ -131,6 +188,113 @@ def list_run_images(run_id: str, request: Request) -> dict[str, Any]:
         .limit(500)
     )
     return {"run_id": run_id, "images": rows, "total": len(rows)}
+
+
+@router.delete("/api/runs/{run_id}/prompts/{prompt_id}")
+def delete_run_prompt_metadata(
+    run_id: str, prompt_id: str, request: Request
+) -> dict[str, Any]:
+    user_id = _user_id(request)
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one(
+        {"user_id": user_id, "run_id": run_id},
+        {
+            "_id": 0,
+            "run_id": 1,
+            "prompt_count": 1,
+            "copy_generation": 1,
+            "deleted_prompt_ids": 1,
+        },
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    deleted, prompt_count = delete_prompt_metadata_record(
+        db,
+        run=run,
+        user_id=user_id,
+        run_id=run_id,
+        prompt_id=prompt_id,
+    )
+    return {
+        "run_id": run_id,
+        "prompt_id": prompt_id,
+        "deleted": deleted,
+        "prompt_count": prompt_count,
+    }
+
+
+@router.post("/api/runs/reconcile-local")
+def reconcile_local_runs(
+    request: Request, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    user_id = _user_id(request)
+    agent_id = str(payload.get("agent_id") or "")
+    device_id = str(payload.get("device_id") or "")
+    owner_type = str(payload.get("owner_type") or "")
+    owner_id = str(payload.get("owner_id") or "")
+    local_run_ids = payload.get("local_run_ids")
+    if (
+        not agent_id
+        or not device_id
+        or owner_type not in {"user", "org"}
+        or not owner_id
+        or not isinstance(local_run_ids, list)
+        or len(local_run_ids) > 500
+        or any(not isinstance(run_id, str) or not run_id for run_id in local_run_ids)
+    ):
+        raise HTTPException(status_code=400, detail="Invalid local run inventory")
+
+    db = get_sync_db()
+    agent = db[COLL_AGENTS].find_one(
+        {
+            "user_id": user_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+        },
+        {"_id": 0, "agent_id": 1, "device_id": 1},
+    )
+    if agent is None:
+        raise HTTPException(status_code=403, detail="Local device is not authorized")
+    if owner_type == "user" and owner_id != user_id:
+        raise HTTPException(status_code=403, detail="Run owner is not authorized")
+
+    candidates = list(
+        db[COLL_RUNS].find(
+            {
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "device_id": device_id,
+                "owner_type": owner_type,
+                "owner_id": owner_id,
+                "created_at": {"$lt": time.time() - 120},
+                "status": {"$nin": ["queued", "running", "deleting"]},
+            },
+            {"_id": 0, "run_id": 1},
+        )
+    )
+    local_ids = set(local_run_ids)
+    stale_ids = sorted(
+        str(row["run_id"])
+        for row in candidates
+        if str(row.get("run_id") or "") not in local_ids
+    )
+    if not stale_ids:
+        return {"removed": 0, "run_ids": []}
+
+    content_scope = {
+        "user_id": user_id,
+        "run_id": {"$in": stale_ids},
+    }
+    db[COLL_PROMPTS].delete_many(content_scope)
+    db[COLL_IMAGES].delete_many(content_scope)
+    db[COLL_AGENT_JOBS].delete_many(content_scope)
+    db[COLL_RUNS].delete_many(
+        {
+            **content_scope,
+            "device_id": device_id,
+        }
+    )
+    return {"removed": len(stale_ids), "run_ids": stale_ids}
 
 
 @router.delete("/api/runs/{run_id}")

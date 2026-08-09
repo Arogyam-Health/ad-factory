@@ -315,6 +315,10 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
     deleteBtn.disabled = true;
     try {
       await localDataPlane.deletePrompt(prompt.prompt_id, run.device_id);
+      await fetchJSON(
+        `/api/runs/${encodeURIComponent(run.run_id)}/prompts/${encodeURIComponent(prompt.prompt_id)}`,
+        { method: "DELETE" },
+      );
       card.remove();
       appendLog(`Deleted prompt: ${prompt.prompt_file}`);
       invalidateRuns();

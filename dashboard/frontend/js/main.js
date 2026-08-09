@@ -514,9 +514,6 @@ async function runPipeline() {
       kind: "product_image",
       deviceId: structuredDeviceId,
     });
-    if (!productAssets.length) {
-      throw new Error("Add at least one product image before starting a run.");
-    }
     const effective = await fetchJSON(studioCurrentOrgId
       ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
       : "/api/config/effective");
@@ -711,7 +708,9 @@ async function runPipeline() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ operation_id: `${envelope.run_id}-structured-copy` }),
     });
-    setStatus(`Run ${envelope.display_batch} queued for local copy generation (${queued.job_id}).`);
+    setStatus(
+      `Run ${envelope.display_batch} is generating ad copy through ${providerName === "opencode" ? "OpenCode" : "Google Gemini"} on your local agent. Images are not generated in this step. Job: ${queued.job_id}`,
+    );
     invalidateRuns();
     await loadAndRenderRuns();
   } catch (err) {
