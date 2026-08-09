@@ -202,16 +202,18 @@ Set `DEPLOYMENT_MODE=production` on Render. This enables:
 
 - **Auth middleware** — All `/api/*` routes (except `/api/auth/*`) require a valid session cookie. Returns 401 if missing.
 - **Startup validation** — App refuses to start if critical env vars are missing/default (MONGODB_URI, APP_SECRET_KEY, ENCRYPTION_KEY, GOOGLE OAuth, CORS)
-- **Stateless content boundary** — Render serves immutable frontend assets only. Content operations use the paired localhost data plane.
+- **Stateless runtime boundary** — Render has no content disk. Uploaded/generated content uses localhost; the eight dashboard config files use MongoDB.
 - **Chrome routes disabled** — `/api/launch-visible-browser`, `/api/kill-chrome`, `/api/stop-generation` return 400 with "Use local agent"
 
 ### Content storage boundary
 
-User uploads, provider configuration, prompt/config bodies, generated images,
-revisions, exports, traces, and browser logs stay on the paired local device.
-MongoDB stores ownership, IDs, hashes, versions, counts, timestamps, job state,
-and availability metadata. Render has no content storage provider or persistent
-disk, and does not use Cloudinary, GridFS, or Redis.
+User uploads, provider credentials, generated prompts/images, revisions,
+exports, traces, and browser logs stay on the paired local device. The eight
+bounded dashboard configuration text/JSON files and their owner-scoped version
+history are stored in MongoDB so personal and shared organization configs load
+without a local agent. MongoDB also stores control metadata. Render has no
+content storage provider or persistent disk and does not use Cloudinary,
+GridFS, or Redis.
 
 Provider credentials are encrypted inside the local data root and must not be
 configured on Render. Back up the local data root before migration or upgrades;

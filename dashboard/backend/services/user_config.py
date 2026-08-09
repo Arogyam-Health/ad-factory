@@ -21,6 +21,11 @@ CONFIG_KEYS = [
     "conversion_916_prompt",
 ]
 
+GENERIC_CONFIG_OWNER_TYPE = "system"
+GENERIC_CONFIG_OWNER_ID = "generic"
+MAX_CONFIG_FILE_BYTES = 1024 * 1024
+MAX_CONFIG_TOTAL_BYTES = 4 * 1024 * 1024
+
 # content_type per key
 _CONTENT_TYPES = {
     "product_master_doc": "text/plain",
@@ -50,11 +55,11 @@ def _generate_config_id() -> str:
     return f"cfg_{uuid.uuid4().hex}"
 
 
-# ── Generic config (filesystem fallback) ─────────────────────────────────────
+# ── Mongo-backed generic config ───────────────────────────────────────────────
 
 
-def get_generic_config() -> dict[str, Any]:
-    """Read actual filesystem config files as global defaults."""
+def _repository_generic_config() -> dict[str, str]:
+    """Read bundled defaults only for the one-time MongoDB bootstrap."""
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -83,6 +88,68 @@ def get_generic_config() -> dict[str, Any]:
         "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
         "conversion_916_prompt": _read(conversion_916_path),
     }
+
+
+def _empty_config() -> dict[str, str]:
+    return dict(_EMPTY_BY_KEY)
+
+
+def get_generic_config() -> dict[str, Any]:
+    """Read the global eight-file dashboard config from MongoDB."""
+    try:
+        doc = get_sync_db()[COLL_USER_CONFIGS].find_one(
+            {
+                "owner_type": GENERIC_CONFIG_OWNER_TYPE,
+                "owner_id": GENERIC_CONFIG_OWNER_ID,
+                "is_active": True,
+            }
+        )
+    except Exception:
+        return _empty_config()
+    if not doc:
+        return _empty_config()
+    return _extract_flat_from_new_schema(doc)
+
+
+def validate_config_files(files: dict[str, Any]) -> dict[str, str]:
+    """Accept only the eight bounded text configuration files."""
+    if not isinstance(files, dict):
+        raise ValueError("Config must be an object")
+    unknown = set(files) - set(CONFIG_KEYS)
+    if unknown:
+        raise ValueError("Config contains unsupported file keys")
+
+    validated: dict[str, str] = {}
+    total_bytes = 0
+    for key, value in files.items():
+        if not isinstance(value, str):
+            raise ValueError(f"Config file {key} must be text")
+        size = len(value.encode("utf-8"))
+        if size > MAX_CONFIG_FILE_BYTES:
+            raise ValueError(f"Config file {key} exceeds the 1 MiB limit")
+        total_bytes += size
+        validated[key] = value
+    if total_bytes > MAX_CONFIG_TOTAL_BYTES:
+        raise ValueError("Config files exceed the 4 MiB total limit")
+    return validated
+
+
+def ensure_generic_config() -> None:
+    """Seed bundled defaults into MongoDB once; subsequent reads are DB-only."""
+    if get_config_doc(GENERIC_CONFIG_OWNER_TYPE, GENERIC_CONFIG_OWNER_ID):
+        return
+    create_or_update_config(
+        owner_type=GENERIC_CONFIG_OWNER_TYPE,
+        owner_id=GENERIC_CONFIG_OWNER_ID,
+        files=_repository_generic_config(),
+        actor_user_id="system",
+        config_scope="global",
+        config_mode="full",
+        source="repository_bootstrap",
+        create_version=False,
+    )
+    if not get_config_doc(GENERIC_CONFIG_OWNER_TYPE, GENERIC_CONFIG_OWNER_ID):
+        raise RuntimeError("Global dashboard config could not be initialized")
 
 
 # ── Core config service functions ────────────────────────────────────────────
@@ -163,16 +230,14 @@ def create_or_update_config(
     create_version: bool = True,
 ) -> dict[str, Any]:
     """Create or update a config doc in owner schema."""
+    files = validate_config_files(files)
     now = time.time()
-    try:
-        coll = get_sync_db()[COLL_USER_CONFIGS]
-        existing = coll.find_one({
-            "owner_type": owner_type,
-            "owner_id": owner_id,
-            "is_active": True,
-        })
-    except Exception:
-        return get_generic_config()
+    coll = get_sync_db()[COLL_USER_CONFIGS]
+    existing = coll.find_one({
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "is_active": True,
+    })
 
     update_entries = {}
     files_obj = {}

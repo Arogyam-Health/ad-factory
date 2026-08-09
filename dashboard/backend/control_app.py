@@ -80,6 +80,9 @@ def startup() -> None:
                 "Required MongoDB indexes could not be created for: "
                 + ", ".join(failed)
             )
+        from dashboard.backend.services.user_config import ensure_generic_config
+
+        ensure_generic_config()
     except Exception as exc:
         if settings.is_production:
             print(

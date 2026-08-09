@@ -828,27 +828,43 @@ def admin_readiness(
     # 8. config_integrity
     if db_ok:
         try:
-            content_configs = db[COLL_USER_CONFIGS].count_documents({
-                "$or": [
-                    {"files": {"$exists": True}},
-                    {"product_master_doc": {"$exists": True}},
-                    {"starting_prompt": {"$exists": True}},
-                    {"config": {"$exists": True}},
-                ],
-            })
-            if content_configs:
+            from dashboard.backend.services.user_config import CONFIG_KEYS
+
+            active_configs = db[COLL_USER_CONFIGS].count_documents(
+                {"is_active": True}
+            )
+            invalid_configs = db[COLL_USER_CONFIGS].count_documents(
+                {
+                    "is_active": True,
+                    "files": {"$exists": False},
+                }
+            )
+            generic_config = db[COLL_USER_CONFIGS].find_one(
+                {
+                    "owner_type": "system",
+                    "owner_id": "generic",
+                    "is_active": True,
+                },
+                {"files": 1},
+            )
+            generic_keys = set((generic_config or {}).get("files", {}))
+            if invalid_configs or generic_keys != set(CONFIG_KEYS):
                 checks.append({
                     "key": "config_integrity",
                     "status": "error",
                     "message": (
-                        f"{content_configs} legacy config document(s) still contain bodies"
+                        f"{invalid_configs} invalid config document(s); "
+                        "global eight-file config is incomplete"
                     ),
                 })
             else:
                 checks.append({
                     "key": "config_integrity",
                     "status": "ok",
-                    "message": "Config documents contain references and metadata only",
+                    "message": (
+                        f"{active_configs} active Mongo-backed dashboard config(s); "
+                        "global eight-file config is complete"
+                    ),
                 })
         except Exception as exc:
             checks.append({

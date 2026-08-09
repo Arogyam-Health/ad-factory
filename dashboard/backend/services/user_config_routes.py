@@ -2,23 +2,53 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
+from dashboard.backend.services.user_config import (
+    delete_user_config,
+    get_user_config,
+    has_custom_config,
+    set_user_config,
+    validate_config_files,
+)
 
 router = APIRouter()
 
 
-def _local_only(
+@router.get("/api/user/config")
+def read_config(
     user: dict[str, Any] = Depends(require_user_dependency),
-) -> None:
-    del user
-    raise HTTPException(
-        status_code=410,
-        detail="Configuration bodies are stored on the paired localhost device",
-    )
+) -> dict[str, Any]:
+    return {
+        "config": get_user_config(user["user_id"]),
+        "has_custom": has_custom_config(user["user_id"]),
+    }
 
 
-router.add_api_route(
-    "/api/user/config", _local_only, methods=["GET", "PUT", "DELETE"]
-)
+@router.put("/api/user/config")
+def save_config(
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    try:
+        config = validate_config_files(payload.get("config", payload))
+        updated = set_user_config(
+            user["user_id"], config, actor_user_id=user["user_id"]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to save config") from exc
+    return {"status": "ok", "config": updated}
+
+
+@router.delete("/api/user/config")
+def clear_config(
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, str]:
+    try:
+        delete_user_config(user["user_id"])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to delete config") from exc
+    return {"status": "deleted"}

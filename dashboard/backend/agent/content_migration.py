@@ -46,11 +46,9 @@ _SECRET_KEYS = frozenset(
 )
 _COLLECTION_KINDS = {
     "agent_jobs": "legacy_job_content",
-    "config_versions": "config_history",
     "json_blobs": "config_file",
     "llm_traces": "trace",
     "prompts": "prompt",
-    "user_configs": "config_file",
 }
 
 
@@ -273,7 +271,7 @@ def _extract_content(
             lowered in _CONTENT_KEYS
             or lowered.endswith(("_body", "_content"))
             or (
-                collection in {"user_configs", "config_versions", "json_blobs"}
+                collection == "json_blobs"
                 and lowered in _CONFIG_KEYS
             )
             or (path and path[-1] == "files" and lowered in _CONFIG_KEYS)

@@ -2,18 +2,18 @@
 
 ## Purpose
 
-This document is the authoritative implementation handoff for converting Ad Factory into a local-first system where Render is stateless, MongoDB stores references and control metadata only, and all user/generated content is stored on the user's local agent machine.
+This document is the authoritative implementation handoff for converting Ad Factory into a local-first generation system. Render has no runtime content disk; MongoDB stores control metadata plus the eight bounded dashboard configuration files; uploaded, generated, provider, and execution content stays on the user's local agent machine.
 
 This is a large refactor. Implement it completely, in phases, with focused tests and multiple commits. Do not stop after adding only upload endpoints or only moving image generation. Every content-bearing workflow listed here must be migrated.
 
 ## Non-Negotiable Requirements
 
 1. User file uploads must go directly from the dashboard browser to the local agent on `127.0.0.1`.
-2. Image, document, prompt, config, log, trace, import, export, and generated-output content must never be uploaded to Render.
+2. Image, uploaded document, generated prompt, log, trace, import, export, and generated-output content must never be uploaded to Render. The eight named dashboard configuration text/JSON files are the explicit exception and are stored in MongoDB.
 3. Render must never proxy user file bytes to the local agent.
 4. Render runtime disk must not be used for durable or workflow-critical user content.
-5. MongoDB must contain only ownership, IDs, hashes, versions, dimensions, counts, statuses, timestamps, and other bounded metadata references.
-6. MongoDB must not contain base64 files, prompt bodies, document bodies, config bodies, provider secrets, LLM request/response bodies, local paths, localhost URLs, or local capability tokens.
+5. MongoDB must contain ownership/control metadata and the eight bounded dashboard configuration files with owner-scoped version history.
+6. MongoDB must not contain base64 files, generated prompt bodies, uploaded document bodies, provider secrets, LLM request/response bodies, local paths, localhost URLs, or local capability tokens.
 7. Structured copy generation and prompt assembly must execute on the local agent.
 8. Structured and Reference browser automation must resolve prompts and exact ordered upload sets from local storage.
 9. Generated 4:5 and 9:16 images, revisions, replacements, and history must remain local.
@@ -66,7 +66,6 @@ Never place either secret in this document, tests, commands, commits, logs, or m
 | Uploaded product images | Full immutable bytes and versions |
 | Uploaded reference images | Full immutable bytes and versions |
 | Product documents | Full content and versions |
-| User/org config files | Full content and versions |
 | Provider credentials | Encrypted local storage only |
 | LLM requests and responses | Local trace objects only |
 | Generated copy | Full local JSON/text |
@@ -83,6 +82,7 @@ Never place either secret in this document, tests, commands, commits, logs, or m
 | Resource | Control-plane responsibility |
 |---|---|
 | Users and sessions | Authentication metadata |
+| Eight dashboard config files | Bounded text/JSON bodies, owner scope and version history |
 | Organizations | Membership, role and ownership metadata |
 | Agents/devices | Registration, online state and protocol support |
 | Runs | Owner, run number, status, counts and local references |
@@ -139,7 +139,7 @@ Only immutable deployed application files and ordinary framework/process tempora
 7. Local agent sends metadata projections to Render through an idempotent outbox.
 8. Dashboard requests run execution from Render using only `run_id`, `workspace_id`, command and bounded settings.
 9. Render creates a metadata-only agent job pinned to the authoritative device.
-10. Local agent resolves local config, local provider credentials, documents and assets.
+10. Browser snapshots the effective Mongo-backed dashboard config into the local run; the local agent resolves that snapshot with local provider credentials, documents and assets.
 11. Local agent calls the selected copy provider directly.
 12. Local agent stores provider traces, generated copy and assembled prompts locally.
 13. Local agent creates explicit ordered browser upload sets for each prompt.
@@ -485,7 +485,7 @@ Structured 4:5 prompts normally use selected product assets. Reference 4:5 promp
 2. Move Reference Workspace product images, product document and starting prompt local.
 3. Remove global Render workspace/list/delete behavior.
 4. Preserve explicit selection of references and product images through resource IDs.
-5. Resolve effective personas/config locally from versioned local resources.
+5. Resolve effective personas/config from MongoDB, then snapshot the selected values into the local run before execution.
 6. For each persona and reference, build and store the prompt locally.
 7. Create one upload set containing that reference first and selected product images after it.
 8. Execute ChatGPT/Gemini on the local worker.
@@ -507,11 +507,15 @@ Google OAuth credentials used for dashboard login remain Render environment secr
 
 ## Organization Configuration
 
-MongoDB stores owner scope and resource references. Content remains on an authority device.
+The eight named dashboard configuration files are MongoDB-backed control-plane
+documents. Personal and organization owners have separate active documents and
+version history. Shared organization mode resolves the organization document;
+individual mode resolves each member's personal document. Config browsing,
+editing, copying, rollback, and persona loading must work immediately after
+login without a local agent.
 
-For organization-shared configuration, support explicit encrypted export/import replication between approved local agents. MongoDB records authority and verified replica device IDs. Do not implement plaintext cloud synchronization.
-
-When no approved local replica is online, show metadata and an unavailable state instead of silently falling back to Render content.
+Config values are bounded strings: at most 1 MiB per file and 4 MiB total per
+update. Provider credentials are not dashboard config files and remain local.
 
 ## MongoDB Target Fields
 
@@ -645,7 +649,7 @@ Extend the current idempotent migration foundation to import:
 
 Provide a one-time migration command that:
 
-1. Inspects prompt/config/job/trace content without mutation.
+1. Inspects generated prompt/job/trace content without mutation; dashboard config collections are explicitly preserved in MongoDB.
 2. Imports content into the local resource store.
 3. Computes and verifies hashes.
 4. Writes metadata references.
@@ -704,7 +708,7 @@ Update `render.yaml` so it no longer claims that generated content uses Render-l
 - [x] Structured run creation.
 - [x] Structured copy generation.
 - [x] Personal config.
-- [x] Shared organization config references and local replication.
+- [x] Shared Mongo-backed organization config.
 - [x] Individual organization config.
 - [x] Product document editing.
 - [x] Product image upload/list/delete.
@@ -809,7 +813,6 @@ Add static and dynamic assertions that fail if MongoDB or Render receives:
 base64
 prompt body
 document body
-config body
 provider key
 LLM request/response body
 localhost URL
@@ -818,6 +821,9 @@ absolute local path
 browser log body
 revision comment
 ```
+
+The assertion intentionally permits only the eight validated dashboard config
+bodies in `user_configs` and their owner-scoped version snapshots.
 
 Run the application with Render content directories read-only during integration tests. Every Structured and Reference feature must still pass.
 
@@ -911,6 +917,7 @@ Update this table during implementation. Include commit SHA and verification res
 | Migration | Complete (repository) | `145d7fc` | 10 focused migration tests, 137 regression tests, 406 smoke assertions, `py_compile`, lints, `git diff --check`, and Graphify update pass | Dry-run-first, hash-verified migration committed |
 | Full verification | Complete (repository) | `1761077` | 78 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload, download, event reconnect, and reload coverage; 52 Structured/Reference/lifecycle tests pass with Render content directories read-only; 141 full regression tests and 406 smoke assertions pass | Automated boundary verification committed; live ChatGPT/Gemini sessions remain final external verification |
 | Operations documentation | Complete (repository) | `1440df0` | Deployment, pairing, provider storage, migration, backup/restore, replication, outage recovery, deletion, troubleshooting, and external security actions documented | Operations runbook committed |
+| Mongo-backed dashboard configs | Complete (repository) | This commit | 5 focused Mongo config tests, 150 full regression tests, standalone smoke assertions, backend compilation, and lints pass | Restores all eight personal/org config files, versioning, copying, and login-time loading without a local agent |
 
 Repository implementation and automated verification are complete. Final
 production sign-off requires these external actions, which cannot be performed
@@ -926,13 +933,13 @@ from the repository test environment:
 The refactor is complete only when all of the following are true:
 
 1. Browser developer tools show user file uploads going to `127.0.0.1`, never the Render origin.
-2. MongoDB inspection confirms that no content bodies, base64 files, paths, URLs, capabilities or secrets are present.
+2. MongoDB inspection confirms that no content bodies except the eight bounded dashboard config files and their version snapshots, base64 files, paths, URLs, capabilities or secrets are present.
 3. Render runtime-content directories can be read-only without breaking any feature.
 4. Structured copy generation, prompt assembly and browser automation run locally.
 5. Reference library, workspace, prompt assembly and browser automation run locally.
 6. Exact browser upload membership is represented by tested upload-set resources.
 7. Prompt and image lifecycle operations are fully local.
-8. Dashboard reload works from Mongo metadata plus localhost content.
+8. Dashboard config/persona loading works from MongoDB without a local agent; run content reload works from Mongo metadata plus localhost content.
 9. Offline local agents display unavailable metadata without broken or cross-device URLs.
 10. Render restarts do not lose required data.
 11. Local agent restarts recover jobs, revisions and synchronization safely.

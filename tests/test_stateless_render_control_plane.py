@@ -21,11 +21,8 @@ LEGACY_CONTENT_REQUESTS = (
     ("POST", "/api/runs/execute"),
     ("GET", "/api/storage/info"),
     ("POST", "/api/upload-input-images"),
-    ("PUT", "/api/user/config"),
     ("GET", "/api/user/json-blobs/bootstrap"),
-    ("GET", "/api/admin/configs"),
     ("GET", "/api/admin/provider-configs"),
-    ("GET", "/api/config/example"),
     ("GET", "/api/file-content/example"),
     ("GET", "/api/files/download/image/example"),
     ("GET", "/api/generic-config"),
@@ -36,8 +33,6 @@ LEGACY_CONTENT_REQUESTS = (
     ("GET", "/api/user/json-blobs/example"),
     ("POST", "/api/batch/generate-images-both"),
     ("PUT", "/api/user/provider-config/google"),
-    ("PUT", "/api/orgs/org_1/config"),
-    ("GET", "/api/orgs/org_1/configs/shared"),
     ("POST", "/api/runs/execute-reference"),
     ("GET", "/api/runs/run_1/content"),
     ("DELETE", "/api/runs/run_1/delete-image"),
@@ -293,11 +288,10 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             self.assertNotIn("UploadFile", source, relative)
             self.assertNotIn("File(", source, relative)
 
-    def test_config_and_blob_routes_cannot_write_content_to_mongo(self) -> None:
+    def test_provider_and_blob_routes_cannot_write_content_to_mongo(self) -> None:
         paths = (
             "dashboard/backend/services/provider_routes.py",
             "dashboard/backend/services/blob_routes.py",
-            "dashboard/backend/services/user_config_routes.py",
         )
         for relative in paths:
             source = (ROOT / relative).read_text(encoding="utf-8")

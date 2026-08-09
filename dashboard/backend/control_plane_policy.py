@@ -59,6 +59,7 @@ _FORBIDDEN_VALUE_MARKERS = (
 _EXACT_CONTENT_ROUTES = frozenset(
     {
         "/api/defaults",
+        "/api/config/provider",
         "/api/google/models",
         "/api/input-images",
         "/api/input-prompt",
@@ -70,14 +71,11 @@ _EXACT_CONTENT_ROUTES = frozenset(
         "/api/runs/execute",
         "/api/storage/info",
         "/api/upload-input-images",
-        "/api/user/config",
         "/api/user/json-blobs/bootstrap",
     }
 )
 _CONTENT_PREFIXES = (
-    "/api/admin/configs",
     "/api/admin/provider-configs",
-    "/api/config/",
     "/api/file-content",
     "/api/files/",
     "/api/generic-config",
@@ -119,10 +117,6 @@ def is_render_content_route(method: str, path: str) -> bool:
     if normalized.startswith("/api/batch/generate-images"):
         return True
     if normalized.startswith("/api/user/provider-config"):
-        return True
-    if normalized.startswith("/api/orgs/") and (
-        normalized.endswith("/config") or "/configs/" in normalized
-    ):
         return True
     if normalized == "/api/runs/execute-reference":
         return True

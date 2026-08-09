@@ -1,23 +1,29 @@
 # Local-First Deployment and Operations
 
 This guide covers the production topology introduced by the local data plane.
-Render is a stateless control plane. User content and generation work remain on
-the paired local device.
+Render has no runtime content disk. Generation content and work remain on the
+paired local device; the eight dashboard config files are stored in MongoDB.
 
 ## Security boundary
 
-Render and MongoDB may store authentication, organization, device, run, job,
-status, count, hash, version, timestamp, and deletion metadata. They must not
-store or proxy:
+Render and MongoDB store authentication, organization, device, run, job,
+status, count, hash, version, timestamp, and deletion metadata. MongoDB also
+stores the eight bounded personal/organization dashboard config files and their
+version snapshots. They must not otherwise store or proxy:
 
 - Upload or generated-image bytes
-- Prompt, document, config, comment, trace, request, or response bodies
+- Generated prompt, uploaded document, comment, trace, request, or response bodies
 - Provider credentials or local session capabilities
 - Localhost URLs, absolute local paths, browser profiles, or raw browser logs
 
-The local agent stores those bodies under its data root, calls selected
+The local agent stores generation bodies under its data root, calls selected
 providers, assembles prompts, drives ChatGPT or Gemini in the local browser, and
 serves authenticated content to the dashboard on loopback.
+
+Config sources, editors, personas, organization sharing, copying, and rollback
+must load after dashboard login even when no local agent is running. Config
+updates accept only the eight known keys, with a 1 MiB per-file and 4 MiB total
+limit. Provider API keys are not config files and remain local-only.
 
 The default data root is `~/ad-factory-agent`. Override it with
 `AGENT_DATA_DIR` or `scripts/local_agent.py --data-dir`. Treat the entire root
@@ -29,7 +35,7 @@ Use only the services already declared by the repository:
 
 1. A free Render web service running
    `dashboard.backend.control_app:app`.
-2. A free MongoDB Atlas database for bounded control metadata.
+2. A free MongoDB Atlas database for bounded control metadata and dashboard configs.
 3. One local agent per device that owns content.
 4. A local Chrome or Brave profile logged in to ChatGPT and/or Gemini.
 

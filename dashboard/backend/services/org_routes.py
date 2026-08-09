@@ -29,6 +29,7 @@ from dashboard.backend.services.user_config import (
     create_or_update_config,
     resolve_effective_config,
     get_generic_config,
+    validate_config_files,
     CONFIG_KEYS,
 )
 
@@ -379,19 +380,21 @@ def update_org_config(
             detail="You do not have permission to update this organization's config",
         )
 
-    config = payload.get("config", payload)
-
-    result = create_or_update_config(
-        owner_type="org",
-        owner_id=org_id,
-        files=config,
-        actor_user_id=user_id,
-        config_scope="organization",
-        source="org_config_update",
-        actor_email=email,
-        change_reason="manual_edit",
-        org_id=org_id,
-    )
+    try:
+        config = validate_config_files(payload.get("config", payload))
+        result = create_or_update_config(
+            owner_type="org",
+            owner_id=org_id,
+            files=config,
+            actor_user_id=user_id,
+            config_scope="organization",
+            source="org_config_update",
+            actor_email=email,
+            change_reason="manual_edit",
+            org_id=org_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     write_audit_event(
         event_type="org_config_updated",

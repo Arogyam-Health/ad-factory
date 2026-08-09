@@ -1090,23 +1090,13 @@ def test_config_versions() -> int:
     from dashboard.backend.services import config_routes
     failed += ok(config_routes.router is not None, "config_routes router imports cleanly")
 
-    # 18. create_or_update_config first insert creates nested files object
-    from dashboard.backend.services.user_config import create_or_update_config, CONFIG_KEYS
-    # Simulate what the insert path builds (unit-level check of logic):
-    # The actual MongoDB call would fail without DB, so we verify the shape the code builds
-    # by checking that the function returns flat config (fallback path on no DB)
-    try:
-        result = create_or_update_config(
-            owner_type="user",
-            owner_id="test_repair_user",
-            files={"starting_prompt": "test"},
-            actor_user_id="test_repair_user",
-            source="test",
-        )
-        # If no DB, falls back to generic — that's fine
-        failed += ok(isinstance(result, dict), "create_or_update_config returns dict even without DB")
-    except Exception as e:
-        failed += ok(False, f"create_or_update_config should not crash: {e}")
+    # 18. Dashboard config writes accept only the eight bounded text files.
+    from dashboard.backend.services.user_config import CONFIG_KEYS, validate_config_files
+    validated = validate_config_files({"starting_prompt": "test"})
+    failed += ok(
+        validated == {"starting_prompt": "test"},
+        "dashboard config validation preserves supported text",
+    )
 
     # 19. _extract_flat_from_new_schema reads properly nested files object
     from dashboard.backend.services.user_config import _extract_flat_from_new_schema
