@@ -1,9 +1,6 @@
 import { fetchJSON, clearCache } from "./api.js";
 import { getAuthUser, isAuthenticated } from "./auth.js";
 import { setStatus, showGlobalLoading, hideGlobalLoading } from "./ui.js";
-import { localDataPlane } from "./local-data-plane.js";
-
-let providerDeviceId = "";
 
 export async function renderProfilePanel() {
   const panel = document.getElementById("profilePanel");
@@ -17,16 +14,9 @@ export async function renderProfilePanel() {
 
   showGlobalLoading("Loading profile...");
   try {
-    const paired = await localDataPlane.ensurePaired({
-      ownerType: "user",
-      ownerId: user.user_id,
-    }).catch(() => null);
-    providerDeviceId = paired?.info?.device_id || "";
     const [orgData, providerConfigs] = await Promise.all([
       fetchJSON("/api/orgs/me").catch(() => null),
-      providerDeviceId
-        ? localDataPlane.listProviderConfigs(providerDeviceId).catch(() => [])
-        : Promise.resolve([]),
+      fetchJSON("/api/user/provider-config").catch(() => []),
     ]);
     renderProfile(panel, user, orgData, providerConfigs);
   } catch (err) {
@@ -156,7 +146,7 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
       const val = field.is_secret ? config.has_secret : config[field.key];
       const hasVal = !!val;
       const displayVal = field.is_secret
-        ? (hasVal ? "•••••••• (saved locally)" : "Not set")
+        ? (hasVal ? "•••••••• (encrypted)" : "Not set")
         : (val || "Not set");
       const statusColor = hasVal ? "var(--accent-green)" : "var(--muted)";
 
@@ -192,7 +182,10 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
       if (!confirm(`Delete all saved credentials for ${PROVIDER_NAMES[prov] || prov}?`)) return;
       btn.disabled = true;
       try {
-        await localDataPlane.deleteProviderConfig(prov, providerDeviceId);
+        await fetchJSON(`/api/user/provider-config/${encodeURIComponent(prov)}`, {
+          method: "DELETE",
+        });
+        clearCache("/api/user/provider-config");
         await renderProfilePanel();
       } catch (err) {
         setStatus(`Delete failed: ${String(err)}`);

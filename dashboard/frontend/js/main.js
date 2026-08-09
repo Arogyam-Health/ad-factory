@@ -211,7 +211,7 @@ function populateGoogleModels(models, selectedModel) {
 
 async function fetchGoogleModels(apiKey) {
   if (!apiKey) return;
-  setStatus("Google credentials are stored locally and will be resolved by local execution.");
+  setStatus("Google credentials are encrypted in your account and used by local execution.");
 }
 
 function toggleProviderConfig(provider) {
@@ -232,18 +232,23 @@ document.getElementById("llmProvider")?.addEventListener("change", (e) => {
 });
 
 async function saveProviderConfig(provider, config) {
-  await ensureStructuredLocal();
-  return localDataPlane.putProviderConfig(provider, config, {
-    deviceId: structuredDeviceId,
+  const saved = await fetchJSON(`/api/user/provider-config/${encodeURIComponent(provider)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config }),
   });
+  clearCache("/api/user/provider-config");
+  return saved;
 }
 
 async function deleteAllCredentials() {
   const providers = ["opencode", "google_gemini"];
   for (const p of providers) {
-    await ensureStructuredLocal();
-    await localDataPlane.deleteProviderConfig(p, structuredDeviceId);
+    await fetchJSON(`/api/user/provider-config/${encodeURIComponent(p)}`, {
+      method: "DELETE",
+    });
   }
+  clearCache("/api/user/provider-config");
 }
 
 // ── Studio Config Source Selector ───────────────────────────────────────────
@@ -337,22 +342,20 @@ async function refreshOpenCodeModels() {
 async function loadProviderConfigsIntoFields() {
   const saved = {};
   try {
-    await ensureStructuredLocal();
+    const configs = await fetchJSON("/api/user/provider-config");
     for (const p of ["opencode", "google_gemini"]) {
-      let cfg = {};
-      try {
-        cfg = await localDataPlane.getProviderConfig(p, structuredDeviceId);
-      } catch {}
+      const entry = (configs || []).find((item) => item.provider === p);
+      const cfg = entry?.config || {};
       saved[p] = cfg;
       if (p === "opencode") {
         if (cfg.api_url) document.getElementById("opencodeApiUrl").value = cfg.api_url;
-        if (cfg.has_secret) document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved locally)";
+        if (cfg.has_secret) document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved securely)";
         if (cfg.default_model) {
           const sel = document.getElementById("opencodeModel");
           if (sel) { sel.value = cfg.default_model; refreshSelect(sel); }
         }
       } else if (p === "google_gemini") {
-        if (cfg.has_secret) document.getElementById("googleApiKey").placeholder = "•••••••• (saved locally)";
+        if (cfg.has_secret) document.getElementById("googleApiKey").placeholder = "•••••••• (saved securely)";
         if (cfg.default_model) {
           const sel = document.getElementById("googleModel");
           if (sel) { sel.value = cfg.default_model; refreshSelect(sel); }
@@ -360,7 +363,7 @@ async function loadProviderConfigsIntoFields() {
       }
     }
   } catch (err) {
-    setStatus(`Local provider config unavailable: ${String(err)}`);
+    setStatus(`Provider config unavailable: ${String(err)}`);
   }
   return saved;
 }
@@ -373,7 +376,7 @@ document.getElementById("saveGoogleKey")?.addEventListener("click", async () => 
     await saveProviderConfig("google_gemini", { api_key: key, default_model: model });
     document.getElementById("googleApiKey").value = "";
     document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
-    setStatus("Google API key saved on this device");
+    setStatus("Google API key encrypted and saved to your account");
     fetchGoogleModels(key);
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
@@ -384,7 +387,7 @@ document.getElementById("saveOpenCodeUrl")?.addEventListener("click", async () =
   try {
     await saveProviderConfig("opencode", { api_url: url });
     await refreshOpenCodeModels();
-    setStatus("OpenCode URL saved on this device");
+    setStatus("OpenCode URL saved to your account");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
@@ -397,7 +400,7 @@ document.getElementById("saveOpenCodeKey")?.addEventListener("click", async () =
     document.getElementById("opencodeApiKey").value = "";
     document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
     await refreshOpenCodeModels();
-    setStatus("OpenCode API key saved on this device");
+    setStatus("OpenCode API key encrypted and saved to your account");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
@@ -492,14 +495,23 @@ async function runPipeline() {
     });
     structuredDeviceId = envelope.device_id;
     const providerName = cfg.provider === "google" ? "google_gemini" : "opencode";
-    await localDataPlane.putProviderConfig(providerName, providerName === "google_gemini" ? {
-      api_key: document.getElementById("googleApiKey").value.trim(),
-      default_model: cfg.google_model,
-    } : {
-      api_url: cfg.opencode_api_url,
-      api_key: document.getElementById("opencodeApiKey").value.trim(),
-      default_model: cfg.opencode_model,
-    }, { deviceId: structuredDeviceId });
+    const pendingSecret = providerName === "google_gemini"
+      ? document.getElementById("googleApiKey").value.trim()
+      : document.getElementById("opencodeApiKey").value.trim();
+    await saveProviderConfig(providerName, {
+      ...(providerName === "opencode" ? { api_url: cfg.opencode_api_url } : {}),
+      ...(pendingSecret ? { api_key: pendingSecret } : {}),
+      default_model: providerName === "google_gemini" ? cfg.google_model : cfg.opencode_model,
+    });
+    const materializedProvider = await fetchJSON(
+      `/api/user/provider-config/${encodeURIComponent(providerName)}/materialize`,
+      { method: "POST" },
+    );
+    await localDataPlane.putProviderConfig(
+      providerName,
+      materializedProvider,
+      { deviceId: structuredDeviceId },
+    );
     document.getElementById("googleApiKey").value = "";
     document.getElementById("opencodeApiKey").value = "";
 

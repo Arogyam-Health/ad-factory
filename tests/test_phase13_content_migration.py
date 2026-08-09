@@ -246,7 +246,7 @@ class ContentMigrationTests(unittest.TestCase):
         self.assertEqual(len(importer.content_calls), 1)
         self.assertNotIn("workspace.json", json.dumps(report))
 
-    def test_provider_secret_is_verified_before_mongo_values_are_unset(self) -> None:
+    def test_provider_secret_is_preserved_in_mongodb(self) -> None:
         providers = _Collection([
             {
                 "_id": "provider-id",
@@ -263,10 +263,9 @@ class ContentMigrationTests(unittest.TestCase):
         )
 
         document = providers.documents[0]
-        self.assertNotIn("encrypted_api_key", document)
-        self.assertNotIn("api_key", document)
-        self.assertTrue(document["local_provider_reference"]["verified"])
-        self.assertEqual(len(importer.secret_calls), 1)
+        self.assertEqual(document["encrypted_api_key"], "ciphertext")
+        self.assertNotIn("local_provider_reference", document)
+        self.assertEqual(len(importer.secret_calls), 0)
         self.assertNotIn("decrypted-secret", json.dumps(report))
 
     def test_malformed_content_is_reported_and_preserved(self) -> None:

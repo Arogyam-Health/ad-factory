@@ -74,7 +74,6 @@ _EXACT_CONTENT_ROUTES = frozenset(
     }
 )
 _CONTENT_PREFIXES = (
-    "/api/admin/provider-configs",
     "/api/file-content",
     "/api/files/",
     "/api/generic-config",
@@ -114,8 +113,6 @@ def is_render_content_route(method: str, path: str) -> bool:
     if normalized.startswith(_CONTENT_PREFIXES):
         return True
     if normalized.startswith("/api/batch/generate-images"):
-        return True
-    if normalized.startswith("/api/user/provider-config"):
         return True
     if normalized == "/api/runs/execute-reference":
         return True

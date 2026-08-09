@@ -372,7 +372,7 @@ class MongoContentMigrator:
             for document in collection.find({}):
                 report["scanned"] += 1
                 if collection_name == "provider_configs":
-                    self._provider_candidate(collection, document, apply, report)
+                    continue
                 else:
                     self._content_candidate(
                         collection_name, collection, document, apply, report

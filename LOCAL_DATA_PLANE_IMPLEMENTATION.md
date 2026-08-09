@@ -12,8 +12,8 @@ This is a large refactor. Implement it completely, in phases, with focused tests
 2. Image, uploaded document, generated prompt, log, trace, import, export, and generated-output content must never be uploaded to Render. The eight named dashboard configuration text/JSON files are the explicit exception and are stored in MongoDB.
 3. Render must never proxy user file bytes to the local agent.
 4. Render runtime disk must not be used for durable or workflow-critical user content.
-5. MongoDB must contain ownership/control metadata and the eight bounded dashboard configuration files with owner-scoped version history.
-6. MongoDB must not contain base64 files, generated prompt bodies, uploaded document bodies, provider secrets, LLM request/response bodies, local paths, localhost URLs, or local capability tokens.
+5. MongoDB must contain ownership/control metadata, the eight bounded dashboard configuration files, and owner-scoped provider settings.
+6. MongoDB must not contain base64 files, generated prompt bodies, uploaded document bodies, plaintext provider secrets, LLM request/response bodies, local paths, local capability tokens, or localhost URLs except an explicitly configured provider API URL.
 7. Structured copy generation and prompt assembly must execute on the local agent.
 8. Structured and Reference browser automation must resolve prompts and exact ordered upload sets from local storage.
 9. Generated 4:5 and 9:16 images, revisions, replacements, and history must remain local.
@@ -66,7 +66,6 @@ Never place either secret in this document, tests, commands, commits, logs, or m
 | Uploaded product images | Full immutable bytes and versions |
 | Uploaded reference images | Full immutable bytes and versions |
 | Product documents | Full content and versions |
-| Provider credentials | Encrypted local storage only |
 | LLM requests and responses | Local trace objects only |
 | Generated copy | Full local JSON/text |
 | Assembled prompts | Full text, metadata and versions |
@@ -83,6 +82,7 @@ Never place either secret in this document, tests, commands, commits, logs, or m
 |---|---|
 | Users and sessions | Authentication metadata |
 | Eight dashboard config files | Bounded text/JSON bodies, owner scope and version history |
+| Provider settings | User-scoped API URL/model and API key encrypted with `ENCRYPTION_KEY` |
 | Organizations | Membership, role and ownership metadata |
 | Agents/devices | Registration, online state and protocol support |
 | Runs | Owner, run number, status, counts and local references |
@@ -139,7 +139,7 @@ Only immutable deployed application files and ordinary framework/process tempora
 7. Local agent sends metadata projections to Render through an idempotent outbox.
 8. Dashboard requests run execution from Render using only `run_id`, `workspace_id`, command and bounded settings.
 9. Render creates a metadata-only agent job pinned to the authoritative device.
-10. Browser snapshots the effective Mongo-backed dashboard config into the local run; the local agent resolves that snapshot with local provider credentials, documents and assets.
+10. Browser snapshots the effective Mongo-backed dashboard config into the local run and securely materializes the user's encrypted Mongo-backed provider settings to the paired local agent for execution.
 11. Local agent calls the selected copy provider directly.
 12. Local agent stores provider traces, generated copy and assembled prompts locally.
 13. Local agent creates explicit ordered browser upload sets for each prompt.
@@ -497,11 +497,12 @@ Structured 4:5 prompts normally use selected product assets. Reference 4:5 promp
 
 ## Provider Configuration
 
-Provider secrets must move from MongoDB to encrypted local storage. Use a local encryption key derived from or protected alongside the root-local secret. Restrict secret files to mode `0600`.
-
-The provider-config dashboard must write secret values directly to localhost. MongoDB may retain provider type, model label, authority device and config resource reference, but not API keys or secret values.
-
-Existing encrypted Mongo provider secrets require a one-time authenticated migration to the local agent, followed by verification and removal from MongoDB.
+Provider API URLs, model selections, and API keys are user-scoped MongoDB
+documents. API keys are Fernet-encrypted with Render's `ENCRYPTION_KEY`; list
+and ordinary read endpoints return only `has_secret`, never plaintext or
+ciphertext. An authenticated, owner-scoped, `no-store` materialization endpoint
+transfers the decrypted setting to the paired local agent immediately before
+local execution. Provider request/response bodies remain local.
 
 Google OAuth credentials used for dashboard login remain Render environment secrets because they belong to authentication, not generation content.
 
@@ -814,7 +815,7 @@ Add static and dynamic assertions that fail if MongoDB or Render receives:
 base64
 prompt body
 document body
-provider key
+plaintext or API-visible provider key outside the owner-scoped materialization endpoint
 LLM request/response body
 localhost URL
 local capability
@@ -823,8 +824,8 @@ browser log body
 revision comment
 ```
 
-The assertion intentionally permits only the eight validated dashboard config
-bodies in `user_configs` and their owner-scoped version snapshots.
+The assertion intentionally permits the eight validated dashboard config bodies
+and encrypted provider keys plus their bounded URL/model settings.
 
 Run the application with Render content directories read-only during integration tests. Every Structured and Reference feature must still pass.
 
@@ -919,6 +920,7 @@ Update this table during implementation. Include commit SHA and verification res
 | Full verification | Complete (repository) | `1761077` | 78 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload, download, event reconnect, and reload coverage; 52 Structured/Reference/lifecycle tests pass with Render content directories read-only; 141 full regression tests and 406 smoke assertions pass | Automated boundary verification committed; live ChatGPT/Gemini sessions remain final external verification |
 | Operations documentation | Complete (repository) | `1440df0` | Deployment, pairing, provider storage, migration, backup/restore, replication, outage recovery, deletion, troubleshooting, and external security actions documented | Operations runbook committed |
 | Mongo-backed dashboard configs | Complete (repository) | `7573c6f`, `4137e27`, `43e0f3f`, plus persona-defaults follow-up | 8 focused Mongo config tests, 153 full regression tests, standalone smoke assertions, backend/frontend compilation, and lints pass | Restores all eight personal/org config files and editable personas, removes legacy Studio content routes, forces frontend asset revalidation, and validates production config/default endpoints plus MongoDB's document limit |
+| Mongo-backed provider settings | Complete (repository) | Pending commit | 4 focused provider tests, 46 boundary/migration regressions, 157 full tests, backend/frontend syntax checks, lints, and Graphify update pass | Stores URL/model plus Fernet-encrypted API keys by user; safe reads expose only configured state and authenticated `no-store` materialization supplies local execution |
 
 Repository implementation and automated verification are complete. Final
 production sign-off requires these external actions, which cannot be performed

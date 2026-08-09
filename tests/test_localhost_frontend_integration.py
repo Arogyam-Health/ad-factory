@@ -59,7 +59,6 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
                 "/api/reference-workspace/product-images",
                 "/api/reference-workspace/product-document",
                 "/api/upload-input-images",
-                "/api/user/provider-config",
                 "/api/google/models",
             ):
                 self.assertNotIn(render_path, source, f"{relative} still uses {render_path}")
@@ -70,7 +69,7 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertIn("/v1/assets", source)
         self.assertIn("authorizedFetch", source)
         main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
-        self.assertIn("putProviderConfig(provider, config", main)
+        self.assertIn("localDataPlane.putProviderConfig(", main)
         self.assertIn("/v1/provider-configs", source)
 
     def test_images_use_authenticated_blob_urls_not_tokenized_urls(self) -> None:

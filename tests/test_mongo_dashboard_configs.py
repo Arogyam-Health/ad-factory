@@ -47,7 +47,7 @@ class MongoDashboardConfigTests(unittest.TestCase):
         )
 
         self.assertNotIn("/api/prompt-file-content", main_js)
-        self.assertIn('/js/main.js?v=5', index_html)
+        self.assertIn('/js/main.js?v=6', index_html)
 
     def test_frontend_assets_revalidate_after_deploy(self) -> None:
         from fastapi.testclient import TestClient
@@ -71,6 +71,8 @@ class MongoDashboardConfigTests(unittest.TestCase):
             ("PUT", "/api/orgs/org_1/config"),
             ("POST", "/api/orgs/org_1/configs/copy"),
             ("GET", "/api/admin/configs"),
+            ("PUT", "/api/user/provider-config/opencode"),
+            ("GET", "/api/admin/provider-configs"),
         )
         for method, path in allowed:
             self.assertFalse(
@@ -78,9 +80,6 @@ class MongoDashboardConfigTests(unittest.TestCase):
                 f"{method} {path} must use MongoDB without a local agent",
             )
 
-        self.assertTrue(
-            is_render_content_route("PUT", "/api/user/provider-config/google")
-        )
         self.assertTrue(is_render_content_route("POST", "/api/config/provider"))
 
     def test_generic_config_is_read_from_mongodb_system_document(self) -> None:

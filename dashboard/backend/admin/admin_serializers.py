@@ -99,18 +99,24 @@ def safe_audit_log(event: dict[str, Any]) -> dict[str, Any]:
 
 def safe_provider_config(doc: dict[str, Any]) -> dict[str, Any]:
     """Return safe view of a provider config (no decrypted keys, no ciphertext, no hashes)."""
+    stored_config = doc.get("config", {})
     masked = ""
     last4 = doc.get("key_last4") or doc.get("api_key_last4") or ""
     if last4:
         masked = "***" + last4
-    elif doc.get("api_key") or doc.get("encrypted_api_key"):
+    elif (
+        doc.get("api_key")
+        or doc.get("encrypted_api_key")
+        or stored_config.get("api_key")
+        or stored_config.get("encrypted_api_key")
+    ):
         masked = "configured"
     return {
         "user_id": doc.get("user_id", ""),
         "provider": doc.get("provider", ""),
         "owner_type": doc.get("owner_type", "user"),
         "owner_id": doc.get("owner_id", doc.get("user_id", "")),
-        "configured": bool(doc.get("api_key") or doc.get("encrypted_api_key")),
+        "configured": bool(masked),
         "masked_key": masked,
         "updated_at": doc.get("updated_at", 0),
     }

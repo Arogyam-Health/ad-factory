@@ -9,11 +9,12 @@ paired local device; the eight dashboard config files are stored in MongoDB.
 Render and MongoDB store authentication, organization, device, run, job,
 status, count, hash, version, timestamp, and deletion metadata. MongoDB also
 stores the eight bounded personal/organization dashboard config files and their
-version snapshots. They must not otherwise store or proxy:
+version snapshots plus user-scoped provider URL/model settings and encrypted
+API keys. They must not otherwise store or proxy:
 
 - Upload or generated-image bytes
 - Generated prompt, uploaded document, comment, trace, request, or response bodies
-- Provider credentials or local session capabilities
+- Plaintext provider credentials or local session capabilities
 - Localhost URLs, absolute local paths, browser profiles, or raw browser logs
 
 The local agent stores generation bodies under its data root, calls selected
@@ -24,7 +25,10 @@ Config sources, editors, personas, organization sharing, copying, and rollback
 must load after dashboard login even when no local agent is running. Config
 updates accept only the eight known keys, with a 12 MiB per-file and 12 MiB
 total limit that leaves headroom below MongoDB's 16 MiB document limit.
-Provider API keys are not config files and remain local-only.
+Provider API keys are encrypted in MongoDB with Render's `ENCRYPTION_KEY`.
+Ordinary reads return only a configured indicator; an authenticated `no-store`
+request materializes the key to the paired agent immediately before local
+execution.
 
 The default data root is `~/ad-factory-agent`. Override it with
 `AGENT_DATA_DIR` or `scripts/local_agent.py --data-dir`. Treat the entire root
@@ -406,13 +410,12 @@ For routine rotation:
 
 - Rotating `APP_SECRET_KEY` invalidates every dashboard session; schedule a
   re-login window.
-- Migrate legacy encrypted Mongo provider values before rotating
-  `ENCRYPTION_KEY`.
+- Decrypt and re-encrypt provider values as part of any planned
+  `ENCRYPTION_KEY` rotation; changing it without migration makes saved keys
+  unreadable.
 - Rotate the Google OAuth client secret in Google Cloud and Render together.
 - Re-register an agent whose bearer token is revoked; never reuse an exposed
   dashboard cookie.
-- Loss or rotation of `provider-secrets.key` requires provider credentials to
-  be entered again on each authority device.
 - Do not rotate device identity or local runtime secrets during active pairing,
   jobs, deletion reconciliation, or config replication.
 

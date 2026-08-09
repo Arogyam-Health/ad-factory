@@ -21,7 +21,6 @@ LEGACY_CONTENT_REQUESTS = (
     ("GET", "/api/storage/info"),
     ("POST", "/api/upload-input-images"),
     ("GET", "/api/user/json-blobs/bootstrap"),
-    ("GET", "/api/admin/provider-configs"),
     ("GET", "/api/file-content/example"),
     ("GET", "/api/files/download/image/example"),
     ("GET", "/api/generic-config"),
@@ -31,7 +30,6 @@ LEGACY_CONTENT_REQUESTS = (
     ("GET", "/api/seeds"),
     ("GET", "/api/user/json-blobs/example"),
     ("POST", "/api/batch/generate-images-both"),
-    ("PUT", "/api/user/provider-config/google"),
     ("POST", "/api/runs/execute-reference"),
     ("GET", "/api/runs/run_1/content"),
     ("DELETE", "/api/runs/run_1/delete-image"),
@@ -287,17 +285,12 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             self.assertNotIn("UploadFile", source, relative)
             self.assertNotIn("File(", source, relative)
 
-    def test_provider_and_blob_routes_cannot_write_content_to_mongo(self) -> None:
-        paths = (
-            "dashboard/backend/services/provider_routes.py",
-            "dashboard/backend/services/blob_routes.py",
-        )
-        for relative in paths:
-            source = (ROOT / relative).read_text(encoding="utf-8")
-            self.assertNotIn("set_json_blob", source, relative)
-            self.assertNotIn("set_user_config", source, relative)
-            self.assertNotIn("set_provider_config", source, relative)
-            self.assertIn("status_code=410", source, relative)
+    def test_blob_routes_cannot_write_content_to_mongo(self) -> None:
+        relative = "dashboard/backend/services/blob_routes.py"
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        self.assertNotIn("set_json_blob", source, relative)
+        self.assertNotIn("set_user_config", source, relative)
+        self.assertIn("status_code=410", source, relative)
 
     def test_terminal_jobs_have_ttl_index(self) -> None:
         source = (ROOT / "dashboard/backend/db/indexes.py").read_text(

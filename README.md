@@ -207,14 +207,10 @@ Set `DEPLOYMENT_MODE=production` on Render. This enables:
 
 ### Content storage boundary
 
-User uploads, provider credentials, generated prompts/images, revisions,
-exports, traces, and browser logs stay on the paired local device. The eight
-bounded dashboard configuration text/JSON files and their owner-scoped version
-history are stored in MongoDB so personal and shared organization configs load
-without a local agent. MongoDB also stores control metadata. Render has no
+User uploads, generated prompts/images, revisions, exports, traces, and browser
+logs stay on the paired local device. The eight bounded dashboard configuration
+files and user-scoped provider settings are stored in MongoDB so they load
+without a local agent. Provider API keys are encrypted with `ENCRYPTION_KEY` and
+ordinary API responses expose only whether a key is configured. Render has no
 content storage provider or persistent disk and does not use Cloudinary,
 GridFS, or Redis.
-
-Provider credentials are encrypted inside the local data root and must not be
-configured on Render. Back up the local data root before migration or upgrades;
-see the operations guide for verified backup and restore commands.
