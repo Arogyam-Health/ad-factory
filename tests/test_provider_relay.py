@@ -406,6 +406,11 @@ class ProviderRelayTests(unittest.TestCase):
                 "poll_pairing_approvals",
                 return_value=[],
             ),
+            patch(
+                "dashboard.backend.services.render_copy_jobs."
+                "resume_user_provider_jobs",
+                return_value=0,
+            ),
             TestClient(app) as client,
         ):
             with client.websocket_connect(
@@ -469,6 +474,11 @@ class ProviderRelayTests(unittest.TestCase):
                 render_copy_jobs,
                 "generate_structured_prompt_bundle",
                 side_effect=offline,
+            ),
+            patch.object(
+                render_copy_jobs,
+                "resolve_effective_config",
+                return_value={},
             ),
             patch.object(
                 render_copy_jobs,

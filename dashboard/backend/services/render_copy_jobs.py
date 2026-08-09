@@ -43,6 +43,14 @@ from dashboard.backend.services.user_config import resolve_effective_config
 _COPY_LEASE_SECONDS = 300
 _DELIVERY_TTL_HOURS = 24
 _TERMINAL_RETENTION_DAYS = 7
+_LOCAL_PROVIDER_RETRY_SECONDS = 5
+_TRANSIENT_RELAY_ERRORS = frozenset(
+    {
+        "local_provider_agent_offline",
+        "local_provider_agent_disconnected",
+        "provider_relay_expired",
+    }
+)
 _worker_event = threading.Event()
 _worker_lock = threading.Lock()
 _worker_started = False
@@ -238,7 +246,13 @@ def _claim_next_job() -> dict[str, Any] | None:
     return get_sync_db()[COLL_RENDER_COPY_JOBS].find_one_and_update(
         {
             "$or": [
-                {"status": "queued"},
+                {
+                    "status": "queued",
+                    "$or": [
+                        {"next_attempt_at": {"$exists": False}},
+                        {"next_attempt_at": {"$lte": now}},
+                    ],
+                },
                 {
                     "status": "running",
                     "lease_expires_at": {"$lte": now},
@@ -409,6 +423,95 @@ def _fail_job(
     )
 
 
+def _defer_job_for_local_agent(
+    job: dict[str, Any],
+    error_code: str,
+) -> None:
+    now = time.time()
+    get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
+        {
+            "copy_job_id": job["copy_job_id"],
+            "status": "running",
+        },
+        {
+            "$set": {
+                "status": "queued",
+                "progress_code": "waiting_for_local_provider",
+                "last_relay_error": str(error_code)[:100],
+                "next_attempt_at": now + _LOCAL_PROVIDER_RETRY_SECONDS,
+                "lease_expires_at": None,
+                "updated_at": now,
+            }
+        },
+    )
+    get_sync_db()[COLL_RUNS].update_one(
+        {"run_id": job["run_id"], "user_id": job["user_id"]},
+        {
+            "$set": {
+                "status": "copy_queued",
+                "updated_at": now,
+            }
+        },
+    )
+
+
+def resume_user_provider_jobs(user_id: str) -> int:
+    db = get_sync_db()
+    jobs = list(
+        db[COLL_RENDER_COPY_JOBS].find(
+            {
+                "user_id": user_id,
+                "status": "failed",
+                "progress_code": {"$in": sorted(_TRANSIENT_RELAY_ERRORS)},
+            },
+            {"_id": 0, "copy_job_id": 1, "run_id": 1},
+        )
+    )
+    now = time.time()
+    resumed = 0
+    for job in jobs:
+        result = db[COLL_RENDER_COPY_JOBS].update_one(
+            {
+                "copy_job_id": str(job.get("copy_job_id") or ""),
+                "user_id": user_id,
+                "status": "failed",
+                "progress_code": {
+                    "$in": sorted(_TRANSIENT_RELAY_ERRORS)
+                },
+            },
+            {
+                "$set": {
+                    "status": "queued",
+                    "progress_code": "waiting_for_local_provider",
+                    "next_attempt_at": now,
+                    "lease_expires_at": None,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "error": "",
+                    "completed_at": "",
+                    "purge_at": "",
+                },
+            },
+        )
+        if not result.modified_count:
+            continue
+        resumed += 1
+        db[COLL_RUNS].update_one(
+            {"run_id": str(job.get("run_id") or ""), "user_id": user_id},
+            {
+                "$set": {
+                    "status": "copy_queued",
+                    "updated_at": now,
+                },
+                "$unset": {"copy_generation": ""},
+            },
+        )
+    if resumed:
+        wake_render_copy_worker()
+    return resumed
+
+
 def _record_provider_failure_trace(
     job: dict[str, Any],
     exc: ProviderCallError,
@@ -523,6 +626,9 @@ def process_next_render_copy_job() -> bool:
             return True
         _complete_job(job, result)
     except ProviderCallError as exc:
+        if exc.code in _TRANSIENT_RELAY_ERRORS:
+            _defer_job_for_local_agent(job, exc.code)
+            return True
         trace_error = exc.trace_persistence_error
         if not exc.trace_persisted:
             trace_error = _record_provider_failure_trace(

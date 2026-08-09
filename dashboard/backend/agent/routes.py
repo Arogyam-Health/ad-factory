@@ -595,6 +595,15 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
                         "provider_relay": supports_provider_relay,
                     }
                 )
+                if supports_provider_relay:
+                    from dashboard.backend.services.render_copy_jobs import (
+                        resume_user_provider_jobs,
+                    )
+
+                    await run_in_threadpool(
+                        resume_user_provider_jobs,
+                        str(agent["user_id"]),
+                    )
             elif message.get("type") == "provider_result":
                 accepted = provider_relay.complete(
                     call_id=str(message.get("call_id") or ""),

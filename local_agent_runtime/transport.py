@@ -145,9 +145,6 @@ class AgentWebSocketClient:
                                     message.get("type") == "connected"
                                     and self.provider_handler is not None
                                 ):
-                                    self._connected.set()
-                                    self.status_callback("connected")
-                                    backoff = 1.0
                                     async with send_lock:
                                         await websocket.send(
                                             json.dumps(
@@ -158,6 +155,14 @@ class AgentWebSocketClient:
                                             )
                                         )
                                     self.signal.handle(message)
+                                elif (
+                                    message.get("type")
+                                    == "capabilities_ack"
+                                    and message.get("provider_relay") is True
+                                ):
+                                    self._connected.set()
+                                    self.status_callback("connected")
+                                    backoff = 1.0
                                 elif message.get("type") == "connected":
                                     self._connected.set()
                                     self.status_callback("connected")
