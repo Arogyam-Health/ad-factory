@@ -1,4 +1,4 @@
-import { fetchJSON, invalidateRuns } from "./api.js";
+import { invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 import { appendLog } from "./ui.js";
 import { localDataPlane } from "./local-data-plane.js";
@@ -20,12 +20,7 @@ function setRevisionState(box, message, busy = false) {
   if (select) select.disabled = busy;
 }
 
-function isLocalArtifact(imageFile) {
-  return /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/files\//i.test(imageFile);
-}
-
 async function queueRevision(runId, imageFile, comment, engine, outputId = "") {
-  const payload = { image_file: imageFile, comment, engine, headless: state.headlessModeEnabled };
   const run = state.runsData.find((item) => item.run_id === runId);
   if (outputId && run?.device_id) {
     const result = await localDataPlane.outputAction(
@@ -37,21 +32,7 @@ async function queueRevision(runId, imageFile, comment, engine, outputId = "") {
     result.device_id = run.device_id;
     return result;
   }
-  if (isLocalArtifact(imageFile)) {
-    const imageUrl = new URL(imageFile);
-    const revisionUrl = new URL("/revisions", imageUrl.origin);
-    revisionUrl.search = imageUrl.search;
-    return fetchJSON(revisionUrl.toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  }
-  return fetchJSON(`/api/runs/${runId}/revise-image`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  throw new Error("This image is unavailable on the run's authoritative local device.");
 }
 
 async function submitRevision(card, box) {
@@ -147,24 +128,11 @@ function delay(ms) {
 async function waitForRevision(runId, revisionId, box, statusUrl = "") {
   for (;;) {
     const run = state.runsData.find((item) => item.run_id === runId);
-    if (!statusUrl && run?.device_id) {
-      const data = await localDataPlane.revisionStatus(revisionId, run.device_id);
-      setRevisionState(box, data.status || "", !["completed", "error"].includes(data.status));
-      if (data.status === "completed") return { ok: true, message: "Completed" };
-      if (data.status === "error") return { ok: false, message: data.error || "Revision failed" };
-      await delay(2000);
-      continue;
-    }
-    const rawUrl = statusUrl || `/api/runs/${runId}/revisions/${revisionId}`;
-    const separator = rawUrl.includes("?") ? "&" : "?";
-    const data = await fetchJSON(`${rawUrl}${separator}t=${Date.now()}`, { cache: "no-store" });
-    setRevisionState(box, data.message || data.status || "", !["completed", "error"].includes(data.status));
-    if (data.status === "completed") return { ok: true, message: data.message || "Completed" };
-    if (data.status === "error") {
-      const errMsg = data.error || data.message || "Unknown error";
-      setRevisionState(box, errMsg, false);
-      return { ok: false, message: errMsg };
-    }
+    if (!run?.device_id) return { ok: false, message: "Authoritative local device is unavailable" };
+    const data = await localDataPlane.revisionStatus(revisionId, run.device_id);
+    setRevisionState(box, data.status || "", !["completed", "error"].includes(data.status));
+    if (data.status === "completed") return { ok: true, message: "Completed" };
+    if (data.status === "error") return { ok: false, message: data.error || "Revision failed" };
     await delay(2000);
   }
 }

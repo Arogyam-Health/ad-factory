@@ -1440,6 +1440,31 @@ class LocalDataPlane:
                 raise APIError(404, "prompt_not_found", "Prompt not found")
             self._send_file(handler, record)
             return
+        if not separator and handler.command == "DELETE":
+            session = self._session(handler, "delete")
+            record = self._resource_record(
+                session.owner_key, kind="prompt", logical_key=prompt_id
+            )
+            if record is not None:
+                self._delete_resource(
+                    session.owner_key,
+                    str(record["resource_id"]),
+                    self._operation_id(handler),
+                )
+                with self.state._connect() as conn:
+                    conn.execute(
+                        "DELETE FROM run_entries WHERE resource_id = ? AND prompt_id = ?",
+                        (record["resource_id"], prompt_id),
+                    )
+            self._json(
+                handler,
+                200,
+                {
+                    "prompt_id": prompt_id,
+                    "status": "deleted" if record else "already_deleted",
+                },
+            )
+            return
         if not separator and handler.command == "PUT":
             session = self._session(handler, "prompts:write")
             payload = self._json_body(handler, self.service.config.max_upload_bytes)

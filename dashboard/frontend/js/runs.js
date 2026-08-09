@@ -838,6 +838,31 @@ fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   }
 }).catch(() => {});
 
+async function queueStructuredImages(runs, engine, mode) {
+  const queued = await Promise.all(runs.map((run) => fetchJSON(
+    `/api/runs/${encodeURIComponent(run.run_id)}/image-generation`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operation_id: `images-${run.run_id}-${engine}-${mode}-${Date.now()}`,
+        engine,
+        mode,
+      }),
+    },
+  )));
+  const latest = queued.at(-1);
+  if (latest?.job_id) {
+    localStorage.setItem(currentJobStorageKey(), JSON.stringify({
+      job_id: latest.job_id,
+      timestamp: Date.now(),
+    }));
+    startAgentJobPolling();
+  }
+  appendLog(`Queued ${queued.length} local image-generation job(s).`);
+  return queued;
+}
+
 document.getElementById("batchGen45")?.addEventListener("click", async () => {
   const runsForBatches = selectedOrCurrentRuns();
   if (!runsForBatches.length) { appendLog("Select a batch or open a run with prompt files first."); return; }
@@ -845,22 +870,12 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
   const engine = await showEngineSelector("4:5");
   if (!engine) return;
 
-  const runIds = runsForBatches.map((r) => r.run_id);
   const batchLabel = runsForBatches.map(displayBatch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Generating 4:5 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
+  appendLog(`Generating 4:5 in ${engineLabel} for ${batchLabel || "current run"} (${runsForBatches.length} run(s))...`);
   showStopGenButton();
   try {
-    const data = await fetchJSON("/api/batch/generate-images-45", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine, visible: false }),
-    });
-    const batchKey = data.batch_key || "";
-    if (batchKey && state.headlessModeEnabled) {
-      import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
-    }
-    appendGenerationResult(data, (d) => `Done. Batch: ${d.batch_key}, Prompts: ${d.total_prompts}`);
+    await queueStructuredImages(runsForBatches, engine, "45");
     loadRuns();
   } catch (err) {
     appendLog(String(err));
@@ -876,18 +891,12 @@ document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
   const engine = await showEngineSelector("4:5 & 9:16");
   if (!engine) return;
 
-  const runIds = runsForBatches.map((r) => r.run_id);
   const batchLabel = runsForBatches.map(displayBatch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Generating 4:5 + 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
+  appendLog(`Generating 4:5 + 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runsForBatches.length} run(s))...`);
   showStopGenButton();
   try {
-    const data = await fetchJSON("/api/batch/generate-images-both", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine, visible: false }),
-    });
-    appendGenerationResult(data, (d) => `Done. 4:5 prompts: ${d.total_45_prompts}, 9:16 images: ${d.total_916_completed}, Batches: ${d.batch_key}`);
+    await queueStructuredImages(runsForBatches, engine, "both");
     loadRuns();
   } catch (err) {
     appendLog(String(err));
@@ -902,22 +911,12 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
   const engine = await showEngineSelector("9:16");
   if (!engine) return;
 
-  const runIds = runsForBatches.map((r) => r.run_id);
   const batchLabel = runsForBatches.map(displayBatch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
-  appendLog(`Generating 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
+  appendLog(`Generating 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runsForBatches.length} run(s))...`);
   showStopGenButton();
   try {
-    const data = await fetchJSON("/api/batch/generate-images-916", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_ids: runIds, headless: state.headlessModeEnabled, engine, visible: false }),
-    });
-    const batchKey = data.batch_key || "";
-    if (batchKey && state.headlessModeEnabled) {
-      import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
-    }
-    appendGenerationResult(data, (d) => `Done. Batch: ${d.batch_key}, Prompts: ${d.total_prompts}`);
+    await queueStructuredImages(runsForBatches, engine, "916");
     loadRuns();
   } catch (err) {
     appendLog(String(err));
@@ -932,35 +931,25 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
   appendLog(`Preparing download for ${selectedBatches.length} batch(es)...`);
   try {
     const selectedRuns = state.runsData.filter((run) => selectedBatches.includes(runKey(run)));
-    const localRunIds = new Set(localArtifactImages.flatMap((image) => image.run_ids || (image.run_id ? [image.run_id] : [])));
-    const selectedLocalRuns = selectedRuns.filter((run) => localRunIds.has(run.run_id));
-    const selectedLocalBatches = selectedLocalRuns.map((run) => run.run_id);
-    if (selectedLocalBatches.length) {
-      const params = new URLSearchParams();
-      selectedLocalRuns.forEach((run) => params.append("run_id", run.run_id));
-      for (const [key, value] of new URLSearchParams(localArtifactCapability)) params.set(key, value);
-      const localResponse = await fetch(`${localArtifactOrigin}/download-batches?${params}`, { cache: "no-store", mode: "cors" });
-      if (!localResponse.ok) throw new Error(`Local batch download failed (${localResponse.status})`);
-      await downloadZipResponse(localResponse, `ad_factory_${selectedLocalBatches.join("_")}.zip`);
-      appendLog(`Downloaded ${selectedLocalBatches.length} local batch(es).`);
-      if (selectedLocalBatches.length === selectedBatches.length) return;
+    const user = getAuthUser();
+    for (const run of selectedRuns) {
+      await localDataPlane.ensurePaired({
+        ownerType: run.owner_type || "user",
+        ownerId: run.owner_id || user.user_id,
+        deviceId: run.device_id,
+        agentId: run.agent_id,
+      });
+      const blob = await localDataPlane.downloadRun(run.run_id, run.device_id);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${displayBatch(run)}-${run.run_id}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
     }
-
-    const localBatchSet = new Set(selectedLocalBatches);
-    const serverBatches = selectedBatches.filter((batch) => !localBatchSet.has(batch));
-    if (!serverBatches.length) return;
-    const res = await fetch("/api/runs/download-batches", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ batch_ids: serverBatches }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      appendLog(`Download failed: ${err.detail || res.statusText}`);
-      return;
-    }
-    await downloadZipResponse(res, `${serverBatches.join("_")}.zip`);
-    appendLog("Batch download complete.");
+    appendLog(`Downloaded ${selectedRuns.length} local run archive(s).`);
   } catch (err) {
     appendLog(`Download error: ${String(err)}`);
   }
@@ -1049,8 +1038,12 @@ document.getElementById("stopGeneration")?.addEventListener("click", async () =>
   const btn = document.getElementById("stopGeneration");
   if (btn) { btn.disabled = true; btn.textContent = "Stopping..."; }
   try {
-    const data = await fetchJSON("/api/stop-generation", { method: "POST" });
-    appendLog(`Generation stopped. ${JSON.stringify(data)}`);
+    const saved = JSON.parse(localStorage.getItem(currentJobStorageKey()) || "{}");
+    if (!saved.job_id) throw new Error("No active local generation job");
+    await fetchJSON(`/api/agents/jobs/${encodeURIComponent(saved.job_id)}/cancel`, {
+      method: "POST",
+    });
+    appendLog(`Cancel requested for local generation job ${saved.job_id}.`);
   } catch (err) {
     appendLog(`Stop generation error: ${String(err)}`);
   }

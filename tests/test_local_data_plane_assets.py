@@ -257,6 +257,18 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
             archive = zipfile.ZipFile(io.BytesIO(response.read()))
         self.assertIn("prompts/prompt-1.txt", archive.namelist())
         self.assertEqual(archive.read("prompts/prompt-1.txt"), b"make an ad")
+        with self.open(
+            "DELETE",
+            "/v1/prompts/prompt-1",
+            headers={"Idempotency-Key": "delete-prompt-1"},
+        ) as response:
+            self.assertEqual(json.loads(response.read())["status"], "deleted")
+        with self.open(
+            "DELETE",
+            "/v1/prompts/prompt-1",
+            headers={"Idempotency-Key": "delete-prompt-2"},
+        ) as response:
+            self.assertEqual(json.loads(response.read())["status"], "already_deleted")
 
     def test_changes_and_events_resume_after_sequence(self) -> None:
         before = self.server.state.change_sequence()

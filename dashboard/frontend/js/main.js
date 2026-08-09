@@ -15,6 +15,7 @@ const modelSelectEl = document.getElementById("opencodeModel");
 const defaultsInfoEl = document.getElementById("defaultsInfo");
 let structuredDeviceId = "";
 let inputImageObjectUrls = [];
+let activeStructuredRunId = "";
 
 function structuredOwner() {
   const user = getAuthUser();
@@ -565,6 +566,7 @@ async function runPipeline() {
       },
     });
     structuredDeviceId = envelope.device_id;
+    activeStructuredRunId = envelope.run_id;
     const parseConfigJSON = (key, fallback) => {
       const value = sourceConfig[key];
       if (value && typeof value === "object") return value;
@@ -737,7 +739,12 @@ document.getElementById("cancelRunBtn")?.addEventListener("click", async () => {
       clearInterval(state.runPollInterval);
       state.runPollInterval = null;
     }
-    await fetchJSON("/api/runs/cancel-current", { method: "POST" });
+    if (!activeStructuredRunId) {
+      throw new Error("No active local run is available to cancel.");
+    }
+    await fetchJSON(`/api/runs/${encodeURIComponent(activeStructuredRunId)}/cancel`, {
+      method: "POST",
+    });
     setStatus("Cancelling pipeline... will stop after current ad and keep generated results.");
   } catch (err) {
     setStatus(`Cancel failed: ${String(err)}`);

@@ -1,22 +1,13 @@
 import { appendLog } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
-import { state } from "./state.js";
 import { localDataPlane } from "./local-data-plane.js";
 
 function imageUrl(item, path) {
   const directUrl = item?.url || item?.local_path || item?.file_path || path;
-  if (/^https?:\/\//i.test(directUrl)) {
+  if (/^(?:blob:|http:\/\/(?:127\.0\.0\.1|localhost):)/i.test(directUrl)) {
     return directUrl;
   }
-  if (item && item.image_id) {
-    return `/api/files/download/image/${item.image_id}`;
-  }
-  const cleanPath = path.replace(/^generated_images\//, "");
-  return `/generated_images/${cleanPath}`;
-}
-
-function isLocalArtifactUrl(path) {
-  return /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/files\//i.test(String(path || ""));
+  return "";
 }
 
 export function buildImageGallery(run, imagesData) {
@@ -112,10 +103,10 @@ export function buildImageGallery(run, imagesData) {
   function updateSelectedCount() {
     selectedCount.textContent = `${selectedItems.size} selected`;
     const hasSelection = selectedItems.size > 0;
-    const hasLocalSelection = Array.from(selectedItems.values()).some((item) => item.is_local);
-    markBtn.disabled = !hasSelection;
-    regenerateNowBtn.disabled = !hasSelection;
-    const title = hasLocalSelection ? "Local images use immutable output versions on this device." : "";
+    const allLocal = Array.from(selectedItems.values()).every((item) => item.is_local && item.output_id);
+    markBtn.disabled = !hasSelection || !allLocal;
+    regenerateNowBtn.disabled = !hasSelection || !allLocal;
+    const title = allLocal ? "Local images use immutable output versions on this device." : "Legacy cloud content is unavailable.";
     markBtn.title = title;
     regenerateNowBtn.title = title;
   }
@@ -127,19 +118,15 @@ export function buildImageGallery(run, imagesData) {
       return null;
     }
     const localItems = Array.from(selectedItems.values()).filter((item) => item.is_local);
-    if (localItems.length) {
-      await Promise.all(localItems.map((item) => localDataPlane.outputAction(
-        item.output_id,
-        "archive",
-        run.device_id,
-      )));
-      return { moved: localItems.map((item) => ({ archived_file: item.path })) };
+    if (localItems.length !== selectedItems.size) {
+      throw new Error("Selected legacy images are unavailable on the authoritative local device.");
     }
-    return fetchJSON(`/api/runs/${run.run_id}/mark-images-to-regenerate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_files: imageFiles }),
-    });
+    await Promise.all(localItems.map((item) => localDataPlane.outputAction(
+      item.output_id,
+      "archive",
+      run.device_id,
+    )));
+    return { moved: localItems.map((item) => ({ archived_file: item.path })) };
   }
 
   selectVisibleBtn.addEventListener("click", () => {
@@ -196,44 +183,18 @@ export function buildImageGallery(run, imagesData) {
     regenerateNowBtn.disabled = true;
     markBtn.disabled = true;
     try {
-      const archived = await archiveSelectedImages();
+      await archiveSelectedImages();
       const localSelection = Array.from(selectedItems.values()).filter((item) => item.is_local);
-      if (localSelection.length) {
-        await Promise.all(localSelection.map((item) => localDataPlane.outputAction(
-          item.output_id,
-          "regenerate",
-          run.device_id,
-          { engine },
-        )));
-        appendLog(`Queued ${localSelection.length} local output regeneration(s).`);
-        selectedItems.clear();
-        invalidateRuns();
-        import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
-        return;
-      }
-      const queuedFiles = (archived?.moved || [])
-        .map((item) => item?.archived_file)
-        .filter(Boolean);
-      if (!queuedFiles.length) {
-        appendLog("No selected images were moved into the regeneration queue.");
-        invalidateRuns();
-        import("./runs.js").then((m) => m.loadRuns());
-        return;
-      }
-      appendLog(`Regenerating ${queuedFiles.length} selected image(s) with ${engine === "chatgpt" ? "ChatGPT" : "Gemini"}...`);
-      const data = await fetchJSON(`/api/runs/${run.run_id}/regenerate-queued-images`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_files: queuedFiles,
-          headless: state.headlessModeEnabled,
-          engine,
-        }),
-      });
-      appendLog(`Regenerated ${data?.generated_files?.length || 0} image(s). ${data?.skipped?.length || 0} skipped.`);
+      await Promise.all(localSelection.map((item) => localDataPlane.outputAction(
+        item.output_id,
+        "regenerate",
+        run.device_id,
+        { engine },
+      )));
+      appendLog(`Queued ${localSelection.length} local output regeneration(s).`);
       selectedItems.clear();
       invalidateRuns();
-      import("./runs.js").then((m) => m.loadRuns());
+      import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
     } catch (err) {
       appendLog(`Regeneration error: ${String(err)}`);
     } finally {
@@ -346,7 +307,6 @@ export function buildImageGallery(run, imagesData) {
     promptFullscreenBtn.textContent = "Fullscreen prompt";
     promptFullscreenBtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      const promptPath = imageItem.prompt_file || "";
       const localPromptOptions = imageItem.is_local && imageItem.prompt_id ? {
         loadContent: () => localDataPlane.promptContent(imageItem.prompt_id, run.device_id),
         onSave: async (text) => {
@@ -365,11 +325,7 @@ export function buildImageGallery(run, imagesData) {
       showPromptFullscreen(
         imageItem.prompt_file || "Prompt",
         imageItem.prompt_excerpt || "No prompt text available for this image.",
-        localPromptOptions || (promptPath ? {
-          fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(promptPath)}`,
-          saveUrl: "/api/prompt-file-content",
-          saveBody: (text) => ({ prompt_path: promptPath, content: text }),
-        } : {})
+        localPromptOptions || {}
       );
     });
     promptBox.appendChild(promptFullscreenBtn);
@@ -400,15 +356,10 @@ export function buildImageGallery(run, imagesData) {
       if (!confirm(`Delete image "${path.split("/").pop()}"?`)) return;
       imgDeleteBtn.disabled = true;
       try {
-        if (imageItem.is_local) {
-          await localDataPlane.deleteOutput(imageItem.output_id, run.device_id);
-        } else {
-          await fetchJSON(`/api/runs/${run.run_id}/delete-image`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image_file: path }),
-          });
+        if (!imageItem.is_local || !imageItem.output_id) {
+          throw new Error("Legacy image content is unavailable on the authoritative local device.");
         }
+        await localDataPlane.deleteOutput(imageItem.output_id, run.device_id);
         appendLog(`Deleted image: ${path.split("/").pop()}`);
         card.remove();
         invalidateRuns();
@@ -419,13 +370,14 @@ export function buildImageGallery(run, imagesData) {
       }
     });
 
-    imgDlBtn.addEventListener("click", (event) => {
+    imgDlBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      const dlUrl = isLocalArtifactUrl(path)
-        ? path
-        : `/api/runs/${run.run_id}/download-image?image_file=${encodeURIComponent(path)}`;
+      if (!imageItem.is_local || !url) {
+        appendLog("Legacy image download is unavailable; reconnect its authoritative local device.");
+        return;
+      }
       const a = document.createElement("a");
-      a.href = dlUrl;
+      a.href = url;
       a.download = "";
       document.body.appendChild(a);
       a.click();
@@ -447,17 +399,12 @@ export function buildImageGallery(run, imagesData) {
       if (!file) return;
       imgReplaceBtn.disabled = true;
       try {
-        if (imageItem.is_local) {
-          await localDataPlane.replaceOutput(imageItem.output_id, file, run.device_id);
-          URL.revokeObjectURL(url);
-          img.src = await localDataPlane.outputObjectUrl(imageItem.output_id, run.device_id);
-        } else {
-          const form = new FormData();
-          form.append("image_file", path);
-          form.append("replacement_file", file);
-          await fetchJSON(`/api/runs/${run.run_id}/replace-image`, { method: "POST", body: form });
-          img.src = `${url}?t=${Date.now()}`;
+        if (!imageItem.is_local || !imageItem.output_id) {
+          throw new Error("Legacy image replacement is unavailable on the authoritative local device.");
         }
+        await localDataPlane.replaceOutput(imageItem.output_id, file, run.device_id);
+        URL.revokeObjectURL(url);
+        img.src = await localDataPlane.outputObjectUrl(imageItem.output_id, run.device_id);
         appendLog(`Replaced image: ${path.split("/").pop()}`);
         invalidateRuns();
       } catch (err) {
@@ -519,8 +466,10 @@ export function buildImageGallery(run, imagesData) {
 
     function updateQueueSelectedCount() {
       queueSelectedCount.textContent = `${queueSelectedItems.size} selected`;
-      regenBtn.disabled = queueSelectedItems.size === 0;
-      restoreBtn.disabled = queueSelectedItems.size === 0;
+      const allLocal = Array.from(queueSelectedItems.values())
+        .every((item) => item.is_local && item.output_id);
+      regenBtn.disabled = queueSelectedItems.size === 0 || !allLocal;
+      restoreBtn.disabled = queueSelectedItems.size === 0 || !allLocal;
     }
 
     const queueGrid = document.createElement("div");
@@ -547,37 +496,23 @@ export function buildImageGallery(run, imagesData) {
 
     regenBtn.addEventListener("click", async () => {
       if (!queueSelectedItems.size) return;
-      const imageFiles = Array.from(queueSelectedItems.keys());
       const engine = await showEngineSelector("4:5 & 9:16");
       if (!engine) return;
       regenBtn.disabled = true;
       try {
         const localItems = Array.from(queueSelectedItems.values()).filter((item) => item.is_local);
-        if (localItems.length) {
-          await Promise.all(localItems.map((item) => localDataPlane.outputAction(
-            item.output_id,
-            "regenerate",
-            run.device_id,
-            { engine },
-          )));
-          appendLog(`Queued ${localItems.length} local image regeneration(s).`);
-          invalidateRuns();
-          import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
-          return;
+        if (localItems.length !== queueSelectedItems.size) {
+          throw new Error("Legacy queued images are unavailable on the authoritative local device.");
         }
-        appendLog(`Regenerating ${imageFiles.length} queued image(s) in queue...`);
-        const data = await fetchJSON(`/api/runs/${run.run_id}/regenerate-queued-images`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            image_files: imageFiles,
-            headless: state.headlessModeEnabled,
-            engine,
-          }),
-        });
-        appendLog(`Regenerated ${data?.generated_files?.length || 0} image(s) in queue. ${data?.skipped?.length || 0} skipped.`);
+        await Promise.all(localItems.map((item) => localDataPlane.outputAction(
+          item.output_id,
+          "regenerate",
+          run.device_id,
+          { engine },
+        )));
+        appendLog(`Queued ${localItems.length} local image regeneration(s).`);
         invalidateRuns();
-        import("./runs.js").then((m) => m.loadRuns());
+        import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
       } catch (err) {
         appendLog(`Queue regeneration error: ${String(err)}`);
       } finally {
@@ -589,28 +524,19 @@ export function buildImageGallery(run, imagesData) {
       if (!queueSelectedItems.size) return;
       if (!confirm(`Restore ${queueSelectedItems.size} image(s) from the regeneration queue back to their original location?`)) return;
       restoreBtn.disabled = true;
-      const imageFiles = Array.from(queueSelectedItems.keys());
       try {
         const localItems = Array.from(queueSelectedItems.values()).filter((item) => item.is_local);
-        if (localItems.length) {
-          await Promise.all(localItems.map((item) => localDataPlane.outputAction(
-            item.output_id,
-            "restore",
-            run.device_id,
-          )));
-          appendLog(`Restored ${localItems.length} local image(s).`);
-          invalidateRuns();
-          import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
-          return;
+        if (localItems.length !== queueSelectedItems.size) {
+          throw new Error("Legacy queued images are unavailable on the authoritative local device.");
         }
-        const data = await fetchJSON(`/api/runs/${run.run_id}/restore-images-from-queue`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_files: imageFiles }),
-        });
-        appendLog(`Restored ${data?.restored?.length || 0} image(s) from regeneration queue.`);
+        await Promise.all(localItems.map((item) => localDataPlane.outputAction(
+          item.output_id,
+          "restore",
+          run.device_id,
+        )));
+        appendLog(`Restored ${localItems.length} local image(s).`);
         invalidateRuns();
-        import("./runs.js").then((m) => m.loadRuns());
+        import("./runs.js").then((m) => m.refreshStructuredLocalOutputs());
       } catch (err) {
         appendLog(`Restore error: ${String(err)}`);
       } finally {
@@ -691,20 +617,12 @@ export function buildImageGallery(run, imagesData) {
         mappingNote.textContent = queueItem.mapping_status;
         promptBox.appendChild(mappingNote);
       }
-      if (queueItem.prompt_file) {
-        const promptLink = document.createElement("a");
-        promptLink.href = queueItem.prompt_url || `/output/${queueItem.prompt_file.replace(/^output\//, "")}`;
-        promptLink.target = "_blank";
-        promptLink.textContent = queueItem.prompt_file;
-        promptBox.appendChild(promptLink);
-      }
       const promptFullscreenBtn = document.createElement("button");
       promptFullscreenBtn.type = "button";
       promptFullscreenBtn.className = "prompt-fullscreen-btn";
       promptFullscreenBtn.textContent = "Fullscreen prompt";
       promptFullscreenBtn.addEventListener("click", (event) => {
         event.stopPropagation();
-        const promptPath = queueItem.prompt_file || "";
         const localPromptOptions = queueItem.is_local && queueItem.prompt_id ? {
           loadContent: () => localDataPlane.promptContent(queueItem.prompt_id, run.device_id),
           onSave: async (text) => {
@@ -723,11 +641,7 @@ export function buildImageGallery(run, imagesData) {
         showPromptFullscreen(
           queueItem.prompt_file || "Prompt",
           queueItem.prompt_excerpt || "No prompt text available.",
-          localPromptOptions || (promptPath ? {
-            fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(promptPath)}`,
-            saveUrl: "/api/prompt-file-content",
-            saveBody: (text) => ({ prompt_path: promptPath, content: text }),
-          } : {})
+          localPromptOptions || {}
         );
       });
       promptBox.appendChild(promptFullscreenBtn);
@@ -752,11 +666,10 @@ export function buildImageGallery(run, imagesData) {
         if (!confirm(`Delete queued image "${path.split("/").pop()}"?`)) return;
         queueDeleteBtn.disabled = true;
         try {
-          await fetchJSON(`/api/runs/${run.run_id}/delete-image`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image_file: path }),
-          });
+          if (!queueItem.is_local || !queueItem.output_id) {
+            throw new Error("Legacy queued image is unavailable on the authoritative local device.");
+          }
+          await localDataPlane.deleteOutput(queueItem.output_id, run.device_id);
           queueSelectedItems.delete(path);
           appendLog(`Deleted queued image: ${path.split("/").pop()}`);
           card.remove();

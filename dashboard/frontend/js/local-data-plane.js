@@ -493,6 +493,17 @@ export class LocalDataPlaneClient {
     ));
   }
 
+  async deletePrompt(promptId, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/prompts/${encodeURIComponent(promptId)}`,
+      {
+        method: "DELETE",
+        headers: { "Idempotency-Key": operationId("delete_prompt") },
+      },
+      deviceId,
+    ));
+  }
+
   async exportPrompts(runId, deviceId) {
     const response = await this.authorizedFetch(
       `/v1/runs/${encodeURIComponent(runId)}/prompt-export`,

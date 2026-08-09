@@ -1,14 +1,6 @@
 import { appendLog } from "./ui.js";
-import { state } from "./state.js";
-import { invalidateRuns } from "./api.js";
+import { fetchJSON, invalidateRuns } from "./api.js";
 import { localDataPlane } from "./local-data-plane.js";
-
-function promptUrl(item, path) {
-  if (item && item.prompt_id) {
-    return `/api/files/download/prompt/${item.prompt_id}`;
-  }
-  return path ? `/output/${path.replace(/^output\//, "")}` : "";
-}
 
 export function buildPromptEditor(run, container, promptsData) {
   const promptsByPath = new Map();
@@ -80,9 +72,7 @@ export function buildPromptEditor(run, container, promptsData) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            const cd = res.headers.get("Content-Disposition");
-            const fnMatch = cd && cd.match(/filename="([^"]+)"/);
-            a.download = fnMatch ? fnMatch[1] : `on-image-copy-${run.run_id}.xlsx`;
+            a.download = `on-image-copy-${run.run_id}.xlsx`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -145,16 +135,16 @@ export function buildPromptEditor(run, container, promptsData) {
           const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
           appendLog(`Generating 4:5 images in ${engineLabel} for ${selected.length} selected prompt(s) from ${run.run_id}...`);
           try {
-            const data = await localDataPlane.generateRun(
-              run.run_id,
-              { engine, mode: "45", count: selected.length },
-              run.device_id,
-            );
-            const batchKey = data.batch || data.run_id || "";
-            if (batchKey && state.headlessModeEnabled) {
-              import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
-            }
-            appendLog(`Done. Generated 4:5 in ${engineLabel} for selected prompts: ${selected.length}`);
+            const data = await fetchJSON(`/api/runs/${encodeURIComponent(run.run_id)}/image-generation`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                operation_id: `prompt-images-${run.run_id}-45-${Date.now()}`,
+                engine,
+                mode: "45",
+              }),
+            });
+            appendLog(`Queued 4:5 generation in ${engineLabel}: ${data.job_id}`);
             import("./runs.js").then((m) => m.loadRuns());
           } catch (err) {
             appendLog(String(err));
@@ -173,16 +163,16 @@ export function buildPromptEditor(run, container, promptsData) {
           const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
           appendLog(`Generating 9:16 in ${engineLabel} from selected 4:5 image references for ${selected.length} prompt(s)...`);
           try {
-            const data = await localDataPlane.generateRun(
-              run.run_id,
-              { engine, mode: "916", count: selected.length },
-              run.device_id,
-            );
-            const batchKey = data.batch || data.run_id || "";
-            if (batchKey && state.headlessModeEnabled) {
-              import("./chrome.js").then((m) => m.startProgressPolling(batchKey));
-            }
-            appendLog(`Done. Generated 9:16 in ${engineLabel} from selected 4:5 refs`);
+            const data = await fetchJSON(`/api/runs/${encodeURIComponent(run.run_id)}/image-generation`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                operation_id: `prompt-images-${run.run_id}-916-${Date.now()}`,
+                engine,
+                mode: "916",
+              }),
+            });
+            appendLog(`Queued 9:16 generation in ${engineLabel}: ${data.job_id}`);
             import("./runs.js").then((m) => m.loadRuns());
           } catch (err) {
             appendLog(String(err));
@@ -215,12 +205,23 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
   checkbox.type = "checkbox";
   checkbox.checked = true;
 
-  const pp = promptsByPath ? (promptsByPath.get(prompt.prompt_file) || promptsByPath.get(prompt.review_url)) : null;
-  const href = pp && pp.prompt_id ? `/api/files/download/prompt/${pp.prompt_id}` : (prompt.review_url || "");
   const link = document.createElement("a");
-  link.href = href;
-  link.target = "_blank";
+  link.href = "#";
   link.textContent = prompt.prompt_file;
+  link.onclick = async (event) => {
+    event.preventDefault();
+    try {
+      const content = await localDataPlane.promptContent(prompt.prompt_id, run.device_id);
+      const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = prompt.prompt_file || `${prompt.prompt_id}.txt`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      appendLog(`Prompt download failed: ${String(error)}`);
+    }
+  };
 
   const inlineControls = document.createElement("span");
   inlineControls.className = "prompt-inline-controls";
@@ -313,7 +314,10 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
     if (!confirm(`Delete prompt file "${prompt.prompt_file}"? This cannot be undone.`)) return;
     deleteBtn.disabled = true;
     try {
-      throw new Error("Prompt deletion is not part of the local lifecycle; edit or delete the run.");
+      await localDataPlane.deletePrompt(prompt.prompt_id, run.device_id);
+      card.remove();
+      appendLog(`Deleted prompt: ${prompt.prompt_file}`);
+      invalidateRuns();
     } catch (err) {
       appendLog(`Delete error: ${String(err)}`);
       deleteBtn.disabled = false;
