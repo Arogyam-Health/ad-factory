@@ -365,6 +365,7 @@ def _fail_job(
     duration_ms: int = 0,
     http_status: int | None = None,
     error_detail: str = "",
+    trace_persistence_error: str = "",
 ) -> None:
     now = time.time()
     safe_error = {
@@ -374,6 +375,7 @@ def _fail_job(
         "duration_ms": duration_ms,
         "http_status": http_status,
         "error_detail": str(error_detail or "")[:2000],
+        "trace_persistence_error": str(trace_persistence_error or "")[:100],
     }
     get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
         {"copy_job_id": job["copy_job_id"]},
@@ -400,6 +402,51 @@ def _fail_job(
             }
         },
     )
+
+
+def _record_provider_failure_trace(
+    job: dict[str, Any],
+    exc: ProviderCallError,
+    provider_config: dict[str, str],
+) -> str:
+    api_url = str(provider_config.get("api_url") or "").rstrip("/")
+    endpoint = (
+        f"{api_url}/chat/completions"
+        if exc.provider == "opencode" and api_url
+        else ""
+    )
+    try:
+        record_recent_llm_trace(
+            user_id=str(job["user_id"]),
+            run_id=str(job["run_id"]),
+            batch=f"v{int(job['run_number'])}",
+            event={
+                "provider": exc.provider,
+                "model": exc.model,
+                "api_model": (
+                    exc.model.removeprefix("opencode/")
+                    if exc.provider == "opencode"
+                    else exc.model
+                ),
+                "endpoint": endpoint,
+                "label": "copy",
+                "status": "failed",
+                "http_status": exc.http_status,
+                "duration_ms": exc.duration_ms,
+                "error_code": exc.code,
+                "error_detail": exc.error_detail,
+                "request": {
+                    "task": "Generate structured advertising copy as JSON",
+                    "planned_ad_count": 0,
+                    "languages": [],
+                    "request_sha256": "",
+                },
+                "response": {"usage": {}},
+            },
+        )
+        return ""
+    except Exception as trace_exc:
+        return type(trace_exc).__name__
 
 
 def process_next_render_copy_job() -> bool:
@@ -444,6 +491,13 @@ def process_next_render_copy_job() -> bool:
             return True
         _complete_job(job, result)
     except ProviderCallError as exc:
+        trace_error = exc.trace_persistence_error
+        if not exc.trace_persisted:
+            trace_error = _record_provider_failure_trace(
+                job,
+                exc,
+                provider_config,
+            )
         _fail_job(
             job,
             error_code=exc.code,
@@ -452,6 +506,7 @@ def process_next_render_copy_job() -> bool:
             duration_ms=exc.duration_ms,
             http_status=exc.http_status,
             error_detail=exc.error_detail,
+            trace_persistence_error=trace_error,
         )
     except ValueError:
         _fail_job(

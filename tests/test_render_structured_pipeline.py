@@ -370,6 +370,41 @@ class RenderStructuredPipelineTests(unittest.TestCase):
             "RuntimeError",
         )
 
+    def test_failed_provider_call_has_a_minimal_trace_fallback(self) -> None:
+        from dashboard.backend.services.render_copy_jobs import (
+            _record_provider_failure_trace,
+        )
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+        )
+
+        error = ProviderCallError(
+            code="provider_http_error",
+            provider="opencode",
+            model="opencode/deepseek-v4-flash-free",
+            duration_ms=123,
+            http_status=429,
+            error_detail="Rate limit exceeded",
+        )
+        with patch(
+            "dashboard.backend.services.render_copy_jobs.record_recent_llm_trace"
+        ) as record:
+            persistence_error = _record_provider_failure_trace(
+                {
+                    "user_id": "user-1",
+                    "run_id": "run-1",
+                    "run_number": 11,
+                },
+                error,
+                {"api_url": "https://opencode.ai/zen/v1"},
+            )
+
+        self.assertEqual(persistence_error, "")
+        event = record.call_args.kwargs["event"]
+        self.assertEqual(event["http_status"], 429)
+        self.assertEqual(event["error_detail"], "Rate limit exceeded")
+        self.assertNotIn("api_key", json.dumps(event).lower())
+
     def test_provider_call_waits_without_a_client_side_timeout(self) -> None:
         from dashboard.backend.services.render_structured_copy import (
             provider_generate_callable,

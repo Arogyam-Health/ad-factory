@@ -33,6 +33,8 @@ class ProviderCallError(RuntimeError):
         duration_ms: int,
         http_status: int | None = None,
         error_detail: str = "",
+        trace_persisted: bool = False,
+        trace_persistence_error: str = "",
     ) -> None:
         super().__init__(code)
         self.code = code
@@ -41,6 +43,8 @@ class ProviderCallError(RuntimeError):
         self.duration_ms = duration_ms
         self.http_status = http_status
         self.error_detail = error_detail
+        self.trace_persisted = trace_persisted
+        self.trace_persistence_error = trace_persistence_error
 
 
 def _json_config(value: Any, fallback: Any) -> Any:
@@ -420,9 +424,9 @@ def provider_generate_callable(
             code: str = "",
             error_detail: str = "",
             usage: dict[str, Any] | None = None,
-        ) -> None:
+        ) -> tuple[bool, str]:
             if trace_callback is None:
-                return
+                return False, "not_configured"
             try:
                 trace_callback(
                     {
@@ -446,8 +450,9 @@ def provider_generate_callable(
                         "response": {"usage": usage or {}},
                     }
                 )
-            except Exception:
-                pass
+                return True, ""
+            except Exception as exc:
+                return False, type(exc).__name__
 
         try:
             if provider == "google_gemini":
@@ -518,16 +523,21 @@ def provider_generate_callable(
             emit(status="completed", usage=usage)
             return parsed
         except requests.Timeout as exc:
-            emit(status="failed", code="provider_timeout")
+            trace_persisted, trace_error = emit(
+                status="failed",
+                code="provider_timeout",
+            )
             raise ProviderCallError(
                 code="provider_timeout",
                 provider=provider,
                 model=model,
                 duration_ms=int((time.monotonic() - started) * 1000),
+                trace_persisted=trace_persisted,
+                trace_persistence_error=trace_error,
             ) from exc
         except requests.RequestException as exc:
             detail = _safe_provider_error_detail(response, api_key)
-            emit(
+            trace_persisted, trace_error = emit(
                 status="failed",
                 code="provider_http_error",
                 error_detail=detail,
@@ -539,10 +549,12 @@ def provider_generate_callable(
                 duration_ms=int((time.monotonic() - started) * 1000),
                 http_status=response.status_code if response is not None else None,
                 error_detail=detail,
+                trace_persisted=trace_persisted,
+                trace_persistence_error=trace_error,
             ) from exc
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
             detail = _safe_provider_error_detail(response, api_key)
-            emit(
+            trace_persisted, trace_error = emit(
                 status="failed",
                 code="provider_invalid_response",
                 error_detail=detail,
@@ -554,6 +566,8 @@ def provider_generate_callable(
                 duration_ms=int((time.monotonic() - started) * 1000),
                 http_status=response.status_code if response is not None else None,
                 error_detail=detail,
+                trace_persisted=trace_persisted,
+                trace_persistence_error=trace_error,
             ) from exc
 
     return generate
