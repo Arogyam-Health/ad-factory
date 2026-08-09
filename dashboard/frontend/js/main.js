@@ -468,7 +468,7 @@ async function waitForRenderCopy(runId, copyJobId, displayBatch) {
     );
     if (job.status === "completed") {
       setStatus(
-        `Run ${displayBatch} copy and final prompts were generated on Render. Final prompts will be delivered to the registered local agent when it is online.`,
+        `Run ${displayBatch} provider response was processed and final prompts were assembled on Render. Final prompts will be delivered to the registered local agent when it is online.`,
       );
       return job;
     }
@@ -488,9 +488,13 @@ async function waitForRenderCopy(runId, copyJobId, displayBatch) {
     if (job.status === "canceled") {
       throw new Error("Structured copy generation was canceled.");
     }
-    setStatus(
-      `Run ${displayBatch}: ${job.progress_code || "generating_copy"} on Render (${copyJobId}).`,
-    );
+    const progress = job.progress_code || "generating_copy";
+    const progressText = progress === "waiting_for_local_provider"
+      ? "waiting for an updated local agent"
+      : progress === "calling_provider_local"
+        ? "the local agent is calling the provider; Render will validate and assemble the response"
+        : `${progress} on Render`;
+    setStatus(`Run ${displayBatch}: ${progressText} (${copyJobId}).`);
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 }
@@ -592,7 +596,7 @@ async function runPipeline() {
       }),
     });
     setStatus(
-      `Run ${envelope.display_batch} is generating ad copy through ${providerName === "opencode" ? "OpenCode" : "Google Gemini"} on Render. Images are not generated in this step. Job: ${queued.copy_job_id}`,
+      `Run ${envelope.display_batch} is preparing ad copy on Render; the provider request will use the local agent's network. Images are not generated in this step. Job: ${queued.copy_job_id}`,
     );
     await waitForRenderCopy(envelope.run_id, queued.copy_job_id, envelope.display_batch);
     invalidateRuns();

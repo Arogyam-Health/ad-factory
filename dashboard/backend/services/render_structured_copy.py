@@ -14,6 +14,7 @@ from scripts import generate_ads
 
 GenerateCallable = Callable[[dict[str, Any], bool], dict[str, Any]]
 TraceCallback = Callable[[dict[str, Any]], None]
+ProviderTransport = Callable[[dict[str, Any]], dict[str, Any]]
 _LANGUAGES = {
     "EN": ("EN",),
     "HI": ("HI",),
@@ -208,7 +209,14 @@ def _safe_provider_error_detail(
 ) -> str:
     if response is None:
         return ""
-    detail = str(getattr(response, "text", "") or "")[:4000]
+    return _safe_provider_error_text(
+        str(getattr(response, "text", "") or ""),
+        api_key,
+    )
+
+
+def _safe_provider_error_text(detail: str, api_key: str) -> str:
+    detail = str(detail or "")[:4000]
     if api_key:
         detail = detail.replace(api_key, "[REDACTED]")
     detail = re.sub(
@@ -402,6 +410,7 @@ def provider_generate_callable(
     config: dict[str, str],
     *,
     trace_callback: TraceCallback | None = None,
+    transport: ProviderTransport | None = None,
 ) -> GenerateCallable:
     api_key = str(config.get("api_key") or "")
     if not api_key:
@@ -417,6 +426,8 @@ def provider_generate_callable(
         started = time.monotonic()
         response: requests.Response | None = None
         endpoint = ""
+        http_status: int | None = None
+        response_text = ""
 
         def emit(
             *,
@@ -436,11 +447,7 @@ def provider_generate_callable(
                         "endpoint": endpoint,
                         "label": "repair" if repair else "copy",
                         "status": status,
-                        "http_status": (
-                            int(response.status_code)
-                            if response is not None
-                            else None
-                        ),
+                        "http_status": http_status,
                         "duration_ms": int(
                             (time.monotonic() - started) * 1000
                         ),
@@ -460,58 +467,119 @@ def provider_generate_callable(
                     "https://generativelanguage.googleapis.com/v1beta/models/"
                     f"{api_model}:generateContent"
                 )
-                response = requests.post(
-                    endpoint,
-                    headers={"x-goog-api-key": api_key},
-                    json={
-                        "contents": [
-                            {
-                                "role": "user",
-                                "parts": [
-                                    {
-                                        "text": json.dumps(
-                                            request, ensure_ascii=False
-                                        )
-                                    }
-                                ],
-                            }
-                        ],
-                        "generationConfig": {
-                            "responseMimeType": "application/json",
-                            "temperature": 0.3 if repair else 0.7,
-                        },
+                request_body = {
+                    "contents": [
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "text": json.dumps(
+                                        request, ensure_ascii=False
+                                    )
+                                }
+                            ],
+                        }
+                    ],
+                    "generationConfig": {
+                        "responseMimeType": "application/json",
+                        "temperature": 0.3 if repair else 0.7,
                     },
-                    timeout=None,
-                )
-                response.raise_for_status()
-                raw = response.json()
-                text = raw["candidates"][0]["content"]["parts"][0]["text"]
-                usage = raw.get("usageMetadata") or {}
+                }
             else:
                 api_url = str(config.get("api_url") or "").rstrip("/")
                 if not api_url.startswith(("http://", "https://")):
                     raise ValueError("OpenCode API URL is invalid")
                 endpoint = f"{api_url}/chat/completions"
+                request_body = {
+                    "model": api_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                request, ensure_ascii=False
+                            ),
+                        }
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.3 if repair else 0.7,
+                }
+
+            if transport is not None:
+                relayed = transport(
+                    {
+                        "provider": provider,
+                        "endpoint": endpoint,
+                        "api_key": api_key,
+                        "request_body": request_body,
+                    }
+                )
+                if not isinstance(relayed, dict):
+                    raise TypeError("Provider relay result is invalid")
+                transport_error = str(
+                    relayed.get("transport_error") or ""
+                )
+                if transport_error:
+                    trace_persisted, trace_error = emit(
+                        status="failed",
+                        code="provider_relay_transport_error",
+                    )
+                    raise ProviderCallError(
+                        code="provider_relay_transport_error",
+                        provider=provider,
+                        model=model,
+                        duration_ms=int(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        error_detail=transport_error[:100],
+                        trace_persisted=trace_persisted,
+                        trace_persistence_error=trace_error,
+                    )
+                http_status = int(relayed.get("http_status") or 0)
+                response_text = str(relayed.get("body") or "")
+                if not 200 <= http_status < 300:
+                    detail = _safe_provider_error_text(
+                        response_text,
+                        api_key,
+                    )
+                    trace_persisted, trace_error = emit(
+                        status="failed",
+                        code="provider_http_error",
+                        error_detail=detail,
+                    )
+                    raise ProviderCallError(
+                        code="provider_http_error",
+                        provider=provider,
+                        model=model,
+                        duration_ms=int(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        http_status=http_status,
+                        error_detail=detail,
+                        trace_persisted=trace_persisted,
+                        trace_persistence_error=trace_error,
+                    )
+                raw = json.loads(response_text)
+            else:
+                headers = (
+                    {"x-goog-api-key": api_key}
+                    if provider == "google_gemini"
+                    else {"Authorization": f"Bearer {api_key}"}
+                )
                 response = requests.post(
                     endpoint,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "model": api_model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": json.dumps(
-                                    request, ensure_ascii=False
-                                ),
-                            }
-                        ],
-                        "response_format": {"type": "json_object"},
-                        "temperature": 0.3 if repair else 0.7,
-                    },
+                    headers=headers,
+                    json=request_body,
                     timeout=None,
                 )
+                http_status = int(response.status_code)
+                response_text = str(response.text or "")
                 response.raise_for_status()
                 raw = response.json()
+
+            if provider == "google_gemini":
+                text = raw["candidates"][0]["content"]["parts"][0]["text"]
+                usage = raw.get("usageMetadata") or {}
+            else:
                 text = raw["choices"][0]["message"]["content"]
                 usage = raw.get("usage") or {}
             clean = str(text).strip()
@@ -547,13 +615,13 @@ def provider_generate_callable(
                 provider=provider,
                 model=model,
                 duration_ms=int((time.monotonic() - started) * 1000),
-                http_status=response.status_code if response is not None else None,
+                http_status=http_status,
                 error_detail=detail,
                 trace_persisted=trace_persisted,
                 trace_persistence_error=trace_error,
             ) from exc
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
-            detail = _safe_provider_error_detail(response, api_key)
+            detail = _safe_provider_error_text(response_text, api_key)
             trace_persisted, trace_error = emit(
                 status="failed",
                 code="provider_invalid_response",
@@ -564,7 +632,7 @@ def provider_generate_callable(
                 provider=provider,
                 model=model,
                 duration_ms=int((time.monotonic() - started) * 1000),
-                http_status=response.status_code if response is not None else None,
+                http_status=http_status,
                 error_detail=detail,
                 trace_persisted=trace_persisted,
                 trace_persistence_error=trace_error,

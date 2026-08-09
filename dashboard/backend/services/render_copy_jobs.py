@@ -9,6 +9,7 @@ from typing import Any
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from dashboard.backend.agent.connections import agent_connections
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import (
     COLL_PROMPT_DELIVERIES,
@@ -26,6 +27,10 @@ from dashboard.backend.services.prompt_delivery import (
 from dashboard.backend.services.llm_trace import record_recent_llm_trace
 from dashboard.backend.services.provider_config import (
     get_materialized_provider_config,
+)
+from dashboard.backend.services.provider_relay import (
+    ProviderRelayError,
+    provider_relay,
 )
 from dashboard.backend.services.render_structured_copy import (
     ProviderCallError,
@@ -243,7 +248,7 @@ def _claim_next_job() -> dict[str, Any] | None:
         {
             "$set": {
                 "status": "running",
-                "progress_code": "calling_provider",
+                "progress_code": "waiting_for_local_provider",
                 "updated_at": now,
                 "lease_expires_at": now + _COPY_LEASE_SECONDS,
             },
@@ -461,6 +466,32 @@ def process_next_render_copy_job() -> bool:
         )
         if provider_config is None:
             raise ValueError("Provider configuration is unavailable")
+
+        def relay_transport(payload: dict[str, Any]) -> dict[str, Any]:
+            get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
+                {"copy_job_id": job["copy_job_id"]},
+                {
+                    "$set": {
+                        "progress_code": "calling_provider_local",
+                        "updated_at": time.time(),
+                    }
+                },
+            )
+            try:
+                return provider_relay.invoke(
+                    user_id=str(job["user_id"]),
+                    payload=payload,
+                    connections=agent_connections,
+                )
+            except ProviderRelayError as relay_exc:
+                raise ProviderCallError(
+                    code=relay_exc.code,
+                    provider=str(settings["provider"]),
+                    model=str(settings["model"]),
+                    duration_ms=0,
+                    error_detail=relay_exc.code,
+                ) from relay_exc
+
         result = generate_structured_prompt_bundle(
             run_id=str(job["run_id"]),
             run_number=int(job["run_number"]),
@@ -475,6 +506,7 @@ def process_next_render_copy_job() -> bool:
                 str(settings["provider"]),
                 str(settings["model"]),
                 provider_config,
+                transport=relay_transport,
                 trace_callback=lambda event: record_recent_llm_trace(
                     user_id=str(job["user_id"]),
                     run_id=str(job["run_id"]),
