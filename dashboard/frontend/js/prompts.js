@@ -182,8 +182,16 @@ export function buildPromptEditor(run, container, promptsData) {
         };
       })
       .catch((err) => {
-        loadHint.textContent = `Could not load editable copy: ${String(err)}`;
-        loadBtn.disabled = false;
+        const message = `Could not load editable copy: ${String(err)}`;
+        if (loadHint.isConnected) {
+          loadHint.textContent = message;
+          loadBtn.disabled = false;
+        } else {
+          const errorHint = document.createElement("div");
+          errorHint.className = "hint";
+          errorHint.textContent = message;
+          container.appendChild(errorHint);
+        }
       });
   };
 }
@@ -366,7 +374,7 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
 
   items.push({
     promptFile: prompt.prompt_file,
-    promptId: pp?.prompt_id || prompt.prompt_id || "",
+    promptId: prompt.prompt_id || "",
     personaNumber: prompt.persona_number,
     checkbox,
   });
