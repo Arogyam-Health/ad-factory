@@ -74,8 +74,12 @@ def startup() -> None:
         from dashboard.backend.db.indexes import create_indexes
 
         result = create_indexes()
-        if settings.is_production and any(value < 0 for value in result.values()):
-            raise RuntimeError("Required MongoDB indexes could not be created")
+        failed = sorted(name for name, value in result.items() if value < 0)
+        if settings.is_production and failed:
+            raise RuntimeError(
+                "Required MongoDB indexes could not be created for: "
+                + ", ".join(failed)
+            )
     except Exception as exc:
         if settings.is_production:
             print(

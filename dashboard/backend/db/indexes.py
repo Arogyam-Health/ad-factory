@@ -122,8 +122,15 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
     ],
     COLL_USER_CONFIGS: [
         IndexModel([("config_id", ASCENDING)], unique=True, sparse=True),
-        IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING), ("is_active", ASCENDING)]),
-        IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING), ("is_active", ASCENDING)], unique=True, partialFilterExpression={"is_active": True}),
+        IndexModel(
+            [
+                ("owner_type", ASCENDING),
+                ("owner_id", ASCENDING),
+                ("is_active", ASCENDING),
+            ],
+            unique=True,
+            partialFilterExpression={"is_active": True},
+        ),
         IndexModel([("created_by_user_id", ASCENDING)]),
         IndexModel([("updated_at", DESCENDING)]),
         IndexModel([(FIELD_USER_ID, ASCENDING)], sparse=True),
@@ -181,6 +188,22 @@ def _fix_indexes(db) -> dict[str, int]:
         # user_configs.user_id_1: was unique in early versions; must be sparse-only.
         (COLL_USER_CONFIGS, "user_id_1",
          IndexModel([(FIELD_USER_ID, ASCENDING)], sparse=True)),
+        # A prior declaration attempted a non-unique and unique partial index
+        # with the same generated name. A failed startup can leave the
+        # non-unique variant behind, so normalize it before normal creation.
+        (
+            COLL_USER_CONFIGS,
+            "owner_type_1_owner_id_1_is_active_1",
+            IndexModel(
+                [
+                    ("owner_type", ASCENDING),
+                    ("owner_id", ASCENDING),
+                    ("is_active", ASCENDING),
+                ],
+                unique=True,
+                partialFilterExpression={"is_active": True},
+            ),
+        ),
     ]
 
     results: dict[str, int] = {}
@@ -226,6 +249,7 @@ def create_indexes() -> dict[str, int]:
             for idx in indexes:
                 if idx.document["name"] not in existing_names:
                     db[coll_name].create_indexes([idx])
+                    existing_names.add(idx.document["name"])
                     created += 1
             results[coll_name] = created
         except OperationFailure as e:
