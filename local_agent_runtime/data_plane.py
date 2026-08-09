@@ -1020,7 +1020,15 @@ class LocalDataPlane:
                 (resource_id, owner_key),
             ).fetchone()
             if row is None:
-                raise APIError(404, "resource_not_found", "Resource not found")
+                self.state._save_operation(
+                    conn,
+                    owner_key,
+                    operation_id,
+                    "delete_resource",
+                    {"resource_id": resource_id, "status": "already_deleted"},
+                )
+                conn.commit()
+                return
             now = time.time()
             conn.execute(
                 "UPDATE resources SET status = 'deleted', deleted_at = ?, updated_at = ? "
@@ -1319,6 +1327,13 @@ class LocalDataPlane:
         )
         run = self._run(session.owner_key, run_id)
         if run is None:
+            if not separator and handler.command == "DELETE":
+                self._json(
+                    handler,
+                    200,
+                    {"run_id": run_id, "status": "already_deleted"},
+                )
+                return
             raise APIError(404, "run_not_found", "Run not found")
         if not separator and handler.command == "GET":
             self._json(handler, 200, self._safe_run(run))

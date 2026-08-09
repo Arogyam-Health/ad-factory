@@ -102,6 +102,20 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("clearLocalPairingSessions();", auth)
         self.assertIn("loadStructuredAssets({ silent: false })", main)
 
+    def test_fresh_agent_preflight_hydrates_before_run_allocation(self) -> None:
+        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+        reference = (
+            FRONTEND / "js" / "reference-flow.js"
+        ).read_text(encoding="utf-8")
+
+        allocation = main.index("localDataPlane.allocateLocalRun(")
+        self.assertLess(main.index('kind: "product_image"', allocation - 5000), allocation)
+        self.assertLess(main.index("/materialize", allocation - 5000), allocation)
+        self.assertIn("Add at least one product image", main)
+        self.assertIn('fetchJSON("/api/config/effective")', reference)
+        self.assertIn("`hydrate-${key}`", reference)
+        self.assertIn("reconciledProductIds", reference)
+
 
 if __name__ == "__main__":
     unittest.main()

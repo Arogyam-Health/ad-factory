@@ -508,6 +508,45 @@ async function runPipeline() {
       state.runPollInterval = null;
     }
     const owner = structuredOwner();
+    await ensureStructuredLocal();
+    const productAssets = await localDataPlane.listAssets({
+      kind: "product_image",
+      deviceId: structuredDeviceId,
+    });
+    if (!productAssets.length) {
+      throw new Error("Add at least one product image before starting a run.");
+    }
+    const effective = await fetchJSON(studioCurrentOrgId
+      ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
+      : "/api/config/effective");
+    const sourceConfig = effective?.config || {};
+    const providerName = cfg.provider === "google" ? "google_gemini" : "opencode";
+    const pendingSecret = providerName === "google_gemini"
+      ? document.getElementById("googleApiKey").value.trim()
+      : document.getElementById("opencodeApiKey").value.trim();
+    await saveProviderConfig(providerName, {
+      ...(providerName === "opencode" ? { api_url: cfg.opencode_api_url } : {}),
+      ...(pendingSecret ? { api_key: pendingSecret } : {}),
+      default_model: providerName === "google_gemini" ? cfg.google_model : cfg.opencode_model,
+    });
+    const materializedProvider = await fetchJSON(
+      `/api/user/provider-config/${encodeURIComponent(providerName)}/materialize`,
+      { method: "POST" },
+    );
+    if (!String(materializedProvider.api_key || "").trim()) {
+      throw new Error(`Save a ${providerName === "opencode" ? "OpenCode" : "Google Gemini"} API key before starting a run.`);
+    }
+    if (providerName === "opencode" && !String(materializedProvider.api_url || "").trim()) {
+      throw new Error("Save an OpenCode API URL before starting a run.");
+    }
+    await localDataPlane.putProviderConfig(
+      providerName,
+      materializedProvider,
+      { deviceId: structuredDeviceId },
+    );
+    document.getElementById("googleApiKey").value = "";
+    document.getElementById("opencodeApiKey").value = "";
+
     const envelope = await localDataPlane.allocateLocalRun({
       ...owner,
       flowType: "structured",
@@ -526,35 +565,6 @@ async function runPipeline() {
       },
     });
     structuredDeviceId = envelope.device_id;
-    const providerName = cfg.provider === "google" ? "google_gemini" : "opencode";
-    const pendingSecret = providerName === "google_gemini"
-      ? document.getElementById("googleApiKey").value.trim()
-      : document.getElementById("opencodeApiKey").value.trim();
-    await saveProviderConfig(providerName, {
-      ...(providerName === "opencode" ? { api_url: cfg.opencode_api_url } : {}),
-      ...(pendingSecret ? { api_key: pendingSecret } : {}),
-      default_model: providerName === "google_gemini" ? cfg.google_model : cfg.opencode_model,
-    });
-    const materializedProvider = await fetchJSON(
-      `/api/user/provider-config/${encodeURIComponent(providerName)}/materialize`,
-      { method: "POST" },
-    );
-    await localDataPlane.putProviderConfig(
-      providerName,
-      materializedProvider,
-      { deviceId: structuredDeviceId },
-    );
-    document.getElementById("googleApiKey").value = "";
-    document.getElementById("opencodeApiKey").value = "";
-
-    const productAssets = await localDataPlane.listAssets({
-      kind: "product_image",
-      deviceId: structuredDeviceId,
-    });
-    const effective = await fetchJSON(studioCurrentOrgId
-      ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
-      : "/api/config/effective");
-    const sourceConfig = effective?.config || {};
     const parseConfigJSON = (key, fallback) => {
       const value = sourceConfig[key];
       if (value && typeof value === "object") return value;

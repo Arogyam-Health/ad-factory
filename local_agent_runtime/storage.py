@@ -477,7 +477,9 @@ class AgentState:
                 (job_id,),
             ).fetchone()
             if row is None:
-                raise ValueError("Job not found")
+                raise ValueError(
+                    "Local job metadata is missing. Reconnect the agent and queue the run again."
+                )
             payload = metadata_job_payload(json.loads(row["payload_json"]))
             run_id = str(payload.get("run_id") or "")
             run = conn.execute(
@@ -485,7 +487,9 @@ class AgentState:
                 (run_id, row["owner_key"]),
             ).fetchone()
             if run is None:
-                raise ValueError("Local run manifest not found")
+                raise ValueError(
+                    "Local run workspace is missing. Restore a local backup or start a new run."
+                )
             entries = conn.execute(
                 """
                 SELECT re.*, r.kind, o.relative_path, o.media_type, o.bytes

@@ -44,6 +44,11 @@ async function readLocalText(collection, logicalKey, fallback = "") {
   }
 }
 
+function configText(value) {
+  if (typeof value === "string") return value;
+  return value && typeof value === "object" ? JSON.stringify(value) : "";
+}
+
 async function readReferenceProductIds() {
   const raw = await readLocalText("configs", REFERENCE_PRODUCT_IDS_KEY, "[]");
   try {
@@ -399,15 +404,43 @@ async function loadReferenceWorkspace() {
     await ensureReferenceLocal();
     referenceProductObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     referenceProductObjectUrls = [];
-    const [allProducts, productIds, productDocument, startingPrompt, personaSeed, conversionPrompt] = await Promise.all([
+    const [allProducts, productIds, productDocument, startingPrompt, personaSeed, conversionPrompt, effective] = await Promise.all([
       localDataPlane.listAssets({ kind: "product_image", deviceId: referenceDeviceId }),
       readReferenceProductIds(),
       readLocalText("documents", "reference-product-document"),
       readLocalText("configs", "reference-starting-prompt"),
       readLocalText("configs", "reference-persona-seed"),
       readLocalText("configs", "reference-conversion-916-prompt"),
+      fetchJSON("/api/config/effective"),
     ]);
-    const productIdSet = new Set(productIds);
+    const sourceConfig = effective?.config || {};
+    const hydratedText = {
+      productDocument: productDocument || configText(sourceConfig.product_master_doc),
+      startingPrompt: startingPrompt || configText(sourceConfig.starting_prompt),
+      personaSeed: personaSeed || configText(sourceConfig.persona_seeds),
+      conversionPrompt: conversionPrompt || configText(sourceConfig.conversion_916_prompt),
+    };
+    const hydrationWrites = [
+      [productDocument, "documents", "reference-product-document", hydratedText.productDocument],
+      [startingPrompt, "configs", "reference-starting-prompt", hydratedText.startingPrompt],
+      [personaSeed, "configs", "reference-persona-seed", hydratedText.personaSeed],
+      [conversionPrompt, "configs", "reference-conversion-916-prompt", hydratedText.conversionPrompt],
+    ]
+      .filter(([existing, , , fallback]) => !existing && fallback)
+      .map(([, collection, key, fallback]) => localDataPlane.putText(
+        collection,
+        key,
+        fallback,
+        { deviceId: referenceDeviceId, operationId: `hydrate-${key}` },
+      ));
+    await Promise.all(hydrationWrites);
+
+    const availableProductIds = new Set(allProducts.map((item) => item.resource_id));
+    const reconciledProductIds = productIds.filter((id) => availableProductIds.has(id));
+    if (reconciledProductIds.length !== productIds.length) {
+      await writeReferenceProductIds(reconciledProductIds);
+    }
+    const productIdSet = new Set(reconciledProductIds);
     const productImages = allProducts.filter((item) => productIdSet.has(item.resource_id));
     const validProducts = new Set(productImages.map((item) => item.resource_id));
     [...selectedProducts].forEach((id) => {
@@ -428,12 +461,12 @@ async function loadReferenceWorkspace() {
       product_images: productImages,
       product_document: {
         name: "reference-product-document",
-        size_bytes: new Blob([productDocument]).size,
-        content: productDocument,
+        size_bytes: new Blob([hydratedText.productDocument]).size,
+        content: hydratedText.productDocument,
       },
-      starting_prompt: { content: startingPrompt },
-      persona_seed: { content: personaSeed },
-      conversion_prompt: { content: conversionPrompt },
+      starting_prompt: { content: hydratedText.startingPrompt },
+      persona_seed: { content: hydratedText.personaSeed },
+      conversion_prompt: { content: hydratedText.conversionPrompt },
     };
     renderProductImages();
     const doc = workspace.product_document || {};

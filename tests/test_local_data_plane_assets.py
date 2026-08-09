@@ -141,6 +141,17 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
             self.open("GET", f"/v1/assets/{resource_id}")
         self.assertEqual(caught.exception.code, 404)
 
+    def test_missing_asset_delete_is_idempotent_after_local_reset(self) -> None:
+        for operation_id in ("delete-missing-1", "delete-missing-2"):
+            with self.open(
+                "DELETE",
+                "/v1/assets/res_missing_after_reset",
+                headers={"Idempotency-Key": operation_id},
+            ) as response:
+                payload = json.loads(response.read())
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["status"], "deleted")
+
     def test_upload_rejects_traversal_mime_mismatch_and_limits(self) -> None:
         cases = [
             ("../hero.png", PNG, 400),
