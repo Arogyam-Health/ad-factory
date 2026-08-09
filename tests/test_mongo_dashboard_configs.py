@@ -47,7 +47,16 @@ class MongoDashboardConfigTests(unittest.TestCase):
         )
 
         self.assertNotIn("/api/prompt-file-content", main_js)
-        self.assertIn('/js/main.js?v=7', index_html)
+        self.assertIn('/js/main.js?v=8', index_html)
+
+    def test_new_local_root_falls_back_to_mongo_product_master_doc(self) -> None:
+        main_js = (ROOT / "dashboard/frontend/js/main.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("resolveProductDocumentText(sourceConfig)", main_js)
+        self.assertIn('sourceConfig.product_master_doc || ""', main_js)
+        self.assertIn("Product document is unavailable", main_js)
 
     def test_frontend_assets_revalidate_after_deploy(self) -> None:
         from fastapi.testclient import TestClient

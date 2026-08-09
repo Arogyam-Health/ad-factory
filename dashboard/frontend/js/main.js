@@ -139,6 +139,22 @@ async function loadStructuredAssets({ silent = true } = {}) {
   }
 }
 
+async function resolveProductDocumentText(sourceConfig) {
+  try {
+    return await localDataPlane.getText(
+      "documents",
+      "structured-product-document",
+      structuredDeviceId,
+    );
+  } catch {
+    const mongoProductDoc = String(sourceConfig.product_master_doc || "").trim();
+    if (mongoProductDoc) return mongoProductDoc;
+    throw new Error(
+      "Product document is unavailable. Add Product Master Doc content or upload a product document.",
+    );
+  }
+}
+
 function renderModelOptions(provider, preferredModel = "") {
   const models = state.modelsByProvider[provider] || [];
   const selected = preferredModel && models.includes(preferredModel) ? preferredModel : (models[0] || "");
@@ -660,11 +676,7 @@ async function runPipeline() {
       }
     }
     if (!document.getElementById("productFile")?.files?.[0]) {
-      const existingProductDoc = await localDataPlane.getText(
-        "documents",
-        "structured-product-document",
-        structuredDeviceId,
-      );
+      const existingProductDoc = await resolveProductDocumentText(sourceConfig);
       await localDataPlane.putText(
         "documents",
         `${envelope.run_id}-product-document`,
