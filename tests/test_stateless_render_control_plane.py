@@ -31,6 +31,8 @@ LEGACY_CONTENT_REQUESTS = (
     ("GET", "/api/user/json-blobs/example"),
     ("POST", "/api/batch/generate-images-both"),
     ("POST", "/api/runs/execute-reference"),
+    ("GET", "/api/runs/run_1/reference-status"),
+    ("GET", "/api/runs/run_1/revisions/rev_1"),
     ("GET", "/api/runs/run_1/content"),
     ("DELETE", "/api/runs/run_1/delete-image"),
     ("DELETE", "/api/runs/run_1/delete-prompt"),

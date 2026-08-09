@@ -175,7 +175,7 @@ class MongoProviderConfigTests(unittest.TestCase):
             },
         )
         with patch(
-            "dashboard.backend.app.list_opencode_models",
+            "dashboard.backend.services.provider_routes.list_opencode_models",
             return_value=["opencode/model-a", "opencode/model-b"],
         ) as list_models:
             catalog = user_opencode_catalog({"user_id": "usr_catalog"})

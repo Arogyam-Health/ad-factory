@@ -261,6 +261,82 @@ def queue_structured_copy(
     }
 
 
+@router.post("/api/runs/{run_id}/image-generation")
+def queue_structured_image_generation(
+    run_id: str,
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_RUNS
+
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one(
+        {
+            "run_id": run_id,
+            "user_id": str(user["user_id"]),
+        },
+        {
+            "_id": 0,
+            "agent_id": 1,
+            "device_id": 1,
+            "owner_type": 1,
+            "owner_id": 1,
+            "flow_type": 1,
+        },
+    )
+    if (
+        not run
+        or run.get("flow_type") == "reference"
+        or not run.get("agent_id")
+        or not run.get("device_id")
+    ):
+        raise HTTPException(
+            status_code=409, detail="Run has no authoritative local device"
+        )
+    operation_id = str(payload.get("operation_id") or "")
+    engine = str(payload.get("engine") or "").lower()
+    mode = str(payload.get("mode") or "").lower()
+    if not operation_id:
+        raise HTTPException(status_code=400, detail="Operation ID is required")
+    if engine not in {"chatgpt", "gemini"} or mode not in {"45", "both", "916"}:
+        raise HTTPException(
+            status_code=400, detail="Image generation settings are invalid"
+        )
+    try:
+        job = create_job(
+            agent_id=str(run["agent_id"]),
+            device_id=str(run["device_id"]),
+            user_id=str(user["user_id"]),
+            owner_type=str(run.get("owner_type") or "user"),
+            owner_id=str(run.get("owner_id") or user["user_id"]),
+            run_id=run_id,
+            job_type="execute_run",
+            command="generate_images",
+            parameters={"engine": engine, "mode": mode},
+            client_operation_id=operation_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db[COLL_RUNS].update_one(
+        {"run_id": run_id, "user_id": str(user["user_id"])},
+        {
+            "$set": {
+                "status": "queued",
+                "updated_at": time.time(),
+                "image_job_id": job["job_id"],
+            }
+        },
+    )
+    return {
+        "job_id": job["job_id"],
+        "run_id": run_id,
+        "status": job["status"],
+        "agent_id": job["agent_id"],
+        "device_id": job["device_id"],
+    }
+
+
 @router.post("/api/runs/{run_id}/reference-generation")
 def queue_reference_generation(
     run_id: str,

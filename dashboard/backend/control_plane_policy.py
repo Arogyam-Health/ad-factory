@@ -98,8 +98,10 @@ _RUN_CONTENT_SUFFIXES = (
     "/import-on-image-copy",
     "/mark-images-to-regenerate",
     "/prompt-copies",
+    "/reference-status",
     "/regenerate-queued-images",
     "/replace-image",
+    "/revisions/",
     "/restore-images-from-queue",
     "/revise-image",
 )

@@ -364,6 +364,60 @@ class StructuredLocalFlowTests(unittest.TestCase):
         self.assertEqual(counts["copy_batch"], 1)
         self.assertEqual(counts["prompt"], 1)
 
+    def test_dashboard_queues_only_pinned_structured_image_metadata(self) -> None:
+        from dashboard.backend.agent.routes import queue_structured_image_generation
+        from tests.test_agent_metadata_jobs import _DB
+
+        db = _DB()
+        device_id = "dev_" + "e" * 32
+        db["agents"].insert_one(
+            {
+                "agent_id": "agent-images",
+                "user_id": "user-images",
+                "device_id": device_id,
+                "is_active": True,
+            }
+        )
+        db["runs"].insert_one(
+            {
+                "run_id": "run-images-control",
+                "user_id": "user-images",
+                "owner_type": "user",
+                "owner_id": "user-images",
+                "agent_id": "agent-images",
+                "device_id": device_id,
+                "flow_type": "structured",
+            }
+        )
+        with (
+            patch("dashboard.backend.db.client.get_sync_db", return_value=db),
+            patch("dashboard.backend.agent.service.get_sync_db", return_value=db),
+        ):
+            result = queue_structured_image_generation(
+                "run-images-control",
+                {
+                    "operation_id": "structured-images-operation",
+                    "engine": "chatgpt",
+                    "mode": "both",
+                },
+                {"user_id": "user-images"},
+            )
+
+        self.assertEqual(result["device_id"], device_id)
+        job = db["agent_jobs"].docs[0]
+        self.assertEqual(job["command"], "generate_images")
+        self.assertEqual(job["parameters"], {"engine": "chatgpt", "mode": "both"})
+        serialized = json.dumps(job).lower()
+        for forbidden in (
+            "prompt",
+            "body",
+            "content",
+            "path",
+            "localhost",
+            "127.0.0.1",
+        ):
+            self.assertNotIn(forbidden, serialized)
+
 
 if __name__ == "__main__":
     unittest.main()

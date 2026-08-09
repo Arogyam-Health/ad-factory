@@ -8,6 +8,11 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
 
 from dashboard.backend.auth.service import require_user_dependency
+from dashboard.backend.services.opencode_catalog import (
+    build_opencode_catalog,
+    choose_openai_gpt52,
+    list_opencode_models,
+)
 from dashboard.backend.services.provider_config import (
     delete_provider_config,
     get_all_provider_configs,
@@ -107,12 +112,6 @@ def materialize_provider(
 def user_opencode_catalog(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    from dashboard.backend.app import (
-        build_opencode_catalog,
-        choose_openai_gpt52,
-        list_opencode_models,
-    )
-
     config = get_provider_config(user["user_id"], "opencode")
     if config is None:
         return build_opencode_catalog()

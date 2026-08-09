@@ -36,6 +36,14 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from dashboard.backend.services.opencode_catalog import (
+    DEFAULT_OPENCODE_API_URL,
+    build_opencode_catalog,
+    choose_openai_gpt52,
+    list_opencode_models,
+    sanitize_dashboard_model,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 STORAGE_ROOT = ROOT / "dashboard_storage"
@@ -86,7 +94,6 @@ def _resolve_user_config(key: str, default: Any = None) -> Any:
 
 
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
-DEFAULT_OPENCODE_API_URL = os.getenv("OPENCODE_API_URL", "http://127.0.0.1:4090")
 DEFAULT_GOOGLE_API_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_GOOGLE_MODEL = "gemini-2.0-flash"
 OPENCODE_ADS_PER_SESSION_SCHEDULE = [25, 15, 10, 5, 2, 1]
@@ -2547,97 +2554,6 @@ def strip_ansi(text: str | None) -> str:
 
 
 
-
-
-def list_opencode_models(api_url: str | None = None, api_key: str | None = None) -> list[str]:
-    url = (api_url or "").strip() or os.getenv("OPENCODE_API_URL", "").strip() or DEFAULT_OPENCODE_API_URL
-    api_key = (api_key or "").strip() or os.getenv("OPENCODE_API_KEY", "").strip()
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    try:
-        with httpx.Client(timeout=httpx.Timeout(15, connect=10)) as client:
-            resp = client.get(f"{url}/models", headers=headers)
-        if resp.status_code != 200:
-            return []
-        try:
-            data = resp.json()
-        except json.JSONDecodeError:
-            return []
-    except (httpx.HTTPError, OSError, json.JSONDecodeError):
-        return []
-    if isinstance(data, list):
-        model_ids = [m["id"] if isinstance(m, dict) else str(m) for m in data]
-    elif isinstance(data, dict):
-        models_data = data.get("data") or data.get("models") or []
-        model_ids = [m["id"] if isinstance(m, dict) else str(m) for m in models_data]
-    else:
-        return []
-    return [m for m in model_ids if "/" in m] or [f"opencode/{m}" for m in model_ids]
-
-
-
-
-
-
-
-
-def choose_openai_gpt52(models: list[str]) -> str:
-    if not models:
-        return ""
-    preferred_free = [
-        "opencode/mimo-v2.5-free",
-        "opencode/north-mini-code-free",
-        "opencode/nemotron-3-ultra-free",
-        "opencode/deepseek-v4-flash-free",
-    ]
-    for preferred in preferred_free:
-        if preferred in models:
-            return preferred
-    for model in models:
-        if "free" in model.lower():
-            return model
-    preferred = "openai/gpt-5.2"
-    if preferred in models:
-        return preferred
-    for model in models:
-        lower = model.lower()
-        if lower.startswith("openai/") and "gpt-5.2" in lower:
-            return model
-    for model in models:
-        if model.lower().startswith("openai/"):
-            return model
-    non_copilot = [m for m in models if not m.lower().startswith("github-copilot/")]
-    if non_copilot:
-        return non_copilot[0]
-    return models[0]
-
-
-def sanitize_dashboard_model(selected: str, models: list[str]) -> str:
-    chosen = (selected or "").strip()
-    if chosen and (not models or chosen in models):
-        return chosen
-    return choose_openai_gpt52(models)
-
-
-def build_opencode_catalog() -> dict[str, Any]:
-    models = list_opencode_models()
-    grouped: dict[str, list[str]] = {}
-    for model in models:
-        provider = model.split("/", 1)[0]
-        grouped.setdefault(provider, []).append(model)
-    for provider in grouped:
-        grouped[provider] = sorted(grouped[provider])
-    providers = sorted(grouped.keys())
-    default_model = ""
-    if models:
-        default_model = choose_openai_gpt52(models)
-    return {
-        "api_url": DEFAULT_OPENCODE_API_URL,
-        "providers": providers,
-        "models_by_provider": grouped,
-        "default_model": default_model,
-    }
 
 
 def parse_json_stdout(result: subprocess.CompletedProcess[str], context: str) -> Any:

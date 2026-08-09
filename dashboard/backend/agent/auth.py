@@ -22,4 +22,11 @@ def is_agent_runtime_path(path: str) -> bool:
     if "/" not in suffix:
         return False
     _job_id, action = suffix.rsplit("/", 1)
-    return action in {"status", "claim", "progress", "complete", "fail"}
+    return action in {
+        "status",
+        "claim",
+        "progress",
+        "projection",
+        "complete",
+        "fail",
+    }

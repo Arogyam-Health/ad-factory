@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,6 +75,20 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertTrue(
             is_agent_runtime_path("/api/agents/jobs/job_123/projection")
         )
+
+    def test_job_status_reports_control_plane_failure(self) -> None:
+        from fastapi import HTTPException
+        from pymongo.errors import ServerSelectionTimeoutError
+
+        from dashboard.backend.routes.batch import _batch_job_status
+
+        with patch(
+            "dashboard.backend.routes.batch.get_sync_db",
+            side_effect=ServerSelectionTimeoutError("unavailable"),
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                _batch_job_status("", {"user_id": "usr_1"})
+        self.assertEqual(raised.exception.status_code, 503)
 
 
 if __name__ == "__main__":
