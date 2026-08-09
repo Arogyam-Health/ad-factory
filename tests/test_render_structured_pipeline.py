@@ -252,6 +252,93 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(raised.exception.http_status, 401)
         self.assertNotIn("secret upstream body", str(raised.exception))
 
+    def test_opencode_http_request_strips_dashboard_provider_prefix(self) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            provider_generate_callable,
+        )
+
+        response = Mock()
+        response.status_code = 200
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"ads":[]}'}}],
+        }
+        response.headers = {"content-type": "application/json"}
+        with patch(
+            "dashboard.backend.services.render_structured_copy.requests.post",
+            return_value=response,
+        ) as post:
+            generate = provider_generate_callable(
+                "opencode",
+                "opencode/deepseek-v4-flash-free",
+                {
+                    "api_url": "https://opencode.ai/zen/v1",
+                    "api_key": "test-key",
+                },
+            )
+            generate({"task": "copy"})
+
+        self.assertEqual(
+            post.call_args.kwargs["json"]["model"],
+            "deepseek-v4-flash-free",
+        )
+
+    def test_provider_trace_callback_receives_redacted_bounded_401_detail(
+        self,
+    ) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+            provider_generate_callable,
+        )
+
+        response = Mock()
+        response.status_code = 401
+        response.text = (
+            '{"error":{"message":"Invalid key sk-private-secret","type":"auth_error"}}'
+        )
+        response.headers = {"content-type": "application/json"}
+        response.raise_for_status.side_effect = requests.HTTPError("unauthorized")
+        traces: list[dict] = []
+        with patch(
+            "dashboard.backend.services.render_structured_copy.requests.post",
+            return_value=response,
+        ):
+            generate = provider_generate_callable(
+                "opencode",
+                "opencode/deepseek-v4-flash-free",
+                {
+                    "api_url": "https://opencode.ai/zen/v1",
+                    "api_key": "sk-private-secret",
+                },
+                trace_callback=traces.append,
+            )
+            with self.assertRaises(ProviderCallError):
+                generate(
+                    {
+                        "task": "copy",
+                        "product_document": "must not be traced",
+                        "planned_ads": [{"format": "TEST"}],
+                        "languages": ["EN"],
+                    }
+                )
+
+        self.assertEqual(len(traces), 1)
+        self.assertEqual(traces[0]["http_status"], 401)
+        self.assertIn("Invalid key [REDACTED]", traces[0]["error_detail"])
+        self.assertNotIn("sk-private-secret", json.dumps(traces))
+        self.assertNotIn("product_document", json.dumps(traces))
+        self.assertEqual(traces[0]["request"]["planned_ad_count"], 1)
+
+    def test_traces_page_reads_recent_cloud_diagnostics_without_local_agent(
+        self,
+    ) -> None:
+        source = (ROOT / "dashboard" / "frontend" / "traces.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('fetch(`/api/llm-traces?', source)
+        self.assertNotIn("localDataPlane.listTraces", source)
+        self.assertNotIn("localDataPlane.traceContent", source)
+
     def test_delivery_and_render_jobs_have_ttl_indexes(self) -> None:
         from dashboard.backend.db.collections import (
             COLL_PROMPT_DELIVERIES,
