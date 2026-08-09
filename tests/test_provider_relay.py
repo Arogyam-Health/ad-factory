@@ -394,7 +394,11 @@ class ProviderRelayTests(unittest.TestCase):
             "protocol_version": "v1",
         }
         with (
-            patch.object(routes, "authenticate_agent", return_value=agent),
+            patch.object(
+                routes,
+                "authenticate_agent",
+                return_value=agent,
+            ) as authenticate,
             patch.object(routes, "heartbeat_agent"),
             patch.object(routes, "poll_jobs", return_value=[]),
             patch.object(
@@ -424,7 +428,7 @@ class ProviderRelayTests(unittest.TestCase):
                 capability = websocket.receive_json()
                 self.assertTrue(capability["provider_relay"])
 
-        routes.authenticate_agent.assert_called_once_with("agent-secret")
+        authenticate.assert_called_once_with("agent-secret")
 
 
 if __name__ == "__main__":

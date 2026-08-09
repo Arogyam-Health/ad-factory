@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+import asyncio
 import json
 import re
 import time
@@ -504,17 +505,47 @@ def acknowledge_browser_pairing(
 
 @router.websocket("/api/agent-runtime/ws")
 async def agent_runtime_websocket(websocket: WebSocket) -> None:
+    await websocket.accept()
     authorization = str(websocket.headers.get("authorization") or "")
-    if not authorization.startswith("Bearer "):
-        await websocket.close(code=4001, reason="Missing agent token")
-        return
-    agent = await run_in_threadpool(authenticate_agent, authorization[7:])
+    token = (
+        authorization[7:]
+        if authorization.startswith("Bearer ")
+        else ""
+    )
+    if not token:
+        try:
+            raw_auth = await asyncio.wait_for(
+                websocket.receive_text(),
+                timeout=10,
+            )
+            if len(raw_auth.encode("utf-8")) > 8192:
+                raise ValueError("Authentication message is too large")
+            auth_message = json.loads(raw_auth)
+            if (
+                not isinstance(auth_message, dict)
+                or auth_message.get("type") != "authenticate"
+            ):
+                raise ValueError("Authentication message is invalid")
+            token = str(auth_message.get("token") or "")
+            if not token or len(token) > 4096:
+                raise ValueError("Authentication token is invalid")
+        except (
+            asyncio.TimeoutError,
+            json.JSONDecodeError,
+            ValueError,
+            WebSocketDisconnect,
+        ):
+            await websocket.close(
+                code=4001,
+                reason="Missing agent token",
+            )
+            return
+    agent = await run_in_threadpool(authenticate_agent, token)
     if agent is None:
         await websocket.close(code=4001, reason="Invalid agent token")
         return
     agent_id = str(agent["agent_id"])
     device_id = str(agent.get("device_id") or "")
-    await websocket.accept()
     await agent_connections.register(
         agent_id,
         str(agent["user_id"]),

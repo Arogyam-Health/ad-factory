@@ -125,10 +125,17 @@ class AgentWebSocketClient:
                     ping_timeout=20,
                     max_size=2 * 1024 * 1024 + 65536,
                 ) as websocket:
-                    self._connected.set()
-                    self.status_callback("connected")
-                    backoff = 1.0
                     send_lock = asyncio.Lock()
+                    async with send_lock:
+                        await websocket.send(
+                            json.dumps(
+                                {
+                                    "type": "authenticate",
+                                    "token": self.token,
+                                },
+                                separators=(",", ":"),
+                            )
+                        )
                     while not self._stop.is_set():
                         try:
                             raw = await asyncio.wait_for(websocket.recv(), timeout=15)
@@ -138,6 +145,9 @@ class AgentWebSocketClient:
                                     message.get("type") == "connected"
                                     and self.provider_handler is not None
                                 ):
+                                    self._connected.set()
+                                    self.status_callback("connected")
+                                    backoff = 1.0
                                     async with send_lock:
                                         await websocket.send(
                                             json.dumps(
@@ -147,6 +157,11 @@ class AgentWebSocketClient:
                                                 }
                                             )
                                         )
+                                    self.signal.handle(message)
+                                elif message.get("type") == "connected":
+                                    self._connected.set()
+                                    self.status_callback("connected")
+                                    backoff = 1.0
                                     self.signal.handle(message)
                                 elif (
                                     message.get("type") == "provider_call"
