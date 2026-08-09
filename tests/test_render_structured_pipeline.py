@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
+
+import requests
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,13 +110,197 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                 {**encrypted, "plaintext_sha256": "0" * 64}
             )
 
+    def test_render_copy_job_is_metadata_only_and_idempotent(self) -> None:
+        from tests.test_agent_metadata_jobs import _DB
+        from dashboard.backend.services.render_copy_jobs import (
+            enqueue_render_copy_job,
+        )
+
+        db = _DB()
+        run = {
+            "run_id": "run-server",
+            "user_id": "user-1",
+            "owner_type": "user",
+            "owner_id": "user-1",
+            "agent_id": "agent-1",
+            "device_id": "dev_" + "a" * 32,
+            "run_number": 7,
+        }
+        db["runs"].insert_one({"job_id": "not-a-job", **run})
+        settings = {
+            "selected_personas": [3],
+            "global_formats": ["TEST"],
+            "formats_by_persona": {},
+            "multiplier": 1,
+            "language_mode": "EN",
+            "provider": "opencode",
+            "model": "opencode/big-pickle",
+            "org_id": "",
+        }
+        with (
+            patch(
+                "dashboard.backend.services.render_copy_jobs.get_sync_db",
+                return_value=db,
+            ),
+            patch(
+                "dashboard.backend.services.render_copy_jobs.wake_render_copy_worker"
+            ),
+        ):
+            created = enqueue_render_copy_job(
+                run=run,
+                user_id="user-1",
+                settings=settings,
+                client_operation_id="run-server-copy",
+            )
+
+        stored = db["render_copy_jobs"].docs[0]
+        self.assertEqual(created["status"], "queued")
+        self.assertEqual(stored["settings"], settings)
+        self.assertNotIn("prompt", json.dumps(stored).lower())
+        self.assertNotIn("api_key", json.dumps(stored).lower())
+        self.assertNotIn("product_master_doc", json.dumps(stored).lower())
+
+    def test_render_copy_run_allocation_does_not_require_a_running_agent(self) -> None:
+        from tests.test_agent_metadata_jobs import _DB
+        from dashboard.backend.services.render_copy_jobs import (
+            allocate_render_copy_run,
+        )
+
+        db = _DB()
+        with (
+            patch(
+                "dashboard.backend.services.render_copy_jobs.get_sync_db",
+                return_value=db,
+            ),
+            patch(
+                "dashboard.backend.services.render_copy_jobs.reserve_run_number",
+                return_value=3,
+            ),
+        ):
+            run = allocate_render_copy_run(
+                user_id="user-1",
+                owner_type="user",
+                owner_id="user-1",
+            )
+
+        self.assertEqual(run["display_batch"], "v3")
+        self.assertEqual(db["runs"].docs[0]["agent_id"], "")
+        self.assertEqual(db["runs"].docs[0]["device_id"], "")
+
+    def test_provider_failure_exposes_safe_status_without_response_body(self) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+            provider_generate_callable,
+        )
+
+        response = Mock()
+        response.status_code = 401
+        response.raise_for_status.side_effect = requests.HTTPError("secret upstream body")
+        with patch(
+            "dashboard.backend.services.render_structured_copy.requests.post",
+            return_value=response,
+        ):
+            generate = provider_generate_callable(
+                "opencode",
+                "opencode/big-pickle",
+                {"api_url": "https://provider.example/v1", "api_key": "test-key"},
+            )
+            with self.assertRaises(ProviderCallError) as raised:
+                generate({"task": "copy"})
+
+        self.assertEqual(raised.exception.code, "provider_http_error")
+        self.assertEqual(raised.exception.http_status, 401)
+        self.assertNotIn("secret upstream body", str(raised.exception))
+
+    def test_delivery_and_render_jobs_have_ttl_indexes(self) -> None:
+        from dashboard.backend.db.collections import (
+            COLL_PROMPT_DELIVERIES,
+            COLL_RENDER_COPY_JOBS,
+        )
+        from dashboard.backend.db.indexes import INDEX_SPECS
+
+        delivery_indexes = [
+            index.document for index in INDEX_SPECS[COLL_PROMPT_DELIVERIES]
+        ]
+        copy_indexes = [
+            index.document for index in INDEX_SPECS[COLL_RENDER_COPY_JOBS]
+        ]
+        self.assertTrue(
+            any(index.get("expireAfterSeconds") == 0 for index in delivery_indexes)
+        )
+        self.assertTrue(
+            any(index.get("expireAfterSeconds") == 0 for index in copy_indexes)
+        )
+
+    def test_local_agent_imports_final_prompts_before_acknowledging_delivery(
+        self,
+    ) -> None:
+        import scripts.local_agent as local_agent
+        from local_agent_runtime.storage import AgentPaths, AgentState
+
+        text = "Final Render-assembled prompt"
+        prompt = {
+            "prompt_id": "prm_delivery",
+            "text": text,
+            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "format": "TEST",
+            "persona_number": 3,
+            "persona_name": "Stress Snacker",
+            "language": "EN",
+            "aspect_ratio": "4:5",
+        }
+        calls: list[tuple[str, str, object]] = []
+
+        def request(method, path, data=None, **_kwargs):
+            calls.append((method, path, data))
+            if method == "GET":
+                return [
+                    {
+                        "delivery_id": "dlv_test",
+                        "run_id": "run-delivered",
+                        "bundle": {
+                            "run_id": "run-delivered",
+                            "run_number": 9,
+                            "owner_type": "user",
+                            "owner_id": "user-1",
+                            "prompts": [prompt],
+                        },
+                    }
+                ]
+            return {"status": "acknowledged"}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = AgentPaths(Path(temporary))
+            state = AgentState(paths)
+            old_paths, old_state = local_agent.AGENT_PATHS, local_agent.AGENT_STATE
+            local_agent.AGENT_PATHS, local_agent.AGENT_STATE = paths, state
+            try:
+                with patch.object(local_agent, "api_request", side_effect=request):
+                    local_agent.sync_prompt_deliveries()
+                manifest = state.run_manifest("run-delivered")
+                self.assertIsNotNone(manifest)
+                entry = manifest["entries"][0]
+                content = state.resource_path(
+                    str(entry["resource_id"]),
+                    int(entry["resource_version"]),
+                ).read_text(encoding="utf-8")
+            finally:
+                local_agent.AGENT_PATHS, local_agent.AGENT_STATE = (
+                    old_paths,
+                    old_state,
+                )
+
+        self.assertEqual(content, text)
+        self.assertEqual(calls[-1][0], "POST")
+        self.assertEqual(calls[-1][2], {"prompt_ids": ["prm_delivery"]})
+
     def test_frontend_run_pipeline_does_not_stage_copy_inputs_on_localhost(self) -> None:
         source = (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(
             encoding="utf-8"
         )
         start = source.index("async function runPipeline()")
         end = source.index(
-            'document.getElementById("cancelRunBtn")', start
+            '\n}\n\n\ndocument.getElementById("cancelRunBtn")', start
         )
         pipeline = source[start:end]
 

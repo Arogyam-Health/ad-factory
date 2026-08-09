@@ -86,6 +86,11 @@ def startup() -> None:
         from dashboard.backend.services.user_config import ensure_generic_config
 
         ensure_generic_config()
+        from dashboard.backend.services.render_copy_jobs import (
+            start_render_copy_worker,
+        )
+
+        start_render_copy_worker()
     except Exception as exc:
         if settings.is_production:
             print(

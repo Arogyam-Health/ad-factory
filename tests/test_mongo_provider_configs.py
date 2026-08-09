@@ -192,7 +192,7 @@ class MongoProviderConfigTests(unittest.TestCase):
         self.assertEqual(catalog["default_model"], "opencode/model-b")
         self.assertNotIn("catalog-secret", repr(catalog))
 
-    def test_frontend_saves_cloud_config_then_materializes_for_local_execution(
+    def test_frontend_saves_cloud_config_for_render_execution(
         self,
     ) -> None:
         main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
@@ -204,7 +204,15 @@ class MongoProviderConfigTests(unittest.TestCase):
         self.assertIn(
             'fetchJSON("/api/user/provider-config/opencode/catalog"', main
         )
-        self.assertIn("/materialize", main)
+        self.assertNotIn("/materialize", main)
+        render_jobs = (
+            ROOT
+            / "dashboard"
+            / "backend"
+            / "services"
+            / "render_copy_jobs.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("get_materialized_provider_config", render_jobs)
         self.assertNotIn('fetchJSON("/api/opencode/catalog")', main)
         self.assertIn('fetchJSON("/api/user/provider-config")', profile)
         self.assertNotIn("localDataPlane.listProviderConfigs", profile)

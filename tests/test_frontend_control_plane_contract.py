@@ -102,18 +102,27 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("clearLocalPairingSessions();", auth)
         self.assertIn("loadStructuredAssets({ silent: false })", main)
 
-    def test_fresh_agent_preflight_hydrates_before_run_allocation(self) -> None:
+    def test_structured_copy_runs_on_render_and_reference_hydration_stays_local(self) -> None:
         main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
         runs = (FRONTEND / "js" / "runs.js").read_text(encoding="utf-8")
         reference = (
             FRONTEND / "js" / "reference-flow.js"
         ).read_text(encoding="utf-8")
 
-        allocation = main.index("localDataPlane.allocateLocalRun(")
-        self.assertLess(main.index('kind: "product_image"', allocation - 5000), allocation)
-        self.assertLess(main.index("/materialize", allocation - 5000), allocation)
+        pipeline_start = main.index("async function runPipeline()")
+        pipeline_end = main.index(
+            '\n}\n\n\ndocument.getElementById("cancelRunBtn")',
+            pipeline_start,
+        )
+        pipeline = main[pipeline_start:pipeline_end]
+        self.assertIn('fetchJSON("/api/runs/allocate-copy"', pipeline)
+        self.assertIn("/structured-copy", pipeline)
+        self.assertNotIn("ensureStructuredLocal()", pipeline)
+        self.assertNotIn("/materialize", pipeline)
+        self.assertNotIn("putProviderConfig(", pipeline)
+        self.assertNotIn('putText("configs"', pipeline)
+        self.assertNotIn('putText("documents"', pipeline)
         self.assertNotIn("Add at least one product image", main)
-        self.assertIn("product_assets: productAssets.map", main)
         self.assertIn('fetchJSON("/api/config/effective")', reference)
         self.assertIn("`hydrate-${key}`", reference)
         self.assertIn("reconciledProductIds", reference)

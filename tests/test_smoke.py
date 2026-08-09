@@ -1664,7 +1664,7 @@ def test_local_agent_responsiveness_contract() -> int:
                  "dashboard receives local artifact changes over SSE")
     failed += ok("localDataPlane.deleteOutput" in images_js and "refreshStructuredLocalOutputs" in images_js,
                  "structured image deletion removes the local file and refreshes authoritative metadata")
-    failed += ok("download-batches" in runs_js and "selectedLocalBatches" in runs_js,
+    failed += ok("localDataPlane.downloadRun" in runs_js and "selectedRuns" in runs_js,
                  "batch download uses the local artifact ZIP for local images")
     failed += ok("Revise all commented" in images_js and "submitAllRevisions" in images_js,
                  "structured gallery exposes mass revision for commented images")
@@ -1672,7 +1672,7 @@ def test_local_agent_responsiveness_contract() -> int:
         '"revise-image"' in run_routes and '"revisions/{revision_id}"' in run_routes,
         "legacy image revision routes are explicitly local-only",
     )
-    failed += ok("queueRevision" in image_comments_js and 'new URL("/revisions", imageUrl.origin)' in image_comments_js,
+    failed += ok("queueRevision" in image_comments_js and 'localDataPlane.outputAction(' in image_comments_js and '"revisions"' in image_comments_js,
                  "localhost image comments use the local agent revision worker")
     failed += ok("Promise.allSettled" in state_js and 'fetchJSON("/api/defaults")' in state_js and 'fetchJSON("/api/config/persona-summary")' in state_js,
                  "defaults and persona summary config load concurrently")
@@ -1690,10 +1690,10 @@ def test_local_agent_responsiveness_contract() -> int:
                  "run detail does not treat Mongo owner stubs as completed manifests")
     main_js = (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(encoding="utf-8")
     failed += ok(
-        'flowType: "structured"' in main_js
-        and "allocateLocalRun" in main_js
+        'fetchJSON("/api/runs/allocate-copy"' in main_js
+        and "/structured-copy" in main_js
         and 'fetchJSON("/api/runs/execute"' not in main_js,
-        "frontend allocates metadata then stages structured content locally",
+        "frontend allocates and executes structured copy on Render",
     )
     failed += ok(".card-input-prompts," in styles_css and ".card-images," in styles_css and "grid-column: span 7" in styles_css,
                  "structured dashboard uses a denser bento card grid")

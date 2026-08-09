@@ -188,6 +188,132 @@ def sync_pairing_approvals(*, fetch_remote: bool) -> None:
         )
 
 
+def sync_prompt_deliveries() -> None:
+    if AGENT_STATE is None:
+        return
+    deliveries = api_request(
+        "GET",
+        "/api/agents/prompt-deliveries/poll",
+        token=AGENT_TOKEN,
+        timeout=30,
+        quiet=True,
+    )
+    if not isinstance(deliveries, list):
+        return
+    for delivery in deliveries:
+        if not isinstance(delivery, dict):
+            continue
+        bundle = delivery.get("bundle")
+        if not isinstance(bundle, dict):
+            continue
+        delivery_id = str(delivery.get("delivery_id") or "")
+        run_id = str(bundle.get("run_id") or "")
+        owner_type = str(bundle.get("owner_type") or "")
+        owner_id = str(bundle.get("owner_id") or "")
+        prompts = bundle.get("prompts")
+        if (
+            not delivery_id
+            or not run_id
+            or owner_type not in {"user", "org"}
+            or not owner_id
+            or not isinstance(prompts, list)
+            or not prompts
+        ):
+            continue
+        owner_key = f"{owner_type}:{owner_id}"
+        if AGENT_STATE.run_manifest(run_id) is None:
+            AGENT_STATE.create_run(
+                run_id=run_id,
+                owner_key=owner_key,
+                device_id=load_or_create_device_id(AGENT_PATHS),
+                workspace_id=f"delivery-{run_id}",
+                run_number=int(bundle.get("run_number") or 0),
+                flow_type="structured",
+                operation_id=f"delivery:{delivery_id}:run",
+                status="copy_completed",
+            )
+        manifest = AGENT_STATE.run_manifest(run_id) or {"entries": []}
+        position = max(
+            [
+                int(entry.get("position") or 0)
+                for entry in manifest.get("entries", [])
+                if isinstance(entry, dict)
+            ]
+            or [0]
+        )
+        prompt_ids: list[str] = []
+        for index, prompt in enumerate(prompts):
+            if not isinstance(prompt, dict):
+                raise ValueError("Prompt delivery item is invalid")
+            prompt_id = str(prompt.get("prompt_id") or "")
+            text = str(prompt.get("text") or "")
+            expected_sha256 = str(prompt.get("sha256") or "")
+            if (
+                not prompt_id
+                or not text
+                or hashlib.sha256(text.encode("utf-8")).hexdigest()
+                != expected_sha256
+            ):
+                raise ValueError("Prompt delivery integrity check failed")
+            temporary = (
+                AGENT_PATHS.staging
+                / f".delivery-{delivery_id}-{index}-{uuid.uuid4().hex}.tmp"
+            )
+            temporary.write_text(text, encoding="utf-8")
+            try:
+                resource = AGENT_STATE.put_resource(
+                    source=temporary,
+                    owner_key=owner_key,
+                    kind="prompt",
+                    logical_key=prompt_id,
+                    operation_id=f"delivery:{delivery_id}:prompt:{index}",
+                    metadata={
+                        "run_id": run_id,
+                        "format": str(prompt.get("format") or ""),
+                        "persona_number": int(prompt.get("persona_number") or 0),
+                        "language": str(prompt.get("language") or ""),
+                        "aspect_ratio": str(prompt.get("aspect_ratio") or "4:5"),
+                    },
+                    media_type="text/plain; charset=utf-8",
+                )
+            finally:
+                temporary.unlink(missing_ok=True)
+            AGENT_STATE.add_run_entry(
+                run_id=run_id,
+                entry_id="ent_"
+                + hashlib.sha256(
+                    f"{delivery_id}:{prompt_id}".encode("utf-8")
+                ).hexdigest()[:24],
+                resource_id=resource.resource_id,
+                resource_version=resource.version,
+                role="prompt",
+                prompt_id=prompt_id,
+                aspect_ratio=str(prompt.get("aspect_ratio") or "4:5"),
+                position=position + index + 1,
+                operation_id=f"delivery:{delivery_id}:entry:{index}",
+                metadata={
+                    "format": str(prompt.get("format") or ""),
+                    "persona_name": str(prompt.get("persona_name") or ""),
+                    "language": str(prompt.get("language") or ""),
+                },
+            )
+            prompt_ids.append(prompt_id)
+        acknowledged = api_request(
+            "POST",
+            "/api/agents/prompt-deliveries/"
+            f"{urllib.parse.quote(delivery_id, safe='')}/ack",
+            {"prompt_ids": prompt_ids},
+            token=AGENT_TOKEN,
+            timeout=30,
+            quiet=True,
+        )
+        if acknowledged is not None:
+            print(
+                f"  [agent] Stored {len(prompt_ids)} final prompts for {run_id}",
+                flush=True,
+            )
+
+
 def _terminal_event_id(job_id: str, action: str, fence: int) -> str:
     return "evt_" + hashlib.sha256(
         f"{job_id}\0{action}\0{fence}".encode("utf-8")
@@ -310,6 +436,28 @@ def check_cdp() -> dict[str, Any]:
         return {"available": True, "browser": info.get("Browser", ""), "url": AGENT_CDP_URL}
     except Exception:
         return {"available": False, "browser": "", "url": ""}
+
+
+def _local_product_asset_references(owner_key: str) -> list[dict[str, Any]]:
+    if AGENT_STATE is None:
+        return []
+    with AGENT_STATE._connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT resource_id, current_version
+            FROM resources
+            WHERE owner_key = ? AND kind = 'product_image' AND deleted_at IS NULL
+            ORDER BY created_at, resource_id
+            """,
+            (owner_key,),
+        ).fetchall()
+    return [
+        {
+            "resource_id": str(row["resource_id"]),
+            "version": int(row["current_version"]),
+        }
+        for row in rows
+    ]
 
 
 def _browser_candidates(browser: str) -> list[str]:
@@ -674,27 +822,27 @@ def execute_job(job: dict[str, Any]) -> None:
         elif job_type == "run_chatgpt":
             _run_script_job(job_id, "chatgpt_web_sutomation.py", parameters)
 
-        elif job_type == "execute_run" and str(job.get("command") or "") == "generate_copy":
-            if AGENT_STATE is None:
-                raise RuntimeError("Local agent state is unavailable")
-            from local_agent_runtime.structured_copy import StructuredCopyExecutor
-
-            projection = StructuredCopyExecutor(AGENT_STATE).execute(job_id)
-            if projection.get("status") == "completed":
-                report_job_terminal(job_id, "complete")
-            else:
-                report_job_terminal(
-                    job_id,
-                    "fail",
-                    error_code=str(projection.get("error_code") or "local_copy_failed"),
-                )
-
         elif job_type == "execute_run" and str(job.get("command") or "") == "generate_images":
             if AGENT_STATE is None:
                 raise RuntimeError("Local agent state is unavailable")
             from local_agent_runtime.structured_browser import StructuredBrowserExecutor
 
-            projection = StructuredBrowserExecutor(AGENT_STATE).execute(job_id)
+            image_context = api_request(
+                "GET",
+                f"/api/agents/runs/{urllib.parse.quote(str(job.get('run_id') or ''), safe='')}/image-context",
+                token=AGENT_TOKEN,
+                timeout=30,
+                quiet=True,
+            )
+            if not isinstance(image_context, dict):
+                raise RuntimeError("Render image-generation context is unavailable")
+            projection = StructuredBrowserExecutor(
+                AGENT_STATE,
+                product_assets=_local_product_asset_references(owner_key),
+                conversion_prompt_text=str(
+                    image_context.get("conversion_916_prompt") or ""
+                ),
+            ).execute(job_id)
             flush_terminal_outbox()
             if projection.get("status") == "completed":
                 report_job_terminal(job_id, "complete")
@@ -1640,6 +1788,7 @@ def register_and_run(args: argparse.Namespace) -> None:
                 continue
             next_http_poll = now + POLL_INTERVAL
             flush_terminal_outbox()
+            sync_prompt_deliveries()
             if not WS_CLIENT.connected and now - last_heartbeat >= 30:
                 api_request("POST", "/api/agents/heartbeat", token=AGENT_TOKEN, timeout=20, quiet=True)
                 last_heartbeat = now

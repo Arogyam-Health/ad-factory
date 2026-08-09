@@ -307,6 +307,7 @@ async function reconcileRunInventory(runs) {
     runs
       .filter((run) => (
         localRunIds.has(run.run_id)
+        || Boolean(run.copy_job_id)
         || Number(run.created_at || 0) >= recentCutoff
         || ["queued", "running"].includes(run.status)
       ))

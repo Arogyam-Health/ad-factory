@@ -69,7 +69,7 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertIn("/v1/assets", source)
         self.assertIn("authorizedFetch", source)
         main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
-        self.assertIn("localDataPlane.putProviderConfig(", main)
+        self.assertNotIn("localDataPlane.putProviderConfig(", main)
         self.assertIn("/v1/provider-configs", source)
 
     def test_images_use_authenticated_blob_urls_not_tokenized_urls(self) -> None:
@@ -99,13 +99,15 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertIn("localDataPlane.streamEvents({", runs)
         self.assertIn("localDataEventStreams", runs)
 
-    def test_structured_run_stages_versioned_conversion_prompt_only_to_localhost(self) -> None:
+    def test_conversion_prompt_is_materialized_only_when_local_image_generation_starts(self) -> None:
         main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
-        self.assertIn("conversionPromptResource", main)
-        self.assertIn('role: "conversion_prompt"', main)
-        self.assertIn('"conversion_prompt": {', main)
-        self.assertIn("resource_id: conversionPromptResource.resource_id", main)
-        self.assertIn("version: conversionPromptResource.version", main)
+        agent = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        routes = (
+            ROOT / "dashboard" / "backend" / "agent" / "routes.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("conversionPromptResource", main)
+        self.assertIn("/image-context", agent)
+        self.assertIn("conversion_916_prompt", routes)
         generation_clients = "\n".join(
             (ROOT / relative).read_text(encoding="utf-8")
             for relative in (

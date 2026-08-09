@@ -5,6 +5,7 @@ _RUNTIME_EXACT_PATHS = {
     "/api/agents/heartbeat",
     "/api/agents/device",
     "/api/agents/jobs/poll",
+    "/api/agents/prompt-deliveries/poll",
     "/api/agents/pairing/approvals",
     "/api/agents/reconciliation/prompt-deleted",
     "/api/agent-runtime/ws",
@@ -14,6 +15,12 @@ _RUNTIME_EXACT_PATHS = {
 def is_agent_runtime_path(path: str) -> bool:
     if path in _RUNTIME_EXACT_PATHS:
         return True
+    if path.startswith("/api/agents/prompt-deliveries/"):
+        suffix = path.removeprefix("/api/agents/prompt-deliveries/")
+        return suffix.endswith("/ack") and "/" in suffix
+    if path.startswith("/api/agents/runs/"):
+        suffix = path.removeprefix("/api/agents/runs/")
+        return suffix.endswith("/image-context") and "/" in suffix
     if not path.startswith("/api/agents/jobs/"):
         if not path.startswith("/api/agents/pairing/approvals/"):
             return False

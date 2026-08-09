@@ -12,7 +12,9 @@ from dashboard.backend.db.collections import (
     COLL_AGENT_JOBS,
     COLL_AGENTS,
     COLL_IMAGES,
+    COLL_PROMPT_DELIVERIES,
     COLL_PROMPTS,
+    COLL_RENDER_COPY_JOBS,
     COLL_RUNS,
 )
 
@@ -35,6 +37,7 @@ _RUN_PROJECTION = {
     "local_manifest_version": 1,
     "prompt_count": 1,
     "image_count": 1,
+    "copy_job_id": 1,
     "copy_generation": 1,
     "image_generation": 1,
     "deletion_tombstone": 1,
@@ -266,6 +269,7 @@ def reconcile_local_runs(
                 "device_id": device_id,
                 "owner_type": owner_type,
                 "owner_id": owner_id,
+                            "copy_job_id": {"$exists": False},
                 "created_at": {"$lt": time.time() - 120},
                 "status": {"$nin": ["queued", "running", "deleting"]},
             },
@@ -309,9 +313,20 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
             "device_id": 1,
             "owner_type": 1,
             "owner_id": 1,
+            "copy_job_id": 1,
             "deletion_tombstone": 1,
         },
     )
+    if run and run.get("copy_job_id") and (
+        not run.get("agent_id") or not run.get("device_id")
+    ):
+        scope = {"run_id": run_id, "user_id": user_id}
+        db[COLL_PROMPT_DELIVERIES].delete_many(scope)
+        db[COLL_RENDER_COPY_JOBS].delete_many(scope)
+        db[COLL_PROMPTS].delete_many(scope)
+        db[COLL_IMAGES].delete_many(scope)
+        db[COLL_RUNS].delete_one(scope)
+        return {"status": "deleted", "run_id": run_id}
     if not run or not run.get("agent_id") or not run.get("device_id"):
         raise HTTPException(
             status_code=409, detail="Run has no authoritative local device"
@@ -337,6 +352,12 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
     )
     db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
     db[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
+    db[COLL_PROMPT_DELIVERIES].delete_many(
+        {"user_id": user_id, "run_id": run_id}
+    )
+    db[COLL_RENDER_COPY_JOBS].delete_many(
+        {"user_id": user_id, "run_id": run_id}
+    )
     job = create_job(
         agent_id=str(run["agent_id"]),
         device_id=str(run["device_id"]),
@@ -371,7 +392,14 @@ def cancel_run(run_id: str, request: Request) -> dict[str, Any]:
         sort=[("created_at", -1)],
     )
     if job is None:
-        raise HTTPException(status_code=404, detail="Active run job not found")
+        from dashboard.backend.services.render_copy_jobs import (
+            cancel_render_copy_run,
+        )
+
+        canceled_copy = cancel_render_copy_run(run_id, user_id)
+        if canceled_copy is None:
+            raise HTTPException(status_code=404, detail="Active run job not found")
+        return canceled_copy
     canceled = cancel_user_job(user_id, str(job["job_id"]))
     return {"status": str((canceled or {}).get("status") or ""), "run_id": run_id}
 

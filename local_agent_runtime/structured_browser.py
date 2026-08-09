@@ -148,11 +148,15 @@ class StructuredBrowserExecutor:
         browser: BrowserAutomation | None = None,
         max_attempts: int = 2,
         workflow_prefix: str = "structured-browser",
+        product_assets: list[dict[str, Any]] | None = None,
+        conversion_prompt_text: str = "",
     ) -> None:
         self.state = state
         self.browser = browser or LocalScriptBrowser()
         self.max_attempts = max(1, min(int(max_attempts), 3))
         self.workflow_prefix = self._identifier(workflow_prefix)
+        self.product_assets = product_assets
+        self.conversion_prompt_text = conversion_prompt_text
 
     def _completed_result(self, job_id: str) -> dict[str, Any] | None:
         with self.state._connect() as conn:
@@ -511,13 +515,18 @@ class StructuredBrowserExecutor:
         latest: dict[str, Any] | None = None
         error_code = ""
         try:
-            _, settings = self._settings(context)
+            try:
+                _, settings = self._settings(context)
+            except ValueError:
+                settings = {}
+            if self.product_assets is not None:
+                settings = {**settings, "product_assets": self.product_assets}
             product_uploads = (
                 self._settings_uploads(context, settings) if "4:5" in phases else []
             )
-            conversion_prompt = (
-                self._conversion_prompt(context, settings) if "9:16" in phases else None
-            )
+            conversion_prompt = None
+            if "9:16" in phases and not self.conversion_prompt_text:
+                conversion_prompt = self._conversion_prompt(context, settings)
             for aspect_ratio in phases:
                 for prompt in prompts:
                     prompt_id = str(prompt.get("prompt_id") or "")
@@ -545,33 +554,31 @@ class StructuredBrowserExecutor:
                                 required_kind="output_image",
                             )
                         ]
-                        if conversion_prompt is None:
-                            raise ValueError(
-                                "Versioned local 9:16 conversion prompt is unavailable"
-                            )
-                        conversion_body = conversion_prompt.path.read_text(
-                            encoding="utf-8"
-                        ).strip()
+                        conversion_body = self.conversion_prompt_text.strip()
+                        if not conversion_body and conversion_prompt is not None:
+                            conversion_body = conversion_prompt.path.read_text(
+                                encoding="utf-8"
+                            ).strip()
                         if not conversion_body:
-                            raise ValueError("Local 9:16 conversion prompt is empty")
-                        bounded_context = "\n".join(
-                            (
-                                "[LOCAL BOUNDED CONVERSION CONTEXT]",
-                                f"prompt_id={prompt_id}",
-                                f"source_output_id={source_output_id}",
-                                f"source_output_version={source_output_version}",
-                                f"source_creative_sha256={source['object_sha256']}",
-                                (
+                            raise ValueError("Render 9:16 conversion prompt is empty")
+                        context_lines = [
+                            "[LOCAL BOUNDED CONVERSION CONTEXT]",
+                            f"prompt_id={prompt_id}",
+                            f"source_output_id={source_output_id}",
+                            f"source_output_version={source_output_version}",
+                            f"source_creative_sha256={source['object_sha256']}",
+                        ]
+                        if conversion_prompt is not None:
+                            context_lines.extend(
+                                [
                                     "conversion_prompt_resource_id="
-                                    f"{conversion_prompt.resource_id}"
-                                ),
-                                (
+                                    f"{conversion_prompt.resource_id}",
                                     "conversion_prompt_version="
-                                    f"{conversion_prompt.version}"
-                                ),
-                                "target_aspect_ratio=9:16",
+                                    f"{conversion_prompt.version}",
+                                ]
                             )
-                        )
+                        context_lines.append("target_aspect_ratio=9:16")
+                        bounded_context = "\n".join(context_lines)
                         prompt_content = (
                             conversion_body + "\n\n" + bounded_context + "\n"
                         ).encode("utf-8")

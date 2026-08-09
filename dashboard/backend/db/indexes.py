@@ -106,6 +106,38 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         ),
         IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
     ],
+    COLL_RENDER_COPY_JOBS: [
+        IndexModel([("copy_job_id", ASCENDING)], unique=True),
+        IndexModel(
+            [
+                (FIELD_STATUS, ASCENDING),
+                ("lease_expires_at", ASCENDING),
+                (FIELD_CREATED_AT, ASCENDING),
+            ]
+        ),
+        IndexModel(
+            [
+                ("owner_type", ASCENDING),
+                ("owner_id", ASCENDING),
+                ("client_operation_id", ASCENDING),
+            ],
+            unique=True,
+        ),
+        IndexModel([("purge_at", ASCENDING)], expireAfterSeconds=0),
+    ],
+    COLL_PROMPT_DELIVERIES: [
+        IndexModel([("delivery_id", ASCENDING)], unique=True),
+        IndexModel(
+            [
+                (FIELD_AGENT_ID, ASCENDING),
+                ("device_id", ASCENDING),
+                (FIELD_STATUS, ASCENDING),
+                (FIELD_CREATED_AT, ASCENDING),
+            ]
+        ),
+        IndexModel([(FIELD_RUN_ID, ASCENDING)], unique=True),
+        IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
+    ],
     COLL_RUN_COUNTERS: [
         IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING)], unique=True),
     ],

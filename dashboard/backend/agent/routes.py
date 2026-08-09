@@ -6,7 +6,7 @@ import json
 import re
 import time
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
 
 from dashboard.backend.agent.service import (
@@ -221,6 +221,9 @@ def queue_structured_copy(
 ) -> dict[str, Any]:
     from dashboard.backend.db.client import get_sync_db
     from dashboard.backend.db.collections import COLL_RUNS
+    from dashboard.backend.services.render_copy_jobs import (
+        enqueue_render_copy_job,
+    )
 
     run = get_sync_db()[COLL_RUNS].find_one(
         {"run_id": run_id, "user_id": str(user["user_id"])},
@@ -230,35 +233,61 @@ def queue_structured_copy(
             "device_id": 1,
             "owner_type": 1,
             "owner_id": 1,
+            "run_number": 1,
         },
     )
     if not run or not run.get("agent_id") or not run.get("device_id"):
         raise HTTPException(status_code=409, detail="Run has no authoritative local device")
     operation_id = str((payload or {}).get("operation_id") or "")
-    if not operation_id:
-        raise HTTPException(status_code=400, detail="Operation ID is required")
+    settings = (payload or {}).get("settings")
     try:
-        job = create_job(
-            agent_id=str(run["agent_id"]),
-            device_id=str(run["device_id"]),
+        job = enqueue_render_copy_job(
+            run={"run_id": run_id, **run},
             user_id=str(user["user_id"]),
-            owner_type=str(run.get("owner_type") or "user"),
-            owner_id=str(run.get("owner_id") or user["user_id"]),
-            run_id=run_id,
-            job_type="execute_run",
-            command="generate_copy",
-            parameters={},
+            settings=settings if isinstance(settings, dict) else {},
             client_operation_id=operation_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
-        "job_id": job["job_id"],
+        "copy_job_id": job["copy_job_id"],
         "run_id": run_id,
         "status": job["status"],
-        "agent_id": job["agent_id"],
-        "device_id": job["device_id"],
+        "progress_code": job["progress_code"],
     }
+
+
+@router.post("/api/runs/allocate-copy")
+def allocate_render_structured_copy_run(
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    from dashboard.backend.services.render_copy_jobs import (
+        allocate_render_copy_run,
+    )
+
+    try:
+        return allocate_render_copy_run(
+            user_id=str(user["user_id"]),
+            owner_type=str(payload.get("owner_type") or ""),
+            owner_id=str(payload.get("owner_id") or ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/runs/{run_id}/structured-copy/{copy_job_id}")
+def get_structured_copy_status(
+    run_id: str,
+    copy_job_id: str,
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict[str, Any]:
+    from dashboard.backend.services.render_copy_jobs import copy_job_status
+
+    status = copy_job_status(copy_job_id, str(user["user_id"]))
+    if status is None or str(status.get("run_id") or "") != run_id:
+        raise HTTPException(status_code=404, detail="Structured copy job not found")
+    return status
 
 
 @router.post("/api/runs/{run_id}/image-generation")
@@ -761,6 +790,77 @@ def reconcile_deleted_prompt(
         "deleted": deleted,
         "prompt_count": prompt_count,
     }
+
+
+@router.get("/api/agents/prompt-deliveries/poll")
+def poll_agent_prompt_deliveries(
+    response: Response,
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> list[dict[str, Any]]:
+    from dashboard.backend.services.render_copy_jobs import poll_prompt_deliveries
+
+    response.headers["Cache-Control"] = "no-store"
+    return poll_prompt_deliveries(agent)
+
+
+@router.post("/api/agents/prompt-deliveries/{delivery_id}/ack")
+def acknowledge_agent_prompt_delivery(
+    delivery_id: str,
+    payload: dict[str, Any] = Body(...),
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, Any]:
+    from dashboard.backend.services.render_copy_jobs import (
+        acknowledge_prompt_delivery,
+    )
+
+    prompt_ids = payload.get("prompt_ids")
+    if (
+        not isinstance(prompt_ids, list)
+        or len(prompt_ids) > 500
+        or any(not isinstance(value, str) or not value for value in prompt_ids)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Prompt delivery acknowledgement is invalid",
+        )
+    try:
+        return acknowledge_prompt_delivery(
+            delivery_id,
+            agent,
+            prompt_ids=prompt_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/api/agents/runs/{run_id}/image-context")
+def materialize_agent_image_context(
+    run_id: str,
+    response: Response,
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_RUNS
+    from dashboard.backend.services.user_config import resolve_effective_config
+
+    run = get_sync_db()[COLL_RUNS].find_one(
+        {
+            "run_id": run_id,
+            "user_id": str(agent["user_id"]),
+            "agent_id": str(agent["agent_id"]),
+            "device_id": str(agent.get("device_id") or ""),
+        },
+        {"_id": 0, "owner_type": 1, "owner_id": 1},
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    config = resolve_effective_config(
+        str(agent["user_id"]),
+        str(run.get("owner_id") or "") if run.get("owner_type") == "org" else None,
+    )
+    conversion_prompt = str(config.get("conversion_916_prompt") or "").strip()
+    response.headers["Cache-Control"] = "no-store"
+    return {"run_id": run_id, "conversion_916_prompt": conversion_prompt}
 
 
 @router.post("/api/agents/jobs/{job_id}/complete")

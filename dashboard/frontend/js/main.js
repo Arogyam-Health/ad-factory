@@ -33,6 +33,30 @@ async function ensureStructuredLocal() {
   return { ...owner, ...paired };
 }
 
+async function saveProductMasterDoc(content) {
+  const effectiveUrl = studioCurrentOrgId
+    ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
+    : "/api/config/effective";
+  const effective = await fetchJSON(effectiveUrl);
+  const isSharedOrg = effective?.owner_type === "org" && studioCurrentOrgId;
+  await fetchJSON(
+    isSharedOrg
+      ? `/api/orgs/${encodeURIComponent(studioCurrentOrgId)}/config`
+      : "/api/user/config",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        isSharedOrg
+          ? { config: { product_master_doc: content } }
+          : { product_master_doc: content },
+      ),
+    },
+  );
+  clearCache("/api/config/effective");
+  clearCache("/api/config/sources");
+}
+
 async function renderInputImages(images = []) {
   const gallery = document.getElementById("inputImageGallery");
   if (!gallery) return;
@@ -137,22 +161,6 @@ async function loadStructuredAssets({ silent = true } = {}) {
     const gallery = document.getElementById("inputImageGallery");
     if (gallery) gallery.innerHTML = '<p class="hint">Local assets unavailable. Start this device\'s local agent and retry.</p>';
     return [];
-  }
-}
-
-async function resolveProductDocumentText(sourceConfig) {
-  try {
-    return await localDataPlane.getText(
-      "documents",
-      "structured-product-document",
-      structuredDeviceId,
-    );
-  } catch {
-    const mongoProductDoc = String(sourceConfig.product_master_doc || "").trim();
-    if (mongoProductDoc) return mongoProductDoc;
-    throw new Error(
-      "Product document is unavailable. Add Product Master Doc content or upload a product document.",
-    );
   }
 }
 
@@ -452,6 +460,37 @@ document.getElementById("deleteAllCredentialsBtn")?.addEventListener("click", as
 
 const runBtn = document.getElementById("runBtn");
 
+async function waitForRenderCopy(runId, copyJobId, displayBatch) {
+  while (true) {
+    const job = await fetchJSON(
+      `/api/runs/${encodeURIComponent(runId)}/structured-copy/${encodeURIComponent(copyJobId)}`,
+    );
+    if (job.status === "completed") {
+      setStatus(
+        `Run ${displayBatch} copy and final prompts were generated on Render. Final prompts will be delivered to the registered local agent when it is online.`,
+      );
+      return job;
+    }
+    if (job.status === "failed") {
+      const detail = job.error || {};
+      const provider = detail.provider || "provider";
+      const model = detail.model ? ` ${detail.model}` : "";
+      const httpStatus = detail.http_status ? ` (HTTP ${detail.http_status})` : "";
+      throw new Error(
+        `${provider}${model} failed${httpStatus}: ${detail.error_code || job.progress_code || "copy_generation_failed"}`,
+      );
+    }
+    if (job.status === "canceled") {
+      throw new Error("Structured copy generation was canceled.");
+    }
+    setStatus(
+      `Run ${displayBatch}: ${job.progress_code || "generating_copy"} on Render (${copyJobId}).`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+
+
 async function runPipeline() {
   const selectedPersonas = getPersonaSelection();
   if (!selectedPersonas.length) {
@@ -491,7 +530,7 @@ async function runPipeline() {
     hypothesis: getHypothesisConfig(),
   };
 
-  setStatus("Allocating a local run workspace...");
+  setStatus("Allocating a Render copy job...");
   if (runBtn) {
     runBtn.disabled = true;
     runBtn.classList.add("is-loading");
@@ -508,16 +547,6 @@ async function runPipeline() {
       clearInterval(state.runPollInterval);
       state.runPollInterval = null;
     }
-    const owner = structuredOwner();
-    await ensureStructuredLocal();
-    const productAssets = await localDataPlane.listAssets({
-      kind: "product_image",
-      deviceId: structuredDeviceId,
-    });
-    const effective = await fetchJSON(studioCurrentOrgId
-      ? `/api/config/effective?org_id=${encodeURIComponent(studioCurrentOrgId)}`
-      : "/api/config/effective");
-    const sourceConfig = effective?.config || {};
     const providerName = cfg.provider === "google" ? "google_gemini" : "opencode";
     const pendingSecret = providerName === "google_gemini"
       ? document.getElementById("googleApiKey").value.trim()
@@ -527,190 +556,40 @@ async function runPipeline() {
       ...(pendingSecret ? { api_key: pendingSecret } : {}),
       default_model: providerName === "google_gemini" ? cfg.google_model : cfg.opencode_model,
     });
-    const materializedProvider = await fetchJSON(
-      `/api/user/provider-config/${encodeURIComponent(providerName)}/materialize`,
-      { method: "POST" },
-    );
-    if (!String(materializedProvider.api_key || "").trim()) {
-      throw new Error(`Save a ${providerName === "opencode" ? "OpenCode" : "Google Gemini"} API key before starting a run.`);
-    }
-    if (providerName === "opencode" && !String(materializedProvider.api_url || "").trim()) {
-      throw new Error("Save an OpenCode API URL before starting a run.");
-    }
-    await localDataPlane.putProviderConfig(
-      providerName,
-      materializedProvider,
-      { deviceId: structuredDeviceId },
-    );
     document.getElementById("googleApiKey").value = "";
     document.getElementById("opencodeApiKey").value = "";
 
-    const envelope = await localDataPlane.allocateLocalRun({
-      ...owner,
-      flowType: "structured",
-      settings: {
-        ad_multiplier: cfg.multiplier,
-        batch_size: cfg.batch_size,
-        global_formats: cfg.global_formats,
-        language_mode: cfg.language_mode,
-        model: cfg.opencode_model || cfg.google_model,
-        provider: cfg.provider,
-        selected_personas: cfg.selected_personas,
-        server_type: cfg.server_type,
-        share_background_across_personas: cfg.share_background_across_personas,
-        hypothesis_type: cfg.hypothesis?.type || "",
-        hypothesis_variant: cfg.hypothesis?.variant || "",
-      },
-    });
-    structuredDeviceId = envelope.device_id;
-    activeStructuredRunId = envelope.run_id;
-    const parseConfigJSON = (key, fallback) => {
-      const value = sourceConfig[key];
-      if (value && typeof value === "object") return value;
-      try { return JSON.parse(value || ""); } catch { return fallback; }
-    };
-    const personaSeeds = parseConfigJSON("persona_seeds", []);
-    const conversionPromptText = String(sourceConfig.conversion_916_prompt || "").trim();
-    if (!conversionPromptText) {
-      throw new Error("A local 9:16 conversion prompt is required before starting this run.");
-    }
-    const conversionPromptResource = await localDataPlane.putText(
-      "configs",
-      `${envelope.run_id}-conversion-916`,
-      conversionPromptText,
-      {
-        deviceId: structuredDeviceId,
-        operationId: `${envelope.run_id}-conversion-916`,
-        runId: envelope.run_id,
-        role: "conversion_prompt",
-      },
-    );
-    const personaByNumber = new Map(
-      (Array.isArray(personaSeeds) ? personaSeeds : Object.values(personaSeeds || {}))
-        .map((persona) => [Number(persona.persona_number || persona.number), persona]),
-    );
-    const plannedAds = [];
-    for (const personaNumber of cfg.selected_personas) {
-      const source = personaByNumber.get(Number(personaNumber)) || {};
-      const formats = cfg.formats_by_persona[String(personaNumber)]?.length
-        ? cfg.formats_by_persona[String(personaNumber)]
-        : cfg.global_formats;
-      for (const format of formats) {
-        for (let creativeIndex = 1; creativeIndex <= cfg.multiplier; creativeIndex += 1) {
-          plannedAds.push({
-            format,
-            creative_index: creativeIndex,
-            creative_total: cfg.multiplier,
-            concept_angle: "desired_outcome",
-            persona: {
-              number: Number(personaNumber),
-              name: String(source.persona_name || source.name || `Persona ${personaNumber}`),
-              pain_en: String(source.core_pattern || "The current routine is difficult to sustain."),
-              desire_en: String(source.relevant_ok_kit_role || "A practical routine that fits daily life."),
-              friction_en: String(source.why_it_failed || "Past approaches felt difficult to maintain."),
-              proof_needed_en: String(source.guardrail || "Use verified product facts only."),
-              tone_cue_en: "Practical, empathetic, and confidence-building.",
-              pain_hi: "मौजूदा रूटीन को लगातार निभाना मुश्किल है।",
-              desire_hi: "रोज़मर्रा में फिट होने वाला आसान रूटीन चाहिए।",
-              friction_hi: "पुराने तरीके लगातार निभाना मुश्किल था।",
-              proof_needed_hi: "केवल सत्यापित प्रोडक्ट तथ्यों का उपयोग करें।",
-              tone_cue_hi: "सरल, भरोसेमंद और व्यावहारिक।",
-            },
-          });
-        }
-      }
-    }
-    await localDataPlane.putText(
-      "configs",
-      `${envelope.run_id}-structured-settings`,
-      JSON.stringify({
-        execution: {
-          provider: providerName,
-          model: cfg.opencode_model || cfg.google_model,
-          language_mode: cfg.language_mode,
-          seed: envelope.run_number,
-          max_repair_attempts: 1,
-        },
-        product_assets: productAssets.map((item) => ({
-          resource_id: item.resource_id,
-          version: item.version,
-          sha256: item.sha256,
-          bytes: item.bytes,
-          status: item.status,
-        })),
-        "conversion_prompt": {
-          resource_id: conversionPromptResource.resource_id,
-          version: conversionPromptResource.version,
-        },
-        planned_ads: plannedAds,
-        prompt_assembler_templates: parseConfigJSON("prompt_assembler_templates", {}),
-        source_config: {
-          config_id: effective?.config_id || "",
-          source: effective?.source || "",
-          version_id: effective?.version_id || "",
-        },
+    const owner = structuredOwner();
+    const envelope = await fetchJSON("/api/runs/allocate-copy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        owner_type: owner.ownerType,
+        owner_id: owner.ownerId,
       }),
-      {
-        deviceId: structuredDeviceId,
-        operationId: `${envelope.run_id}-settings`,
-        runId: envelope.run_id,
-        role: "structured_settings",
-      },
-    );
-    await localDataPlane.putText(
-      "configs",
-      `${envelope.run_id}-backgrounds`,
-      JSON.stringify(parseConfigJSON("background_variant", {})),
-      {
-        deviceId: structuredDeviceId,
-        operationId: `${envelope.run_id}-backgrounds`,
-        runId: envelope.run_id,
-        role: "backgrounds",
-      },
-    );
-    const sourceUploads = [
-      ["product-document", document.getElementById("productFile")],
-      ["image-sources", document.getElementById("imageSourcesFile")],
-    ];
-    for (const [key, input] of sourceUploads) {
-      const file = input?.files?.[0];
-      if (file) {
-        await localDataPlane.putText(
-          "documents",
-          `${envelope.run_id}-${key}`,
-          await file.text(),
-          {
-            deviceId: structuredDeviceId,
-            operationId: `${envelope.run_id}-${key}`,
-            ...(key === "product-document"
-              ? { runId: envelope.run_id, role: "product_document" }
-              : {}),
-          },
-        );
-      }
-    }
-    if (!document.getElementById("productFile")?.files?.[0]) {
-      const existingProductDoc = await resolveProductDocumentText(sourceConfig);
-      await localDataPlane.putText(
-        "documents",
-        `${envelope.run_id}-product-document`,
-        existingProductDoc,
-        {
-          deviceId: structuredDeviceId,
-          operationId: `${envelope.run_id}-product-document`,
-          runId: envelope.run_id,
-          role: "product_document",
-        },
-      );
-    }
+    });
+    activeStructuredRunId = envelope.run_id;
     const queued = await fetchJSON(`/api/runs/${encodeURIComponent(envelope.run_id)}/structured-copy`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operation_id: `${envelope.run_id}-structured-copy` }),
+      body: JSON.stringify({
+        operation_id: `${envelope.run_id}-structured-copy`,
+        settings: {
+          selected_personas: cfg.selected_personas,
+          global_formats: cfg.global_formats,
+          formats_by_persona: cfg.formats_by_persona,
+          multiplier: cfg.multiplier,
+          language_mode: cfg.language_mode,
+          provider: providerName,
+          model: cfg.opencode_model || cfg.google_model,
+          org_id: studioCurrentOrgId || "",
+        },
+      }),
     });
     setStatus(
-      `Run ${envelope.display_batch} is generating ad copy through ${providerName === "opencode" ? "OpenCode" : "Google Gemini"} on your local agent. Images are not generated in this step. Job: ${queued.job_id}`,
+      `Run ${envelope.display_batch} is generating ad copy through ${providerName === "opencode" ? "OpenCode" : "Google Gemini"} on Render. Images are not generated in this step. Job: ${queued.copy_job_id}`,
     );
+    await waitForRenderCopy(envelope.run_id, queued.copy_job_id, envelope.display_batch);
     invalidateRuns();
     await loadAndRenderRuns();
   } catch (err) {
@@ -767,12 +646,8 @@ document.getElementById("saveProductDoc")?.addEventListener("click", async () =>
   if (!textarea) return;
   if (saveBtn) saveBtn.disabled = true;
   try {
-    await ensureStructuredLocal();
-    const saved = await localDataPlane.putText("documents", "structured-product-document", textarea.value, {
-      deviceId: structuredDeviceId,
-    });
-    renderProductDocInfo(saved);
-    setStatus("Product doc saved.");
+    await saveProductMasterDoc(textarea.value);
+    setStatus("Product Master Doc saved to Render configuration.");
   } catch (err) {
     setStatus(`Failed to save product doc: ${String(err)}`);
   } finally {
@@ -890,12 +765,11 @@ document.getElementById("productFile")?.addEventListener("change", async (event)
   if (!file) return;
   setStatus(`Uploading ${file.name}...`);
   try {
-    await ensureStructuredLocal();
-    const doc = await localDataPlane.putText("documents", "structured-product-document", await file.text(), {
-      deviceId: structuredDeviceId,
-    });
-    renderProductDocInfo(doc);
-    setStatus(`Uploaded ${file.name}`);
+    const content = await file.text();
+    await saveProductMasterDoc(content);
+    const textarea = document.getElementById("productDocText");
+    if (textarea) textarea.value = content;
+    setStatus(`Uploaded ${file.name} to Render configuration`);
     event.target.value = "";
   } catch (err) {
     setStatus(`Upload failed: ${String(err)}`);
