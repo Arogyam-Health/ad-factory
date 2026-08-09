@@ -331,6 +331,45 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertNotIn("product_document", json.dumps(traces))
         self.assertEqual(traces[0]["request"]["planned_ad_count"], 1)
 
+    def test_provider_trace_storage_failure_is_not_silently_discarded(
+        self,
+    ) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+            provider_generate_callable,
+        )
+
+        response = Mock()
+        response.status_code = 429
+        response.text = '{"error":{"type":"FreeUsageLimitError"}}'
+        response.headers = {"content-type": "application/json"}
+        response.raise_for_status.side_effect = requests.HTTPError("limited")
+
+        def fail_trace(_event):
+            raise RuntimeError("trace database unavailable")
+
+        with patch(
+            "dashboard.backend.services.render_structured_copy.requests.post",
+            return_value=response,
+        ):
+            generate = provider_generate_callable(
+                "opencode",
+                "opencode/deepseek-v4-flash-free",
+                {
+                    "api_url": "https://opencode.ai/zen/v1",
+                    "api_key": "test-key",
+                },
+                trace_callback=fail_trace,
+            )
+            with self.assertRaises(ProviderCallError) as raised:
+                generate({"task": "copy"})
+
+        self.assertFalse(raised.exception.trace_persisted)
+        self.assertEqual(
+            raised.exception.trace_persistence_error,
+            "RuntimeError",
+        )
+
     def test_provider_call_waits_without_a_client_side_timeout(self) -> None:
         from dashboard.backend.services.render_structured_copy import (
             provider_generate_callable,
