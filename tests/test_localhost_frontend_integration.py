@@ -189,6 +189,13 @@ console.log(JSON.stringify(simplified));
         self.assertNotIn("file", json.dumps(render_calls[0]["body"]).lower())
         self.assertEqual(local_uploads[0]["bodyType"], "FormData")
 
+    def test_local_prompt_card_uses_the_delivered_prompt_identifier(self) -> None:
+        source = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("pp?.prompt_id", source)
+        self.assertIn("promptId: prompt.prompt_id || \"\"", source)
+
 
 if __name__ == "__main__":
     unittest.main()
