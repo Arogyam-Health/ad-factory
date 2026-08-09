@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
 
@@ -9,10 +12,31 @@ from dashboard.backend.services.provider_config import (
     delete_provider_config,
     get_all_provider_configs,
     get_materialized_provider_config,
+    get_decrypted_provider_key,
     get_provider_config,
     set_provider_config,
 )
 router = APIRouter()
+
+
+def _safe_catalog_url(value: str) -> bool:
+    """Allow model discovery only against public HTTPS endpoints."""
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not host or parsed.username or parsed.password:
+        return False
+    if host == "opencode.ai" or host.endswith(".opencode.ai"):
+        return True
+    try:
+        addresses = {
+            result[4][0]
+            for result in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+        }
+        return bool(addresses) and all(
+            ipaddress.ip_address(address).is_global for address in addresses
+        )
+    except (OSError, ValueError):
+        return False
 
 
 @router.get("/api/user/provider-config")
@@ -83,6 +107,47 @@ def materialize_provider(
 def user_opencode_catalog(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    from dashboard.backend.app import build_opencode_catalog
+    from dashboard.backend.app import (
+        build_opencode_catalog,
+        choose_openai_gpt52,
+        list_opencode_models,
+    )
 
-    return build_opencode_catalog()
+    config = get_provider_config(user["user_id"], "opencode")
+    if config is None:
+        return build_opencode_catalog()
+
+    saved = config["config"]
+    api_url = str(saved.get("api_url") or "").strip()
+    saved_model = str(saved.get("default_model") or "").strip()
+    models: list[str] = []
+    if api_url and _safe_catalog_url(api_url):
+        api_key = get_decrypted_provider_key(
+            user["user_id"], "opencode", "api_key"
+        )
+        models = list_opencode_models(api_url=api_url, api_key=api_key)
+
+    normalized_saved_model = (
+        f"opencode/{saved_model}"
+        if saved_model and "/" not in saved_model
+        else saved_model
+    )
+    if not models and normalized_saved_model:
+        models = [normalized_saved_model]
+    grouped: dict[str, list[str]] = {}
+    for model in models:
+        provider = model.split("/", 1)[0]
+        grouped.setdefault(provider, []).append(model)
+    for provider in grouped:
+        grouped[provider] = sorted(set(grouped[provider]))
+    default_model = (
+        normalized_saved_model
+        if normalized_saved_model in models
+        else choose_openai_gpt52(models)
+    )
+    return {
+        "api_url": api_url,
+        "providers": sorted(grouped),
+        "models_by_provider": grouped,
+        "default_model": default_model,
+    }

@@ -161,6 +161,37 @@ class MongoProviderConfigTests(unittest.TestCase):
         self.assertEqual(materialized.status_code, 200)
         self.assertEqual(materialized.json()["api_key"], "route-secret")
 
+    def test_catalog_uses_saved_url_and_decrypted_key(self) -> None:
+        from dashboard.backend.services.provider_config import set_provider_config
+        from dashboard.backend.services.provider_routes import user_opencode_catalog
+
+        set_provider_config(
+            "usr_catalog",
+            "opencode",
+            {
+                "api_url": "https://opencode.ai/zen/v1",
+                "api_key": "catalog-secret",
+                "default_model": "opencode/model-b",
+            },
+        )
+        with patch(
+            "dashboard.backend.app.list_opencode_models",
+            return_value=["opencode/model-a", "opencode/model-b"],
+        ) as list_models:
+            catalog = user_opencode_catalog({"user_id": "usr_catalog"})
+
+        list_models.assert_called_once_with(
+            api_url="https://opencode.ai/zen/v1",
+            api_key="catalog-secret",
+        )
+        self.assertEqual(catalog["providers"], ["opencode"])
+        self.assertEqual(
+            catalog["models_by_provider"]["opencode"],
+            ["opencode/model-a", "opencode/model-b"],
+        )
+        self.assertEqual(catalog["default_model"], "opencode/model-b")
+        self.assertNotIn("catalog-secret", repr(catalog))
+
     def test_frontend_saves_cloud_config_then_materializes_for_local_execution(
         self,
     ) -> None:
@@ -170,7 +201,11 @@ class MongoProviderConfigTests(unittest.TestCase):
         )
 
         self.assertIn('fetchJSON("/api/user/provider-config"', main)
+        self.assertIn(
+            'fetchJSON("/api/user/provider-config/opencode/catalog"', main
+        )
         self.assertIn("/materialize", main)
+        self.assertNotIn('fetchJSON("/api/opencode/catalog")', main)
         self.assertIn('fetchJSON("/api/user/provider-config")', profile)
         self.assertNotIn("localDataPlane.listProviderConfigs", profile)
 

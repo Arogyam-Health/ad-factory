@@ -47,7 +47,7 @@ class MongoDashboardConfigTests(unittest.TestCase):
         )
 
         self.assertNotIn("/api/prompt-file-content", main_js)
-        self.assertIn('/js/main.js?v=6', index_html)
+        self.assertIn('/js/main.js?v=7', index_html)
 
     def test_frontend_assets_revalidate_after_deploy(self) -> None:
         from fastapi.testclient import TestClient

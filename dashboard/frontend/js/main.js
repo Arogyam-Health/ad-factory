@@ -163,7 +163,7 @@ async function initDefaults() {
     let opencode = data.opencode || {};
     const catalogPromise = Object.keys(opencode.models_by_provider || {}).length
       ? Promise.resolve(opencode)
-      : fetchJSON("/api/opencode/catalog").catch(() => opencode);
+      : fetchJSON("/api/user/provider-config/opencode/catalog").catch(() => opencode);
     const providerConfigsPromise = loadProviderConfigsIntoFields();
 
     // Load provider config (may have saved URL/key)
@@ -335,8 +335,15 @@ async function initStudioSourceSelector({ reloadInitialPersona = true } = {}) {
 }
 
 async function refreshOpenCodeModels() {
-  const provider = Object.keys(state.modelsByProvider)[0] || "";
-  renderModelOptions(provider, document.getElementById("opencodeModel")?.value || "");
+  const currentModel = document.getElementById("opencodeModel")?.value || "";
+  const catalog = await fetchJSON("/api/user/provider-config/opencode/catalog", {
+    noCache: true,
+  });
+  state.modelsByProvider = catalog.models_by_provider || {};
+  const provider = (catalog.providers || Object.keys(state.modelsByProvider))[0] || "";
+  renderModelOptions(provider, currentModel || catalog.default_model || "");
+  return Object.values(state.modelsByProvider)
+    .reduce((total, models) => total + (Array.isArray(models) ? models.length : 0), 0);
 }
 
 async function loadProviderConfigsIntoFields() {
@@ -386,8 +393,10 @@ document.getElementById("saveOpenCodeUrl")?.addEventListener("click", async () =
   if (!url) { setStatus("Enter an API URL first."); return; }
   try {
     await saveProviderConfig("opencode", { api_url: url });
-    await refreshOpenCodeModels();
-    setStatus("OpenCode URL saved to your account");
+    const modelCount = await refreshOpenCodeModels();
+    setStatus(modelCount
+      ? `OpenCode URL saved; loaded ${modelCount} model${modelCount === 1 ? "" : "s"}`
+      : "OpenCode URL saved, but the provider returned no models");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
@@ -399,8 +408,10 @@ document.getElementById("saveOpenCodeKey")?.addEventListener("click", async () =
     await saveProviderConfig("opencode", { api_key: key, default_model: model });
     document.getElementById("opencodeApiKey").value = "";
     document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
-    await refreshOpenCodeModels();
-    setStatus("OpenCode API key encrypted and saved to your account");
+    const modelCount = await refreshOpenCodeModels();
+    setStatus(modelCount
+      ? `OpenCode API key saved; loaded ${modelCount} model${modelCount === 1 ? "" : "s"}`
+      : "OpenCode API key saved, but the provider returned no models");
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 
