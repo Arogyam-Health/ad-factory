@@ -123,8 +123,68 @@ def _planned_ads(
     return planned
 
 
+def _normalized_language_block(
+    candidate: dict[str, Any],
+    language: str,
+) -> dict[str, Any]:
+    copy = (
+        candidate.get("copy")
+        if isinstance(candidate.get("copy"), dict)
+        else {}
+    )
+    nested = next(
+        (
+            value
+            for key, value in copy.items()
+            if str(key).upper() == language
+            and isinstance(value, dict)
+        ),
+        {},
+    )
+    alias = candidate.get(f"copy_{language.lower()}")
+    alias = alias if isinstance(alias, dict) else {}
+    direct_copy = (
+        copy
+        if any(
+            key in copy
+            for key in ("headline", "cta", "support_line", "subheadline")
+        )
+        else {}
+    )
+    sources = (
+        [candidate, direct_copy, alias, nested]
+        if language == "EN"
+        else [direct_copy, alias, nested]
+    )
+    allowed = (
+        "headline",
+        "cta",
+        "subheadline",
+        "support_line",
+        "context_line",
+        "trust_line",
+        "attribution",
+        "bullets",
+    )
+    block: dict[str, Any] = {}
+    for source in sources:
+        for key in allowed:
+            value = source.get(key)
+            if value not in (None, "", []):
+                block[key] = value
+        if (
+            not block.get("support_line")
+            and not block.get("subheadline")
+            and str(source.get("body") or "").strip()
+        ):
+            block["support_line"] = str(source["body"]).strip()
+    return block
+
+
 def _normalize_copy(
-    response: dict[str, Any], planned: list[dict[str, Any]]
+    response: dict[str, Any],
+    planned: list[dict[str, Any]],
+    languages: tuple[str, ...],
 ) -> dict[str, Any]:
     candidates = response.get("ads") if isinstance(response.get("ads"), list) else []
     ads = []
@@ -142,11 +202,13 @@ def _normalize_copy(
                     or plan.get("concept_angle")
                     or "desired_outcome"
                 ),
-                "copy": (
-                    candidate.get("copy")
-                    if isinstance(candidate.get("copy"), dict)
-                    else {}
-                ),
+                "copy": {
+                    language: _normalized_language_block(
+                        candidate,
+                        language,
+                    )
+                    for language in languages
+                },
             }
         )
     return {"default_aspect_ratio": "4:5", "ads": ads}
@@ -298,11 +360,33 @@ def generate_structured_prompt_bundle(
         "requirements": {
             "json_only": True,
             "preserve_persona_and_format": True,
+            "one_ad_per_planned_ad_in_the_same_order": True,
             "no_unverified_claims": True,
+            "copy_must_be_nested_by_language": True,
+        },
+        "output_schema": {
+            "product_truths": ["string"],
+            "ads": [
+                {
+                    "concept_angle": "string",
+                    "copy": {
+                        language: {
+                            "headline": "string",
+                            "cta": "string",
+                            "support_line": (
+                                "required string for HERO and UGC"
+                            ),
+                            "trust_line": "optional string",
+                            "bullets": ["optional string"],
+                        }
+                        for language in languages
+                    },
+                }
+            ],
         },
     }
     response = generate(request, False)
-    copy_batch = _normalize_copy(response, planned)
+    copy_batch = _normalize_copy(response, planned, languages)
     error = _validation_error(copy_batch, languages)
     repair_count = 0
     if error:
@@ -311,12 +395,13 @@ def generate_structured_prompt_bundle(
             {
                 "task": "Repair structured copy validation errors and return JSON only",
                 "validation_error": error,
+                "required_output_schema": request["output_schema"],
                 "original_request": request,
                 "invalid_response": response,
             },
             True,
         )
-        copy_batch = _normalize_copy(response, planned)
+        copy_batch = _normalize_copy(response, planned, languages)
         error = _validation_error(copy_batch, languages)
     if error:
         raise ProviderCallError(
