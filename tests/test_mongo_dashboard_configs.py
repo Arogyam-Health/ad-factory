@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 from unittest.mock import patch
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class _ConfigCollection:
@@ -26,6 +30,25 @@ class _DB:
 
 
 class MongoDashboardConfigTests(unittest.TestCase):
+    def test_studio_config_cards_have_no_legacy_content_route(self) -> None:
+        main_js = (ROOT / "dashboard/frontend/js/main.js").read_text(
+            encoding="utf-8"
+        )
+        index_html = (ROOT / "dashboard/frontend/index.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("/api/prompt-file-content", main_js)
+        self.assertIn('/js/main.js?v=5', index_html)
+
+    def test_frontend_assets_revalidate_after_deploy(self) -> None:
+        from fastapi.testclient import TestClient
+        from dashboard.backend.control_app import app
+
+        response = TestClient(app).get("/js/main.js")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("cache-control"), "no-cache")
+
     def test_dashboard_config_routes_remain_on_control_plane(self) -> None:
         from dashboard.backend.control_plane_policy import is_render_content_route
 
@@ -126,15 +149,11 @@ class MongoDashboardConfigTests(unittest.TestCase):
         self.assertLess(len(BSON.encode(document)), 16 * 1024 * 1024)
 
     def test_login_time_config_endpoints_load_without_local_agent(self) -> None:
-        from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
         from dashboard.backend.auth.service import require_user_dependency
-        from dashboard.backend.services.invite_routes import router as invite_router
+        from dashboard.backend import control_app as control_app_module
         from dashboard.backend.services.user_config import CONFIG_KEYS
-        from dashboard.backend.services.user_config_routes import (
-            router as user_config_router,
-        )
 
         files = {
             key: {
@@ -152,27 +171,37 @@ class MongoDashboardConfigTests(unittest.TestCase):
             "files": files,
         }
         db = _DB(personal)
-        app = FastAPI()
-        app.include_router(invite_router)
-        app.include_router(user_config_router)
+        app = control_app_module.app
         app.dependency_overrides[require_user_dependency] = lambda: {
             "user_id": "usr_1",
             "email": "user@example.com",
         }
 
-        with (
-            patch(
-                "dashboard.backend.services.user_config.get_sync_db",
-                return_value=db,
-            ),
-            patch(
-                "dashboard.backend.services.org_helper.get_sync_db",
-                return_value=db,
-            ),
-        ):
-            client = TestClient(app)
-            effective = client.get("/api/config/effective")
-            sources = client.get("/api/config/sources")
+        try:
+            with (
+                patch.object(
+                    control_app_module,
+                    "get_current_user_from_cookie",
+                    return_value={"user_id": "usr_1", "email": "user@example.com"},
+                ),
+                patch(
+                    "dashboard.backend.services.user_config.get_sync_db",
+                    return_value=db,
+                ),
+                patch(
+                    "dashboard.backend.services.org_helper.get_sync_db",
+                    return_value=db,
+                ),
+            ):
+                client = TestClient(app)
+                effective = client.get(
+                    "/api/config/effective", cookies={"session": "test"}
+                )
+                sources = client.get(
+                    "/api/config/sources", cookies={"session": "test"}
+                )
+        finally:
+            app.dependency_overrides.pop(require_user_dependency, None)
 
         self.assertEqual(effective.status_code, 200)
         self.assertEqual(

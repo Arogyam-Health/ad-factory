@@ -64,7 +64,10 @@ async def control_plane_boundary(request: Request, call_next) -> Response:
             },
             status_code=410,
         )
-    return await call_next(request)
+    response = await call_next(request)
+    if path == "/" or path.endswith(".html") or path.startswith("/js/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.on_event("startup")

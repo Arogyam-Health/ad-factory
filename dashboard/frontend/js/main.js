@@ -784,47 +784,47 @@ document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((car
 });
 
 // Config Files
+const configFilePathKeys = {
+  "persona_seeds.json": "persona_seeds",
+  "dashboard/backend/copy_architecture.json": "copy_architecture",
+  "dashboard/backend/copy_prompt_templates.json": "copy_prompt_templates",
+  "scripts/prompt_assembler_templates.json": "prompt_assembler_templates",
+  "background_variant.json": "background_variant",
+  "product_master_doc": "product_master_doc",
+};
+
 document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
   card.addEventListener("click", () => {
-    const configKey = card.dataset.configKey;
     const filePath = card.dataset.filePath;
+    const configKey = card.dataset.configKey || configFilePathKeys[filePath];
     const title = card.querySelector("strong").textContent;
-
-    if (configKey) {
-      const orgId = studioCurrentOrgId;
-      const fetchUrl = orgId
-        ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
-        : "/api/config/effective";
-      fetchJSON(fetchUrl)
-        .then((data) => {
-          const content = data?.config?.[configKey] || "";
-          const isOrg = data?.owner_type === "org";
-          const saveUrl = isOrg && orgId
-            ? `/api/orgs/${orgId}/config`
-            : "/api/user/config";
-          const saveBodyFn = (text) => isOrg && orgId
-            ? { config: { [configKey]: text } }
-            : { [configKey]: text };
-          showPromptFullscreen(title, content, {
-            saveUrl: saveUrl,
-            saveMethod: "PUT",
-            saveBody: saveBodyFn,
-            postSave: () => { clearCache("/api/config/effective"); clearCache("/api/config/sources"); },
-          });
-        })
-        .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
-    } else {
-      fetch(`/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`)
-        .then((r) => r.json())
-        .then((data) => {
-          showPromptFullscreen(title, data.content || "", {
-            fetchUrl: `/api/prompt-file-content?prompt_path=${encodeURIComponent(filePath)}`,
-            saveUrl: "/api/prompt-file-content",
-            saveBody: (text) => ({ prompt_path: filePath, content: text }),
-          });
-        })
-        .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
+    if (!configKey) {
+      appendLog(`Unknown config file: ${filePath || title}`);
+      return;
     }
+
+    const orgId = studioCurrentOrgId;
+    const fetchUrl = orgId
+      ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
+      : "/api/config/effective";
+    fetchJSON(fetchUrl)
+      .then((data) => {
+        const content = data?.config?.[configKey] || "";
+        const isOrg = data?.owner_type === "org";
+        const saveUrl = isOrg && orgId
+          ? `/api/orgs/${orgId}/config`
+          : "/api/user/config";
+        const saveBodyFn = (text) => isOrg && orgId
+          ? { config: { [configKey]: text } }
+          : { [configKey]: text };
+        showPromptFullscreen(title, content, {
+          saveUrl: saveUrl,
+          saveMethod: "PUT",
+          saveBody: saveBodyFn,
+          postSave: () => { clearCache("/api/config/effective"); clearCache("/api/config/sources"); },
+        });
+      })
+      .catch((err) => appendLog(`Failed to load ${title}: ${err}`));
   });
 });
 
