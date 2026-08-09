@@ -490,6 +490,15 @@ function normalizeRun(run) {
   };
 }
 
+function localOutputRenderSignature(runs) {
+  return JSON.stringify(runs.map((run) => [
+    run.run_id,
+    run.local_device_status || "",
+    run.image_files || [],
+    run.regeneration_queue_files || [],
+  ]));
+}
+
 function scopedStorageKey(baseKey) {
   const userId = getAuthUser()?.user_id || "anonymous";
   return `${baseKey}:${userId}`;
@@ -660,6 +669,7 @@ export function applyLocalArtifactsToRuns() {
 export async function refreshStructuredLocalOutputs() {
   const user = getAuthUser();
   if (!user?.user_id) return;
+  const beforeRenderSignature = localOutputRenderSignature(state.runsData);
   const activeDeviceIds = new Set(
     state.runsData.map((run) => run?.device_id).filter(Boolean),
   );
@@ -744,7 +754,13 @@ export async function refreshStructuredLocalOutputs() {
   });
   structuredLocalImages = next;
   applyLocalArtifactsToRuns();
-  if (state.runsData.length) renderRunCarousel().catch(() => {});
+  const afterRenderSignature = localOutputRenderSignature(state.runsData);
+  if (
+    state.runsData.length
+    && beforeRenderSignature !== afterRenderSignature
+  ) {
+    renderRunCarousel().catch(() => {});
+  }
 }
 
 function startLocalArtifactEvents() {

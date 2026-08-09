@@ -2,6 +2,8 @@ import { appendLog } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { localDataPlane } from "./local-data-plane.js";
 
+const expandedPromptRunIds = new Set();
+
 export function buildPromptEditor(run, container, promptsData) {
   const promptsByPath = new Map();
   if (Array.isArray(promptsData)) {
@@ -42,10 +44,12 @@ export function buildPromptEditor(run, container, promptsData) {
       .then((data) => {
         const prompts = data.prompts || [];
         if (!prompts.length) {
+          expandedPromptRunIds.delete(run.run_id);
           loadHint.textContent = "No prompts found for this run.";
           loadBtn.disabled = false;
           return;
         }
+        expandedPromptRunIds.add(run.run_id);
         loadBtn.remove();
         loadHint.remove();
 
@@ -194,6 +198,9 @@ export function buildPromptEditor(run, container, promptsData) {
         }
       });
   };
+  if (expandedPromptRunIds.has(run.run_id)) {
+    queueMicrotask(() => loadBtn.click());
+  }
 }
 
 function mkBtn(text) {
