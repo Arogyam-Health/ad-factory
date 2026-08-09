@@ -47,7 +47,7 @@ class MongoDashboardConfigTests(unittest.TestCase):
         )
 
         self.assertNotIn("/api/prompt-file-content", main_js)
-        self.assertIn('/js/main.js?v=8', index_html)
+        self.assertIn('/js/main.js?v=9', index_html)
 
     def test_new_local_root_falls_back_to_mongo_product_master_doc(self) -> None:
         main_js = (ROOT / "dashboard/frontend/js/main.js").read_text(
