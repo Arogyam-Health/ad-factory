@@ -430,6 +430,62 @@ class ProviderRelayTests(unittest.TestCase):
 
         authenticate.assert_called_once_with("agent-secret")
 
+    def test_offline_local_provider_is_requeued_instead_of_failed(
+        self,
+    ) -> None:
+        from dashboard.backend.services import render_copy_jobs
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+        )
+
+        job = {
+            "copy_job_id": "copy-1",
+            "run_id": "run-1",
+            "run_number": 1,
+            "user_id": "user-1",
+            "settings": {
+                "provider": "opencode",
+                "model": "opencode/big-pickle",
+            },
+        }
+        offline = ProviderCallError(
+            code="local_provider_agent_offline",
+            provider="opencode",
+            model="opencode/big-pickle",
+            duration_ms=0,
+        )
+        with (
+            patch.object(
+                render_copy_jobs,
+                "_claim_next_job",
+                return_value=job,
+            ),
+            patch.object(
+                render_copy_jobs,
+                "get_materialized_provider_config",
+                return_value={"api_key": "secret"},
+            ),
+            patch.object(
+                render_copy_jobs,
+                "generate_structured_prompt_bundle",
+                side_effect=offline,
+            ),
+            patch.object(
+                render_copy_jobs,
+                "_defer_job_for_local_agent",
+            ) as defer,
+            patch.object(render_copy_jobs, "_fail_job") as fail,
+        ):
+            self.assertTrue(
+                render_copy_jobs.process_next_render_copy_job()
+            )
+
+        defer.assert_called_once_with(
+            job,
+            "local_provider_agent_offline",
+        )
+        fail.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
