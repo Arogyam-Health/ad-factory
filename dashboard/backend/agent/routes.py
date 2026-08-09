@@ -236,8 +236,8 @@ def queue_structured_copy(
             "run_number": 1,
         },
     )
-    if not run or not run.get("agent_id") or not run.get("device_id"):
-        raise HTTPException(status_code=409, detail="Run has no authoritative local device")
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
     operation_id = str((payload or {}).get("operation_id") or "")
     settings = (payload or {}).get("settings")
     try:
