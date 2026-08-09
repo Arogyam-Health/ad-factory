@@ -13,8 +13,8 @@ This is a large refactor. Implement it completely, in phases, with focused tests
 3. Render must never proxy user file bytes to the local agent.
 4. Render runtime disk must not be used for durable or workflow-critical user content.
 5. MongoDB must contain ownership/control metadata, the eight bounded dashboard configuration files, and owner-scoped provider settings.
-6. MongoDB must not contain base64 files, generated prompt bodies, uploaded document bodies, plaintext provider secrets, LLM request/response bodies, local paths, local capability tokens, or localhost URLs except an explicitly configured provider API URL.
-7. Structured copy generation and prompt assembly must execute on the local agent.
+6. MongoDB must not contain base64 files, plaintext generated prompts, uploaded document bodies outside the eight bounded dashboard configs, plaintext provider secrets, LLM request/response bodies, local paths, local capability tokens, or localhost URLs except an explicitly configured provider API URL. Final prompts may exist only as encrypted, TTL-bound delivery ciphertext until a local agent acknowledges them.
+7. Structured copy generation and prompt assembly execute on Render; only final prompt bodies are delivered to local storage. Structured browser automation remains local.
 8. Structured and Reference browser automation must resolve prompts and exact ordered upload sets from local storage.
 9. Generated 4:5 and 9:16 images, revisions, replacements, and history must remain local.
 10. Existing functionality must continue to work after migration.
@@ -466,18 +466,17 @@ Structured 4:5 prompts normally use selected product assets. Reference 4:5 promp
 
 ## Structured Flow Implementation
 
-1. Replace Structured multipart submission to Render with run allocation plus direct localhost workspace upload.
-2. Store product documents, optional source files, hypotheses, selected assets and execution config locally.
-3. Move provider configuration and credentials to encrypted local storage.
-4. Move Google/OpenCode calls into the local worker.
-5. Store full provider traces locally and report only provider/model/status/duration/token counts/hashes.
-6. Move copy validation, repair and normalized copy JSON local.
-7. Run `generate_ads.py` locally or extract its reusable assembly functions into a local module.
-8. Store generated prompt bodies and sidecars as local resource versions.
-9. Replace Mongo `prompts.content` with local prompt references.
-10. Route selected-prompt, 4:5 batch, both-aspect and standalone 9:16 generation through local upload sets.
-11. Move prompt editing/import/export to local endpoints.
-12. Remove new writes to Render `output`, `runtime`, run inputs and generated-image trees.
+1. Allocate Structured copy runs on Render without requiring a running or previously registered local agent.
+2. Resolve the eight bounded dashboard configs and encrypted owner provider credentials on Render.
+3. Execute Google/OpenCode requests, validation, bounded repair, and `generate_ads` prompt assembly in a durable Mongo-backed Render job.
+4. Persist only provider/model/status/duration/count/hash diagnostics; never persist LLM request, response, normalized-copy, or plaintext prompt bodies.
+5. Encrypt the final prompt bundle into an owner-scoped TTL delivery record. Assign an unclaimed delivery atomically to the first authenticated local agent for that account.
+6. Import and hash-verify final prompts into owner-scoped local resources, then acknowledge and immediately delete delivery ciphertext.
+7. Keep product images out of copy generation. Resolve them from local storage only when 4:5 image generation starts.
+8. Materialize the bounded 9:16 conversion template from Render only when local browser conversion starts.
+9. Route selected-prompt, 4:5 batch, both-aspect and standalone 9:16 generation through local upload sets.
+10. Keep prompt editing/import/export and all generated-image lifecycle operations local.
+11. Remove new writes to Render `output`, `runtime`, run inputs and generated-image trees.
 
 ## Reference Flow Implementation
 
@@ -922,6 +921,7 @@ Update this table during implementation. Include commit SHA and verification res
 | Mongo-backed dashboard configs | Complete (repository) | `7573c6f`, `4137e27`, `43e0f3f`, plus persona-defaults follow-up | 8 focused Mongo config tests, 153 full regression tests, standalone smoke assertions, backend/frontend compilation, and lints pass | Restores all eight personal/org config files and editable personas, removes legacy Studio content routes, forces frontend asset revalidation, and validates production config/default endpoints plus MongoDB's document limit |
 | Mongo-backed provider settings | Complete (repository) | `79dd3b3` | 4 focused provider tests, 46 boundary/migration regressions, 157 full tests, backend/frontend syntax checks, lints, and Graphify update pass | Stores URL/model plus Fernet-encrypted API keys by user; safe reads expose only configured state and authenticated `no-store` materialization supplies local execution |
 | Retired API compatibility audit | Complete (repository) | `76802f3`, `7b10b14`, `757aab5`, `31e20b4`, `2e88a36`, `5393251`, `580beb9`, plus multi-account follow-up | 174 full regression tests pass; all frontend JavaScript and backend/local-runtime Python compile; production frontend-to-policy audit passes; Graphify update passes | Removes all shipped browser dependencies on retired Render content routes, keeps Structured copy independent of product images, reconciles stale owner/device-scoped metadata, propagates local prompt deletion, and stores separate local-agent credentials per dashboard account on shared machines |
+| Render Structured copy pipeline | Complete (repository) | `715d8bc` | 9 focused Render generation/delivery tests, 183 full regression tests, standalone smoke assertions, backend/frontend compilation, lints, and Graphify update pass | Runs provider calls and prompt assembly on Render without a running local agent; stores only metadata plus encrypted TTL delivery ciphertext; imports final prompts locally before acknowledgement and deletion |
 
 Repository implementation and automated verification are complete. Final
 production sign-off requires these external actions, which cannot be performed
@@ -937,9 +937,9 @@ from the repository test environment:
 The refactor is complete only when all of the following are true:
 
 1. Browser developer tools show user file uploads going to `127.0.0.1`, never the Render origin.
-2. MongoDB inspection confirms that no content bodies except the eight bounded dashboard config files and their version snapshots, base64 files, paths, URLs, capabilities or secrets are present.
+2. MongoDB inspection confirms that no content bodies except the eight bounded dashboard config files, their version snapshots, encrypted provider secrets, and TTL-bound encrypted prompt deliveries are present; no plaintext prompt, LLM request/response, base64 file, local path, localhost URL, or capability is stored.
 3. Render runtime-content directories can be read-only without breaking any feature.
-4. Structured copy generation, prompt assembly and browser automation run locally.
+4. Structured copy generation and prompt assembly run on Render; final prompts and all Structured browser automation remain local.
 5. Reference library, workspace, prompt assembly and browser automation run locally.
 6. Exact browser upload membership is represented by tested upload-set resources.
 7. Prompt and image lifecycle operations are fully local.
