@@ -8,6 +8,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -378,6 +381,50 @@ class ProviderRelayTests(unittest.TestCase):
         self.assertNotIn("supports_provider_relay", agent_service)
         self.assertNotIn("print(provider", transport)
         self.assertNotIn("logger.", transport)
+
+    def test_agent_websocket_authenticates_after_upgrade(self) -> None:
+        from dashboard.backend.agent import routes
+
+        app = FastAPI()
+        app.include_router(routes.router)
+        agent = {
+            "agent_id": "agent-1",
+            "user_id": "user-1",
+            "device_id": "dev_" + "a" * 32,
+            "protocol_version": "v1",
+        }
+        with (
+            patch.object(routes, "authenticate_agent", return_value=agent),
+            patch.object(routes, "heartbeat_agent"),
+            patch.object(routes, "poll_jobs", return_value=[]),
+            patch.object(
+                routes,
+                "poll_pairing_approvals",
+                return_value=[],
+            ),
+            TestClient(app) as client,
+        ):
+            with client.websocket_connect(
+                "/api/agent-runtime/ws"
+            ) as websocket:
+                websocket.send_json(
+                    {
+                        "type": "authenticate",
+                        "token": "agent-secret",
+                    }
+                )
+                connected = websocket.receive_json()
+                self.assertEqual(connected["type"], "connected")
+                websocket.send_json(
+                    {
+                        "type": "capabilities",
+                        "provider_relay": True,
+                    }
+                )
+                capability = websocket.receive_json()
+                self.assertTrue(capability["provider_relay"])
+
+        routes.authenticate_agent.assert_called_once_with("agent-secret")
 
 
 if __name__ == "__main__":
