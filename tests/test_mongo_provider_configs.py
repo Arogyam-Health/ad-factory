@@ -100,7 +100,10 @@ class MongoProviderConfigTests(unittest.TestCase):
         self.assertIsNone(get_provider_config("usr_2", "opencode"))
 
     def test_partial_updates_preserve_secret_and_validation_is_strict(self) -> None:
-        from dashboard.backend.services.provider_config import set_provider_config
+        from dashboard.backend.services.provider_config import (
+            get_materialized_provider_config,
+            set_provider_config,
+        )
 
         set_provider_config(
             "usr_1",
@@ -112,6 +115,32 @@ class MongoProviderConfigTests(unittest.TestCase):
         )
         stored = self.db.collection.documents[0]
         self.assertIn("encrypted_api_key", stored["config"])
+
+        first_ciphertext = stored["config"]["encrypted_api_key"]
+        first_fingerprint = stored["config"]["key_fingerprint"]
+        replaced = set_provider_config(
+            "usr_1",
+            "opencode",
+            {"api_key": "second-key"},
+        )
+        stored = self.db.collection.documents[0]
+        self.assertNotEqual(
+            stored["config"]["encrypted_api_key"],
+            first_ciphertext,
+        )
+        self.assertNotEqual(
+            stored["config"]["key_fingerprint"],
+            first_fingerprint,
+        )
+        self.assertEqual(
+            replaced["config"]["key_fingerprint"],
+            stored["config"]["key_fingerprint"],
+        )
+        self.assertEqual(
+            get_materialized_provider_config("usr_1", "opencode")["api_key"],
+            "second-key",
+        )
+        self.assertNotIn("second-key", repr(replaced))
 
         invalid = (
             ("unknown", {"api_key": "x"}),

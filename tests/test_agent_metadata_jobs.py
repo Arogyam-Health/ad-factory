@@ -11,8 +11,13 @@ from unittest.mock import patch
 
 
 class _Result:
-    def __init__(self, modified_count: int = 0) -> None:
+    def __init__(
+        self,
+        modified_count: int = 0,
+        deleted_count: int = 0,
+    ) -> None:
         self.modified_count = modified_count
+        self.deleted_count = deleted_count
 
 
 class _Cursor(list):
@@ -88,6 +93,13 @@ class _Collection:
                 for key, amount in update.get("$inc", {}).items():
                     doc[key] = int(doc.get(key) or 0) + amount
                 return _Result(1)
+        return _Result()
+
+    def delete_one(self, query: dict) -> _Result:
+        for index, doc in enumerate(self.docs):
+            if self._matches(doc, query):
+                self.docs.pop(index)
+                return _Result(deleted_count=1)
         return _Result()
 
     def find_one_and_update(self, query: dict, update: dict, **_kwargs):
@@ -518,6 +530,41 @@ class AgentMetadataJobTests(unittest.TestCase):
         self.assertEqual(repeated["changed"], 0)
         self.assertNotIn("payload", collection.docs[0])
         self.assertNotIn("private", json.dumps(dry))
+
+    def test_mongo_cleanup_deletes_legacy_jobs_that_cannot_be_safely_migrated(
+        self,
+    ) -> None:
+        from dashboard.backend.agent.migration import cleanup_mongo_job_documents
+
+        collection = _Collection()
+        collection.docs.append(
+            {
+                "job_id": "unsafe-legacy",
+                "payload": {
+                    "prompt": "private",
+                    "input_images": [{"base64": "A" * 1000}],
+                },
+            }
+        )
+
+        report = cleanup_mongo_job_documents(collection, apply=True)
+
+        self.assertEqual(report["deleted"], 1)
+        self.assertEqual(collection.docs, [])
+        self.assertNotIn("private", json.dumps(report))
+
+    def test_control_plane_startup_cleans_legacy_agent_jobs_before_indexes(
+        self,
+    ) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "dashboard"
+            / "backend"
+            / "control_app.py"
+        ).read_text(encoding="utf-8")
+        cleanup = source.index("cleanup_mongo_job_documents")
+        indexes = source.index("create_indexes")
+        self.assertLess(cleanup, indexes)
 
 
 if __name__ == "__main__":
