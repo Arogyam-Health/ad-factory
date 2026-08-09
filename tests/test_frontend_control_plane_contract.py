@@ -90,6 +90,18 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
                 _batch_job_status("", {"user_id": "usr_1"})
         self.assertEqual(raised.exception.status_code, 503)
 
+    def test_pairing_recovers_from_local_reset_and_logout_clears_sessions(self) -> None:
+        local_client = (
+            FRONTEND / "js" / "local-data-plane.js"
+        ).read_text(encoding="utf-8")
+        auth = (FRONTEND / "js" / "auth.js").read_text(encoding="utf-8")
+        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn('"invalid_session"', local_client)
+        self.assertIn("await this.ensurePaired(", local_client)
+        self.assertIn("clearLocalPairingSessions();", auth)
+        self.assertIn("loadStructuredAssets({ silent: false })", main)
+
 
 if __name__ == "__main__":
     unittest.main()

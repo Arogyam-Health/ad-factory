@@ -145,13 +145,16 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
             "device_id": 1,
             "owner_type": 1,
             "owner_id": 1,
+            "deletion_tombstone": 1,
         },
     )
     if not run or not run.get("agent_id") or not run.get("device_id"):
         raise HTTPException(
             status_code=409, detail="Run has no authoritative local device"
         )
-    operation_id = "purge_" + uuid.uuid4().hex
+    tombstone = run.get("deletion_tombstone") or {}
+    operation_id = str(tombstone.get("operation_id") or "")
+    operation_id = operation_id or "purge_" + uuid.uuid4().hex
     now = time.time()
     db[COLL_RUNS].update_one(
         {"run_id": run_id, "user_id": user_id},
@@ -181,6 +184,7 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
         command="purge_run",
         parameters={},
         client_operation_id=operation_id,
+        allow_inactive_agent=True,
     )
     return {
         "status": "deleting",

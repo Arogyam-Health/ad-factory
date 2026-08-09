@@ -1,4 +1,5 @@
 import { fetchJSON } from "./api.js";
+import { clearLocalPairingSessions } from "./local-data-plane.js";
 
 let authState = { authenticated: false, user_id: "", email: "", display_name: "" };
 let authCheckDone = false;
@@ -45,6 +46,7 @@ export async function initAuth() {
       <button id="logoutBtn" class="ghost-btn auth-btn" type="button">Logout</button>
     `;
     document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+      clearLocalPairingSessions();
       try {
         await fetchJSON("/api/auth/logout", { method: "POST" });
       } catch {}

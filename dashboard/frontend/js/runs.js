@@ -128,7 +128,7 @@ export async function renderRun(run) {
 
   const header = document.createElement("div");
   header.className = "run-header";
-  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${displayBatch(run)} &middot; prompts ${run.prompt_files.length} &middot; images ${run.image_files.length}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
+  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${displayBatch(run)} &middot; prompts ${run.prompt_count} &middot; images ${run.image_count}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
   if (run.device_id && run.local_device_status === "unavailable") {
     const unavailable = document.createElement("span");
     unavailable.className = "run-device-unavailable";
@@ -141,19 +141,11 @@ export async function renderRun(run) {
     e.stopPropagation();
     if (!confirm(`Delete entire run ${run.run_id} and all its images?`)) return;
     try {
-      if (!run.device_id) throw new Error("Run has no authoritative local device");
-      await localDataPlane.authorizedFetch(
-        `/v1/runs/${encodeURIComponent(run.run_id)}`,
-        { method: "DELETE", headers: { "Idempotency-Key": `delete-${run.run_id}-${Date.now()}` } },
-        run.device_id,
-      ).then(async (response) => {
-        if (!response.ok) throw new Error(`Local deletion failed (${response.status})`);
-      });
       await fetchJSON(`/api/runs/${run.run_id}`, {
         method: "DELETE",
-        headers: { "X-Local-Deletion-Receipt": "pending-reconciliation" },
+        headers: { "Idempotency-Key": `delete-${run.run_id}` },
       });
-      appendLog(`Deleted run ${run.run_id}`);
+      appendLog(`Run ${run.run_id} queued for local purge`);
       invalidateRuns();
       const { loadRuns } = await import("./runs.js");
       loadRuns();
@@ -171,10 +163,6 @@ export async function renderRun(run) {
     fetchImagesData(run.run_id),
     fetchPromptsData(run.run_id),
   ]);
-
-  if (run.prompt_files && run.prompt_files.length) {
-    div.appendChild(buildPromptFileSummary(run.run_id, run.prompt_files, promptsData));
-  }
 
   const promptActions = document.createElement("div");
   promptActions.className = "prompt-actions";
@@ -304,7 +292,7 @@ export async function loadRuns() {
   state.isRunsLoading = true;
   try {
     const data = await fetchJSON("/api/runs");
-    state.runsData = data.runs || [];
+    state.runsData = (data.runs || []).map(normalizeRun);
     applyLocalArtifactsToRuns();
     state.currentRunIndex = 0;
     updatePreviousRunOptions();
@@ -314,11 +302,10 @@ export async function loadRuns() {
 
     const batches = new Set();
     const batchLabels = new Map();
-    state.runsData.forEach((r) => {
-      if (r.batch) {
-        batches.add(r.batch);
-        batchLabels.set(r.batch, displayBatch(r));
-      }
+    state.runsData.forEach((run) => {
+      const key = runKey(run);
+      batches.add(key);
+      batchLabels.set(key, displayBatch(run));
     });
 
     const grid = document.createElement("div");
@@ -413,7 +400,25 @@ let localArtifactEventSource = null;
 const localDataEventStreams = new Map();
 
 function displayBatch(run) {
-  return run?.display_batch || (run?.run_number ? `v${run.run_number}` : run?.batch) || "-";
+  return run?.display_batch || (run?.run_number ? `v${run.run_number}` : "") || "-";
+}
+
+function runKey(run) {
+  return String(run?.run_id || run?.display_batch || run?.run_number || "");
+}
+
+function normalizeRun(run) {
+  return {
+    ...run,
+    display_batch: displayBatch(run),
+    prompt_count: Number(run?.prompt_count || 0),
+    image_count: Number(run?.image_count || 0),
+    prompt_files: Array.isArray(run?.prompt_files) ? run.prompt_files : [],
+    image_files: Array.isArray(run?.image_files) ? run.image_files : [],
+    regeneration_queue_files: Array.isArray(run?.regeneration_queue_files)
+      ? run.regeneration_queue_files
+      : [],
+  };
 }
 
 function scopedStorageKey(baseKey) {
@@ -740,10 +745,10 @@ function escapeHtml(value) {
 function selectedOrCurrentRuns() {
   const selectedBatches = getSelectedBatchValues();
   if (selectedBatches.length) {
-    return state.runsData.filter((run) => selectedBatches.includes(run.batch));
+    return state.runsData.filter((run) => selectedBatches.includes(runKey(run)));
   }
   const current = state.runsData[state.currentRunIndex];
-  return current?.batch ? [current] : [];
+  return current?.run_id ? [current] : [];
 }
 
 function hideAgentJobBar() {
@@ -841,7 +846,7 @@ document.getElementById("batchGen45")?.addEventListener("click", async () => {
   if (!engine) return;
 
   const runIds = runsForBatches.map((r) => r.run_id);
-  const batchLabel = runsForBatches.map((r) => r.batch).filter(Boolean).join(", ");
+  const batchLabel = runsForBatches.map(displayBatch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Generating 4:5 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
   showStopGenButton();
@@ -872,7 +877,7 @@ document.getElementById("batchGenBoth")?.addEventListener("click", async () => {
   if (!engine) return;
 
   const runIds = runsForBatches.map((r) => r.run_id);
-  const batchLabel = runsForBatches.map((r) => r.batch).filter(Boolean).join(", ");
+  const batchLabel = runsForBatches.map(displayBatch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Generating 4:5 + 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
   showStopGenButton();
@@ -898,7 +903,7 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
   if (!engine) return;
 
   const runIds = runsForBatches.map((r) => r.run_id);
-  const batchLabel = runsForBatches.map((r) => r.batch).filter(Boolean).join(", ");
+  const batchLabel = runsForBatches.map(displayBatch).filter(Boolean).join(", ");
   const engineLabel = engine === "chatgpt" ? "ChatGPT" : "Gemini";
   appendLog(`Generating 9:16 in ${engineLabel} for ${batchLabel || "current run"} (${runIds.length} run(s))...`);
   showStopGenButton();
@@ -926,10 +931,10 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
   if (!selectedBatches.length) { appendLog("Select at least one batch from the dropdown."); return; }
   appendLog(`Preparing download for ${selectedBatches.length} batch(es)...`);
   try {
-    const selectedRuns = state.runsData.filter((run) => selectedBatches.includes(run.batch));
+    const selectedRuns = state.runsData.filter((run) => selectedBatches.includes(runKey(run)));
     const localRunIds = new Set(localArtifactImages.flatMap((image) => image.run_ids || (image.run_id ? [image.run_id] : [])));
     const selectedLocalRuns = selectedRuns.filter((run) => localRunIds.has(run.run_id));
-    const selectedLocalBatches = selectedLocalRuns.map((run) => run.batch);
+    const selectedLocalBatches = selectedLocalRuns.map((run) => run.run_id);
     if (selectedLocalBatches.length) {
       const params = new URLSearchParams();
       selectedLocalRuns.forEach((run) => params.append("run_id", run.run_id));

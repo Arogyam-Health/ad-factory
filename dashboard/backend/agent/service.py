@@ -633,6 +633,7 @@ def create_job(
     command: str = "",
     parameters: dict[str, Any] | None = None,
     client_operation_id: str = "",
+    allow_inactive_agent: bool = False,
 ) -> dict[str, Any]:
     """Create a metadata-only job pinned to one authorized agent device.
 
@@ -640,9 +641,10 @@ def create_job(
     but only allowlisted scalar metadata is retained.
     """
     db = get_sync_db()
-    agent = db[COLL_AGENTS].find_one(
-        {"agent_id": agent_id, "user_id": user_id, "is_active": True}
-    )
+    agent_query: dict[str, Any] = {"agent_id": agent_id, "user_id": user_id}
+    if not allow_inactive_agent:
+        agent_query["is_active"] = True
+    agent = db[COLL_AGENTS].find_one(agent_query)
     if agent is None:
         raise ValueError("Agent does not belong to this user")
     resolved_device = device_id or str(agent.get("device_id") or "")

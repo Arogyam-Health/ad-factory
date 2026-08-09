@@ -145,6 +145,13 @@ export class LocalDataPlaneClient {
     }
   }
 
+  clearSessions() {
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index);
+      if (key?.startsWith(SESSION_PREFIX)) sessionStorage.removeItem(key);
+    }
+  }
+
   async ensurePaired({
     ownerType = "user",
     ownerId,
@@ -179,11 +186,28 @@ export class LocalDataPlaneClient {
   }
 
   async authorizedFetch(path, options = {}, deviceId) {
-    const session = this.session(deviceId);
+    let session = this.session(deviceId);
     if (!session?.access_token) throw new Error("Local pairing session is required");
-    const headers = new Headers(options.headers || {});
-    headers.set("Authorization", `Bearer ${session.access_token}`);
-    return fetch(`${this.baseUrl}${path}`, { ...options, headers });
+    const send = (accessToken) => {
+      const headers = new Headers(options.headers || {});
+      headers.set("Authorization", `Bearer ${accessToken}`);
+      return fetch(`${this.baseUrl}${path}`, { ...options, headers });
+    };
+    let response = await send(session.access_token);
+    if (response.status !== 401) return response;
+    const payload = await response.clone().json().catch(() => ({}));
+    if (payload?.error?.code !== "invalid_session") return response;
+
+    sessionStorage.removeItem(`${SESSION_PREFIX}${deviceId}`);
+    const paired = await this.ensurePaired({
+      ownerType: session.owner_type || "user",
+      ownerId: session.owner_id,
+      deviceId,
+      agentId: session.agent_id || "",
+      scopes: session.scopes || DEFAULT_SCOPES,
+    });
+    session = paired.session;
+    return send(session.access_token);
   }
 
   async allocateRun({
@@ -662,6 +686,9 @@ export class LocalDataPlaneClient {
 }
 
 export const localDataPlane = new LocalDataPlaneClient();
+export function clearLocalPairingSessions() {
+  localDataPlane.clearSessions();
+}
 
 if (typeof window !== "undefined") {
   window.AdFactoryLocalDataPlane = Object.freeze({

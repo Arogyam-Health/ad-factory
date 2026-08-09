@@ -344,9 +344,14 @@ async function initStudioSourceSelector({ reloadInitialPersona = true } = {}) {
     const src = btn.dataset.source;
     studioCurrentOrgId = src === "personal" ? null : src;
     styleButtons();
-    await reloadPersonaSeeds();
-    const suffix = studioCurrentOrgId ? `(org: ${btn.textContent})` : "(personal)";
-    setStatus(`Config source switched to ${btn.textContent} ${suffix}`);
+    structuredDeviceId = "";
+    try {
+      await Promise.all([reloadPersonaSeeds(), loadStructuredAssets({ silent: false })]);
+      const suffix = studioCurrentOrgId ? `(org: ${btn.textContent})` : "(personal)";
+      setStatus(`Config and local asset scope switched to ${btn.textContent} ${suffix}`);
+    } catch (error) {
+      setStatus(`Source changed, but local scope is unavailable: ${String(error)}`);
+    }
   });
 }
 

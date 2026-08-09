@@ -259,6 +259,30 @@ class AgentMetadataJobTests(unittest.TestCase):
         self.assertEqual(first["device_id"], self.device_id)
         self.assertNotIn("payload", first)
 
+    def test_offline_device_can_receive_idempotent_purge_job(self) -> None:
+        from dashboard.backend.agent.service import create_job
+
+        self.db["agents"].docs[0]["is_active"] = False
+        values = {
+            "agent_id": self.agent_id,
+            "device_id": self.device_id,
+            "user_id": "user-1",
+            "owner_type": "user",
+            "owner_id": "user-1",
+            "run_id": "run-1",
+            "job_type": "purge_run",
+            "command": "purge_run",
+            "parameters": {},
+            "client_operation_id": "purge-run-1",
+        }
+        with self.assertRaises(ValueError):
+            create_job(**values)
+
+        first = create_job(**values, allow_inactive_agent=True)
+        second = create_job(**values, allow_inactive_agent=True)
+        self.assertEqual(first["job_id"], second["job_id"])
+        self.assertEqual(first["command"], "purge_run")
+
     def test_creation_rejects_cross_user_device_and_run_authority(self) -> None:
         from dashboard.backend.agent.service import create_job
 
