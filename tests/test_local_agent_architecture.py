@@ -226,6 +226,59 @@ class ScopedPromptNameTests(unittest.TestCase):
 
 
 class AgentAuthTests(unittest.TestCase):
+    def test_saved_agent_credentials_are_scoped_by_dashboard_account(self) -> None:
+        import scripts.local_agent as local_agent
+        from local_agent_runtime.storage import AgentPaths
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AgentPaths(Path(tmp) / "agent")
+            paths.ensure()
+            previous_paths = local_agent.AGENT_PATHS
+            try:
+                local_agent.AGENT_PATHS = paths
+                paths.config.joinpath("agent.json").write_text(
+                    '{"api_base":"https://dashboard.example",'
+                    '"agent_id":"legacy-agent","token":"legacy-token"}',
+                    encoding="utf-8",
+                )
+                local_agent._save_agent_token(
+                    "https://dashboard.example",
+                    "user-1",
+                    "agent-1",
+                    "token-1",
+                )
+                local_agent._save_agent_token(
+                    "https://dashboard.example",
+                    "user-2",
+                    "agent-2",
+                    "token-2",
+                )
+
+                self.assertEqual(
+                    local_agent._load_saved_registration(
+                        "https://dashboard.example", "user-1"
+                    ),
+                    {"agent_id": "agent-1", "token": "token-1"},
+                )
+                self.assertEqual(
+                    local_agent._load_saved_registration(
+                        "https://dashboard.example", "user-2"
+                    ),
+                    {"agent_id": "agent-2", "token": "token-2"},
+                )
+                self.assertEqual(
+                    local_agent._load_only_saved_registration(
+                        "https://dashboard.example"
+                    ),
+                    {"agent_id": "legacy-agent", "token": "legacy-token"},
+                )
+                self.assertEqual(
+                    paths.config.joinpath("agent.json").stat().st_mode & 0o777,
+                    0o600,
+                )
+            finally:
+                local_agent.AGENT_PATHS = previous_paths
+
     def test_runtime_paths_can_use_agent_bearer_without_browser_cookie(self) -> None:
         from dashboard.backend.agent.auth import is_agent_runtime_path
 

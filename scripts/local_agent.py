@@ -1418,24 +1418,83 @@ def _token_config_path() -> Path:
     return AGENT_PATHS.config / "agent.json"
 
 
-def _load_saved_token(api_base: str) -> str:
+def _load_agent_credentials() -> dict[str, Any]:
     path = _token_config_path()
     if not path.is_file():
-        return ""
+        return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return ""
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_saved_registration(api_base: str, user_id: str) -> dict[str, str]:
+    payload = _load_agent_credentials()
     if str(payload.get("api_base") or "").rstrip("/") != api_base.rstrip("/"):
-        return ""
-    return str(payload.get("token") or "")
+        return {}
+    accounts = payload.get("accounts")
+    registration = accounts.get(user_id) if isinstance(accounts, dict) else None
+    if not isinstance(registration, dict):
+        return {}
+    agent_id = str(registration.get("agent_id") or "")
+    token = str(registration.get("token") or "")
+    return {"agent_id": agent_id, "token": token} if agent_id and token else {}
 
 
-def _save_agent_token(api_base: str, agent_id: str, token: str) -> None:
+def _load_only_saved_registration(api_base: str) -> dict[str, str]:
+    payload = _load_agent_credentials()
+    if str(payload.get("api_base") or "").rstrip("/") != api_base.rstrip("/"):
+        return {}
+    accounts = payload.get("accounts")
+    if isinstance(accounts, dict) and len(accounts) == 1:
+        user_id, registration = next(iter(accounts.items()))
+        if isinstance(registration, dict):
+            agent_id = str(registration.get("agent_id") or "")
+            token = str(registration.get("token") or "")
+            if user_id and agent_id and token:
+                return {
+                    "user_id": str(user_id),
+                    "agent_id": agent_id,
+                    "token": token,
+                }
+    legacy = payload.get("legacy")
+    legacy = legacy if isinstance(legacy, dict) else payload
+    agent_id = str(legacy.get("agent_id") or "")
+    token = str(legacy.get("token") or "")
+    return {"agent_id": agent_id, "token": token} if agent_id and token else {}
+
+
+def _save_agent_token(
+    api_base: str, user_id: str, agent_id: str, token: str
+) -> None:
     path = _token_config_path()
+    payload = _load_agent_credentials()
+    if str(payload.get("api_base") or "").rstrip("/") != api_base.rstrip("/"):
+        payload = {}
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, dict):
+        accounts = {}
+    accounts[user_id] = {"agent_id": agent_id, "token": token}
+    stored = {
+        "version": 2,
+        "api_base": api_base.rstrip("/"),
+        "accounts": accounts,
+    }
+    legacy = payload.get("legacy")
+    if not isinstance(legacy, dict):
+        legacy_agent_id = str(payload.get("agent_id") or "")
+        legacy_token = str(payload.get("token") or "")
+        legacy = (
+            {"agent_id": legacy_agent_id, "token": legacy_token}
+            if legacy_agent_id and legacy_token
+            else {}
+        )
+    if legacy:
+        stored["legacy"] = legacy
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     temporary.write_text(
-        json.dumps({"api_base": api_base.rstrip("/"), "agent_id": agent_id, "token": token}, indent=2) + "\n",
+        json.dumps(stored, indent=2) + "\n",
         encoding="utf-8",
     )
     os.chmod(temporary, 0o600)
@@ -1447,28 +1506,93 @@ def register_and_run(args: argparse.Namespace) -> None:
 
     _configure_runtime(args)
 
-    saved_token = _load_saved_token(AGENT_API_BASE)
     device_id = load_or_create_device_id(AGENT_PATHS)
-    if args.token or saved_token:
-        AGENT_TOKEN = args.token or saved_token
-        print("[agent] Using saved agent credential")
+    account_user_id = ""
+    saved_registration: dict[str, str] = {}
+    if args.token:
+        AGENT_TOKEN = args.token
+        print("[agent] Using explicitly supplied agent credential")
     else:
-        print(f"[agent] Registering agent with {AGENT_API_BASE}...")
-        result = api_request("POST", "/api/agents/register",
-                            {
-                                "name": args.name,
-                                "device_id": device_id,
-                                "protocol_version": "v1",
-                                "supports_pairing": True,
-                            })
-        if result is None:
-            print("[agent] Failed to register. Pass --session-cookie once, or reuse a saved --token.")
+        if AGENT_SESSION_COOKIE:
+            auth = api_request(
+                "GET", "/api/auth/status", timeout=20, quiet=True
+            )
+            if not isinstance(auth, dict) or not auth.get("authenticated"):
+                raise RuntimeError(
+                    "Dashboard session cookie is invalid or expired"
+                )
+            account_user_id = str(auth.get("user_id") or "")
+            if not account_user_id:
+                raise RuntimeError("Dashboard account identity is unavailable")
+            saved_registration = _load_saved_registration(
+                AGENT_API_BASE, account_user_id
+            )
+            if not saved_registration:
+                legacy = _load_only_saved_registration(AGENT_API_BASE)
+                visible_agents = api_request(
+                    "GET", "/api/agents", timeout=20, quiet=True
+                )
+                if (
+                    legacy
+                    and isinstance(visible_agents, list)
+                    and any(
+                        str(agent.get("agent_id") or "")
+                        == legacy.get("agent_id")
+                        for agent in visible_agents
+                        if isinstance(agent, dict)
+                    )
+                ):
+                    saved_registration = legacy
+                    _save_agent_token(
+                        AGENT_API_BASE,
+                        account_user_id,
+                        saved_registration["agent_id"],
+                        saved_registration["token"],
+                    )
+        else:
+            saved_registration = _load_only_saved_registration(AGENT_API_BASE)
+
+        if saved_registration:
+            AGENT_ID = str(saved_registration.get("agent_id") or "")
+            AGENT_TOKEN = str(saved_registration.get("token") or "")
+            print(
+                "[agent] Using saved credential for the selected dashboard account"
+            )
+        elif AGENT_SESSION_COOKIE:
+            print(
+                f"[agent] Registering this device for dashboard account {account_user_id}..."
+            )
+            result = api_request(
+                "POST",
+                "/api/agents/register",
+                {
+                    "name": args.name,
+                    "device_id": device_id,
+                    "protocol_version": "v1",
+                    "supports_pairing": True,
+                },
+            )
+            if result is None:
+                print("[agent] Failed to register this dashboard account.")
+                sys.exit(1)
+            AGENT_TOKEN = str(result["token"])
+            AGENT_ID = str(result["agent_id"])
+            print(f"[agent] Registered: {result['agent_id']}")
+            _save_agent_token(
+                AGENT_API_BASE,
+                account_user_id,
+                AGENT_ID,
+                AGENT_TOKEN,
+            )
+            print(
+                f"[agent] Account credential saved to {_token_config_path()} (mode 0600)"
+            )
+        else:
+            print(
+                "[agent] No unambiguous saved account credential. "
+                "Pass --session-cookie to select an account."
+            )
             sys.exit(1)
-        AGENT_TOKEN = result["token"]
-        AGENT_ID = str(result["agent_id"])
-        print(f"[agent] Registered: {result['agent_id']}")
-        _save_agent_token(AGENT_API_BASE, str(result["agent_id"]), AGENT_TOKEN)
-        print(f"[agent] Credential saved to {_token_config_path()} (mode 0600)")
     binding = api_request(
         "POST",
         "/api/agents/device",
