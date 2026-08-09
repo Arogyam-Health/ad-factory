@@ -58,7 +58,6 @@ _FORBIDDEN_VALUE_MARKERS = (
 
 _EXACT_CONTENT_ROUTES = frozenset(
     {
-        "/api/defaults",
         "/api/config/provider",
         "/api/google/models",
         "/api/input-images",

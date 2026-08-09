@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_CONTENT_REQUESTS = (
-    ("GET", "/api/defaults"),
     ("GET", "/api/google/models"),
     ("GET", "/api/input-images"),
     ("GET", "/api/input-prompt"),

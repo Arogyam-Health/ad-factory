@@ -20,6 +20,14 @@ class _ConfigCollection:
     def find(self, _query: dict) -> list[dict]:
         return []
 
+    def update_one(self, _query: dict, update: dict) -> None:
+        for dotted_key, value in update.get("$set", {}).items():
+            target = self.document
+            parts = dotted_key.split(".")
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            target[parts[-1]] = value
+
 
 class _DB:
     def __init__(self, document: dict):
@@ -53,6 +61,7 @@ class MongoDashboardConfigTests(unittest.TestCase):
         from dashboard.backend.control_plane_policy import is_render_content_route
 
         allowed = (
+            ("GET", "/api/defaults"),
             ("GET", "/api/config/sources"),
             ("GET", "/api/config/effective"),
             ("GET", "/api/config/persona-summary"),
@@ -163,7 +172,11 @@ class MongoDashboardConfigTests(unittest.TestCase):
             }
             for key in CONFIG_KEYS
         }
+        files["persona_seeds"]["content"] = (
+            '[{"persona_number": 1, "persona_name": "Mongo Persona"}]'
+        )
         personal = {
+            "_id": "mongo_personal",
             "config_id": "cfg_personal",
             "owner_type": "user",
             "owner_id": "usr_1",
@@ -192,6 +205,10 @@ class MongoDashboardConfigTests(unittest.TestCase):
                     "dashboard.backend.services.org_helper.get_sync_db",
                     return_value=db,
                 ),
+                patch(
+                    "dashboard.backend.services.config_version_service.create_config_version_before_update",
+                    return_value=None,
+                ),
             ):
                 client = TestClient(app)
                 effective = client.get(
@@ -200,16 +217,34 @@ class MongoDashboardConfigTests(unittest.TestCase):
                 sources = client.get(
                     "/api/config/sources", cookies={"session": "test"}
                 )
+                defaults = client.get(
+                    "/api/defaults", cookies={"session": "test"}
+                )
+                saved = client.put(
+                    "/api/user/config",
+                    cookies={"session": "test"},
+                    json={"starting_prompt": "Edited in MongoDB"},
+                )
         finally:
             app.dependency_overrides.pop(require_user_dependency, None)
 
         self.assertEqual(effective.status_code, 200)
         self.assertEqual(
             effective.json()["config"]["persona_seeds"],
-            "personal:persona_seeds",
+            '[{"persona_number": 1, "persona_name": "Mongo Persona"}]',
         )
         self.assertEqual(sources.status_code, 200)
         self.assertEqual(sources.json()["sources"][0]["type"], "personal")
+        self.assertEqual(defaults.status_code, 200)
+        self.assertEqual(
+            defaults.json()["personas"][0]["name"],
+            "Mongo Persona",
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(
+            db.collection.document["files"]["starting_prompt"]["content"],
+            "Edited in MongoDB",
+        )
 
     def test_content_migration_does_not_remove_dashboard_configs(self) -> None:
         from dashboard.backend.agent.content_migration import _COLLECTION_KINDS
