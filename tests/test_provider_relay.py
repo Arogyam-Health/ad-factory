@@ -115,10 +115,70 @@ class ProviderRelayTests(unittest.TestCase):
                 result={"http_status": 200, "body": '{"ok":true}'},
             )
         )
+        self.assertFalse(
+            broker.complete(
+                call_id=call["call_id"],
+                user_id="user-1",
+                agent_id="agent-1",
+                device_id="dev_" + "a" * 32,
+                result={"http_status": 200, "body": '{"duplicate":true}'},
+            )
+        )
         thread.join(1)
         self.assertFalse(thread.is_alive())
         self.assertEqual(result["http_status"], 200)
         self.assertEqual(broker.pending_count(), 0)
+
+    def test_broker_rejects_incompatible_agents_and_oversized_payloads(
+        self,
+    ) -> None:
+        from dashboard.backend.services.provider_relay import (
+            MAX_RELAY_REQUEST_BYTES,
+            ProviderRelayBroker,
+            ProviderRelayError,
+        )
+
+        broker = ProviderRelayBroker(ttl_seconds=2)
+        connections = _Connections()
+        connections.connection.supports_provider_relay = False
+        with self.assertRaises(ProviderRelayError) as offline:
+            broker.invoke(
+                user_id="user-1",
+                payload={
+                    "provider": "opencode",
+                    "endpoint": (
+                        "https://opencode.ai/zen/v1/chat/completions"
+                    ),
+                    "api_key": "secret-key",
+                    "request_body": {},
+                },
+                connections=connections,
+            )
+        self.assertEqual(
+            offline.exception.code,
+            "local_provider_agent_offline",
+        )
+
+        connections.connection.supports_provider_relay = True
+        with self.assertRaises(ProviderRelayError) as oversized:
+            broker.invoke(
+                user_id="user-1",
+                payload={
+                    "provider": "opencode",
+                    "endpoint": (
+                        "https://opencode.ai/zen/v1/chat/completions"
+                    ),
+                    "api_key": "secret-key",
+                    "request_body": {
+                        "content": "x" * MAX_RELAY_REQUEST_BYTES
+                    },
+                },
+                connections=connections,
+            )
+        self.assertEqual(
+            oversized.exception.code,
+            "provider_relay_request_too_large",
+        )
 
         source = (
             ROOT / "dashboard" / "backend" / "services" / "provider_relay.py"
@@ -162,6 +222,61 @@ class ProviderRelayTests(unittest.TestCase):
         self.assertIsInstance(errors[0], ProviderRelayError)
         self.assertEqual(errors[0].code, "local_provider_agent_disconnected")
         self.assertEqual(broker.pending_count(), 0)
+
+    def test_broker_bounds_provider_response_before_returning_to_render(
+        self,
+    ) -> None:
+        from dashboard.backend.services.provider_relay import (
+            MAX_RELAY_RESPONSE_BYTES,
+            ProviderRelayBroker,
+            ProviderRelayError,
+        )
+
+        broker = ProviderRelayBroker(ttl_seconds=2)
+        connections = _Connections()
+        errors: list[Exception] = []
+
+        def invoke() -> None:
+            try:
+                broker.invoke(
+                    user_id="user-1",
+                    payload={
+                        "provider": "opencode",
+                        "endpoint": (
+                            "https://opencode.ai/zen/v1/chat/completions"
+                        ),
+                        "api_key": "secret-key",
+                        "request_body": {},
+                    },
+                    connections=connections,
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=invoke)
+        thread.start()
+        self.assertTrue(connections.sent_event.wait(1))
+        call_id = connections.sent[0]["call_id"]
+        self.assertTrue(
+            broker.complete(
+                call_id=call_id,
+                user_id="user-1",
+                agent_id="agent-1",
+                device_id="dev_" + "a" * 32,
+                result={
+                    "http_status": 200,
+                    "body": "x" * (MAX_RELAY_RESPONSE_BYTES + 1),
+                },
+            )
+        )
+        thread.join(1)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], ProviderRelayError)
+        self.assertEqual(
+            errors[0].code,
+            "provider_relay_response_too_large",
+        )
 
     def test_local_executor_allows_only_known_https_provider_endpoints(self) -> None:
         from local_agent_runtime.provider_relay import execute_provider_call
