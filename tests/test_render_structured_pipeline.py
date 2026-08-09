@@ -16,6 +16,54 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RenderStructuredPipelineTests(unittest.TestCase):
+    def test_provider_copy_en_alias_is_normalized_to_language_block(
+        self,
+    ) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            _normalize_copy,
+            _validation_error,
+        )
+
+        planned = [
+            {
+                "format": "TEST",
+                "creative_index": 1,
+                "creative_total": 1,
+                "concept_angle": "desired_outcome",
+                "persona": {"number": 6, "name": "Persona 6"},
+            }
+        ]
+        normalized = _normalize_copy(
+            {
+                "ads": [
+                    {
+                        "format": "UGC",
+                        "headline": "A routine that finally fits your life",
+                        "body": "A practical approach for everyday life.",
+                        "cta": "Take the first step today.",
+                        "copy_en": {
+                            "headline": (
+                                "A routine that finally fits your life"
+                            ),
+                            "body": (
+                                "A practical approach for everyday life."
+                            ),
+                            "cta": "Take the first step today.",
+                        },
+                    }
+                ]
+            },
+            planned,
+            ("EN",),
+        )
+
+        self.assertIsNone(_validation_error(normalized, ("EN",)))
+        self.assertEqual(normalized["ads"][0]["format"], "TEST")
+        self.assertEqual(
+            normalized["ads"][0]["copy"]["EN"]["headline"],
+            "A routine that finally fits your life",
+        )
+
     def test_render_generates_and_assembles_final_prompts_without_local_assets(self) -> None:
         from dashboard.backend.services.render_structured_copy import (
             generate_structured_prompt_bundle,
