@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import time
 from typing import Any, Callable
 
@@ -12,6 +13,7 @@ from scripts import generate_ads
 
 
 GenerateCallable = Callable[[dict[str, Any], bool], dict[str, Any]]
+TraceCallback = Callable[[dict[str, Any]], None]
 _LANGUAGES = {
     "EN": ("EN",),
     "HI": ("HI",),
@@ -30,6 +32,7 @@ class ProviderCallError(RuntimeError):
         model: str,
         duration_ms: int,
         http_status: int | None = None,
+        error_detail: str = "",
     ) -> None:
         super().__init__(code)
         self.code = code
@@ -37,6 +40,7 @@ class ProviderCallError(RuntimeError):
         self.model = model
         self.duration_ms = duration_ms
         self.http_status = http_status
+        self.error_detail = error_detail
 
 
 def _json_config(value: Any, fallback: Any) -> Any:
@@ -194,6 +198,43 @@ def _sha256_json(value: Any) -> str:
     ).hexdigest()
 
 
+def _safe_provider_error_detail(
+    response: requests.Response | None,
+    api_key: str,
+) -> str:
+    if response is None:
+        return ""
+    detail = str(getattr(response, "text", "") or "")[:4000]
+    if api_key:
+        detail = detail.replace(api_key, "[REDACTED]")
+    detail = re.sub(
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [REDACTED]",
+        detail,
+    )
+    detail = re.sub(
+        r"\bsk-[A-Za-z0-9_-]{8,}\b",
+        "[REDACTED]",
+        detail,
+    )
+    detail = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]+", " ", detail)
+    return detail[:2000]
+
+
+def _trace_request_metadata(request: dict[str, Any]) -> dict[str, Any]:
+    planned = request.get("planned_ads")
+    languages = request.get("languages")
+    return {
+        "task": str(request.get("task") or "")[:160],
+        "planned_ad_count": len(planned) if isinstance(planned, list) else 0,
+        "languages": [
+            str(value)[:20]
+            for value in (languages if isinstance(languages, list) else [])
+        ][:10],
+        "request_sha256": _sha256_json(request),
+    }
+
+
 def generate_structured_prompt_bundle(
     *,
     run_id: str,
@@ -324,19 +365,67 @@ def provider_generate_callable(
     provider: str,
     model: str,
     config: dict[str, str],
+    *,
+    trace_callback: TraceCallback | None = None,
 ) -> GenerateCallable:
     api_key = str(config.get("api_key") or "")
     if not api_key:
         raise ValueError("Provider API key is not configured")
 
+    api_model = (
+        model.removeprefix("opencode/")
+        if provider == "opencode"
+        else model
+    )
+
     def generate(request: dict[str, Any], repair: bool = False) -> dict[str, Any]:
         started = time.monotonic()
         response: requests.Response | None = None
+        endpoint = ""
+
+        def emit(
+            *,
+            status: str,
+            code: str = "",
+            error_detail: str = "",
+            usage: dict[str, Any] | None = None,
+        ) -> None:
+            if trace_callback is None:
+                return
+            try:
+                trace_callback(
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "api_model": api_model,
+                        "endpoint": endpoint,
+                        "label": "repair" if repair else "copy",
+                        "status": status,
+                        "http_status": (
+                            int(response.status_code)
+                            if response is not None
+                            else None
+                        ),
+                        "duration_ms": int(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        "error_code": code,
+                        "error_detail": error_detail,
+                        "request": _trace_request_metadata(request),
+                        "response": {"usage": usage or {}},
+                    }
+                )
+            except Exception:
+                pass
+
         try:
             if provider == "google_gemini":
-                response = requests.post(
+                endpoint = (
                     "https://generativelanguage.googleapis.com/v1beta/models/"
-                    f"{model}:generateContent",
+                    f"{api_model}:generateContent"
+                )
+                response = requests.post(
+                    endpoint,
                     headers={"x-goog-api-key": api_key},
                     json={
                         "contents": [
@@ -361,15 +450,17 @@ def provider_generate_callable(
                 response.raise_for_status()
                 raw = response.json()
                 text = raw["candidates"][0]["content"]["parts"][0]["text"]
+                usage = raw.get("usageMetadata") or {}
             else:
                 api_url = str(config.get("api_url") or "").rstrip("/")
                 if not api_url.startswith(("http://", "https://")):
                     raise ValueError("OpenCode API URL is invalid")
+                endpoint = f"{api_url}/chat/completions"
                 response = requests.post(
-                    f"{api_url}/chat/completions",
+                    endpoint,
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
-                        "model": model,
+                        "model": api_model,
                         "messages": [
                             {
                                 "role": "user",
@@ -386,14 +477,17 @@ def provider_generate_callable(
                 response.raise_for_status()
                 raw = response.json()
                 text = raw["choices"][0]["message"]["content"]
+                usage = raw.get("usage") or {}
             clean = str(text).strip()
             if clean.startswith("```"):
                 clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             parsed = json.loads(clean)
             if not isinstance(parsed, dict):
                 raise ValueError("Provider response is not a JSON object")
+            emit(status="completed", usage=usage)
             return parsed
         except requests.Timeout as exc:
+            emit(status="failed", code="provider_timeout")
             raise ProviderCallError(
                 code="provider_timeout",
                 provider=provider,
@@ -401,20 +495,34 @@ def provider_generate_callable(
                 duration_ms=int((time.monotonic() - started) * 1000),
             ) from exc
         except requests.RequestException as exc:
+            detail = _safe_provider_error_detail(response, api_key)
+            emit(
+                status="failed",
+                code="provider_http_error",
+                error_detail=detail,
+            )
             raise ProviderCallError(
                 code="provider_http_error",
                 provider=provider,
                 model=model,
                 duration_ms=int((time.monotonic() - started) * 1000),
                 http_status=response.status_code if response is not None else None,
+                error_detail=detail,
             ) from exc
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            detail = _safe_provider_error_detail(response, api_key)
+            emit(
+                status="failed",
+                code="provider_invalid_response",
+                error_detail=detail,
+            )
             raise ProviderCallError(
                 code="provider_invalid_response",
                 provider=provider,
                 model=model,
                 duration_ms=int((time.monotonic() - started) * 1000),
                 http_status=response.status_code if response is not None else None,
+                error_detail=detail,
             ) from exc
 
     return generate

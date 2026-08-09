@@ -23,6 +23,7 @@ from dashboard.backend.services.prompt_delivery import (
     decrypt_prompt_bundle,
     encrypt_prompt_bundle,
 )
+from dashboard.backend.services.llm_trace import record_recent_llm_trace
 from dashboard.backend.services.provider_config import (
     get_materialized_provider_config,
 )
@@ -363,6 +364,7 @@ def _fail_job(
     model: str = "",
     duration_ms: int = 0,
     http_status: int | None = None,
+    error_detail: str = "",
 ) -> None:
     now = time.time()
     safe_error = {
@@ -371,6 +373,7 @@ def _fail_job(
         "model": model,
         "duration_ms": duration_ms,
         "http_status": http_status,
+        "error_detail": str(error_detail or "")[:2000],
     }
     get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
         {"copy_job_id": job["copy_job_id"]},
@@ -425,6 +428,12 @@ def process_next_render_copy_job() -> bool:
                 str(settings["provider"]),
                 str(settings["model"]),
                 provider_config,
+                trace_callback=lambda event: record_recent_llm_trace(
+                    user_id=str(job["user_id"]),
+                    run_id=str(job["run_id"]),
+                    batch=f"v{int(job['run_number'])}",
+                    event=event,
+                ),
             ),
         )
         current = get_sync_db()[COLL_RENDER_COPY_JOBS].find_one(
@@ -442,6 +451,7 @@ def process_next_render_copy_job() -> bool:
             model=exc.model,
             duration_ms=exc.duration_ms,
             http_status=exc.http_status,
+            error_detail=exc.error_detail,
         )
     except ValueError:
         _fail_job(

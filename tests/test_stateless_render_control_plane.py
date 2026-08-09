@@ -24,7 +24,6 @@ LEGACY_CONTENT_REQUESTS = (
     ("GET", "/api/file-content/example"),
     ("GET", "/api/files/download/image/example"),
     ("GET", "/api/generic-config"),
-    ("GET", "/api/llm-traces/example"),
     ("GET", "/api/reference-images"),
     ("GET", "/api/reference-workspace"),
     ("GET", "/api/seeds"),

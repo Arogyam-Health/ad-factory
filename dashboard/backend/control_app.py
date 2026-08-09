@@ -148,7 +148,7 @@ async def retired_extension_websocket(websocket: WebSocket) -> None:
 from dashboard.backend.admin.admin_routes import router as admin_router
 from dashboard.backend.agent.routes import router as agent_router
 from dashboard.backend.auth.routes import router as auth_router
-from dashboard.backend.routes import batch, defaults, execute, export_import, generate, runs
+from dashboard.backend.routes import batch, defaults, execute, export_import, generate, runs, traces
 from dashboard.backend.services.blob_routes import router as blob_router
 from dashboard.backend.services.config_routes import router as config_router
 from dashboard.backend.services.invite_routes import router as invite_router
@@ -159,6 +159,7 @@ from dashboard.backend.services.user_config_routes import router as user_config_
 app.include_router(auth_router)
 app.include_router(agent_router)
 app.include_router(runs.router)
+app.include_router(traces.router)
 app.include_router(batch.router)
 app.include_router(defaults.router)
 app.include_router(execute.router)

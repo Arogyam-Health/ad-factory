@@ -22,7 +22,6 @@ FORBIDDEN_RENDER_CONTENT_ROUTES = (
     "/api/batch/generate-images-",
     "/api/files/download/",
     "/api/kill-chrome",
-    "/api/llm-traces",
     "/api/progress/",
     "/api/prompt-file-content",
     "/api/reference-workspace",

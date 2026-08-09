@@ -476,8 +476,9 @@ async function waitForRenderCopy(runId, copyJobId, displayBatch) {
       const provider = detail.provider || "provider";
       const model = detail.model ? ` ${detail.model}` : "";
       const httpStatus = detail.http_status ? ` (HTTP ${detail.http_status})` : "";
+      const providerDetail = detail.error_detail ? ` — ${detail.error_detail}` : "";
       throw new Error(
-        `${provider}${model} failed${httpStatus}: ${detail.error_code || job.progress_code || "copy_generation_failed"}`,
+        `${provider}${model} failed${httpStatus}: ${detail.error_code || job.progress_code || "copy_generation_failed"}${providerDetail}`,
       );
     }
     if (job.status === "canceled") {

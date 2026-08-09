@@ -77,7 +77,6 @@ _CONTENT_PREFIXES = (
     "/api/file-content",
     "/api/files/",
     "/api/generic-config",
-    "/api/llm-traces",
     "/api/reference-images",
     "/api/reference-workspace",
     "/api/seeds",

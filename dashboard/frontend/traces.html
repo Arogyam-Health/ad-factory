@@ -211,7 +211,6 @@
   <script type="module">
     import { initTheme } from "/js/theme.js";
     import { checkAuth } from "/js/auth.js";
-    import { localDataPlane } from "/js/local-data-plane.js";
     initTheme();
 
     // Navbar auth chip
@@ -242,12 +241,11 @@
       });
     });
 
-    const LIMIT = 50;
+    const LIMIT = 5;
     let offset = 0;
     let runIdFilter = "";
     let tracesData = [];
     let selectedFiles = new Set();
-    let traceDeviceId = "";
 
     const container = document.getElementById("tracesContainer");
     const pagination = document.getElementById("pagination");
@@ -264,29 +262,23 @@
 
     async function loadTraces() {
       const user = await checkAuth();
-      if (!user.authenticated) throw new Error("Sign in to inspect local traces");
-      const paired = await localDataPlane.ensurePaired({
-        ownerType: "user",
-        ownerId: user.user_id,
+      if (!user.authenticated) throw new Error("Sign in to inspect recent traces");
+      const params = new URLSearchParams();
+      if (runIdFilter) params.set("run_id", runIdFilter);
+      const response = await fetch(`/api/llm-traces?${params.toString()}`, {
+        credentials: "same-origin",
+        cache: "no-store",
       });
-      traceDeviceId = paired.info.device_id;
-      const summaries = await localDataPlane.listTraces(traceDeviceId);
-      const filtered = runIdFilter
-        ? summaries.filter((item) => item.run_id.includes(runIdFilter))
-        : summaries;
-      const page = filtered.slice(offset, offset + LIMIT);
-      tracesData = await Promise.all(page.map(async (item) => {
-        const body = await localDataPlane.traceContent(item.trace_id, traceDeviceId);
-        return {
-          ...body,
-          _file: item.trace_id,
-          run_id: item.run_id,
-          timestamp: new Date(Number(item.created_at || 0) * 1000).toISOString(),
-          label: "copy",
-          status_code: body.status === "completed" ? 200 : 500,
-        };
+      if (!response.ok) throw new Error(`Trace request failed (${response.status})`);
+      const data = await response.json();
+      tracesData = (data.traces || []).map((trace) => ({
+        ...trace,
+        _file: trace.trace_id,
+        timestamp: new Date(Number(trace.created_at || 0) * 1000).toISOString(),
+        status_code: Number(trace.http_status || (trace.status === "completed" ? 200 : 500)),
+        duration_s: Number((Number(trace.duration_ms || 0) / 1000).toFixed(2)),
+        error: trace.error_detail || trace.error_code || "",
       }));
-      const data = { traces: tracesData, total: filtered.length, offset, limit: LIMIT };
       renderTraces(data);
     }
 
@@ -415,7 +407,13 @@
       if (!confirm(`Delete ${selectedFiles.size} selected trace${selectedFiles.size > 1 ? "s" : ""}?`)) return;
       const files = Array.from(selectedFiles);
       try {
-        await Promise.all(files.map((traceId) => localDataPlane.deleteTrace(traceId, traceDeviceId)));
+        const response = await fetch("/api/llm-traces/delete-batch", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ trace_ids: files }),
+        });
+        if (!response.ok) throw new Error("Batch delete failed");
         showToast(`Deleted ${files.length} trace${files.length !== 1 ? "s" : ""}`);
         clearSelection();
         offset = 0;
@@ -429,7 +427,11 @@
       if (!file) return;
       if (!confirm(`Delete this trace?`)) return;
       try {
-        await localDataPlane.deleteTrace(file, traceDeviceId);
+        const response = await fetch(`/api/llm-traces/${encodeURIComponent(file)}`, {
+          method: "DELETE",
+          credentials: "same-origin",
+        });
+        if (!response.ok) throw new Error("Trace delete failed");
         showToast("Deleted 1 trace");
         offset = 0;
         loadTraces();
@@ -440,7 +442,11 @@
 
     async function deleteAllTraces() {
       if (!confirm("Delete ALL LLM traces? This cannot be undone.")) return;
-      await localDataPlane.deleteAllTraces(traceDeviceId);
+      const response = await fetch("/api/llm-traces", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error("Trace delete failed");
       showToast("All traces deleted");
       offset = 0;
       loadTraces();

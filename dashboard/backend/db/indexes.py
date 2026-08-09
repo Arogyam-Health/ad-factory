@@ -59,6 +59,7 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_USER_ID, ASCENDING), ("batch", ASCENDING)]),
     ],
     COLL_LLM_TRACES: [
+        IndexModel([("trace_id", ASCENDING)], unique=True, sparse=True),
         IndexModel([(FIELD_USER_ID, ASCENDING), (FIELD_CREATED_AT, DESCENDING)]),
         IndexModel([(FIELD_RUN_ID, ASCENDING)]),
     ],

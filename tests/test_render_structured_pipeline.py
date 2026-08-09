@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import hashlib
+import copy
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import requests
@@ -338,6 +340,115 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertIn('fetch(`/api/llm-traces?', source)
         self.assertNotIn("localDataPlane.listTraces", source)
         self.assertNotIn("localDataPlane.traceContent", source)
+
+    def test_mongo_trace_history_keeps_only_five_sanitized_records(self) -> None:
+        from dashboard.backend.services.llm_trace import (
+            list_recent_llm_traces,
+            record_recent_llm_trace,
+        )
+
+        class Cursor(list):
+            def sort(self, key, direction):
+                return Cursor(
+                    sorted(
+                        self,
+                        key=lambda item: item.get(key, 0),
+                        reverse=direction < 0,
+                    )
+                )
+
+            def skip(self, count):
+                return Cursor(self[count:])
+
+            def limit(self, count):
+                return Cursor(self[:count])
+
+        class Collection:
+            def __init__(self):
+                self.docs = []
+
+            def insert_one(self, doc):
+                self.docs.append(copy.deepcopy(doc))
+
+            def find(self, query, projection):
+                rows = [
+                    copy.deepcopy(doc)
+                    for doc in self.docs
+                    if all(doc.get(key) == value for key, value in query.items())
+                ]
+                if projection:
+                    rows = [
+                        {
+                            key: value
+                            for key, value in row.items()
+                            if projection.get(key) == 1
+                        }
+                        for row in rows
+                    ]
+                return Cursor(rows)
+
+            def delete_many(self, query):
+                before = len(self.docs)
+                trace_filter = query.get("trace_id")
+                if isinstance(trace_filter, dict) and "$exists" in trace_filter:
+                    self.docs = [
+                        doc
+                        for doc in self.docs
+                        if not (
+                            doc.get("user_id") == query.get("user_id")
+                            and ("trace_id" in doc) is trace_filter["$exists"]
+                        )
+                    ]
+                elif isinstance(trace_filter, dict) and "$in" in trace_filter:
+                    values = set(trace_filter["$in"])
+                    self.docs = [
+                        doc
+                        for doc in self.docs
+                        if not (
+                            doc.get("user_id") == query.get("user_id")
+                            and doc.get("trace_id") in values
+                        )
+                    ]
+                return SimpleNamespace(deleted_count=before - len(self.docs))
+
+        collection = Collection()
+        db = {"llm_traces": collection}
+        event = {
+            "provider": "opencode",
+            "model": "opencode/deepseek-v4-flash-free",
+            "api_model": "deepseek-v4-flash-free",
+            "endpoint": "https://opencode.ai/zen/v1/chat/completions",
+            "label": "copy",
+            "status": "failed",
+            "http_status": 401,
+            "duration_ms": 20,
+            "error_code": "provider_http_error",
+            "error_detail": "Invalid API key",
+            "request": {
+                "task": "copy",
+                "planned_ad_count": 1,
+                "languages": ["EN"],
+                "request_sha256": "a" * 64,
+            },
+            "response": {"usage": {}},
+        }
+        with patch(
+            "dashboard.backend.services.llm_trace.get_sync_db",
+            return_value=db,
+        ):
+            for index in range(7):
+                record_recent_llm_trace(
+                    user_id="user-1",
+                    run_id=f"run-{index}",
+                    batch=f"v{index}",
+                    event=event,
+                )
+            traces = list_recent_llm_traces("user-1")
+
+        self.assertEqual(len(collection.docs), 5)
+        self.assertEqual(len(traces), 5)
+        self.assertEqual(traces[0]["run_id"], "run-6")
+        self.assertNotIn("api_key", json.dumps(traces).lower())
 
     def test_delivery_and_render_jobs_have_ttl_indexes(self) -> None:
         from dashboard.backend.db.collections import (
