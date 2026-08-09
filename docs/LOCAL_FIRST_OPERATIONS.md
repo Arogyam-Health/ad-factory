@@ -22,8 +22,9 @@ serves authenticated content to the dashboard on loopback.
 
 Config sources, editors, personas, organization sharing, copying, and rollback
 must load after dashboard login even when no local agent is running. Config
-updates accept only the eight known keys, with a 1 MiB per-file and 4 MiB total
-limit. Provider API keys are not config files and remain local-only.
+updates accept only the eight known keys, with a 12 MiB per-file and 12 MiB
+total limit that leaves headroom below MongoDB's 16 MiB document limit.
+Provider API keys are not config files and remain local-only.
 
 The default data root is `~/ad-factory-agent`. Override it with
 `AGENT_DATA_DIR` or `scripts/local_agent.py --data-dir`. Treat the entire root

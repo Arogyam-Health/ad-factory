@@ -514,8 +514,9 @@ individual mode resolves each member's personal document. Config browsing,
 editing, copying, rollback, and persona loading must work immediately after
 login without a local agent.
 
-Config values are bounded strings: at most 1 MiB per file and 4 MiB total per
-update. Provider credentials are not dashboard config files and remain local.
+Config values are bounded strings: at most 12 MiB per file and 12 MiB total per
+update, leaving BSON headroom below MongoDB's 16 MiB document limit. Provider
+credentials are not dashboard config files and remain local.
 
 ## MongoDB Target Fields
 
@@ -917,7 +918,7 @@ Update this table during implementation. Include commit SHA and verification res
 | Migration | Complete (repository) | `145d7fc` | 10 focused migration tests, 137 regression tests, 406 smoke assertions, `py_compile`, lints, `git diff --check`, and Graphify update pass | Dry-run-first, hash-verified migration committed |
 | Full verification | Complete (repository) | `1761077` | 78 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload, download, event reconnect, and reload coverage; 52 Structured/Reference/lifecycle tests pass with Render content directories read-only; 141 full regression tests and 406 smoke assertions pass | Automated boundary verification committed; live ChatGPT/Gemini sessions remain final external verification |
 | Operations documentation | Complete (repository) | `1440df0` | Deployment, pairing, provider storage, migration, backup/restore, replication, outage recovery, deletion, troubleshooting, and external security actions documented | Operations runbook committed |
-| Mongo-backed dashboard configs | Complete (repository) | This commit | 5 focused Mongo config tests, 150 full regression tests, standalone smoke assertions, backend compilation, and lints pass | Restores all eight personal/org config files, versioning, copying, and login-time loading without a local agent |
+| Mongo-backed dashboard configs | Complete (repository) | `7573c6f` plus startup-size follow-up | 6 focused Mongo config tests, 151 full regression tests, standalone smoke assertions, backend compilation, and lints pass | Restores all eight personal/org config files, versioning, copying, login-time loading without a local agent, and validates the real bundled defaults against MongoDB's document limit |
 
 Repository implementation and automated verification are complete. Final
 production sign-off requires these external actions, which cannot be performed

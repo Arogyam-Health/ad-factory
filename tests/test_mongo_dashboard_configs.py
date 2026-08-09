@@ -85,7 +85,10 @@ class MongoDashboardConfigTests(unittest.TestCase):
         self.assertEqual(config["starting_prompt"], "mongo:starting_prompt")
 
     def test_only_eight_bounded_string_config_files_are_accepted(self) -> None:
-        from dashboard.backend.services.user_config import validate_config_files
+        from dashboard.backend.services.user_config import (
+            MAX_CONFIG_TOTAL_BYTES,
+            validate_config_files,
+        )
 
         self.assertEqual(
             validate_config_files({"starting_prompt": "hello"}),
@@ -96,7 +99,31 @@ class MongoDashboardConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_config_files({"starting_prompt": {"body": "not text"}})
         with self.assertRaises(ValueError):
-            validate_config_files({"starting_prompt": "x" * (1024 * 1024 + 1)})
+            validate_config_files(
+                {"starting_prompt": "x" * (MAX_CONFIG_TOTAL_BYTES + 1)}
+            )
+
+    def test_repository_defaults_fit_the_mongodb_config_budget(self) -> None:
+        from bson import BSON
+
+        from dashboard.backend.services.user_config import (
+            _repository_generic_config,
+            validate_config_files,
+        )
+
+        defaults = _repository_generic_config()
+        self.assertEqual(validate_config_files(defaults), defaults)
+        self.assertGreater(len(defaults["background_variant"]), 1024 * 1024)
+        document = {
+            "owner_type": "system",
+            "owner_id": "generic",
+            "is_active": True,
+            "files": {
+                key: {"content": value, "content_type": "text/plain"}
+                for key, value in defaults.items()
+            },
+        }
+        self.assertLess(len(BSON.encode(document)), 16 * 1024 * 1024)
 
     def test_login_time_config_endpoints_load_without_local_agent(self) -> None:
         from fastapi import FastAPI

@@ -23,8 +23,10 @@ CONFIG_KEYS = [
 
 GENERIC_CONFIG_OWNER_TYPE = "system"
 GENERIC_CONFIG_OWNER_ID = "generic"
-MAX_CONFIG_FILE_BYTES = 1024 * 1024
-MAX_CONFIG_TOTAL_BYTES = 4 * 1024 * 1024
+# MongoDB documents are limited to 16 MiB. Reserve roughly 4 MiB for BSON
+# structure, identifiers, timestamps, and future bounded metadata.
+MAX_CONFIG_FILE_BYTES = 12 * 1024 * 1024
+MAX_CONFIG_TOTAL_BYTES = 12 * 1024 * 1024
 
 # content_type per key
 _CONTENT_TYPES = {
@@ -126,11 +128,11 @@ def validate_config_files(files: dict[str, Any]) -> dict[str, str]:
             raise ValueError(f"Config file {key} must be text")
         size = len(value.encode("utf-8"))
         if size > MAX_CONFIG_FILE_BYTES:
-            raise ValueError(f"Config file {key} exceeds the 1 MiB limit")
+            raise ValueError(f"Config file {key} exceeds the 12 MiB limit")
         total_bytes += size
         validated[key] = value
     if total_bytes > MAX_CONFIG_TOTAL_BYTES:
-        raise ValueError("Config files exceed the 4 MiB total limit")
+        raise ValueError("Config files exceed the 12 MiB total limit")
     return validated
 
 
