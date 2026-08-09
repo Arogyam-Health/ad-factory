@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,10 +25,12 @@ class AgentConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, AgentConnection] = {}
         self._lock = asyncio.Lock()
+        self._sync_lock = threading.RLock()
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def get(self, agent_id: str, device_id: str | None = None) -> AgentConnection | None:
-        connection = self._connections.get(agent_id)
+        with self._sync_lock:
+            connection = self._connections.get(agent_id)
         if connection is not None and device_id is not None and connection.device_id != device_id:
             return None
         return connection
@@ -38,20 +41,37 @@ class AgentConnectionManager:
         protocol_version: str = "",
         supports_provider_relay: bool = False,
     ) -> AgentConnection | None:
-        matches = [
-            connection
-            for connection in self._connections.values()
-            if connection.user_id == user_id
-            and (
-                not protocol_version
-                or connection.protocol_version == protocol_version
-            )
-            and (
-                not supports_provider_relay
-                or connection.supports_provider_relay
-            )
-        ]
+        with self._sync_lock:
+            matches = [
+                connection
+                for connection in self._connections.values()
+                if connection.user_id == user_id
+                and (
+                    not protocol_version
+                    or connection.protocol_version == protocol_version
+                )
+                and (
+                    not supports_provider_relay
+                    or connection.supports_provider_relay
+                )
+            ]
         return max(matches, key=lambda item: item.last_seen_at) if matches else None
+
+    def set_provider_relay_capability(
+        self,
+        agent_id: str,
+        device_id: str,
+        enabled: bool,
+    ) -> bool:
+        with self._sync_lock:
+            connection = self._connections.get(agent_id)
+            if (
+                connection is None
+                or connection.device_id != device_id
+            ):
+                return False
+            connection.supports_provider_relay = bool(enabled)
+            return connection.supports_provider_relay
 
     async def register(
         self,
@@ -63,7 +83,8 @@ class AgentConnectionManager:
     ) -> AgentConnection:
         self._loop = asyncio.get_running_loop()
         async with self._lock:
-            existing = self._connections.get(agent_id)
+            with self._sync_lock:
+                existing = self._connections.get(agent_id)
             if existing is not None:
                 try:
                     await existing.websocket.close(code=4001, reason="Agent reconnected")
@@ -76,14 +97,17 @@ class AgentConnectionManager:
                 websocket=websocket,
                 protocol_version=protocol_version,
             )
-            self._connections[agent_id] = connection
+            with self._sync_lock:
+                self._connections[agent_id] = connection
             return connection
 
     async def unregister(self, agent_id: str, websocket: WebSocket | None = None) -> None:
         async with self._lock:
-            existing = self._connections.get(agent_id)
+            with self._sync_lock:
+                existing = self._connections.get(agent_id)
             if existing is not None and (websocket is None or existing.websocket is websocket):
-                self._connections.pop(agent_id, None)
+                with self._sync_lock:
+                    self._connections.pop(agent_id, None)
 
     async def notify(
         self,

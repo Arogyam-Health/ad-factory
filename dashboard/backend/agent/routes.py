@@ -551,21 +551,17 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
                     connection.last_seen_at = time.time()
                 await websocket.send_json({"type": "pong"})
             elif message.get("type") == "capabilities":
-                connection = agent_connections.get(
-                    agent_id,
-                    device_id=device_id,
-                )
-                if connection is not None:
-                    connection.supports_provider_relay = (
-                        message.get("provider_relay") is True
+                supports_provider_relay = (
+                    agent_connections.set_provider_relay_capability(
+                        agent_id,
+                        device_id,
+                        message.get("provider_relay") is True,
                     )
+                )
                 await websocket.send_json(
                     {
                         "type": "capabilities_ack",
-                        "provider_relay": bool(
-                            connection
-                            and connection.supports_provider_relay
-                        ),
+                        "provider_relay": supports_provider_relay,
                     }
                 )
             elif message.get("type") == "provider_result":
