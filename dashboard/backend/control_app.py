@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -115,6 +115,23 @@ def readyz() -> dict[str, Any]:
 
     get_sync_db().command("ping")
     return {"status": "ready", "mongodb": True, "content_storage": False}
+
+
+@app.get("/api/extension/status")
+def retired_extension_status() -> dict[str, Any]:
+    """Keep stale dashboards quiet without re-enabling the Render CDP bridge."""
+    return {
+        "connected": False,
+        "active_connections": 0,
+        "disabled": True,
+        "reason": "local_agent_required",
+    }
+
+
+@app.websocket("/api/extension/ws")
+async def retired_extension_websocket(websocket: WebSocket) -> None:
+    """Reject installed legacy extensions before they reach StaticFiles."""
+    await websocket.close(code=1008, reason="Use the paired local agent")
 
 
 from dashboard.backend.admin.admin_routes import router as admin_router

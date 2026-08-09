@@ -198,6 +198,37 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             {"status": "ready", "mongodb": True, "content_storage": False},
         )
 
+    def test_retired_extension_routes_fail_gracefully(self) -> None:
+        from unittest.mock import patch
+
+        from fastapi.testclient import TestClient
+        from starlette.websockets import WebSocketDisconnect
+        from dashboard.backend import control_app as app_module
+
+        with patch.object(
+            app_module,
+            "get_current_user_from_cookie",
+            return_value={"user_id": "usr_extension"},
+        ):
+            client = TestClient(app_module.app)
+            response = client.get(
+                "/api/extension/status", cookies={"session": "test"}
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "connected": False,
+                    "active_connections": 0,
+                    "disabled": True,
+                    "reason": "local_agent_required",
+                },
+            )
+            with self.assertRaises(WebSocketDisconnect) as raised:
+                with client.websocket_connect("/api/extension/ws"):
+                    pass
+            self.assertEqual(raised.exception.code, 1008)
+
     def test_mongo_metadata_validator_accepts_target_projections(self) -> None:
         policy = importlib.import_module(
             "dashboard.backend.control_plane_policy"

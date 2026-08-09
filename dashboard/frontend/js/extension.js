@@ -55,7 +55,11 @@ function renderStatus(data) {
   const dot = statusEl.querySelector(".extension-dot");
   const label = statusEl.querySelector(".extension-label");
 
-  if (data.connected) {
+  if (data.disabled) {
+    dot.className = "extension-dot offline";
+    label.textContent = "Local agent mode";
+    statusEl.title = "The Render CDP bridge is retired; browser automation runs on the paired local agent";
+  } else if (data.connected) {
     dot.className = "extension-dot online";
     label.textContent = `Connected`;
     statusEl.title = `Extension connected (${data.active_connections} total)`;
