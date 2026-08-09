@@ -18,15 +18,25 @@ class _Connections:
             agent_id="agent-1",
             user_id="user-1",
             device_id="dev_" + "a" * 32,
-            protocol_version="v2",
+            protocol_version="v1",
+            supports_provider_relay=True,
         )
         self.sent: list[dict] = []
         self.sent_event = threading.Event()
 
-    def for_user(self, user_id: str, protocol_version: str = ""):
+    def for_user(
+        self,
+        user_id: str,
+        protocol_version: str = "",
+        supports_provider_relay: bool = False,
+    ):
         if (
             user_id != self.connection.user_id
             or protocol_version != self.connection.protocol_version
+            or (
+                supports_provider_relay
+                and not self.connection.supports_provider_relay
+            )
         ):
             return None
         return self.connection

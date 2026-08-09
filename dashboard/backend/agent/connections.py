@@ -15,6 +15,7 @@ class AgentConnection:
     device_id: str
     websocket: WebSocket
     protocol_version: str = ""
+    supports_provider_relay: bool = False
     connected_at: float = field(default_factory=time.time)
     last_seen_at: float = field(default_factory=time.time)
 
@@ -35,6 +36,7 @@ class AgentConnectionManager:
         self,
         user_id: str,
         protocol_version: str = "",
+        supports_provider_relay: bool = False,
     ) -> AgentConnection | None:
         matches = [
             connection
@@ -43,6 +45,10 @@ class AgentConnectionManager:
             and (
                 not protocol_version
                 or connection.protocol_version == protocol_version
+            )
+            and (
+                not supports_provider_relay
+                or connection.supports_provider_relay
             )
         ]
         return max(matches, key=lambda item: item.last_seen_at) if matches else None
@@ -54,6 +60,7 @@ class AgentConnectionManager:
         websocket: WebSocket,
         device_id: str = "",
         protocol_version: str = "",
+        supports_provider_relay: bool = False,
     ) -> AgentConnection:
         self._loop = asyncio.get_running_loop()
         async with self._lock:
@@ -69,6 +76,7 @@ class AgentConnectionManager:
                 device_id=device_id,
                 websocket=websocket,
                 protocol_version=protocol_version,
+                supports_provider_relay=supports_provider_relay,
             )
             self._connections[agent_id] = connection
             return connection

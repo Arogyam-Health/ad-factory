@@ -10,7 +10,7 @@ from typing import Any
 
 MAX_RELAY_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_RELAY_RESPONSE_BYTES = 4 * 1024 * 1024
-RELAY_PROTOCOL_VERSION = "v2"
+RELAY_PROTOCOL_VERSION = "v1"
 
 
 class ProviderRelayError(RuntimeError):
@@ -58,6 +58,7 @@ class ProviderRelayBroker:
         connection = connections.for_user(
             user_id,
             protocol_version=RELAY_PROTOCOL_VERSION,
+            supports_provider_relay=True,
         )
         if connection is None:
             raise ProviderRelayError("local_provider_agent_offline")
