@@ -387,6 +387,12 @@ class AgentMetadataJobTests(unittest.TestCase):
                     "owner_id": 1,
                     "client_operation_id": 1,
                 }
+                and document.get("partialFilterExpression")
+                == {
+                    "owner_type": {"$type": "string"},
+                    "owner_id": {"$type": "string"},
+                    "client_operation_id": {"$type": "string"},
+                }
                 for document in documents
             )
         )

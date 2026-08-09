@@ -71,6 +71,38 @@ class ControlPlaneIndexTests(unittest.TestCase):
             {"is_active": True},
         )
 
+    def test_legacy_agent_jobs_are_excluded_from_operation_uniqueness(self) -> None:
+        from dashboard.backend.db.collections import COLL_AGENT_JOBS
+        from dashboard.backend.db.indexes import (
+            JOB_OPERATION_PARTIAL_FILTER,
+            _fix_indexes,
+        )
+
+        stale_name = "owner_type_1_owner_id_1_client_operation_id_1"
+        collection = _Collection(
+            [
+                {
+                    "name": stale_name,
+                    "key": {
+                        "owner_type": 1,
+                        "owner_id": 1,
+                        "client_operation_id": 1,
+                    },
+                    "unique": True,
+                }
+            ]
+        )
+        db = _DB({COLL_AGENT_JOBS: collection})
+
+        result = _fix_indexes(db)
+
+        self.assertEqual(result[f"{COLL_AGENT_JOBS}.{stale_name}"], 1)
+        self.assertEqual(collection.dropped, [stale_name])
+        self.assertEqual(
+            collection.created[0]["partialFilterExpression"],
+            JOB_OPERATION_PARTIAL_FILTER,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

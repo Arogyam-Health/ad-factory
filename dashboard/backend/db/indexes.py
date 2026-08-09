@@ -9,6 +9,13 @@ from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import *
 
 
+JOB_OPERATION_PARTIAL_FILTER = {
+    "owner_type": {"$type": "string"},
+    "owner_id": {"$type": "string"},
+    "client_operation_id": {"$type": "string"},
+}
+
+
 INDEX_SPECS: dict[str, list[IndexModel]] = {
     COLL_USERS: [
         IndexModel([("email", ASCENDING)], unique=True, sparse=True),
@@ -81,6 +88,7 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
                 ("client_operation_id", ASCENDING),
             ],
             unique=True,
+            partialFilterExpression=JOB_OPERATION_PARTIAL_FILTER,
         ),
         IndexModel([("terminal_event_id", ASCENDING)], unique=True, sparse=True),
         IndexModel([("purge_at", ASCENDING)], expireAfterSeconds=0),
@@ -202,6 +210,22 @@ def _fix_indexes(db) -> dict[str, int]:
                 ],
                 unique=True,
                 partialFilterExpression={"is_active": True},
+            ),
+        ),
+        # Legacy agent jobs do not have V2 owner/operation fields. Exclude
+        # those documents from operation idempotency rather than indexing
+        # repeated null compound keys.
+        (
+            COLL_AGENT_JOBS,
+            "owner_type_1_owner_id_1_client_operation_id_1",
+            IndexModel(
+                [
+                    ("owner_type", ASCENDING),
+                    ("owner_id", ASCENDING),
+                    ("client_operation_id", ASCENDING),
+                ],
+                unique=True,
+                partialFilterExpression=JOB_OPERATION_PARTIAL_FILTER,
             ),
         ),
     ]
