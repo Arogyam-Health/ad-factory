@@ -1,6 +1,10 @@
 import { appendLog } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { localDataPlane } from "./local-data-plane.js";
+import {
+  exactOnImageCopyLines,
+  replaceExactOnImageCopy,
+} from "./prompt-copy.js";
 
 const expandedPromptRunIds = new Set();
 
@@ -29,15 +33,11 @@ export function buildPromptEditor(run, container, promptsData) {
       .then(async (items) => ({
         prompts: await Promise.all(items.map(async (item) => {
           const content = await localDataPlane.promptContent(item.prompt_id, run.device_id);
-          const copyLines = content.split(/\r?\n/)
-            .map((line) => line.match(/^\s*-\s*([^:]+):\s*(.*)$/))
-            .filter(Boolean)
-            .map((match) => ({ label: match[1].trim(), value: match[2] }));
           return {
             ...item,
             prompt_file: `${item.prompt_id}.txt`,
             full_content: content,
-            copy_lines: copyLines,
+            copy_lines: exactOnImageCopyLines(content),
           };
         })),
       }))
@@ -345,22 +345,25 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
 
   saveBtn.onclick = async () => {
     const lineRows = editForm.querySelectorAll(".prompt-line");
-    const newText = [...lineRows].map((row) => {
-      const label = row.querySelector("label").textContent;
-      const value = row.querySelector("textarea").value;
-      return `- ${label}: ${value}`;
-    }).join("\n");
-    if (!newText.trim()) { appendLog("Prompt text cannot be empty."); return; }
+    const editedCopy = [...lineRows].map((row) => ({
+      label: row.querySelector("label").textContent,
+      value: row.querySelector("textarea").value,
+    }));
+    const updatedContent = replaceExactOnImageCopy(
+      prompt.full_content,
+      editedCopy,
+    );
     saveBtn.disabled = true;
     try {
       const result = await localDataPlane.putPrompt(
         prompt.prompt_id,
         run.run_id,
-        newText,
+        updatedContent,
         prompt.resource_version,
         run.device_id,
       );
       prompt.resource_version = result.version;
+      prompt.full_content = updatedContent;
       appendLog(`Saved edits to: ${prompt.prompt_file}`);
       editing = false;
       linesDisplay.style.display = "";
