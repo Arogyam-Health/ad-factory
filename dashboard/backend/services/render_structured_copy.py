@@ -221,6 +221,30 @@ def _safe_provider_error_detail(
     return detail[:2000]
 
 
+def _safe_model_output_detail(
+    validation_error: str,
+    response: dict[str, Any],
+) -> str:
+    raw = json.dumps(
+        response,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    raw = re.sub(
+        r'(?i)("(?:api[_-]?key|authorization)"\s*:\s*")[^"]*(")',
+        r"\1[REDACTED]\2",
+        raw,
+    )
+    raw = re.sub(
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [REDACTED]",
+        raw,
+    )
+    raw = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]", raw)
+    return f"{validation_error}. Raw model response: {raw}"[:2000]
+
+
 def _trace_request_metadata(request: dict[str, Any]) -> dict[str, Any]:
     planned = request.get("planned_ads")
     languages = request.get("languages")
@@ -283,7 +307,14 @@ def generate_structured_prompt_bundle(
         copy_batch = _normalize_copy(response, planned)
         error = _validation_error(copy_batch, languages)
     if error:
-        raise ValueError("Structured copy validation failed")
+        raise ProviderCallError(
+            code="provider_invalid_output",
+            provider=provider_name,
+            model=provider_model,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            http_status=200,
+            error_detail=_safe_model_output_detail(error, response),
+        )
 
     backgrounds = _json_config(effective_config.get("background_variant"), {})
     templates = _json_config(
@@ -445,7 +476,7 @@ def provider_generate_callable(
                             "temperature": 0.3 if repair else 0.7,
                         },
                     },
-                    timeout=(10, 120),
+                    timeout=None,
                 )
                 response.raise_for_status()
                 raw = response.json()
@@ -472,7 +503,7 @@ def provider_generate_callable(
                         "response_format": {"type": "json_object"},
                         "temperature": 0.3 if repair else 0.7,
                     },
-                    timeout=(10, 120),
+                    timeout=None,
                 )
                 response.raise_for_status()
                 raw = response.json()
