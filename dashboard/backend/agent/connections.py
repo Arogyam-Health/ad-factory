@@ -14,6 +14,7 @@ class AgentConnection:
     user_id: str
     device_id: str
     websocket: WebSocket
+    protocol_version: str = ""
     connected_at: float = field(default_factory=time.time)
     last_seen_at: float = field(default_factory=time.time)
 
@@ -30,12 +31,29 @@ class AgentConnectionManager:
             return None
         return connection
 
+    def for_user(
+        self,
+        user_id: str,
+        protocol_version: str = "",
+    ) -> AgentConnection | None:
+        matches = [
+            connection
+            for connection in self._connections.values()
+            if connection.user_id == user_id
+            and (
+                not protocol_version
+                or connection.protocol_version == protocol_version
+            )
+        ]
+        return max(matches, key=lambda item: item.last_seen_at) if matches else None
+
     async def register(
         self,
         agent_id: str,
         user_id: str,
         websocket: WebSocket,
         device_id: str = "",
+        protocol_version: str = "",
     ) -> AgentConnection:
         self._loop = asyncio.get_running_loop()
         async with self._lock:
@@ -50,6 +68,7 @@ class AgentConnectionManager:
                 user_id=user_id,
                 device_id=device_id,
                 websocket=websocket,
+                protocol_version=protocol_version,
             )
             self._connections[agent_id] = connection
             return connection
@@ -83,13 +102,20 @@ class AgentConnectionManager:
         payload: dict[str, Any],
         *,
         device_id: str | None = None,
-    ) -> None:
+        wait: bool = False,
+    ) -> bool:
         loop = self._loop
         if loop is None or loop.is_closed():
-            return
-        asyncio.run_coroutine_threadsafe(
+            return False
+        future = asyncio.run_coroutine_threadsafe(
             self.notify(agent_id, payload, device_id=device_id), loop
         )
+        if not wait:
+            return True
+        try:
+            return bool(future.result(timeout=10))
+        except Exception:
+            return False
 
 
 agent_connections = AgentConnectionManager()

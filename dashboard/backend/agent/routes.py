@@ -31,6 +31,10 @@ from dashboard.backend.agent.service import (
 )
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.agent.connections import agent_connections
+from dashboard.backend.services.provider_relay import (
+    MAX_RELAY_RESPONSE_BYTES,
+    provider_relay,
+)
 
 router = APIRouter()
 
@@ -512,7 +516,11 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
     device_id = str(agent.get("device_id") or "")
     await websocket.accept()
     await agent_connections.register(
-        agent_id, str(agent["user_id"]), websocket, device_id=device_id
+        agent_id,
+        str(agent["user_id"]),
+        websocket,
+        device_id=device_id,
+        protocol_version=str(agent.get("protocol_version") or ""),
     )
     await run_in_threadpool(heartbeat_agent, agent_id)
     await websocket.send_json({"type": "connected", "agent_id": agent_id, "heartbeat_seconds": 15})
@@ -525,6 +533,12 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
     try:
         while True:
             raw = await websocket.receive_text()
+            if len(raw.encode("utf-8")) > MAX_RELAY_RESPONSE_BYTES + 65536:
+                await websocket.close(
+                    code=1009,
+                    reason="Provider result is too large",
+                )
+                break
             try:
                 message = json.loads(raw)
             except json.JSONDecodeError:
@@ -536,9 +550,29 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
                 if connection is not None:
                     connection.last_seen_at = time.time()
                 await websocket.send_json({"type": "pong"})
+            elif message.get("type") == "provider_result":
+                accepted = provider_relay.complete(
+                    call_id=str(message.get("call_id") or ""),
+                    user_id=str(agent["user_id"]),
+                    agent_id=agent_id,
+                    device_id=device_id,
+                    result=(
+                        message.get("result")
+                        if isinstance(message.get("result"), dict)
+                        else {}
+                    ),
+                )
+                await websocket.send_json(
+                    {
+                        "type": "provider_result_ack",
+                        "call_id": str(message.get("call_id") or ""),
+                        "accepted": accepted,
+                    }
+                )
     except WebSocketDisconnect:
         pass
     finally:
+        provider_relay.fail_agent(agent_id, device_id)
         await agent_connections.unregister(agent_id, websocket)
 
 
