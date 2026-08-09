@@ -398,6 +398,44 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         )
         self.assertIn("model returned broken JSON", raised.exception.error_detail)
 
+    def test_structurally_wrong_json_reports_raw_model_output(self) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+            generate_structured_prompt_bundle,
+        )
+
+        invalid = {"ads": [{"copy": {"EN": {"headline": "missing fields"}}}]}
+        with self.assertRaises(ProviderCallError) as raised:
+            generate_structured_prompt_bundle(
+                run_id="run-invalid",
+                run_number=1,
+                settings={
+                    "selected_personas": [3],
+                    "global_formats": ["TEST"],
+                    "formats_by_persona": {},
+                    "multiplier": 1,
+                    "language_mode": "EN",
+                },
+                effective_config={
+                    "product_master_doc": "Verified product facts.",
+                    "persona_seeds": json.dumps(
+                        [
+                            {
+                                "persona_number": 3,
+                                "persona_name": "Stress Snacker",
+                            }
+                        ]
+                    ),
+                },
+                provider_name="opencode",
+                provider_model="opencode/deepseek-v4-flash-free",
+                generate=lambda request, repair=False: invalid,
+            )
+
+        self.assertEqual(raised.exception.code, "provider_invalid_output")
+        self.assertEqual(raised.exception.http_status, 200)
+        self.assertIn("missing fields", raised.exception.error_detail)
+
     def test_traces_page_reads_recent_cloud_diagnostics_without_local_agent(
         self,
     ) -> None:
