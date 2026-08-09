@@ -65,9 +65,6 @@ def register_agent_endpoint(
             device_id=device_id,
             protocol_version=protocol_version,
             supports_pairing=payload.get("supports_pairing") is True,
-            supports_provider_relay=(
-                payload.get("supports_provider_relay") is True
-            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -458,7 +455,6 @@ def register_agent_device(
             str(payload.get("device_id") or ""),
             str(payload.get("protocol_version") or ""),
             payload.get("supports_pairing") is True,
-            payload.get("supports_provider_relay") is True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -525,9 +521,6 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
         websocket,
         device_id=device_id,
         protocol_version=str(agent.get("protocol_version") or ""),
-        supports_provider_relay=bool(
-            agent.get("supports_provider_relay")
-        ),
     )
     await run_in_threadpool(heartbeat_agent, agent_id)
     await websocket.send_json({"type": "connected", "agent_id": agent_id, "heartbeat_seconds": 15})
@@ -557,6 +550,24 @@ async def agent_runtime_websocket(websocket: WebSocket) -> None:
                 if connection is not None:
                     connection.last_seen_at = time.time()
                 await websocket.send_json({"type": "pong"})
+            elif message.get("type") == "capabilities":
+                connection = agent_connections.get(
+                    agent_id,
+                    device_id=device_id,
+                )
+                if connection is not None:
+                    connection.supports_provider_relay = (
+                        message.get("provider_relay") is True
+                    )
+                await websocket.send_json(
+                    {
+                        "type": "capabilities_ack",
+                        "provider_relay": bool(
+                            connection
+                            and connection.supports_provider_relay
+                        ),
+                    }
+                )
             elif message.get("type") == "provider_result":
                 accepted = provider_relay.complete(
                     call_id=str(message.get("call_id") or ""),

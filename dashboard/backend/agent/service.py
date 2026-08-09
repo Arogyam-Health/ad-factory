@@ -215,7 +215,6 @@ def register_agent(
     device_id: str = "",
     protocol_version: str = "",
     supports_pairing: bool = False,
-    supports_provider_relay: bool = False,
 ) -> dict[str, Any]:
     agent_name = str(agent_name or "").strip()
     if not agent_name or len(agent_name) > 100:
@@ -236,11 +235,6 @@ def register_agent(
         "device_id": device_id,
         "protocol_version": protocol_version,
         "supports_pairing": bool(supports_pairing and device_id and protocol_version == "v1"),
-        "supports_provider_relay": bool(
-            supports_provider_relay
-            and device_id
-            and protocol_version == "v1"
-        ),
         "is_active": True,
         "last_heartbeat_at": now,
         "created_at": now,
@@ -253,7 +247,6 @@ def register_agent(
         "device_id": device_id,
         "protocol_version": protocol_version,
         "supports_pairing": doc["supports_pairing"],
-        "supports_provider_relay": doc["supports_provider_relay"],
     }
 
 
@@ -274,7 +267,6 @@ def bind_agent_device(
     device_id: str,
     protocol_version: str,
     supports_pairing: bool,
-    supports_provider_relay: bool = False,
 ) -> dict[str, Any]:
     if not _valid_device_id(device_id) or protocol_version != "v1":
         raise ValueError("Invalid device protocol registration")
@@ -292,9 +284,6 @@ def bind_agent_device(
                 "device_id": device_id,
                 "protocol_version": protocol_version,
                 "supports_pairing": bool(supports_pairing),
-                "supports_provider_relay": bool(
-                    supports_provider_relay
-                ),
                 "updated_at": time.time(),
             }
         },
@@ -304,7 +293,6 @@ def bind_agent_device(
         "device_id": device_id,
         "protocol_version": protocol_version,
         "supports_pairing": bool(supports_pairing),
-        "supports_provider_relay": bool(supports_provider_relay),
     }
 
 
@@ -330,9 +318,6 @@ def list_user_agents(user_id: str) -> list[dict[str, Any]]:
             "device_id": d.get("device_id", ""),
             "protocol_version": d.get("protocol_version", ""),
             "supports_pairing": bool(d.get("supports_pairing", False)),
-            "supports_provider_relay": bool(
-                d.get("supports_provider_relay", False)
-            ),
         }
         for d in docs
     ]

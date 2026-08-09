@@ -60,7 +60,6 @@ class AgentConnectionManager:
         websocket: WebSocket,
         device_id: str = "",
         protocol_version: str = "",
-        supports_provider_relay: bool = False,
     ) -> AgentConnection:
         self._loop = asyncio.get_running_loop()
         async with self._lock:
@@ -76,7 +75,6 @@ class AgentConnectionManager:
                 device_id=device_id,
                 websocket=websocket,
                 protocol_version=protocol_version,
-                supports_provider_relay=supports_provider_relay,
             )
             self._connections[agent_id] = connection
             return connection

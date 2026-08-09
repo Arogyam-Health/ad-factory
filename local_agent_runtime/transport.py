@@ -135,6 +135,20 @@ class AgentWebSocketClient:
                             message = json.loads(raw)
                             if isinstance(message, dict):
                                 if (
+                                    message.get("type") == "connected"
+                                    and self.provider_handler is not None
+                                ):
+                                    async with send_lock:
+                                        await websocket.send(
+                                            json.dumps(
+                                                {
+                                                    "type": "capabilities",
+                                                    "provider_relay": True,
+                                                }
+                                            )
+                                        )
+                                    self.signal.handle(message)
+                                elif (
                                     message.get("type") == "provider_call"
                                     and self.provider_handler is not None
                                 ):

@@ -1719,7 +1719,6 @@ def register_and_run(args: argparse.Namespace) -> None:
                     "device_id": device_id,
                     "protocol_version": "v1",
                     "supports_pairing": True,
-                    "supports_provider_relay": True,
                 },
             )
             if result is None:
@@ -1750,7 +1749,6 @@ def register_and_run(args: argparse.Namespace) -> None:
             "device_id": device_id,
             "protocol_version": "v1",
             "supports_pairing": True,
-            "supports_provider_relay": True,
         },
         token=AGENT_TOKEN,
         timeout=20,

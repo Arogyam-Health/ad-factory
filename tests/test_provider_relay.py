@@ -252,10 +252,15 @@ class ProviderRelayTests(unittest.TestCase):
         transport = (
             ROOT / "local_agent_runtime" / "transport.py"
         ).read_text(encoding="utf-8")
+        agent_service = (
+            ROOT / "dashboard" / "backend" / "agent" / "service.py"
+        ).read_text(encoding="utf-8")
         self.assertIn('"provider_result"', routes)
         self.assertIn("provider_relay.complete", routes)
         self.assertIn("provider_handler", transport)
         self.assertIn('"provider_call"', transport)
+        self.assertIn('"type": "capabilities"', transport)
+        self.assertNotIn("supports_provider_relay", agent_service)
         self.assertNotIn("print(provider", transport)
         self.assertNotIn("logger.", transport)
 
