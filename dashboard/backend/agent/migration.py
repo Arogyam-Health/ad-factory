@@ -126,18 +126,25 @@ def cleanup_mongo_job_documents(
 ) -> dict[str, Any]:
     """Dry-run-first metadata-only cleanup for legacy Mongo agent jobs."""
     changed: list[tuple[dict[str, Any], dict[str, Any], dict[str, str]]] = []
+    invalid: list[dict[str, Any]] = []
     scanned = 0
     for document in collection.find({}):
         scanned += 1
-        clean = _clean_mongo_job(document)
-        comparable = {key: value for key, value in document.items() if key != "_id"}
-        if comparable == clean:
-            continue
         selector = (
             {"_id": document["_id"]}
             if document.get("_id") is not None
             else {"job_id": document.get("job_id")}
         )
+        try:
+            clean = _clean_mongo_job(document)
+        except (TypeError, ValueError):
+            invalid.append(selector)
+            continue
+        comparable = {
+            key: value for key, value in document.items() if key != "_id"
+        }
+        if comparable == clean:
+            continue
         unset = {
             key: ""
             for key in document
@@ -150,10 +157,14 @@ def cleanup_mongo_job_documents(
             if unset:
                 update["$unset"] = unset
             collection.update_one(selector, update)
+        for selector in invalid:
+            collection.delete_one(selector)
     return {
         "kind": "mongo_agent_jobs",
         "apply": bool(apply),
         "scanned": scanned,
         "changed": len(changed),
-        "mutated": bool(apply and changed),
+        "invalid": len(invalid),
+        "deleted": len(invalid) if apply else 0,
+        "mutated": bool(apply and (changed or invalid)),
     }

@@ -410,10 +410,10 @@ document.getElementById("saveGoogleKey")?.addEventListener("click", async () => 
   if (!key) { setStatus("Enter a Google API key first."); return; }
   try {
     const model = document.getElementById("googleModel").value;
-    await saveProviderConfig("google_gemini", { api_key: key, default_model: model });
+    const saved = await saveProviderConfig("google_gemini", { api_key: key, default_model: model });
     document.getElementById("googleApiKey").value = "";
     document.getElementById("googleApiKey").placeholder = "•••••••• (saved)";
-    setStatus("Google API key encrypted and saved to your account");
+    setStatus(`Google API key encrypted and saved (fingerprint ${saved.config.key_fingerprint})`);
     fetchGoogleModels(key);
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
@@ -435,13 +435,14 @@ document.getElementById("saveOpenCodeKey")?.addEventListener("click", async () =
   if (!key) { setStatus("Enter an API key first."); return; }
   try {
     const model = document.getElementById("opencodeModel")?.value || "";
-    await saveProviderConfig("opencode", { api_key: key, default_model: model });
+    const saved = await saveProviderConfig("opencode", { api_key: key, default_model: model });
     document.getElementById("opencodeApiKey").value = "";
     document.getElementById("opencodeApiKey").placeholder = "•••••••• (saved)";
     const modelCount = await refreshOpenCodeModels();
+    const fingerprint = saved.config.key_fingerprint;
     setStatus(modelCount
-      ? `OpenCode API key saved; loaded ${modelCount} model${modelCount === 1 ? "" : "s"}`
-      : "OpenCode API key saved, but the provider returned no models");
+      ? `OpenCode API key saved (fingerprint ${fingerprint}); loaded ${modelCount} model${modelCount === 1 ? "" : "s"}`
+      : `OpenCode API key saved (fingerprint ${fingerprint}), but the provider returned no models`);
   } catch (err) { setStatus(`Failed: ${String(err)}`); }
 });
 

@@ -74,6 +74,22 @@ async def control_plane_boundary(request: Request, call_next) -> Response:
 def startup() -> None:
     validate_production_settings()
     try:
+        from dashboard.backend.agent.migration import (
+            cleanup_mongo_job_documents,
+        )
+        from dashboard.backend.db.client import get_sync_db
+        from dashboard.backend.db.collections import COLL_AGENT_JOBS
+
+        cleanup = cleanup_mongo_job_documents(
+            get_sync_db()[COLL_AGENT_JOBS],
+            apply=True,
+        )
+        if cleanup["mutated"]:
+            print(
+                "[startup] Sanitized legacy agent jobs: "
+                f"updated={cleanup['changed']} deleted={cleanup['deleted']}",
+                flush=True,
+            )
         from dashboard.backend.db.indexes import create_indexes
 
         result = create_indexes()

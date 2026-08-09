@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -17,6 +18,10 @@ _PROVIDERS = frozenset(PROVIDER_FIELDS)
 _MAX_SECRET_LENGTH = 4096
 _MAX_URL_LENGTH = 2048
 _MAX_MODEL_LENGTH = 256
+
+
+def _key_fingerprint(api_key: str) -> str:
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
 
 
 def _validate_provider(provider: str) -> str:
@@ -65,6 +70,7 @@ def _safe_config(doc: dict[str, Any]) -> dict[str, Any]:
             "has_secret": bool(
                 stored.get("encrypted_api_key") or stored.get("api_key")
             ),
+            "key_fingerprint": str(stored.get("key_fingerprint") or ""),
         },
         "updated_at": doc.get("updated_at", 0),
     }
@@ -95,12 +101,19 @@ def set_provider_config(
     )
     if existing_secret:
         stored["encrypted_api_key"] = str(existing_secret)
+        fingerprint = str(existing_config.get("key_fingerprint") or "")
+        if not fingerprint:
+            fingerprint = _key_fingerprint(
+                decrypt_value(str(existing_secret))
+            )
+        stored["key_fingerprint"] = fingerprint
     if "api_url" in clean:
         stored["api_url"] = clean["api_url"]
     if "default_model" in clean:
         stored["default_model"] = clean["default_model"]
     if clean.get("api_key"):
         stored["encrypted_api_key"] = encrypt_value(clean["api_key"])
+        stored["key_fingerprint"] = _key_fingerprint(clean["api_key"])
 
     now = time.time()
     collection.update_one(
@@ -155,6 +168,7 @@ def get_materialized_provider_config(
     return {
         "api_url": str(config.get("api_url") or ""),
         "api_key": get_decrypted_provider_key(user_id, provider, "api_key") or "",
+        "key_fingerprint": str(config.get("key_fingerprint") or ""),
         "default_model": str(config.get("default_model") or ""),
     }
 
