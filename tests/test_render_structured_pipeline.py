@@ -187,6 +187,46 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(db["runs"].docs[0]["agent_id"], "")
         self.assertEqual(db["runs"].docs[0]["device_id"], "")
 
+    def test_render_copy_queue_accepts_run_without_local_device(self) -> None:
+        from tests.test_agent_metadata_jobs import _DB
+        from dashboard.backend.agent.routes import queue_structured_copy
+
+        db = _DB()
+        db["runs"].insert_one(
+            {
+                "job_id": "not-a-job",
+                "run_id": "run-server",
+                "user_id": "user-1",
+                "owner_type": "user",
+                "owner_id": "user-1",
+                "agent_id": "",
+                "device_id": "",
+                "run_number": 4,
+            }
+        )
+        queued = {
+            "copy_job_id": "copy-test",
+            "status": "queued",
+            "progress_code": "queued_on_render",
+        }
+        with (
+            patch("dashboard.backend.db.client.get_sync_db", return_value=db),
+            patch(
+                "dashboard.backend.services.render_copy_jobs.enqueue_render_copy_job",
+                return_value=queued,
+            ),
+        ):
+            response = queue_structured_copy(
+                "run-server",
+                {
+                    "operation_id": "run-server-copy",
+                    "settings": {},
+                },
+                {"user_id": "user-1"},
+            )
+
+        self.assertEqual(response["copy_job_id"], "copy-test")
+
     def test_provider_failure_exposes_safe_status_without_response_body(self) -> None:
         from dashboard.backend.services.render_structured_copy import (
             ProviderCallError,
