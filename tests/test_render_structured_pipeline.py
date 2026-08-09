@@ -331,6 +331,73 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertNotIn("product_document", json.dumps(traces))
         self.assertEqual(traces[0]["request"]["planned_ad_count"], 1)
 
+    def test_provider_call_waits_without_a_client_side_timeout(self) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            provider_generate_callable,
+        )
+
+        response = Mock()
+        response.status_code = 200
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"ads":[]}'}}],
+        }
+        response.headers = {"content-type": "application/json"}
+        with patch(
+            "dashboard.backend.services.render_structured_copy.requests.post",
+            return_value=response,
+        ) as post:
+            generate = provider_generate_callable(
+                "opencode",
+                "opencode/deepseek-v4-flash-free",
+                {
+                    "api_url": "https://opencode.ai/zen/v1",
+                    "api_key": "test-key",
+                },
+            )
+            generate({"task": "copy"})
+
+        self.assertIsNone(post.call_args.kwargs["timeout"])
+
+    def test_invalid_model_output_exposes_bounded_sanitized_raw_response(
+        self,
+    ) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+            provider_generate_callable,
+        )
+
+        response = Mock()
+        response.status_code = 200
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"message": {"content": "model returned broken JSON"}}],
+        }
+        response.text = (
+            '{"choices":[{"message":{"content":"model returned broken JSON"}}]}'
+        )
+        response.headers = {"content-type": "application/json"}
+        with patch(
+            "dashboard.backend.services.render_structured_copy.requests.post",
+            return_value=response,
+        ):
+            generate = provider_generate_callable(
+                "opencode",
+                "opencode/deepseek-v4-flash-free",
+                {
+                    "api_url": "https://opencode.ai/zen/v1",
+                    "api_key": "test-key",
+                },
+            )
+            with self.assertRaises(ProviderCallError) as raised:
+                generate({"task": "copy"})
+
+        self.assertEqual(
+            raised.exception.code,
+            "provider_invalid_response",
+        )
+        self.assertIn("model returned broken JSON", raised.exception.error_detail)
+
     def test_traces_page_reads_recent_cloud_diagnostics_without_local_agent(
         self,
     ) -> None:
