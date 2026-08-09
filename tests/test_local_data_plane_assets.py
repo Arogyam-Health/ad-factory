@@ -152,6 +152,45 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(payload["status"], "deleted")
 
+    def test_trace_list_read_and_delete_remain_on_localhost(self) -> None:
+        source = self.server.config.paths.staging / "trace.json"
+        source.write_text(
+            json.dumps(
+                {
+                    "provider": "fake",
+                    "model": "test-model",
+                    "status": "completed",
+                    "request": {"task": "local only"},
+                    "response": {"ok": True},
+                }
+            ),
+            encoding="utf-8",
+        )
+        version = self.server.state.put_resource(
+            source=source,
+            owner_key="user-1",
+            kind="trace",
+            logical_key="run-1:job-1:trace",
+            operation_id="trace-create",
+            metadata={"run_id": "run-1", "job_id": "job-1", "status": "completed"},
+            media_type="application/json",
+        )
+
+        with self.open("GET", "/v1/traces") as response:
+            listed = json.loads(response.read())
+        self.assertEqual(listed["items"][0]["trace_id"], version.resource_id)
+        self.assertNotIn("local only", json.dumps(listed))
+        with self.open(
+            "GET", f"/v1/traces/{version.resource_id}/content"
+        ) as response:
+            self.assertEqual(json.loads(response.read())["request"]["task"], "local only")
+        with self.open(
+            "DELETE",
+            f"/v1/traces/{version.resource_id}",
+            headers={"Idempotency-Key": "trace-delete"},
+        ) as response:
+            self.assertEqual(json.loads(response.read())["status"], "deleted")
+
     def test_upload_rejects_traversal_mime_mismatch_and_limits(self) -> None:
         cases = [
             ("../hero.png", PNG, 400),

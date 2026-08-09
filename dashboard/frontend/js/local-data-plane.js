@@ -577,6 +577,47 @@ export class LocalDataPlaneClient {
     ));
   }
 
+  async listTraces(deviceId) {
+    const payload = await readJson(await this.authorizedFetch(
+      "/v1/traces",
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    ));
+    return payload.items || [];
+  }
+
+  async traceContent(traceId, deviceId) {
+    const response = await this.authorizedFetch(
+      `/v1/traces/${encodeURIComponent(traceId)}/content`,
+      { method: "GET", cache: "no-store" },
+      deviceId,
+    );
+    if (!response.ok) await readJson(response);
+    return response.json();
+  }
+
+  async deleteTrace(traceId, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/traces/${encodeURIComponent(traceId)}`,
+      {
+        method: "DELETE",
+        headers: { "Idempotency-Key": operationId("delete_trace") },
+      },
+      deviceId,
+    ));
+  }
+
+  async deleteAllTraces(deviceId) {
+    return readJson(await this.authorizedFetch(
+      "/v1/traces",
+      {
+        method: "DELETE",
+        headers: { "Idempotency-Key": operationId("delete_all_traces") },
+      },
+      deviceId,
+    ));
+  }
+
   async downloadRun(runId, deviceId) {
     const response = await this.authorizedFetch(
       `/v1/runs/${encodeURIComponent(runId)}/download`,

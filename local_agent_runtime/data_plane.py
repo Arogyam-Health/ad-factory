@@ -437,6 +437,9 @@ class LocalDataPlane:
         if path.startswith("/v1/outputs/"):
             self._output_route(handler, path)
             return
+        if path == "/v1/traces" or path.startswith("/v1/traces/"):
+            self._trace_route(handler, path)
+            return
         if path.startswith("/v1/revisions/") and method == "GET":
             self._revision_status(handler, path.removeprefix("/v1/revisions/"))
             return
@@ -450,6 +453,86 @@ class LocalDataPlane:
             self._events(handler)
             return
         raise APIError(404, "not_found", "Endpoint not found")
+
+    def _trace_route(self, handler: Any, path: str) -> None:
+        if path == "/v1/traces":
+            session = self._session(
+                handler,
+                "delete" if handler.command == "DELETE" else "manifest:read",
+            )
+            with self.state._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT r.resource_id, r.logical_key, r.current_version,
+                           rv.metadata_json, r.created_at, r.updated_at
+                    FROM resources r
+                    JOIN resource_versions rv
+                      ON rv.resource_id = r.resource_id
+                     AND rv.version = r.current_version
+                    WHERE r.owner_key = ? AND r.kind = 'trace' AND r.status != 'deleted'
+                    ORDER BY r.created_at DESC
+                    LIMIT 500
+                    """,
+                    (session.owner_key,),
+                ).fetchall()
+            if handler.command == "GET":
+                items = []
+                for row in rows:
+                    metadata = json.loads(row["metadata_json"] or "{}")
+                    items.append(
+                        {
+                            "trace_id": row["resource_id"],
+                            "logical_key": row["logical_key"],
+                            "version": int(row["current_version"]),
+                            "run_id": str(metadata.get("run_id") or ""),
+                            "job_id": str(metadata.get("job_id") or ""),
+                            "status": str(metadata.get("status") or ""),
+                            "created_at": row["created_at"],
+                            "updated_at": row["updated_at"],
+                        }
+                    )
+                self._json(handler, 200, {"items": items, "total": len(items)})
+                return
+            if handler.command == "DELETE":
+                for row in rows:
+                    self._delete_resource(
+                        session.owner_key,
+                        str(row["resource_id"]),
+                        f"{self._operation_id(handler)}:{row['resource_id']}",
+                    )
+                self._json(handler, 200, {"deleted": len(rows)})
+                return
+            raise APIError(405, "method_not_allowed", "Method not allowed")
+
+        suffix = path.removeprefix("/v1/traces/")
+        trace_id, separator, action = suffix.partition("/")
+        trace_id = self._safe_logical_key(trace_id)
+        session = self._session(
+            handler,
+            "delete" if handler.command == "DELETE" else "content:read",
+        )
+        record = self._resource_record(session.owner_key, resource_id=trace_id)
+        if record is None or record["kind"] != "trace":
+            if handler.command == "DELETE":
+                self._json(
+                    handler,
+                    200,
+                    {"trace_id": trace_id, "status": "already_deleted"},
+                )
+                return
+            raise APIError(404, "trace_not_found", "Local trace not found")
+        if separator and action == "content" and handler.command == "GET":
+            self._send_file(handler, record)
+            return
+        if not separator and handler.command == "DELETE":
+            self._delete_resource(
+                session.owner_key, trace_id, self._operation_id(handler)
+            )
+            self._json(
+                handler, 200, {"trace_id": trace_id, "status": "deleted"}
+            )
+            return
+        raise APIError(405, "method_not_allowed", "Method not allowed")
 
     def _migration_route(self, handler: Any, path: str) -> None:
         """Authenticated, hash-verified one-time imports without exposing content."""

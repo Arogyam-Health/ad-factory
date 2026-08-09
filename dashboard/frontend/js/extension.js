@@ -76,31 +76,6 @@ export function getExtensionStatus() {
   return cachedExtensionStatus;
 }
 
-export async function navigateTab(url, targetId = "") {
-  const params = new URLSearchParams({ url });
-  if (targetId) params.set("target_id", targetId);
-  return fetchJSON(`/api/extension/navigate?${params}`, { method: "POST" });
-}
-
-export async function executeCommand(method, params = {}, targetId = "") {
-  const qs = new URLSearchParams({ method });
-  if (targetId) qs.set("target_id", targetId);
-  return fetchJSON(`/api/extension/command?${qs}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-}
-
-export async function getTargets() {
-  return fetchJSON("/api/extension/targets");
-}
-
-export async function takeScreenshot(targetId = "") {
-  const params = targetId ? `?target_id=${targetId}` : "";
-  return fetchJSON(`/api/extension/screenshot${params}`, { method: "POST" });
-}
-
 /* ─── Cleanup ─── */
 
 export function stopExtensionPolling() {

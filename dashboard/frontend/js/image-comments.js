@@ -78,7 +78,7 @@ function enhanceRunHeader(runEl) {
   if (runEl.dataset.flowEnhanced === "true") return;
   const runId = runEl.querySelector(".run-header strong")?.textContent?.trim();
   const run = state.runsData.find((item) => item.run_id === runId);
-  if (!run || run.flow_type !== "reference_image") return;
+  if (!run || run.flow_type !== "reference") return;
   runEl.dataset.flowEnhanced = "true";
   const header = runEl.querySelector(".run-header");
   const badge = document.createElement("span");
