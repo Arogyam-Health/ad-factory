@@ -2,24 +2,24 @@
 
 ## Purpose
 
-This document is the authoritative implementation handoff for converting Ad Factory into a local-first generation system. Render has no runtime content disk; MongoDB stores control metadata plus the eight bounded dashboard configuration files; uploaded, generated, provider, and execution content stays on the user's local agent machine.
+This document is the authoritative implementation handoff for converting Ad Factory into a local-first generation system. Render has no runtime content disk; MongoDB stores control metadata plus the eight bounded dashboard configuration files. Render plans and validates Structured copy, while the local agent performs the provider HTTPS call and returns a bounded response through an in-memory relay. Durable uploaded, generated, and execution content stays on the user's local agent machine.
 
 This is a large refactor. Implement it completely, in phases, with focused tests and multiple commits. Do not stop after adding only upload endpoints or only moving image generation. Every content-bearing workflow listed here must be migrated.
 
 ## Non-Negotiable Requirements
 
 1. User file uploads must go directly from the dashboard browser to the local agent on `127.0.0.1`.
-2. Image, uploaded document, generated prompt, log, trace, import, export, and generated-output content must never be uploaded to Render. The eight named dashboard configuration text/JSON files are the explicit exception and are stored in MongoDB.
+2. Image, uploaded file, generated prompt, import, export, and generated-output bytes must never be persisted on Render. The eight named dashboard configuration text/JSON files are the explicit MongoDB exception. Structured provider request and response bodies may cross Render only through the bounded in-memory relay and must never be written to MongoDB or Render disk.
 3. Render must never proxy user file bytes to the local agent.
 4. Render runtime disk must not be used for durable or workflow-critical user content.
 5. MongoDB must contain ownership/control metadata, the eight bounded dashboard configuration files, and owner-scoped provider settings.
 6. MongoDB must not contain base64 files, plaintext generated prompts, uploaded document bodies outside the eight bounded dashboard configs, plaintext provider secrets, LLM request/response bodies, local paths, local capability tokens, or localhost URLs except an explicitly configured provider API URL. Final prompts may exist only as encrypted, TTL-bound delivery ciphertext until a local agent acknowledges them.
-7. Structured copy generation and prompt assembly execute on Render; only final prompt bodies are delivered to local storage. Structured browser automation remains local.
+7. Structured copy planning, response validation/repair, and prompt assembly execute on Render; outbound provider HTTPS calls execute through the authenticated local agent. Only final prompt bodies are delivered to local storage. Structured browser automation remains local.
 8. Structured and Reference browser automation must resolve prompts and exact ordered upload sets from local storage.
 9. Generated 4:5 and 9:16 images, revisions, replacements, and history must remain local.
 10. Existing functionality must continue to work after migration.
 11. Render and MongoDB are on free plans. Do not introduce Redis, GridFS, Cloudinary, paid Render disks, or another cloud object store.
-12. The local agent and browser may send content directly to external providers selected by the user. Render must not receive or persist that provider content.
+12. The local agent sends Structured provider requests directly to allowlisted external providers. Render may receive the bounded response transiently for validation and assembly, but must not persist request or response bodies.
 
 ## Repository Context
 
@@ -922,7 +922,8 @@ Update this table during implementation. Include commit SHA and verification res
 | Mongo-backed provider settings | Complete (repository) | `79dd3b3`, `5381355` | 5 focused provider tests, 193 full regression tests, backend/frontend syntax checks, lints, and Graphify update pass | Stores URL/model plus Fernet-encrypted API keys by user; replacement keys overwrite prior ciphertext and expose only a non-secret fingerprint so users can verify rotation |
 | Legacy agent-job storage cleanup | Complete (repository) | `5381355` | 2 focused legacy-cleanup tests, 193 full regression tests, compilation, lints, and Graphify update pass | Sanitizes legacy content-bearing `agent_jobs` before index creation, unsets oversized payloads, deletes jobs that cannot satisfy the metadata-only protocol, and leaves current jobs bounded to 8 KiB with terminal TTL cleanup |
 | Retired API compatibility audit | Complete (repository) | `76802f3`, `7b10b14`, `757aab5`, `31e20b4`, `2e88a36`, `5393251`, `580beb9`, plus multi-account follow-up | 174 full regression tests pass; all frontend JavaScript and backend/local-runtime Python compile; production frontend-to-policy audit passes; Graphify update passes | Removes all shipped browser dependencies on retired Render content routes, keeps Structured copy independent of product images, reconciles stale owner/device-scoped metadata, propagates local prompt deletion, and stores separate local-agent credentials per dashboard account on shared machines |
-| Render Structured copy pipeline | Complete (repository) | `715d8bc`, `d8d75b7`, `7f8d525`, `c2c9641`, `9e005f7` | 19 focused Render generation/delivery/diagnostic tests, 195 full regression tests, standalone smoke assertions, backend/frontend compilation, lints, and Graphify update pass | Runs provider calls and prompt assembly on Render without a running local agent; normalizes dashboard model IDs for provider APIs; waits without a client-side provider response timeout; surfaces bounded, secret-redacted raw provider errors and malformed model output; retains only each user's five most recent sanitized provider diagnostics and retries a minimal trace write when primary trace persistence fails; stores encrypted TTL prompt delivery ciphertext; imports final prompts locally before acknowledgement and deletion |
+| Render Structured copy pipeline | Complete (repository) | `715d8bc`, `d8d75b7`, `7f8d525`, `c2c9641`, `9e005f7` | 19 focused Render generation/delivery/diagnostic tests, 195 full regression tests, standalone smoke assertions, backend/frontend compilation, lints, and Graphify update pass | Runs Structured planning, validation, repair, prompt assembly, and sanitized tracing on Render; normalizes dashboard model IDs; surfaces bounded, secret-redacted provider errors and malformed output; retains only each user's five most recent diagnostics; stores encrypted TTL prompt delivery ciphertext; imports final prompts locally before acknowledgement and deletion |
+| Local provider relay | Complete (repository) | `f906150`, `b47264c`, `9694f35`, `600cb5a`, `f4d9706`, `8332b87`, `5d31166` | 7 focused relay tests, 202 full regression tests, standalone smoke assertions, backend/local compilation, all frontend JavaScript syntax checks, lints, and Graphify update pass | Executes only allowlisted OpenCode/Google HTTPS calls from the local agent with no client-side response timeout; uses bounded one-time in-memory calls pinned to the authenticated user, agent, and device; synchronizes cross-thread connection selection; negotiates capability over the live WebSocket without Mongo persistence; keeps API keys and request/response bodies out of MongoDB and Render disk; Render retains planning, validation, repair, assembly, encrypted prompt delivery, and sanitized recent traces |
 
 Repository implementation and automated verification are complete. Final
 production sign-off requires these external actions, which cannot be performed
@@ -940,7 +941,7 @@ The refactor is complete only when all of the following are true:
 1. Browser developer tools show user file uploads going to `127.0.0.1`, never the Render origin.
 2. MongoDB inspection confirms that no content bodies except the eight bounded dashboard config files, their version snapshots, encrypted provider secrets, and TTL-bound encrypted prompt deliveries are present; no plaintext prompt, LLM request/response, base64 file, local path, localhost URL, or capability is stored.
 3. Render runtime-content directories can be read-only without breaking any feature.
-4. Structured copy generation and prompt assembly run on Render; final prompts and all Structured browser automation remain local.
+4. Structured copy planning, validation, repair, and prompt assembly run on Render; provider HTTPS calls, final prompt storage, and all Structured browser automation remain local.
 5. Reference library, workspace, prompt assembly and browser automation run locally.
 6. Exact browser upload membership is represented by tested upload-set resources.
 7. Prompt and image lifecycle operations are fully local.
