@@ -79,14 +79,18 @@ class AgentWebSocketClient:
         signal: JobSignal,
         *,
         status_callback: Callable[[str], None] | None = None,
+        provider_handler: Callable[[dict[str, Any]], dict[str, Any]]
+        | None = None,
     ) -> None:
         self.url = websocket_url(api_base)
         self.token = token
         self.signal = signal
         self.status_callback = status_callback or (lambda _status: None)
+        self.provider_handler = provider_handler
         self._stop = threading.Event()
         self._connected = threading.Event()
         self._thread: threading.Thread | None = None
+        self._provider_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def connected(self) -> bool:
@@ -119,19 +123,44 @@ class AgentWebSocketClient:
                     close_timeout=2,
                     ping_interval=20,
                     ping_timeout=20,
-                    max_size=1024 * 1024,
+                    max_size=2 * 1024 * 1024 + 65536,
                 ) as websocket:
                     self._connected.set()
                     self.status_callback("connected")
                     backoff = 1.0
+                    send_lock = asyncio.Lock()
                     while not self._stop.is_set():
                         try:
                             raw = await asyncio.wait_for(websocket.recv(), timeout=15)
                             message = json.loads(raw)
                             if isinstance(message, dict):
-                                self.signal.handle(message)
+                                if (
+                                    message.get("type") == "provider_call"
+                                    and self.provider_handler is not None
+                                ):
+                                    task = asyncio.create_task(
+                                        self._handle_provider_call(
+                                            websocket,
+                                            message,
+                                            send_lock,
+                                        )
+                                    )
+                                    self._provider_tasks.add(task)
+                                    task.add_done_callback(
+                                        self._provider_tasks.discard
+                                    )
+                                else:
+                                    self.signal.handle(message)
                         except asyncio.TimeoutError:
-                            await websocket.send(json.dumps({"type": "heartbeat", "at": time.time()}))
+                            async with send_lock:
+                                await websocket.send(
+                                    json.dumps(
+                                        {
+                                            "type": "heartbeat",
+                                            "at": time.time(),
+                                        }
+                                    )
+                                )
                         except json.JSONDecodeError:
                             continue
             except Exception as exc:
@@ -140,3 +169,43 @@ class AgentWebSocketClient:
                 self._connected.clear()
             await asyncio.sleep(backoff)
             backoff = min(30.0, backoff * 2)
+
+    async def _handle_provider_call(
+        self,
+        websocket: Any,
+        message: dict[str, Any],
+        send_lock: asyncio.Lock,
+    ) -> None:
+        call_id = str(message.get("call_id") or "")
+        if not call_id.startswith("rly_") or len(call_id) > 80:
+            return
+        try:
+            result = await asyncio.to_thread(
+                self.provider_handler,
+                {
+                    key: value
+                    for key, value in message.items()
+                    if key not in {"type", "call_id"}
+                },
+            )
+            if not isinstance(result, dict):
+                raise ValueError("Provider result is invalid")
+        except Exception as exc:
+            result = {
+                "http_status": 0,
+                "content_type": "",
+                "body": "",
+                "transport_error": type(exc).__name__,
+            }
+        async with send_lock:
+            await websocket.send(
+                json.dumps(
+                    {
+                        "type": "provider_result",
+                        "call_id": call_id,
+                        "result": result,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )

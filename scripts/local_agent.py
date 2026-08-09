@@ -46,6 +46,7 @@ from local_agent_runtime.storage import (
     resolve_data_root,
 )
 from local_agent_runtime.transport import AgentWebSocketClient, JobSignal
+from local_agent_runtime.provider_relay import execute_provider_call
 
 
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "http://localhost:4090")
@@ -1716,7 +1717,7 @@ def register_and_run(args: argparse.Namespace) -> None:
                 {
                     "name": args.name,
                     "device_id": device_id,
-                    "protocol_version": "v1",
+                    "protocol_version": "v2",
                     "supports_pairing": True,
                 },
             )
@@ -1746,7 +1747,7 @@ def register_and_run(args: argparse.Namespace) -> None:
         "/api/agents/device",
         {
             "device_id": device_id,
-            "protocol_version": "v1",
+            "protocol_version": "v2",
             "supports_pairing": True,
         },
         token=AGENT_TOKEN,
@@ -1767,7 +1768,13 @@ def register_and_run(args: argparse.Namespace) -> None:
         elif not status.startswith("disconnected: ConnectionClosed"):
             print(f"[agent] Render job WebSocket {status}", flush=True)
 
-    WS_CLIENT = AgentWebSocketClient(AGENT_API_BASE, AGENT_TOKEN, JOB_SIGNAL, status_callback=websocket_status)
+    WS_CLIENT = AgentWebSocketClient(
+        AGENT_API_BASE,
+        AGENT_TOKEN,
+        JOB_SIGNAL,
+        status_callback=websocket_status,
+        provider_handler=execute_provider_call,
+    )
     WS_CLIENT.start()
 
     last_heartbeat = 0.0
