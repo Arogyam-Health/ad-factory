@@ -210,6 +210,88 @@ console.log(JSON.stringify(simplified));
         )
         self.assertIn("expandedPromptRunIds", prompts)
 
+    def test_prompt_copy_parser_only_returns_exact_on_image_copy(self) -> None:
+        script = """
+import { exactOnImageCopyLines } from './dashboard/frontend/js/prompt-copy.js';
+const formats = [
+  `PERSONA INPUT BLOCK
+- Persona: Busy parent
+EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING
+- Headline: A calmer routine
+- Support line: Built for real days
+- CTA: Learn more
+Render every character exactly as written. No paraphrasing.
+- Proof bar is present exactly once.
+NEGATIVE CONSTRAINTS
+- Do not add badges.`,
+  `EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING
+- Headline: Before and after
+- Left situation 1: Constant cravings
+- Right shift 1: Feel in control
+- CTA: Start today
+Render every character exactly as written.`,
+  `EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING
+- Headline: Three practical benefits
+- Bullet 1: Easy routine
+- Bullet 2: Verified ingredients
+- CTA: See how it works
+Render every character exactly as written.`,
+];
+console.log(JSON.stringify(formats.map(exactOnImageCopyLines)));
+"""
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        parsed = json.loads(result.stdout)
+        self.assertEqual(
+            [line["label"] for line in parsed[0]],
+            ["Headline", "Support line", "CTA"],
+        )
+        self.assertEqual(
+            [line["label"] for line in parsed[1]],
+            ["Headline", "Left situation 1", "Right shift 1", "CTA"],
+        )
+        self.assertEqual(
+            [line["label"] for line in parsed[2]],
+            ["Headline", "Bullet 1", "Bullet 2", "CTA"],
+        )
+
+    def test_prompt_copy_edit_preserves_full_generation_prompt(self) -> None:
+        script = """
+import { replaceExactOnImageCopy } from './dashboard/frontend/js/prompt-copy.js';
+const original = `PRODUCT LOCK BLOCK
+- Keep packaging exact.
+EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING
+- Headline: Old headline
+- CTA: Old CTA
+Render every character exactly as written. No paraphrasing.
+NEGATIVE CONSTRAINTS
+- Do not add badges.`;
+console.log(replaceExactOnImageCopy(original, [
+  { label: 'Headline', value: 'New headline' },
+  { label: 'CTA', value: 'New CTA' },
+]));
+"""
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        updated = result.stdout
+        self.assertIn("- Headline: New headline", updated)
+        self.assertIn("- CTA: New CTA", updated)
+        self.assertNotIn("Old headline", updated)
+        self.assertIn("PRODUCT LOCK BLOCK", updated)
+        self.assertIn("- Keep packaging exact.", updated)
+        self.assertIn("NEGATIVE CONSTRAINTS", updated)
+        self.assertIn("- Do not add badges.", updated)
+
 
 if __name__ == "__main__":
     unittest.main()
