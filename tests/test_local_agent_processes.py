@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import signal
 import socket
 import subprocess
 import sys
@@ -47,9 +48,15 @@ class LocalAgentProcessTests(unittest.TestCase):
                 self.assertIsNotNone(payload, process.stdout.read() if process.poll() is not None else "")
                 self.assertEqual(payload["data_root"], str(data_root))
                 self.assertNotEqual(payload["pid"], __import__("os").getpid())
+                process.send_signal(signal.SIGINT)
+                output, _ = process.communicate(timeout=5)
+                self.assertEqual(process.returncode, 0)
+                self.assertNotIn("Traceback", output)
+                self.assertNotIn("KeyboardInterrupt", output)
             finally:
-                process.terminate()
-                process.wait(timeout=5)
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=5)
                 if process.stdout is not None:
                     process.stdout.close()
 

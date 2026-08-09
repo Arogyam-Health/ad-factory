@@ -88,7 +88,13 @@ class ArtifactServer:
             handler = self._handler_class()
             self._server = ThreadingHTTPServer((self.config.host, self.config.port), handler)
             self._server.daemon_threads = True
-        self._server.serve_forever()
+        try:
+            self._server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self._server.server_close()
+            self._server = None
 
     def stop(self) -> None:
         if self._server is None:

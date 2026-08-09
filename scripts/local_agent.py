@@ -1661,7 +1661,10 @@ def register_and_run(args: argparse.Namespace) -> None:
 
 
 def _worker_process(args_dict: dict[str, Any]) -> None:
-    register_and_run(argparse.Namespace(**args_dict))
+    try:
+        register_and_run(argparse.Namespace(**args_dict))
+    except KeyboardInterrupt:
+        pass
 
 
 def _wait_for_artifact_server(port: int, expected_root: Path, timeout: float = 10.0) -> None:
