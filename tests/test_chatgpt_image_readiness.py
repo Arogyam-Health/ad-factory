@@ -54,6 +54,47 @@ class ChatGPTImageReadinessTests(unittest.TestCase):
                     timeout=3,
                 )
 
+    def test_per_file_upload_wait_rejects_unready_attachment_preview(self) -> None:
+        clock = _Clock()
+        with (
+            patch.object(automation.time, "time", clock.time),
+            patch.object(automation.time, "sleep", clock.sleep),
+            patch.object(automation, "_visible_uploaded_image_count", return_value=1),
+            patch.object(automation, "_composer_attachment_count", return_value=1),
+            patch.object(automation, "_composer_attachment_ready_count", return_value=0),
+            patch.object(automation, "upload_activity_present", return_value=False),
+            patch.object(automation, "_attachment_spinner_count", return_value=0),
+            patch.object(automation, "duplicate_upload_modal_present", return_value=False),
+        ):
+            with self.assertRaises(PWTimeoutError):
+                automation._wait_for_uploaded_count_at_least(
+                    object(),
+                    set(),
+                    target_count=1,
+                    timeout=3,
+                )
+
+    def test_duplicate_upload_modal_does_not_bypass_settle_checks(self) -> None:
+        clock = _Clock()
+        with (
+            patch.object(automation.time, "time", clock.time),
+            patch.object(automation.time, "sleep", clock.sleep),
+            patch.object(automation, "_visible_uploaded_image_count", return_value=1),
+            patch.object(automation, "_composer_attachment_count", return_value=1),
+            patch.object(automation, "_composer_attachment_ready_count", return_value=1),
+            patch.object(automation, "upload_activity_present", return_value=True),
+            patch.object(automation, "_attachment_spinner_count", return_value=1),
+            patch.object(automation, "duplicate_upload_modal_present", return_value=True),
+            patch.object(automation, "dismiss_duplicate_upload_modal", return_value=True),
+        ):
+            with self.assertRaises(PWTimeoutError):
+                automation.wait_for_uploads_to_settle(
+                    object(),
+                    set(),
+                    expected_count=1,
+                    timeout=3,
+                )
+
     def test_generation_wait_rejects_incomplete_or_unavailable_preview(self) -> None:
         clock = _Clock()
         candidate = {
