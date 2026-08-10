@@ -1836,35 +1836,67 @@ def _composer_attachment_count(page: Page) -> int:
         return 0
 
 
+def _composer_attachment_ready_count(page: Page) -> int:
+    script = """
+    () => {
+        const composer = document.querySelector('form') || document.querySelector('[contenteditable="true"]')?.closest('div') || document.body;
+        function visible(el) {
+            const r = el.getBoundingClientRect();
+            const s = getComputedStyle(el);
+            return r.width >= 24 && r.height >= 24 && s.display !== 'none' && s.visibility !== 'hidden';
+        }
+        const seen = new Set();
+        let count = 0;
+        for (const img of composer.querySelectorAll('img')) {
+            if (!visible(img) || !img.complete || (img.naturalWidth || 0) <= 0 || (img.naturalHeight || 0) <= 0) continue;
+            const src = img.currentSrc || img.src || '';
+            if (!src || seen.has(src)) continue;
+            const low = src.toLowerCase();
+            if (low.includes('avatar') || low.includes('profile') || low.includes('openai') || low.includes('logo')) continue;
+            seen.add(src);
+            count++;
+        }
+        return count;
+    }
+    """.strip()
+    try:
+        return int(page.evaluate(script) or 0)
+    except Exception:
+        return 0
+
+
 def wait_for_uploads_to_settle(page: Page, before_srcs: set[str], expected_count: int, timeout: int = 180) -> None:
     if expected_count <= 0:
         return
     deadline = time.time() + timeout
     stable_since: float | None = None
-    last_state: tuple[int, bool] | None = None
+    last_state: tuple[int, bool, int] | None = None
     last_log = 0.0
     while time.time() < deadline:
         count = _visible_uploaded_image_count(page, before_srcs)
         attachment_count = _composer_attachment_count(page)
+        ready_attachment_count = _composer_attachment_ready_count(page)
         if duplicate_upload_modal_present(page):
             dismiss_duplicate_upload_modal(page)
-            if attachment_count >= expected_count:
-                print(f"  [upload] Duplicate upload modal dismissed; existing attachments={attachment_count}, expected={expected_count}")
+            if ready_attachment_count >= expected_count:
+                print(f"  [upload] Duplicate upload modal dismissed; ready attachments={ready_attachment_count}, expected={expected_count}")
                 return
         active = upload_activity_present(page)
-        state = (count, active)
+        spinners = _attachment_spinner_count(page)
+        state = (ready_attachment_count, active, spinners)
         if state != last_state:
             stable_since = time.time()
             last_state = state
-        if (count >= expected_count or attachment_count >= expected_count) and not active and stable_since is not None and time.time() - stable_since >= 4.0:
-            print(f"  [upload] Upload settled. visible_uploaded_images={count}, attachments={attachment_count}, expected={expected_count}")
+        if ready_attachment_count >= expected_count and not active and spinners == 0 and stable_since is not None and time.time() - stable_since >= 4.0:
+            print(f"  [upload] Upload settled. visible_uploaded_images={count}, attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_count}")
             return
         if time.time() - last_log > 6:
-            print(f"  [upload] Waiting for upload settle... visible_uploaded_images={count}, expected={expected_count}, active={active}")
+            print(f"  [upload] Waiting for upload settle... visible_uploaded_images={count}, attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_count}, active={active}, spinners={spinners}")
             last_log = time.time()
         time.sleep(1.0)
     count = _visible_uploaded_image_count(page, before_srcs)
-    raise PWTimeoutError(f"Upload did not settle before timeout: visible_uploaded_images={count}, expected={expected_count}")
+    ready_attachment_count = _composer_attachment_ready_count(page)
+    raise PWTimeoutError(f"Upload did not settle before timeout: visible_uploaded_images={count}, ready_attachments={ready_attachment_count}, expected={expected_count}")
 
 
 def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> None:
@@ -2107,34 +2139,36 @@ def wait_until_ready_to_send(
     last_log = 0.0
     while time.time() < deadline:
         attachment_count = _composer_attachment_count(page)
+        ready_attachment_count = _composer_attachment_ready_count(page)
         active = upload_activity_present(page)
         spinners = _attachment_spinner_count(page)
         send_enabled = _send_button_action(page, composer=composer, loose=True, click=False)
-        state = (attachment_count, active, spinners, send_enabled)
+        state = (ready_attachment_count, active, spinners, send_enabled)
         if state != last_state:
             stable_since = time.time()
             last_state = state
 
-        attachments_ready = expected_attachment_count <= 0 or attachment_count >= expected_attachment_count
+        attachments_ready = expected_attachment_count <= 0 or ready_attachment_count >= expected_attachment_count
         if attachments_ready and not active and spinners == 0 and send_enabled and stable_since is not None and time.time() - stable_since >= 2.0:
-            print(f"  [send] Ready: attachments={attachment_count}, expected={expected_attachment_count}, send_enabled={send_enabled}")
+            print(f"  [send] Ready: attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_attachment_count}, send_enabled={send_enabled}")
             return
 
         if time.time() - last_log > 6:
             print(
                 "  [send] Waiting until uploads finish and Send is enabled... "
-                f"attachments={attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
+                f"attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
             )
             last_log = time.time()
         time.sleep(0.75)
 
     attachment_count = _composer_attachment_count(page)
+    ready_attachment_count = _composer_attachment_ready_count(page)
     active = upload_activity_present(page)
     spinners = _attachment_spinner_count(page)
     send_enabled = _send_button_action(page, composer=composer, loose=True, click=False)
     raise PWTimeoutError(
         "ChatGPT was not ready to send after waiting for uploads/button readiness. "
-        f"attachments={attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
+        f"attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
     )
 
 
@@ -2434,6 +2468,7 @@ def _image_candidates(page: Page, baseline_srcs: set[str]) -> list[dict[str, Any
                 height: r.height,
                 naturalWidth: nw,
                 naturalHeight: nh,
+                complete: !!img.complete,
                 alt,
                 assistantArea: inAssistant,
                 domIndex: idx,
@@ -2528,38 +2563,105 @@ def wait_for_generated_image_stability(
     return current
 
 
-def wait_for_generated_image(page: Page, baseline_srcs: set[str], timeout: int) -> str:
+def _generated_image_resource_ready(
+    page: Page,
+    src: str,
+    min_bytes: int = 20_000,
+) -> bool:
+    try:
+        result = page.evaluate(
+            """async ({src, minBytes}) => {
+                const image = Array.from(document.querySelectorAll(
+                    '[data-message-author-role="assistant"] img, article img, [data-testid*="conversation-turn"] img'
+                )).find((item) => (item.currentSrc || item.src || '') === src);
+                if (!image || !image.complete || (image.naturalWidth || 0) < 256 || (image.naturalHeight || 0) < 256) {
+                    return false;
+                }
+                try {
+                    const response = await fetch(src, {credentials: 'include', cache: 'no-store'});
+                    const blob = await response.blob();
+                    return response.ok && blob.type.startsWith('image/') && blob.size >= minBytes;
+                } catch (_) {
+                    return false;
+                }
+            }""",
+            {"src": src, "minBytes": int(min_bytes)},
+        )
+        return bool(result)
+    except Exception:
+        return False
+
+
+def wait_for_generated_image(
+    page: Page,
+    baseline_srcs: set[str],
+    timeout: int,
+    *,
+    quiet_seconds: float = 5.0,
+    min_bytes: int = 20_000,
+) -> str:
     print("  [wait-img] Waiting for a new generated image in the assistant response...")
     deadline = time.time() + timeout
     next_log = time.time() + 3
+    ready_since: float | None = None
+    ready_key: tuple[str, int, int] | None = None
     while time.time() < deadline:
         candidates = _image_candidates(page, baseline_srcs)
-        if candidates:
-            assistant_candidates = [c for c in candidates if c.get("assistantArea")]
-            chosen = assistant_candidates[0] if assistant_candidates else candidates[0]
-            if generation_in_progress(page):
-                chosen = wait_for_generated_image_stability(page, baseline_srcs, chosen)
-            print(
-                "  [wait-img] Found generated image: "
-                f"{int(chosen.get('width', 0))}x{int(chosen.get('height', 0))}, "
-                f"assistantArea={chosen.get('assistantArea')}."
+        assistant_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.get("assistantArea")
+            and candidate.get("complete")
+            and int(candidate.get("naturalWidth") or 0) >= 256
+            and int(candidate.get("naturalHeight") or 0) >= 256
+        ]
+        chosen = assistant_candidates[0] if assistant_candidates else None
+        if chosen:
+            src = str(chosen.get("src") or "")
+            busy = generation_in_progress(page)
+            key = (
+                src,
+                int(chosen.get("naturalWidth") or 0),
+                int(chosen.get("naturalHeight") or 0),
             )
-            return str(chosen.get("src") or "")
+            if not busy:
+                if key != ready_key:
+                    ready_key = key
+                    ready_since = time.time()
+                elif ready_since is not None and time.time() - ready_since >= quiet_seconds:
+                    downloadable = (
+                        _generated_image_resource_ready(
+                            page,
+                            src,
+                            min_bytes=min_bytes,
+                        )
+                        or _download_control_available(page)
+                    )
+                    if downloadable:
+                        print(
+                            "  [wait-img] Generated image is complete, stable, and downloadable: "
+                            f"{key[1]}x{key[2]}."
+                        )
+                        return src
+                    ready_since = time.time()
+            else:
+                ready_key = None
+                ready_since = None
+        else:
+            ready_key = None
+            ready_since = None
 
         if time.time() >= next_log:
-            marked_src = mark_largest_generated_image(page)
-            if marked_src and not generation_in_progress(page):
-                print("  [wait-img] Found generated image using relaxed visible-image detection.")
-                return marked_src
-            print("  [wait-img] Still waiting for generated image...")
+            print(
+                "  [wait-img] Still waiting for a complete, stable, downloadable "
+                "assistant image..."
+            )
             next_log = time.time() + 3
         time.sleep(0.5)
 
-    marked_src = mark_largest_generated_image(page)
-    if marked_src:
-        print("  [wait-img] Timeout reached, but visible image found; proceeding to save it.")
-        return marked_src
-    raise PWTimeoutError(f"No generated image appeared within {timeout}s")
+    raise PWTimeoutError(
+        f"No complete, stable, downloadable generated image appeared within {timeout}s"
+    )
 
 
 def infer_ext_from_src(src: str, content_type: str = "") -> str:
@@ -3181,7 +3283,12 @@ def run() -> None:
                             ready_timeout=max(180.0, float(args.timeout)),
                         )
 
-                        src = wait_for_generated_image(page_for_job, baseline_srcs, timeout=args.timeout)
+                        src = wait_for_generated_image(
+                            page_for_job,
+                            baseline_srcs,
+                            timeout=args.timeout,
+                            min_bytes=args.min_image_bytes,
+                        )
                         saved_path = download_generated_image(
                             page_for_job,
                             context,

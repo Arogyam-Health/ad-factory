@@ -54,16 +54,25 @@ export class LocalDataPlaneClient {
     }));
   }
 
-  async registeredAgent(deviceId) {
+  async registeredAgent(deviceId, preferredAgentId = "") {
     const response = await fetch("/api/agents", {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store",
     });
     const agents = await readJson(response);
-    const agent = Array.isArray(agents)
-      ? agents.find((item) => item.device_id === deviceId && item.supports_pairing)
-      : null;
+    const candidates = Array.isArray(agents)
+      ? agents.filter((item) => item.device_id === deviceId && item.supports_pairing)
+      : [];
+    const agent = (
+      (preferredAgentId
+        ? candidates.find((item) => item.agent_id === preferredAgentId)
+        : null)
+      || candidates.sort(
+        (a, b) => Number(b.last_heartbeat_at || 0) - Number(a.last_heartbeat_at || 0),
+      )[0]
+      || null
+    );
     if (!agent) throw new Error("This local device is not registered to your account");
     const heartbeatAge = Date.now() / 1000 - Number(agent.last_heartbeat_at || 0);
     if (!agent.is_active || heartbeatAge > 180) {
@@ -163,7 +172,7 @@ export class LocalDataPlaneClient {
     if (deviceId && info.device_id !== deviceId) {
       throw new Error("The selected run belongs to a different local device");
     }
-    const agent = await this.registeredAgent(info.device_id);
+    const agent = await this.registeredAgent(info.device_id, agentId);
     if (agentId && agent.agent_id !== agentId) {
       throw new Error("The selected run belongs to a different local agent");
     }

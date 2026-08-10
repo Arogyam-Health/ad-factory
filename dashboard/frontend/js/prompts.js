@@ -1,12 +1,34 @@
 import { appendLog } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { localDataPlane } from "./local-data-plane.js";
+import { getAuthUser } from "./auth.js";
 import {
   exactOnImageCopyLines,
   replaceExactOnImageCopy,
 } from "./prompt-copy.js";
 
 const expandedPromptRunIds = new Set();
+
+async function loadLocalPrompts(run) {
+  await localDataPlane.ensurePaired({
+    ownerType: run.owner_type || "user",
+    ownerId: run.owner_id || getAuthUser()?.user_id,
+    deviceId: run.device_id,
+    agentId: run.agent_id,
+  });
+  const items = await localDataPlane.listPrompts(run.run_id, run.device_id);
+  return {
+    prompts: await Promise.all(items.map(async (item) => {
+      const content = await localDataPlane.promptContent(item.prompt_id, run.device_id);
+      return {
+        ...item,
+        prompt_file: `${item.prompt_id}.txt`,
+        full_content: content,
+        copy_lines: exactOnImageCopyLines(content),
+      };
+    })),
+  };
+}
 
 export function buildPromptEditor(run, container, promptsData) {
   const promptsByPath = new Map();
@@ -29,18 +51,7 @@ export function buildPromptEditor(run, container, promptsData) {
   loadBtn.onclick = () => {
     loadBtn.disabled = true;
     loadHint.textContent = "Loading editable on-image copy...";
-    localDataPlane.listPrompts(run.run_id, run.device_id)
-      .then(async (items) => ({
-        prompts: await Promise.all(items.map(async (item) => {
-          const content = await localDataPlane.promptContent(item.prompt_id, run.device_id);
-          return {
-            ...item,
-            prompt_file: `${item.prompt_id}.txt`,
-            full_content: content,
-            copy_lines: exactOnImageCopyLines(content),
-          };
-        })),
-      }))
+    loadLocalPrompts(run)
       .then((data) => {
         const prompts = data.prompts || [];
         if (!prompts.length) {

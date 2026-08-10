@@ -116,9 +116,6 @@ class LocalScriptBrowser:
         completed = subprocess.run(
             command,
             cwd=self.project_root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
             timeout=900,
         )
         if completed.returncode:

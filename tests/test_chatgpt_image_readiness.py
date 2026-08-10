@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -20,6 +21,19 @@ class _Clock:
 
 
 class ChatGPTImageReadinessTests(unittest.TestCase):
+    def test_local_browser_streams_progress_and_propagates_cdp_url(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        browser_source = (
+            root / "local_agent_runtime/structured_browser.py"
+        ).read_text(encoding="utf-8")
+        agent_source = (root / "scripts/local_agent.py").read_text(encoding="utf-8")
+        self.assertNotIn("stdout=subprocess.PIPE", browser_source)
+        self.assertNotIn("stderr=subprocess.STDOUT", browser_source)
+        self.assertIn(
+            'os.environ["AGENT_CDP_URL"] = AGENT_CDP_URL',
+            agent_source,
+        )
+
     def test_upload_wait_requires_ready_composer_attachments(self) -> None:
         clock = _Clock()
         with (
@@ -89,7 +103,7 @@ class ChatGPTImageReadinessTests(unittest.TestCase):
             patch.object(
                 automation,
                 "generation_in_progress",
-                side_effect=[True, False, False, False, False],
+                side_effect=[True] + [False] * 20,
             ),
             patch.object(
                 automation,

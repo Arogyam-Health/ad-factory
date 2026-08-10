@@ -1559,6 +1559,7 @@ def _configure_runtime(args: argparse.Namespace) -> None:
     CONTENT_STORE = ContentStore(AGENT_PATHS)
     LOCAL_OUTPUT_ROOT = AGENT_PATHS.staging
     AGENT_CDP_URL = f"http://127.0.0.1:{args.cdp_port}"
+    os.environ["AGENT_CDP_URL"] = AGENT_CDP_URL
     AGENT_ARTIFACT_PORT = args.artifact_port
     AGENT_ARTIFACT_BASE_URL = f"http://127.0.0.1:{AGENT_ARTIFACT_PORT}"
 
