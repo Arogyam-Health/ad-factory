@@ -160,6 +160,64 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                 {**encrypted, "plaintext_sha256": "0" * 64}
             )
 
+    def test_prompt_delivery_ack_heals_run_agent_and_device_binding(self) -> None:
+        from tests.test_agent_metadata_jobs import _DB
+        from dashboard.backend.services.prompt_delivery import encrypt_prompt_bundle
+        from dashboard.backend.services.render_copy_jobs import (
+            acknowledge_prompt_delivery,
+        )
+
+        db = _DB()
+        bundle = {
+            "run_id": "run-heal-binding",
+            "prompts": [{"prompt_id": "prm-heal", "text": "Final prompt"}],
+        }
+        db["runs"].insert_one(
+            {
+                "run_id": "run-heal-binding",
+                "user_id": "user-heal",
+                "agent_id": "agent-stale",
+                "device_id": "dev_" + "a" * 32,
+            }
+        )
+        db["prompt_deliveries"].insert_one(
+            {
+                "delivery_id": "delivery-heal",
+                "run_id": "run-heal-binding",
+                "user_id": "user-heal",
+                "agent_id": "agent-current",
+                "device_id": "dev_" + "b" * 32,
+                **encrypt_prompt_bundle(bundle),
+            }
+        )
+        db["prompts"].insert_one(
+            {
+                "run_id": "run-heal-binding",
+                "user_id": "user-heal",
+                "prompt_id": "prm-heal",
+                "status": "awaiting_local_delivery",
+            }
+        )
+        db["prompts"].update_many = Mock()
+
+        with patch(
+            "dashboard.backend.services.render_copy_jobs.get_sync_db",
+            return_value=db,
+        ):
+            acknowledge_prompt_delivery(
+                "delivery-heal",
+                {
+                    "user_id": "user-heal",
+                    "agent_id": "agent-current",
+                    "device_id": "dev_" + "b" * 32,
+                },
+                prompt_ids=["prm-heal"],
+            )
+
+        run = db["runs"].docs[0]
+        self.assertEqual(run["agent_id"], "agent-current")
+        self.assertEqual(run["device_id"], "dev_" + "b" * 32)
+
     def test_render_copy_job_is_metadata_only_and_idempotent(self) -> None:
         from tests.test_agent_metadata_jobs import _DB
         from dashboard.backend.services.render_copy_jobs import (
