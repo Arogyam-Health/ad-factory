@@ -1878,9 +1878,6 @@ def wait_for_uploads_to_settle(page: Page, before_srcs: set[str], expected_count
         ready_attachment_count = _composer_attachment_ready_count(page)
         if duplicate_upload_modal_present(page):
             dismiss_duplicate_upload_modal(page)
-            if ready_attachment_count >= expected_count:
-                print(f"  [upload] Duplicate upload modal dismissed; ready attachments={ready_attachment_count}, expected={expected_count}")
-                return
         active = upload_activity_present(page)
         spinners = _attachment_spinner_count(page)
         state = (ready_attachment_count, active, spinners)
@@ -1920,7 +1917,7 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
     time.sleep(0.2)
 
     for idx, file_path in enumerate(file_paths, start=1):
-        if _composer_attachment_count(page) >= idx:
+        if _composer_attachment_ready_count(page) >= idx:
             print(f"  [upload] File {idx}/{len(file_paths)} already attached; skipping duplicate upload.")
             continue
         print(f"  [upload] Uploading file {idx}/{len(file_paths)}: {Path(file_path).name}")
@@ -1982,23 +1979,22 @@ def _wait_for_uploaded_count_at_least(
     while time.time() < deadline:
         images_added, active, spinners = _upload_counts(page, before_srcs)
         attachment_count = _composer_attachment_count(page)
+        ready_attachment_count = _composer_attachment_ready_count(page)
         if duplicate_upload_modal_present(page):
             dismiss_duplicate_upload_modal(page)
-            if attachment_count >= target_count:
-                print(f"  [upload] Duplicate upload modal dismissed; existing attachments={attachment_count}, target={target_count}")
-                return
-        state = (images_added, active, spinners)
+        state = (ready_attachment_count, active, spinners)
         if state != last_state:
             stable_since = time.time()
             last_state = state
-        if (images_added >= target_count or attachment_count >= target_count) and not active and spinners == 0 and stable_since is not None and time.time() - stable_since >= stable_seconds:
+        if ready_attachment_count >= target_count and not active and spinners == 0 and stable_since is not None and time.time() - stable_since >= stable_seconds:
             return
         if time.time() - last_log > 5:
-            print(f"  [upload] Waiting for uploaded images... visible={images_added}, target={target_count}, active={active}, spinners={spinners}")
+            print(f"  [upload] Waiting for uploaded images... visible={images_added}, attachments={attachment_count}, ready_attachments={ready_attachment_count}, target={target_count}, active={active}, spinners={spinners}")
             last_log = time.time()
         time.sleep(0.6)
     images_added, active, spinners = _upload_counts(page, before_srcs)
-    raise PWTimeoutError(f"Timed out waiting for uploaded image count {target_count}; visible={images_added}, active={active}, spinners={spinners}")
+    ready_attachment_count = _composer_attachment_ready_count(page)
+    raise PWTimeoutError(f"Timed out waiting for uploaded image count {target_count}; visible={images_added}, ready_attachments={ready_attachment_count}, active={active}, spinners={spinners}")
 
 
 def _upload_counts(page: Page, before_srcs: set[str]) -> tuple[int, bool, int]:
