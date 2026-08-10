@@ -210,6 +210,22 @@ console.log(JSON.stringify(simplified));
         )
         self.assertIn("expandedPromptRunIds", prompts)
 
+    def test_prompt_loading_repairs_missing_local_pairing_session(self) -> None:
+        client = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
+            encoding="utf-8"
+        )
+        prompts = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("registeredAgent(deviceId, preferredAgentId", client)
+        self.assertIn("item.agent_id === preferredAgentId", client)
+        self.assertIn("await localDataPlane.ensurePaired({", prompts)
+        self.assertIn("agentId: run.agent_id", prompts)
+        self.assertLess(
+            prompts.index("await localDataPlane.ensurePaired({"),
+            prompts.index("localDataPlane.listPrompts(run.run_id"),
+        )
+
     def test_prompt_copy_parser_only_returns_exact_on_image_copy(self) -> None:
         script = """
 import { exactOnImageCopyLines } from './dashboard/frontend/js/prompt-copy.js';
