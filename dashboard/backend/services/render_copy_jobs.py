@@ -853,6 +853,8 @@ def acknowledge_prompt_delivery(
         },
         {
             "$set": {
+                "agent_id": str(agent["agent_id"]),
+                "device_id": str(agent.get("device_id") or ""),
                 "status": "copy_completed",
                 "copy_generation.delivery_status": "delivered",
                 "copy_generation.acknowledged_delivery_id": delivery_id,
