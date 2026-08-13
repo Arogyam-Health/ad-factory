@@ -66,26 +66,74 @@ export function getHypothesisConfig() {
   return { type, variant: document.getElementById("hypothesisVariant")?.value || "" };
 }
 
+function mapPersonaSummary(personas) {
+  if (!Array.isArray(personas)) return [];
+  return personas.map((persona) => ({
+    number: Number(persona.number),
+    name: String(persona.name || `Persona ${persona.number}`),
+  })).filter((persona) => persona.number);
+}
+
+function studioDefaultsFromPersonas(personas) {
+  return {
+    personas,
+    formats: ["HERO", "BA", "TEST", "FEAT", "UGC"],
+    format_patterns: {},
+    image_sources: [],
+    input_images: [],
+    product_doc: {},
+    default_files: {
+      product_info: "MongoDB: product_master_doc",
+      playbook: "MongoDB dashboard config",
+    },
+    opencode: {
+      api_url: "",
+      providers: [],
+      models_by_provider: {},
+      default_model: "",
+    },
+    provider: {
+      current: "opencode",
+      google_api_key: false,
+      opencode_api_url: "",
+      google_model: "",
+      google_models: [],
+    },
+    hypothesis: {
+      variables: {
+        none: {
+          label: "No hypothesis test",
+          description: "Generate ads normally without controlled A/B testing.",
+          options: [],
+        },
+      },
+      default: { type: "none", variant: "" },
+    },
+    batch_size: 10,
+  };
+}
+
 export async function loadDefaults() {
   state.isPersonasLoading = true;
   try {
     const [defaultsResult, personaResult] = await Promise.allSettled([
-      fetchJSON("/api/defaults"),
-      fetchJSON("/api/config/persona-summary"),
+      fetchJSON("/api/defaults", { cache: "no-store" }),
+      fetchJSON("/api/config/persona-summary", { cache: "no-store" }),
     ]);
-    if (defaultsResult.status !== "fulfilled") throw defaultsResult.reason;
-    state.defaultData = defaultsResult.value;
+    const summaryPersonas = mapPersonaSummary(
+      personaResult.status === "fulfilled" ? personaResult.value?.personas : null,
+    );
+    if (defaultsResult.status === "fulfilled") {
+      state.defaultData = defaultsResult.value;
+    } else if (summaryPersonas.length) {
+      state.defaultData = studioDefaultsFromPersonas(summaryPersonas);
+    } else {
+      throw defaultsResult.reason;
+    }
 
-    // Overlay user's custom persona seeds from MongoDB config
-    try {
-      const personas = personaResult.status === "fulfilled" ? personaResult.value?.personas : null;
-      if (Array.isArray(personas) && personas.length) {
-        state.defaultData.personas = personas.map((persona) => ({
-          number: Number(persona.number),
-          name: String(persona.name || `Persona ${persona.number}`),
-        })).filter((persona) => persona.number);
-      }
-    } catch {}
+    if (summaryPersonas.length) {
+      state.defaultData.personas = summaryPersonas;
+    }
 
     initPersonaState(state.defaultData?.personas || []);
     return state.defaultData;

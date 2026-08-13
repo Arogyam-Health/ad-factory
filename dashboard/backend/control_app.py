@@ -63,6 +63,7 @@ async def control_plane_boundary(request: Request, call_next) -> Response:
                 )
             },
             status_code=410,
+            headers={"Cache-Control": "no-store"},
         )
     response = await call_next(request)
     if path == "/" or path.endswith(".html") or path.startswith("/js/"):

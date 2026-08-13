@@ -1674,8 +1674,13 @@ def test_local_agent_responsiveness_contract() -> int:
     )
     failed += ok("queueRevision" in image_comments_js and 'localDataPlane.outputAction(' in image_comments_js and '"revisions"' in image_comments_js,
                  "localhost image comments use the local agent revision worker")
-    failed += ok("Promise.allSettled" in state_js and 'fetchJSON("/api/defaults")' in state_js and 'fetchJSON("/api/config/persona-summary")' in state_js,
-                 "defaults and persona summary config load concurrently")
+    failed += ok(
+        "Promise.allSettled" in state_js
+        and 'fetchJSON("/api/defaults"' in state_js
+        and 'fetchJSON("/api/config/persona-summary"' in state_js
+        and "studioDefaultsFromPersonas" in state_js,
+        "defaults can fall back to Mongo persona-summary when /api/defaults is gated",
+    )
     failed += ok('if (user_id):' not in app_py and 'if user_id:' in app_py and 'return {"runs": runs}' in app_py,
                  "authenticated run listing returns before filesystem backfill")
     failed += ok('run.batch === image.batch' not in runs_js and 'explicitRunIds.includes(run.run_id)' in runs_js,

@@ -56,6 +56,17 @@ _FORBIDDEN_VALUE_MARKERS = (
     "https://localhost",
 )
 
+_CONTROL_PLANE_ROUTES = frozenset(
+    {
+        "/api/defaults",
+        "/api/config/persona-summary",
+        "/api/config/effective",
+        "/api/config/sources",
+        "/api/version",
+        "/api/readyz",
+        "/healthz",
+    }
+)
 _EXACT_CONTENT_ROUTES = frozenset(
     {
         "/api/config/provider",
@@ -109,6 +120,8 @@ _RUN_CONTENT_SUFFIXES = (
 def is_render_content_route(method: str, path: str) -> bool:
     """Return whether a request belongs exclusively on the localhost data plane."""
     normalized = "/" + str(path or "").lstrip("/")
+    if normalized.rstrip("/") in _CONTROL_PLANE_ROUTES:
+        return False
     if normalized in _EXACT_CONTENT_ROUTES:
         return True
     if normalized.startswith(_CONTENT_PREFIXES):

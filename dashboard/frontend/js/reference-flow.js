@@ -177,10 +177,12 @@ function renderPersonas(personas = state.defaultData?.personas || []) {
 
 async function refreshReferencePersonas({ silent = true } = {}) {
   try {
-    const [defaults, summary] = await Promise.all([
-      fetchJSON("/api/defaults"),
-      fetchJSON("/api/config/persona-summary"),
+    const [defaultsResult, summaryResult] = await Promise.allSettled([
+      fetchJSON("/api/defaults", { cache: "no-store" }),
+      fetchJSON("/api/config/persona-summary", { cache: "no-store" }),
     ]);
+    const defaults = defaultsResult.status === "fulfilled" ? defaultsResult.value : {};
+    const summary = summaryResult.status === "fulfilled" ? summaryResult.value : {};
     let personas = defaults.personas || [];
     if (Array.isArray(summary?.personas) && summary.personas.length) {
       personas = summary.personas.map((entry) => ({

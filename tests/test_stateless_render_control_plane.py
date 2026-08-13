@@ -93,6 +93,16 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
                 "POST", "/api/runs/run_1/reference-generation"
             )
         )
+        self.assertFalse(policy.is_render_content_route("GET", "/api/defaults"))
+        self.assertFalse(
+            policy.is_render_content_route("GET", "/api/config/persona-summary")
+        )
+        self.assertFalse(
+            policy.is_render_content_route("GET", "/api/defaults/")
+        )
+        self.assertTrue(
+            policy._CONTROL_PLANE_ROUTES.isdisjoint(policy._EXACT_CONTENT_ROUTES)
+        )
 
     def test_app_control_surface_writes_nothing_with_read_only_content_dirs(
         self,
