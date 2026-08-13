@@ -12,6 +12,7 @@ from dashboard.backend.db.collections import (
     COLL_AGENT_JOBS,
     COLL_AGENTS,
     COLL_IMAGES,
+    COLL_LLM_TRACES,
     COLL_PROMPT_DELIVERIES,
     COLL_PROMPTS,
     COLL_RENDER_COPY_JOBS,
@@ -355,6 +356,7 @@ def reconcile_local_runs(
     db[COLL_PROMPTS].delete_many(content_scope)
     db[COLL_IMAGES].delete_many(content_scope)
     db[COLL_AGENT_JOBS].delete_many(content_scope)
+    db[COLL_LLM_TRACES].delete_many(content_scope)
     db[COLL_RUNS].delete_many(
         {
             **content_scope,
@@ -364,10 +366,24 @@ def reconcile_local_runs(
     return {"removed": len(stale_ids), "run_ids": stale_ids}
 
 
-@router.delete("/api/runs/{run_id}")
-def delete_run(run_id: str, request: Request) -> dict[str, Any]:
-    user_id = _user_id(request)
-    db = get_sync_db()
+def purge_run_metadata(db: Any, *, user_id: str, run_id: str) -> None:
+    """Drop every metadata document Render holds for a single run."""
+    scope = {"run_id": run_id, "user_id": user_id}
+    db[COLL_PROMPT_DELIVERIES].delete_many(scope)
+    db[COLL_RENDER_COPY_JOBS].delete_many(scope)
+    db[COLL_PROMPTS].delete_many(scope)
+    db[COLL_IMAGES].delete_many(scope)
+    db[COLL_AGENT_JOBS].delete_many(scope)
+    db[COLL_LLM_TRACES].delete_many(scope)
+    db[COLL_RUNS].delete_one(scope)
+
+
+def delete_run_for_user(db: Any, *, user_id: str, run_id: str) -> dict[str, Any]:
+    """Queue a local purge for device-bound runs; hard-delete everything else.
+
+    A run with no authoritative device has no local content to reclaim, so it
+    would otherwise be undeletable from the dashboard.
+    """
     run = db[COLL_RUNS].find_one(
         {"run_id": run_id, "user_id": user_id},
         {
@@ -381,20 +397,9 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
             "status": 1,
         },
     )
-    if run and run.get("copy_job_id") and (
-        not run.get("agent_id") or not run.get("device_id")
-    ):
-        scope = {"run_id": run_id, "user_id": user_id}
-        db[COLL_PROMPT_DELIVERIES].delete_many(scope)
-        db[COLL_RENDER_COPY_JOBS].delete_many(scope)
-        db[COLL_PROMPTS].delete_many(scope)
-        db[COLL_IMAGES].delete_many(scope)
-        db[COLL_RUNS].delete_one(scope)
-        return {"status": "deleted", "run_id": run_id}
     if not run or not run.get("agent_id") or not run.get("device_id"):
-        raise HTTPException(
-            status_code=409, detail="Run has no authoritative local device"
-        )
+        purge_run_metadata(db, user_id=user_id, run_id=run_id)
+        return {"status": "deleted", "run_id": run_id}
     tombstone = run.get("deletion_tombstone") or {}
     operation_id = str(tombstone.get("operation_id") or "")
     if str(run.get("status") or "") == "purge_failed":
@@ -438,6 +443,43 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
     }
 
 
+@router.delete("/api/runs/{run_id}")
+def delete_run(run_id: str, request: Request) -> dict[str, Any]:
+    return delete_run_for_user(
+        get_sync_db(), user_id=_user_id(request), run_id=run_id
+    )
+
+
+@router.post("/api/runs/bulk-delete")
+def bulk_delete_runs(
+    request: Request, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    user_id = _user_id(request)
+    run_ids = payload.get("run_ids")
+    if (
+        not isinstance(run_ids, list)
+        or not run_ids
+        or len(run_ids) > 500
+        or any(not isinstance(run_id, str) or not run_id.strip() for run_id in run_ids)
+    ):
+        raise HTTPException(status_code=400, detail="Provide 1-500 run ids to delete")
+    db = get_sync_db()
+    results: list[dict[str, Any]] = []
+    for run_id in dict.fromkeys(str(value).strip() for value in run_ids):
+        try:
+            results.append(delete_run_for_user(db, user_id=user_id, run_id=run_id))
+        except HTTPException as exc:
+            results.append(
+                {"status": "error", "run_id": run_id, "detail": str(exc.detail)}
+            )
+    return {
+        "results": results,
+        "deleted": sum(1 for item in results if item["status"] == "deleted"),
+        "deleting": sum(1 for item in results if item["status"] == "deleting"),
+        "failed": sum(1 for item in results if item["status"] == "error"),
+    }
+
+
 @router.post("/api/runs/purge-all")
 def purge_all_user_runs(
     request: Request, payload: dict[str, Any] = Body(default={})
@@ -455,6 +497,7 @@ def purge_all_user_runs(
     deliveries = db[COLL_PROMPT_DELIVERIES].delete_many(scope).deleted_count
     copy_jobs = db[COLL_RENDER_COPY_JOBS].delete_many(scope).deleted_count
     jobs = db[COLL_AGENT_JOBS].delete_many(scope).deleted_count
+    traces = db[COLL_LLM_TRACES].delete_many(scope).deleted_count
     runs = db[COLL_RUNS].delete_many(scope).deleted_count
     return {
         "status": "purged",
@@ -464,6 +507,7 @@ def purge_all_user_runs(
         "prompt_deliveries": deliveries,
         "render_copy_jobs": copy_jobs,
         "agent_jobs": jobs,
+        "llm_traces": traces,
     }
 
 

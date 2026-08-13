@@ -1052,6 +1052,7 @@ def complete_job(
             user_scope = {"run_id": run_id, "user_id": str(job.get("user_id") or "")}
             from dashboard.backend.db.collections import (
                 COLL_IMAGES,
+                COLL_LLM_TRACES,
                 COLL_PROMPT_DELIVERIES,
                 COLL_PROMPTS,
                 COLL_RENDER_COPY_JOBS,
@@ -1061,6 +1062,7 @@ def complete_job(
             db[COLL_IMAGES].delete_many(user_scope)
             db[COLL_PROMPT_DELIVERIES].delete_many(user_scope)
             db[COLL_RENDER_COPY_JOBS].delete_many(user_scope)
+            db[COLL_LLM_TRACES].delete_many(user_scope)
             db[COLL_RUNS].update_one(
                 {
                     "run_id": run_id,

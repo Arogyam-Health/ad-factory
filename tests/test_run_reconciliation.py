@@ -57,6 +57,7 @@ class RunReconciliationTests(unittest.TestCase):
             COLL_AGENT_JOBS,
             COLL_AGENTS,
             COLL_IMAGES,
+            COLL_LLM_TRACES,
             COLL_PROMPTS,
             COLL_RUNS,
         )
@@ -69,6 +70,7 @@ class RunReconciliationTests(unittest.TestCase):
                 COLL_AGENT_JOBS,
                 COLL_AGENTS,
                 COLL_IMAGES,
+                COLL_LLM_TRACES,
                 COLL_PROMPTS,
                 COLL_RUNS,
             )
@@ -112,6 +114,7 @@ class RunReconciliationTests(unittest.TestCase):
         collections[COLL_PROMPTS].delete_many.assert_called_once_with(exact_scope)
         collections[COLL_IMAGES].delete_many.assert_called_once_with(exact_scope)
         collections[COLL_AGENT_JOBS].delete_many.assert_called_once_with(exact_scope)
+        collections[COLL_LLM_TRACES].delete_many.assert_called_once_with(exact_scope)
         self.assertEqual(result, {"removed": 1, "run_ids": ["run-stale"]})
 
     def test_agent_prompt_reconciliation_is_pinned_to_agent_device(self) -> None:
@@ -233,6 +236,7 @@ class RunReconciliationTests(unittest.TestCase):
         from dashboard.backend.db.collections import (
             COLL_AGENT_JOBS,
             COLL_IMAGES,
+            COLL_LLM_TRACES,
             COLL_PROMPT_DELIVERIES,
             COLL_PROMPTS,
             COLL_RENDER_COPY_JOBS,
@@ -246,6 +250,7 @@ class RunReconciliationTests(unittest.TestCase):
             for name in (
                 COLL_AGENT_JOBS,
                 COLL_IMAGES,
+                COLL_LLM_TRACES,
                 COLL_PROMPT_DELIVERIES,
                 COLL_PROMPTS,
                 COLL_RENDER_COPY_JOBS,
@@ -268,6 +273,119 @@ class RunReconciliationTests(unittest.TestCase):
             collections[name].delete_many.assert_called_once_with({"user_id": "user-1"})
         self.assertEqual(result["status"], "purged")
         self.assertEqual(result["runs"], 2)
+
+    @staticmethod
+    def _delete_collections() -> tuple[MagicMock, dict[str, MagicMock]]:
+        from dashboard.backend.db.collections import (
+            COLL_AGENT_JOBS,
+            COLL_IMAGES,
+            COLL_LLM_TRACES,
+            COLL_PROMPT_DELIVERIES,
+            COLL_PROMPTS,
+            COLL_RENDER_COPY_JOBS,
+            COLL_RUNS,
+        )
+
+        db = MagicMock()
+        collections = {
+            name: MagicMock()
+            for name in (
+                COLL_AGENT_JOBS,
+                COLL_IMAGES,
+                COLL_LLM_TRACES,
+                COLL_PROMPT_DELIVERIES,
+                COLL_PROMPTS,
+                COLL_RENDER_COPY_JOBS,
+                COLL_RUNS,
+            )
+        }
+        db.__getitem__.side_effect = collections.__getitem__
+        return db, collections
+
+    def test_run_without_local_device_is_hard_deleted_instead_of_409(self) -> None:
+        from dashboard.backend.db.collections import (
+            COLL_IMAGES,
+            COLL_LLM_TRACES,
+            COLL_PROMPTS,
+            COLL_RUNS,
+        )
+        from dashboard.backend.routes.runs import delete_run
+
+        db, collections = self._delete_collections()
+        collections[COLL_RUNS].find_one.return_value = {
+            "run_id": "run-orphan",
+            "status": "copy_ready",
+        }
+
+        with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+            result = delete_run("run-orphan", self.request())
+
+        scope = {"run_id": "run-orphan", "user_id": "user-1"}
+        self.assertEqual(result, {"status": "deleted", "run_id": "run-orphan"})
+        collections[COLL_RUNS].delete_one.assert_called_once_with(scope)
+        for name in (COLL_PROMPTS, COLL_IMAGES, COLL_LLM_TRACES):
+            collections[name].delete_many.assert_called_once_with(scope)
+
+    def test_device_bound_run_still_queues_a_local_purge_job(self) -> None:
+        from dashboard.backend.db.collections import COLL_RUNS
+        from dashboard.backend.routes.runs import delete_run
+
+        db, collections = self._delete_collections()
+        collections[COLL_RUNS].find_one.return_value = {
+            "run_id": "run-bound",
+            "agent_id": "agent-1",
+            "device_id": "dev_" + "a" * 32,
+            "owner_type": "user",
+            "owner_id": "user-1",
+            "status": "copy_completed",
+        }
+
+        with (
+            patch("dashboard.backend.routes.runs.get_sync_db", return_value=db),
+            patch(
+                "dashboard.backend.routes.runs.create_job",
+                return_value={"job_id": "job-1"},
+            ) as create_job,
+        ):
+            result = delete_run("run-bound", self.request())
+
+        self.assertEqual(result["status"], "deleting")
+        self.assertEqual(result["purge_job_id"], "job-1")
+        self.assertEqual(create_job.call_args.kwargs["job_type"], "purge_run")
+        collections[COLL_RUNS].delete_one.assert_not_called()
+
+    def test_bulk_delete_is_user_scoped_and_deduplicates_run_ids(self) -> None:
+        from fastapi import HTTPException
+
+        from dashboard.backend.routes.runs import bulk_delete_runs
+
+        with patch(
+            "dashboard.backend.routes.runs.delete_run_for_user",
+            side_effect=lambda db, *, user_id, run_id: {
+                "status": "deleted",
+                "run_id": run_id,
+            },
+        ) as delete_one:
+            with patch(
+                "dashboard.backend.routes.runs.get_sync_db", return_value=MagicMock()
+            ):
+                result = bulk_delete_runs(
+                    self.request(), {"run_ids": ["run-a", "run-b", "run-a"]}
+                )
+
+        self.assertEqual(result["deleted"], 2)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(
+            [call.kwargs["run_id"] for call in delete_one.call_args_list],
+            ["run-a", "run-b"],
+        )
+        for call in delete_one.call_args_list:
+            self.assertEqual(call.kwargs["user_id"], "user-1")
+
+        for payload in ({}, {"run_ids": []}, {"run_ids": ["ok", 7]}):
+            with self.assertRaises(HTTPException) as raised:
+                bulk_delete_runs(self.request(), payload)
+            self.assertEqual(raised.exception.status_code, 400)
 
     def test_prompt_metadata_patch_is_user_and_run_scoped(self) -> None:
         from dashboard.backend.db.collections import COLL_PROMPTS, COLL_RUNS

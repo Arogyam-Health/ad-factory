@@ -1082,6 +1082,80 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
   }
 });
 
+async function purgeRunsLocally(runs) {
+  const user = getAuthUser();
+  let purged = 0;
+  for (const run of runs) {
+    try {
+      const paired = await localDataPlane.ensurePaired({
+        ownerType: run.owner_type || "user",
+        ownerId: run.owner_id || user?.user_id,
+        deviceId: run.device_id,
+        agentId: run.agent_id,
+      });
+      await localDataPlane.deleteRun(run.run_id, paired.info.device_id);
+      purged += 1;
+    } catch {
+      // A run with no reachable local device has nothing left to reclaim here.
+    }
+  }
+  return purged;
+}
+
+document.getElementById("batchDelete")?.addEventListener("click", async () => {
+  const selectedBatches = getSelectedBatchValues();
+  if (!selectedBatches.length) { appendLog("Select at least one batch from the dropdown."); return; }
+  const selectedRuns = state.runsData.filter((run) => selectedBatches.includes(runKey(run)));
+  if (!selectedRuns.length) { appendLog("No matching runs to delete."); return; }
+  const labels = selectedRuns.map((run) => displayBatch(run) || run.run_id).join(", ");
+  if (!confirm(`Delete ${selectedRuns.length} run(s) (${labels}) and every prompt and image stored for them? This cannot be undone.`)) return;
+  appendLog(`Deleting ${selectedRuns.length} run(s)...`);
+  try {
+    const result = await fetchJSON("/api/runs/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_ids: selectedRuns.map((run) => run.run_id) }),
+    });
+    const purged = await purgeRunsLocally(selectedRuns);
+    appendLog(
+      `Deleted ${result.deleted} run(s), queued ${result.deleting} local purge(s), `
+      + `${result.failed} failed. Cleared ${purged} local run(s).`,
+    );
+    (result.results || [])
+      .filter((item) => item.status === "error")
+      .forEach((item) => appendLog(`Delete failed for ${item.run_id}: ${item.detail}`));
+    invalidateRuns();
+    loadRuns();
+  } catch (err) {
+    appendLog(`Delete failed: ${String(err)}`);
+  }
+});
+
+document.getElementById("purgeAllRuns")?.addEventListener("click", async () => {
+  const typed = prompt(
+    "This deletes every run owned by this account, including all prompts and images on this device.\n\nType PURGE to confirm:",
+  );
+  if (typed === null || typed.trim().toUpperCase() !== "PURGE") return;
+  const runs = [...state.runsData];
+  appendLog("Purging every run for this account...");
+  try {
+    const result = await fetchJSON("/api/runs/purge-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: "PURGE" }),
+    });
+    const purged = await purgeRunsLocally(runs);
+    appendLog(
+      `Purged ${result.runs} run(s), ${result.prompts} prompt(s), ${result.images} image(s), `
+      + `${result.llm_traces} trace(s). Cleared ${purged} local run(s).`,
+    );
+    invalidateRuns();
+    loadRuns();
+  } catch (err) {
+    appendLog(`Purge failed: ${String(err)}`);
+  }
+});
+
 async function downloadZipResponse(response, fallbackName) {
   const blob = await response.blob();
   const objectUrl = URL.createObjectURL(blob);
