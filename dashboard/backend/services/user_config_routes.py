@@ -10,6 +10,7 @@ from dashboard.backend.services.user_config import (
     get_user_config,
     has_custom_config,
     parse_expected_version,
+    extract_config_files,
     set_user_config,
     validate_config_files,
     ConfigVersionConflict,
@@ -34,7 +35,7 @@ def save_config(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
     try:
-        config = validate_config_files(payload.get("config", payload))
+        config = validate_config_files(extract_config_files(payload))
         updated = set_user_config(
             user["user_id"],
             config,

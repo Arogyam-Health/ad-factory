@@ -1550,6 +1550,11 @@ def test_admin_frontend() -> int:
                  "input prompt cards map to MongoDB config keys")
     failed += ok('saveMethod: "PUT"' in prompt_cards_block and "/api/user/config" in prompt_cards_block,
                  "input prompt cards save via config PUT endpoint")
+    failed += ok(
+        'config: { [configKey]: text }' in main_js
+        and 'expected_version: data?.version' in main_js,
+        "studio config saves nest file keys under config and send expected_version",
+    )
 
     return failed
 

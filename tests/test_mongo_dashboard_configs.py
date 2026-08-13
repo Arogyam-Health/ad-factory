@@ -154,6 +154,32 @@ class MongoDashboardConfigTests(unittest.TestCase):
                 {"starting_prompt": "x" * (MAX_CONFIG_TOTAL_BYTES + 1)}
             )
 
+    def test_expected_version_is_not_treated_as_a_config_file(self) -> None:
+        from dashboard.backend.services.user_config import (
+            extract_config_files,
+            validate_config_files,
+        )
+
+        self.assertEqual(
+            validate_config_files(
+                extract_config_files(
+                    {"starting_prompt": "hello", "expected_version": 4}
+                )
+            ),
+            {"starting_prompt": "hello"},
+        )
+        self.assertEqual(
+            validate_config_files(
+                extract_config_files(
+                    {
+                        "config": {"persona_seeds": "[]"},
+                        "expected_version": 4,
+                    }
+                )
+            ),
+            {"persona_seeds": "[]"},
+        )
+
     def test_repository_defaults_fit_the_mongodb_config_budget(self) -> None:
         from bson import BSON
 

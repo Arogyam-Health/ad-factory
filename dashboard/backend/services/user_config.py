@@ -28,6 +28,20 @@ def parse_expected_version(payload: dict[str, Any]) -> int | None:
         raise ValueError("expected_version must be an integer") from exc
 
 
+def extract_config_files(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return file keys from a save body, ignoring concurrency metadata."""
+    if not isinstance(payload, dict):
+        raise ValueError("Config must be an object")
+    nested = payload.get("config")
+    if isinstance(nested, dict):
+        return nested
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in _RESERVED_CONFIG_PAYLOAD_KEYS
+    }
+
+
 CONFIG_KEYS = [
     "product_master_doc",
     "starting_prompt",
@@ -38,6 +52,7 @@ CONFIG_KEYS = [
     "prompt_assembler_templates",
     "conversion_916_prompt",
 ]
+_RESERVED_CONFIG_PAYLOAD_KEYS = frozenset({"config", "expected_version"})
 
 GENERIC_CONFIG_OWNER_TYPE = "system"
 GENERIC_CONFIG_OWNER_ID = "generic"

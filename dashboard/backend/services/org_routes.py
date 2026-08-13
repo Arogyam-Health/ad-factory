@@ -30,6 +30,7 @@ from dashboard.backend.services.user_config import (
     resolve_effective_config,
     get_generic_config,
     parse_expected_version,
+    extract_config_files,
     validate_config_files,
     CONFIG_KEYS,
     ConfigVersionConflict,
@@ -383,7 +384,7 @@ def update_org_config(
         )
 
     try:
-        config = validate_config_files(payload.get("config", payload))
+        config = validate_config_files(extract_config_files(payload))
         result = create_or_update_config(
             owner_type="org",
             owner_id=org_id,

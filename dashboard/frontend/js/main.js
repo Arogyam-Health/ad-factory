@@ -47,9 +47,10 @@ async function saveProductMasterDoc(content) {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
-        isSharedOrg
-          ? { config: { product_master_doc: content } }
-          : { product_master_doc: content },
+        {
+          config: { product_master_doc: content },
+          expected_version: effective?.version,
+        },
       ),
     },
   );
@@ -709,9 +710,10 @@ document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((car
         const saveUrl = isOrg && orgId
           ? `/api/orgs/${orgId}/config`
           : "/api/user/config";
-        const saveBodyFn = (text) => isOrg && orgId
-          ? { config: { [configKey]: text }, expected_version: data?.version }
-          : { [configKey]: text, expected_version: data?.version };
+        const saveBodyFn = (text) => ({
+          config: { [configKey]: text },
+          expected_version: data?.version,
+        });
         showPromptFullscreen(title, content, {
           saveUrl: saveUrl,
           saveMethod: "PUT",
@@ -754,9 +756,10 @@ document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
         const saveUrl = isOrg && orgId
           ? `/api/orgs/${orgId}/config`
           : "/api/user/config";
-        const saveBodyFn = (text) => isOrg && orgId
-          ? { config: { [configKey]: text }, expected_version: data?.version }
-          : { [configKey]: text, expected_version: data?.version };
+        const saveBodyFn = (text) => ({
+          config: { [configKey]: text },
+          expected_version: data?.version,
+        });
         showPromptFullscreen(title, content, {
           saveUrl: saveUrl,
           saveMethod: "PUT",
