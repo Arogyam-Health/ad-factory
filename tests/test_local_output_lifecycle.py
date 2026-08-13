@@ -107,6 +107,63 @@ class LocalOutputLifecycleTests(unittest.TestCase):
         self.assertIn("Original full prompt", full_prompt)
         self.assertIn("Increase contrast", full_prompt)
 
+    def test_revision_uploads_a_real_image_file_not_the_raw_cas_blob(self) -> None:
+        import importlib
+
+        local_agent = importlib.import_module("scripts.local_agent")
+        version = self.state.output_versions("output-11")[0]
+        source = self.state.resource_path(
+            version["resource_id"], version["resource_version"]
+        )
+        # Content-addressed objects live at objects/<ab>/<sha256>.blob, and the
+        # browser scripts refuse to upload anything that is not an image file.
+        self.assertEqual(source.suffix, ".blob")
+
+        work_root = Path(self.temp.name) / "work"
+        manifest_path = local_agent._write_revision_upload_manifest(
+            work_root,
+            revision_id="rev_test",
+            image_path=source,
+            media_type="image/png",
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        entries = manifest["entries"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["position"], 1)
+        self.assertEqual(entries[0]["role"], "source_creative")
+
+        uploaded = Path(entries[0]["path"])
+        self.assertTrue(uploaded.is_absolute())
+        self.assertTrue(uploaded.is_file())
+        self.assertIn(uploaded.suffix.lower(), {".png", ".jpg", ".jpeg", ".webp"})
+        self.assertEqual(uploaded.read_bytes(), PNG_A)
+
+        from scripts.chatgpt_web_sutomation import parse_upload_manifest
+
+        self.assertEqual(parse_upload_manifest(manifest_path), [uploaded.resolve()])
+
+    def test_revision_command_passes_the_manifest_instead_of_a_blob_path(self) -> None:
+        import importlib
+
+        local_agent = importlib.import_module("scripts.local_agent")
+        manifest = Path(self.temp.name) / "uploads.manifest.json"
+        for engine in ("chatgpt", "gemini"):
+            command = local_agent._browser_automation_cmd(
+                engine,
+                Path("/scripts/engine.py"),
+                Path("/work/prompts"),
+                Path("/work/output"),
+                Path("/work"),
+                {},
+                "4:5",
+                prompt_glob="revision.txt",
+                upload_manifest=manifest,
+            )
+            self.assertIn("--upload-manifest", command)
+            self.assertEqual(command[command.index("--upload-manifest") + 1], str(manifest))
+            self.assertNotIn("--upload-dir", command)
+            self.assertNotIn("--image-source-file", command)
+
     def test_activate_archive_restore_delete_and_gc_are_transactional(self) -> None:
         self.state.replace_output(
             output_id="output-11",

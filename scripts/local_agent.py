@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mimetypes
 import os
 import queue
 import re
@@ -999,6 +1000,7 @@ def _chatgpt_cmd(
     *,
     prompt_glob: str = "*.txt",
     image_source_file: Path | None = None,
+    upload_manifest: Path | None = None,
 ) -> list[str]:
     cmd = [
         sys.executable,
@@ -1010,12 +1012,15 @@ def _chatgpt_cmd(
         "--timeout", str(int(payload.get("timeout") or 420)),
         "--download-timeout", str(int(payload.get("download_timeout") or 90)),
         "--manual-login-timeout", str(int(payload.get("manual_login_timeout") or 180)),
-        "--upload-dir", str(upload_dir),
         "--cdp-url", str(payload.get("cdp_url") or AGENT_CDP_URL),
         "--aspect-ratio", aspect_ratio,
         "--starting-prompt-file", "",
         "--browser-download-dir", str(out_dir / ".browser_downloads"),
     ]
+    if upload_manifest is not None:
+        cmd.extend(["--upload-manifest", str(upload_manifest)])
+    else:
+        cmd.extend(["--upload-dir", str(upload_dir)])
     if image_source_file is not None:
         cmd.extend(["--image-source-file", str(image_source_file)])
     if payload.get("headless"):
@@ -1033,6 +1038,7 @@ def _gemini_cmd(
     *,
     prompt_glob: str = "*.txt",
     image_source_file: Path | None = None,
+    upload_manifest: Path | None = None,
 ) -> list[str]:
     cmd = [
         sys.executable,
@@ -1044,12 +1050,15 @@ def _gemini_cmd(
         "--timeout", str(int(payload.get("timeout") or 420)),
         "--download-timeout", str(int(payload.get("download_timeout") or 180)),
         "--manual-login-timeout", str(int(payload.get("manual_login_timeout") or 180)),
-        "--upload-dir", str(upload_dir),
         "--aspect-ratio", aspect_ratio,
         "--starting-prompt-file", "",
         "--browser-download-dir", str(out_dir / ".browser_downloads"),
         "--user-data-dir", str(AGENT_PATHS.browser / "gemini-profile"),
     ]
+    if upload_manifest is not None:
+        cmd.extend(["--upload-manifest", str(upload_manifest)])
+    else:
+        cmd.extend(["--upload-dir", str(upload_dir)])
     if image_source_file is not None:
         cmd.extend(["--image-source-file", str(image_source_file)])
     if payload.get("headless"):
@@ -1068,19 +1077,10 @@ def _browser_automation_cmd(
     *,
     prompt_glob: str = "*.txt",
     image_source_file: Path | None = None,
+    upload_manifest: Path | None = None,
 ) -> list[str]:
-    if engine == "gemini":
-        return _gemini_cmd(
-            script_path,
-            prompt_dir,
-            out_dir,
-            upload_dir,
-            payload,
-            aspect_ratio,
-            prompt_glob=prompt_glob,
-            image_source_file=image_source_file,
-        )
-    return _chatgpt_cmd(
+    builder = _gemini_cmd if engine == "gemini" else _chatgpt_cmd
+    return builder(
         script_path,
         prompt_dir,
         out_dir,
@@ -1089,7 +1089,61 @@ def _browser_automation_cmd(
         aspect_ratio,
         prompt_glob=prompt_glob,
         image_source_file=image_source_file,
+        upload_manifest=upload_manifest,
     )
+
+
+_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+
+
+def _write_revision_upload_manifest(
+    work_root: Path, *, revision_id: str, image_path: Path, media_type: str
+) -> Path:
+    uploads = work_root / "uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    suffix = mimetypes.guess_extension(media_type.split(";", 1)[0]) or image_path.suffix
+    if suffix == ".jpe":
+        suffix = ".jpg"
+    if suffix not in _IMAGE_SUFFIXES:
+        suffix = ".png"
+    target = uploads / f"0001{suffix}"
+    target.write_bytes(image_path.read_bytes())
+    manifest_path = work_root / "uploads.manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "revision_id": revision_id,
+                "entries": [
+                    {
+                        "position": 1,
+                        "role": "source_creative",
+                        "path": str(target.resolve()),
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def _last_meaningful_line(text: str) -> str:
+    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    return lines[-1][:400] if lines else "no output captured"
+
+
+def _write_revision_log(
+    revision_id: str, command: list[str], result: subprocess.CompletedProcess
+) -> Path:
+    log_dir = AGENT_PATHS.logs / "revisions"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{revision_id}.log"
+    log_path.write_text(
+        f"$ {' '.join(command)}\nexit_code={result.returncode}\n\n{result.stdout or ''}",
+        encoding="utf-8",
+    )
+    return log_path
 
 
 def _execute_next_output_revision() -> bool:
@@ -1104,9 +1158,13 @@ def _execute_next_output_revision() -> bool:
         with AGENT_STATE._connect() as conn:
             output = conn.execute(
                 """
-                SELECT out.aspect_ratio, ov.resource_id, ov.resource_version
-                FROM outputs out JOIN output_versions ov
+                SELECT out.aspect_ratio, ov.resource_id, ov.resource_version, o.media_type
+                FROM outputs out
+                JOIN output_versions ov
                   ON ov.output_id = out.output_id AND ov.version = ?
+                JOIN resource_versions rv
+                  ON rv.resource_id = ov.resource_id AND rv.version = ov.resource_version
+                JOIN objects o ON o.sha256 = rv.object_sha256
                 WHERE out.output_id = ?
                 """,
                 (revision["source_output_version"], revision["output_id"]),
@@ -1128,8 +1186,15 @@ def _execute_next_output_revision() -> bool:
         prompt_dir.mkdir(parents=True, exist_ok=True)
         prompt_path = prompt_dir / "revision.txt"
         shutil.copy2(prompt_source, prompt_path)
-        source_file = work_root / "source.images.txt"
-        source_file.write_text(str(image_path.resolve()) + "\n", encoding="utf-8")
+        # The browser scripts reject uploads whose extension is not an image, and
+        # content-addressed objects are stored as <sha256>.blob, so copy the source
+        # creative into staging under a real image name first.
+        manifest_path = _write_revision_upload_manifest(
+            work_root,
+            revision_id=revision_id,
+            image_path=image_path,
+            media_type=str(output["media_type"] or "image/png"),
+        )
         script_path = SCRIPT_DIR / (
             "gemini_web_automation.py"
             if engine == "gemini"
@@ -1144,8 +1209,9 @@ def _execute_next_output_revision() -> bool:
             {},
             str(output["aspect_ratio"]),
             prompt_glob=prompt_path.name,
-            image_source_file=source_file,
+            upload_manifest=manifest_path,
         )
+        output_dir.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
             command,
             cwd=str(ROOT),
@@ -1154,8 +1220,12 @@ def _execute_next_output_revision() -> bool:
             stderr=subprocess.STDOUT,
             timeout=900,
         )
+        log_path = _write_revision_log(revision_id, command, result)
         if result.returncode != 0:
-            raise RuntimeError(f"{engine} revision exited {result.returncode}")
+            raise RuntimeError(
+                f"{engine} revision exited {result.returncode}: "
+                f"{_last_meaningful_line(result.stdout)} (log: {log_path})"
+            )
         candidates = [
             path
             for path in output_dir.rglob("*")
