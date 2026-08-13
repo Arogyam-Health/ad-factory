@@ -175,6 +175,33 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             }
             self.assertEqual(before, after)
 
+    def test_invite_page_is_served_for_tokenized_paths(self) -> None:
+        from fastapi.testclient import TestClient
+        from dashboard.backend import control_app as app_module
+
+        response = TestClient(app_module.app).get(
+            "/invite/3z8WEu8-AihFpL1MFT1SVa9poq20jCms0O3zQMzhrQs43TLNzyz9DA"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers.get("content-type", ""))
+        self.assertIn("Organization Invite", response.text)
+
+    def test_post_login_return_to_only_allows_same_origin_invites(self) -> None:
+        from dashboard.backend.auth.routes import sanitize_return_to
+
+        self.assertEqual(sanitize_return_to("/invite/abc-123_XY"), "/invite/abc-123_XY")
+        for hostile in (
+            "",
+            "/",
+            "//evil.example.com/invite/abc",
+            "https://evil.example.com/invite/abc",
+            "/invite/abc?next=https://evil.example.com",
+            "/invite/abc/../../admin.html",
+            "/admin.html",
+            "javascript:alert(1)",
+        ):
+            self.assertEqual(sanitize_return_to(hostile), "", hostile)
+
     def test_mongo_metadata_validator_rejects_content_fields(self) -> None:
         policy = importlib.import_module(
             "dashboard.backend.control_plane_policy"

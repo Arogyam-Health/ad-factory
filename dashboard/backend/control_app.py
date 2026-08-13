@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
@@ -191,5 +191,15 @@ app.include_router(org_router)
 app.include_router(invite_router)
 app.include_router(config_router)
 app.include_router(admin_router)
+
+
+@app.get("/invite/{token:path}")
+def serve_invite_page(token: str) -> FileResponse:
+    """Client-side routed invite page; the static mount cannot resolve tokens."""
+    invite_html = FRONTEND_ROOT / "invite.html"
+    if not invite_html.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(invite_html, media_type="text/html")
+
 
 app.mount("/", StaticFiles(directory=str(FRONTEND_ROOT), html=True), name="frontend")

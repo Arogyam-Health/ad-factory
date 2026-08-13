@@ -40,6 +40,20 @@
     const content = document.getElementById("inviteContent");
     const pathParts = window.location.pathname.split("/");
     const token = pathParts[pathParts.length - 1];
+    const loginUrl = (email) =>
+      `/api/auth/google/login?login_hint=${encodeURIComponent(email)}`
+      + `&return_to=${encodeURIComponent(`/invite/${token}`)}`;
+
+    async function acceptInvite(resultDiv, button) {
+      if (button) button.disabled = true;
+      try {
+        const res = await fetchJSON(`/api/invites/${token}/accept`, { method: "POST" });
+        resultDiv.innerHTML = `<p class="success-msg">You've joined ${escapeHtml(res.org?.name || "the organization")}! <a href="/">Go to Dashboard</a></p>`;
+      } catch (err) {
+        resultDiv.innerHTML = `<p class="error-msg">${escapeHtml(String(err))}</p>`;
+        if (button) button.disabled = false;
+      }
+    }
 
     async function render() {
       if (!token) {
@@ -78,36 +92,28 @@
               <p style="margin:0 0 4px;font-size:0.88rem;color:var(--ink)">You're logged in as <strong>${escapeHtml(loggedInEmail)}</strong></p>
               <p style="margin:0 0 12px;font-size:0.88rem;color:var(--muted)">This invite is for <strong>${escapeHtml(inviteEmail)}</strong></p>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <a href="/api/auth/google/login?login_hint=${encodeURIComponent(inviteEmail)}" class="ghost-btn" style="display:inline-block;padding:8px 20px;font-size:0.88rem;font-weight:500">Switch to ${escapeHtml(inviteEmail)}</a>
+                <a href="${loginUrl(inviteEmail)}" class="ghost-btn" style="display:inline-block;padding:8px 20px;font-size:0.88rem;font-weight:500">Switch to ${escapeHtml(inviteEmail)}</a>
                 <button id="logoutSwitchBtn" class="ghost-btn" type="button" style="padding:8px 20px;font-size:0.88rem;color:var(--muted)">Log out first</button>
               </div>
             </div>
           ` : auth ? `
             <div id="acceptSection">
               <button id="acceptInviteBtn" class="ghost-btn" type="button" style="font-size:1rem;padding:12px 40px">Accept Invite</button>
-              <div id="acceptResult"></div>
+              <div id="acceptResult"><p class="loading">Joining ${escapeHtml(inv.org_name)}...</p></div>
             </div>
           ` : `
             <div class="login-prompt">
               <p>Login with Google to accept this invite.</p>
-              <a href="/api/auth/google/login?login_hint=${encodeURIComponent(inviteEmail)}" class="ghost-btn" style="display:inline-block;margin-top:12px;padding:12px 40px">Login as ${escapeHtml(inviteEmail)}</a>
+              <a href="${loginUrl(inviteEmail)}" class="ghost-btn" style="display:inline-block;margin-top:12px;padding:12px 40px">Login as ${escapeHtml(inviteEmail)}</a>
             </div>
           `}
         `;
 
         const acceptBtn = document.getElementById("acceptInviteBtn");
         if (acceptBtn) {
-          acceptBtn.addEventListener("click", async () => {
-            acceptBtn.disabled = true;
-            const resultDiv = document.getElementById("acceptResult");
-            try {
-              const res = await fetchJSON(`/api/invites/${token}/accept`, { method: "POST" });
-              resultDiv.innerHTML = `<p class="success-msg">You've joined ${escapeHtml(res.org?.name || "the organization")}! <a href="/">Go to Dashboard</a></p>`;
-            } catch (err) {
-              resultDiv.innerHTML = `<p class="error-msg">${escapeHtml(String(err))}</p>`;
-              acceptBtn.disabled = false;
-            }
-          });
+          const resultDiv = document.getElementById("acceptResult");
+          acceptBtn.addEventListener("click", () => acceptInvite(resultDiv, acceptBtn));
+          await acceptInvite(resultDiv, acceptBtn);
         }
 
         const logoutSwitchBtn = document.getElementById("logoutSwitchBtn");
@@ -118,7 +124,7 @@
             try {
               await fetchJSON("/api/auth/logout", { method: "POST" });
             } catch {}
-            window.location.href = `/api/auth/google/login?login_hint=${encodeURIComponent(inviteEmail)}`;
+            window.location.href = loginUrl(inviteEmail);
           });
         }
       } catch (err) {
