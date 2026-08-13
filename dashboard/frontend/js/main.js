@@ -462,6 +462,36 @@ document.getElementById("deleteAllCredentialsBtn")?.addEventListener("click", as
 
 const runBtn = document.getElementById("runBtn");
 
+// Render assembles the prompts, but the agent acknowledges storing them
+// separately, so keep reporting until the run says the delivery landed.
+const LOCAL_DELIVERY_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function waitForLocalPromptDelivery(runId, displayBatch) {
+  const deadline = Date.now() + LOCAL_DELIVERY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    let run;
+    try {
+      run = await fetchJSON(`/api/runs/${encodeURIComponent(runId)}`);
+    } catch {
+      continue;
+    }
+    const copy = run.copy_generation || {};
+    if (copy.delivery_status === "delivered" || run.status === "copy_completed") {
+      const count = Number(copy.prompt_count || run.prompt_count || 0);
+      setStatus(
+        `Run ${displayBatch}: the local agent stored ${count} final prompt(s) on this device. Prompt generation is complete.`,
+      );
+      return true;
+    }
+    if (run.status === "failed" || run.status === "canceled") return false;
+  }
+  setStatus(
+    `Run ${displayBatch}: final prompts are still waiting for the local agent. They will be saved as soon as it comes online.`,
+  );
+  return false;
+}
+
 async function waitForRenderCopy(runId, copyJobId, displayBatch) {
   while (true) {
     const job = await fetchJSON(
@@ -471,6 +501,7 @@ async function waitForRenderCopy(runId, copyJobId, displayBatch) {
       setStatus(
         `Run ${displayBatch} provider response was processed and final prompts were assembled on Render. Final prompts will be delivered to the registered local agent when it is online.`,
       );
+      await waitForLocalPromptDelivery(runId, displayBatch);
       return job;
     }
     if (job.status === "failed") {

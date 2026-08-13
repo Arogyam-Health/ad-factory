@@ -1720,6 +1720,16 @@ def test_local_agent_responsiveness_contract() -> int:
     )
     failed += ok(".card-input-prompts," in styles_css and ".card-images," in styles_css and "grid-column: span 7" in styles_css,
                  "structured dashboard uses a denser bento card grid")
+    failed += ok(
+        "waitForLocalPromptDelivery" in main_js
+        and 'copy.delivery_status === "delivered"' in main_js
+        and "stored ${count} final prompt(s) on this device" in main_js,
+        "copy pipeline reports when the local agent has stored the final prompts",
+    )
+    failed += ok(
+        '/api/runs/bulk-delete' in runs_js and "purge-all" in runs_js,
+        "runs toolbar can delete selected runs and purge every run",
+    )
 
     return failed
 
