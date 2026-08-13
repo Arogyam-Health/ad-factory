@@ -5,6 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.services.user_config import resolve_effective_config_for_user
+from dashboard.backend.services.visual_archetypes import (
+    FORMATS,
+    format_visual_archetypes,
+)
 
 router = APIRouter()
 
@@ -82,8 +86,10 @@ def dashboard_defaults(
     config = resolve_effective_config_for_user(user["user_id"])
     return {
         "personas": _persona_summaries(config),
-        "formats": ["HERO", "BA", "TEST", "FEAT", "UGC"],
-        "format_patterns": {},
+        "formats": list(FORMATS),
+        "format_patterns": format_visual_archetypes(
+            _parse_json(config.get("copy_prompt_templates"), {})
+        ),
         "image_sources": [],
         "input_images": [],
         "product_doc": {},

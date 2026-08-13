@@ -681,16 +681,9 @@ def cancel_event_for_run(run_id: str) -> threading.Event:
 
 
 def load_format_visual_archetypes() -> dict[str, list[dict[str, str]]]:
-    raw = _resolve_copy_prompts().get("visual_archetypes") or {}
-    out: dict[str, list[dict[str, str]]] = {}
-    for fmt in FORMATS:
-        items = raw.get(fmt) or []
-        out[fmt] = [
-            {"id": str(item.get("id") or ""), "label": str(item.get("label") or item.get("id") or "")}
-            for item in items
-            if isinstance(item, dict) and str(item.get("id") or "").strip()
-        ]
-    return out
+    from dashboard.backend.services.visual_archetypes import format_visual_archetypes
+
+    return format_visual_archetypes(_resolve_copy_prompts())
 
 
 
