@@ -764,6 +764,8 @@ const configFilePathKeys = {
   "scripts/prompt_assembler_templates.json": "prompt_assembler_templates",
   "background_variant.json": "background_variant",
   "product_master_doc": "product_master_doc",
+  reference_starting_prompt: "reference_starting_prompt",
+  reference_product_master_doc: "reference_product_master_doc",
 };
 
 document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {

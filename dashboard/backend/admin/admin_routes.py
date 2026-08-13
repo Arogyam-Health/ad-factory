@@ -854,7 +854,7 @@ def admin_readiness(
                     "status": "error",
                     "message": (
                         f"{invalid_configs} invalid config document(s); "
-                        "global eight-file config is incomplete"
+                        "global config file set is incomplete"
                     ),
                 })
             else:
@@ -863,7 +863,7 @@ def admin_readiness(
                     "status": "ok",
                     "message": (
                         f"{active_configs} active Mongo-backed dashboard config(s); "
-                        "global eight-file config is complete"
+                        "global config file set is complete"
                     ),
                 })
         except Exception as exc:

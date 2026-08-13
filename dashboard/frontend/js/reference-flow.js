@@ -1,4 +1,4 @@
-import { fetchJSON, invalidateRuns } from "./api.js";
+import { clearCache, fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 import { appendLog } from "./ui.js";
 import { applyLocalArtifactsToRuns, renderRunCarousel } from "./runs.js";
@@ -47,6 +47,31 @@ async function readLocalText(collection, logicalKey, fallback = "") {
 function configText(value) {
   if (typeof value === "string") return value;
   return value && typeof value === "object" ? JSON.stringify(value) : "";
+}
+
+// The reference starting prompt and product document are Mongo-backed like the
+// structured config files, so edits are pinned locally and mirrored to the
+// account config that seeds a fresh device.
+async function saveReferenceConfigFile(configKey, content) {
+  try {
+    const effective = await fetchJSON("/api/config/effective");
+    const orgId = effective?.owner_type === "org" ? effective?.owner_id : "";
+    const path = orgId
+      ? `/api/orgs/${encodeURIComponent(orgId)}/config`
+      : "/api/user/config";
+    await fetchJSON(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        config: { [configKey]: content },
+        expected_version: effective?.version,
+      }),
+    });
+    clearCache("/api/config/effective");
+    clearCache("/api/config/sources");
+  } catch (error) {
+    appendLog(`Saved locally, but syncing ${configKey} failed: ${String(error)}`);
+  }
 }
 
 async function readReferenceProductIds() {
@@ -416,9 +441,12 @@ async function loadReferenceWorkspace() {
       fetchJSON("/api/config/effective"),
     ]);
     const sourceConfig = effective?.config || {};
+    // The reference flow has its own starting prompt and product document. Only
+    // persona seeds and the 9:16 conversion prompt are shared with the
+    // structured flow, so never seed the other two from structured keys.
     const hydratedText = {
-      productDocument: productDocument || configText(sourceConfig.product_master_doc),
-      startingPrompt: startingPrompt || configText(sourceConfig.starting_prompt),
+      productDocument: productDocument || configText(sourceConfig.reference_product_master_doc),
+      startingPrompt: startingPrompt || configText(sourceConfig.reference_starting_prompt),
       personaSeed: personaSeed || configText(sourceConfig.persona_seeds),
       conversionPrompt: conversionPrompt || configText(sourceConfig.conversion_916_prompt),
     };
@@ -510,9 +538,11 @@ async function uploadProductDoc(file) {
   if (!file) return;
   try {
     await ensureReferenceLocal();
-    await localDataPlane.putText("documents", "reference-product-document", await file.text(), {
+    const content = await file.text();
+    await localDataPlane.putText("documents", "reference-product-document", content, {
       deviceId: referenceDeviceId,
     });
+    await saveReferenceConfigFile("reference_product_master_doc", content);
     await loadReferenceWorkspace();
     appendLog(`Reference product document updated: ${file.name}`);
   } catch (error) {
@@ -523,7 +553,19 @@ async function uploadProductDoc(file) {
 function openWorkspaceText(kind) {
   if (!workspace) return;
   if (kind === "doc") {
-    showPromptFullscreen("Reference product document", workspace.product_document?.content || "", {});
+    showPromptFullscreen("Reference product document", workspace.product_document?.content || "", {
+      onSave: async (content) => {
+        await localDataPlane.putText("documents", "reference-product-document", content, {
+          deviceId: referenceDeviceId,
+        });
+        await saveReferenceConfigFile("reference_product_master_doc", content);
+        workspace.product_document = {
+          name: "reference-product-document",
+          size_bytes: new Blob([content]).size,
+          content,
+        };
+      },
+    });
   } else if (kind === "persona") {
     const persona = workspace.persona_seed;
     showPromptFullscreen("Persona seed (editable)", persona?.content || "", {
@@ -540,6 +582,7 @@ function openWorkspaceText(kind) {
         await localDataPlane.putText("configs", "reference-starting-prompt", content, {
           deviceId: referenceDeviceId,
         });
+        await saveReferenceConfigFile("reference_starting_prompt", content);
         workspace.starting_prompt = { content };
       },
     });

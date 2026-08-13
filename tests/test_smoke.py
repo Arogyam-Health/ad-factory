@@ -606,17 +606,23 @@ def test_config_system() -> int:
         _EMPTY_BY_KEY,
     )
 
-    # 1. CONFIG_KEYS has exactly the 8 keys
+    # 1. CONFIG_KEYS has exactly the supported keys
     expected_keys = [
         "product_master_doc", "starting_prompt", "copy_prompt_templates",
         "persona_seeds", "copy_architecture", "background_variant",
         "prompt_assembler_templates", "conversion_916_prompt",
+        "reference_starting_prompt", "reference_product_master_doc",
     ]
-    failed += ok(sorted(CONFIG_KEYS) == sorted(expected_keys), "CONFIG_KEYS has exactly 8 expected keys")
+    failed += ok(sorted(CONFIG_KEYS) == sorted(expected_keys), "CONFIG_KEYS has exactly the expected keys")
+    failed += ok(
+        "reference_starting_prompt" in CONFIG_KEYS
+        and "reference_product_master_doc" in CONFIG_KEYS,
+        "reference flow has its own starting prompt and product document keys",
+    )
 
-    # 2. get_generic_config returns all 8 keys
+    # 2. get_generic_config returns every key
     generic = get_generic_config()
-    failed += ok(sorted(generic.keys()) == sorted(expected_keys), "get_generic_config returns all 8 keys")
+    failed += ok(sorted(generic.keys()) == sorted(expected_keys), "get_generic_config returns every config key")
     failed += ok(all(isinstance(generic[k], str) for k in CONFIG_KEYS), "All generic config values are strings")
 
     # 3. get_user_config returns generic when no custom config exists
@@ -1729,6 +1735,19 @@ def test_local_agent_responsiveness_contract() -> int:
     failed += ok(
         '/api/runs/bulk-delete' in runs_js and "purge-all" in runs_js,
         "runs toolbar can delete selected runs and purge every run",
+    )
+    reference_js = (ROOT / "dashboard" / "frontend" / "js" / "reference-flow.js").read_text(encoding="utf-8")
+    failed += ok(
+        "sourceConfig.reference_starting_prompt" in reference_js
+        and "sourceConfig.reference_product_master_doc" in reference_js
+        and "sourceConfig.starting_prompt" not in reference_js
+        and "sourceConfig.product_master_doc" not in reference_js,
+        "reference flow never seeds its prompts from structured config keys",
+    )
+    failed += ok(
+        "sourceConfig.persona_seeds" in reference_js
+        and "sourceConfig.conversion_916_prompt" in reference_js,
+        "reference flow still shares persona seeds and the 9:16 conversion prompt",
     )
 
     return failed

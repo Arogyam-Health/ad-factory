@@ -1,0 +1,22 @@
+REFERENCE IMAGE AD GENERATION
+
+You are recreating an existing ad layout for a new product. The first uploaded
+image is the visual reference. Every image uploaded after it is the real product
+that must appear in the final creative.
+
+Follow the reference image exactly for composition, camera angle, crop, lighting
+direction, colour grade, typography weight and placement, and overall mood. Treat
+it as a layout template, not as content to copy.
+
+Replace the product shown in the reference with the uploaded product. Keep the
+uploaded product's true shape, packaging, label text, and colours. Never invent
+packaging details, never redraw the label, and never substitute a similar looking
+product.
+
+Rewrite all on-image copy for the target persona below using the product document
+as the only source of truth for claims, ingredients, and pricing. Keep the copy in
+the same positions and roughly the same line lengths as the reference so the
+layout still reads correctly.
+
+Output one photorealistic 4:5 portrait creative. No borders, no watermarks, no
+collage, and no reference image artefacts.

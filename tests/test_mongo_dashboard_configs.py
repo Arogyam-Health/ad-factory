@@ -135,7 +135,73 @@ class MongoDashboardConfigTests(unittest.TestCase):
         )
         self.assertEqual(config["starting_prompt"], "mongo:starting_prompt")
 
-    def test_only_eight_bounded_string_config_files_are_accepted(self) -> None:
+    def test_reference_flow_prompts_are_separate_config_files(self) -> None:
+        from dashboard.backend.services.user_config import (
+            CONFIG_KEYS,
+            _CONTENT_TYPES,
+            _EMPTY_BY_KEY,
+            validate_config_files,
+        )
+
+        for key in ("reference_starting_prompt", "reference_product_master_doc"):
+            self.assertIn(key, CONFIG_KEYS)
+            self.assertEqual(_CONTENT_TYPES[key], "text/plain")
+            self.assertEqual(_EMPTY_BY_KEY[key], "")
+
+        saved = validate_config_files(
+            {
+                "starting_prompt": "structured only",
+                "reference_starting_prompt": "reference only",
+                "product_master_doc": "structured doc",
+                "reference_product_master_doc": "reference doc",
+            }
+        )
+        self.assertEqual(saved["starting_prompt"], "structured only")
+        self.assertEqual(saved["reference_starting_prompt"], "reference only")
+        self.assertEqual(saved["product_master_doc"], "structured doc")
+        self.assertEqual(saved["reference_product_master_doc"], "reference doc")
+
+    def test_generic_bootstrap_backfills_config_keys_added_after_first_boot(self) -> None:
+        from unittest.mock import patch
+
+        from dashboard.backend.services import user_config
+
+        stored_keys = [
+            key
+            for key in user_config.CONFIG_KEYS
+            if not key.startswith("reference_")
+        ]
+        existing = {
+            "owner_type": "system",
+            "owner_id": "generic",
+            "is_active": True,
+            "files": {key: {"content": "old"} for key in stored_keys},
+        }
+        with (
+            patch.object(user_config, "get_config_doc", return_value=existing),
+            patch.object(user_config, "create_or_update_config") as write,
+        ):
+            user_config.ensure_generic_config()
+
+        self.assertEqual(
+            sorted(write.call_args.kwargs["files"]),
+            ["reference_product_master_doc", "reference_starting_prompt"],
+        )
+        self.assertTrue(write.call_args.kwargs["files"]["reference_starting_prompt"])
+
+        with (
+            patch.object(user_config, "get_config_doc", return_value={
+                **existing,
+                "files": {
+                    key: {"content": "old"} for key in user_config.CONFIG_KEYS
+                },
+            }),
+            patch.object(user_config, "create_or_update_config") as write,
+        ):
+            user_config.ensure_generic_config()
+        write.assert_not_called()
+
+    def test_only_known_bounded_string_config_files_are_accepted(self) -> None:
         from dashboard.backend.services.user_config import (
             MAX_CONFIG_TOTAL_BYTES,
             validate_config_files,

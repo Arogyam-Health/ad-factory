@@ -42,6 +42,8 @@ def extract_config_files(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# The reference flow keeps its own starting prompt and product document. Only
+# persona_seeds and conversion_916_prompt are shared with the structured flow.
 CONFIG_KEYS = [
     "product_master_doc",
     "starting_prompt",
@@ -51,6 +53,8 @@ CONFIG_KEYS = [
     "background_variant",
     "prompt_assembler_templates",
     "conversion_916_prompt",
+    "reference_starting_prompt",
+    "reference_product_master_doc",
 ]
 _RESERVED_CONFIG_PAYLOAD_KEYS = frozenset({"config", "expected_version"})
 
@@ -71,6 +75,8 @@ _CONTENT_TYPES = {
     "background_variant": "application/json",
     "prompt_assembler_templates": "application/json",
     "conversion_916_prompt": "text/plain",
+    "reference_starting_prompt": "text/plain",
+    "reference_product_master_doc": "text/plain",
 }
 
 # Default empty values by expected type
@@ -83,6 +89,8 @@ _EMPTY_BY_KEY = {
     "background_variant": "{}",
     "prompt_assembler_templates": "{}",
     "conversion_916_prompt": "",
+    "reference_starting_prompt": "",
+    "reference_product_master_doc": "",
 }
 
 
@@ -106,6 +114,7 @@ def _repository_generic_config() -> dict[str, str]:
     background_variant_path = root / "background_variant.json"
     prompt_assembler_path = root / "scripts" / "prompt_assembler_templates.json"
     conversion_916_path = root / "input" / "prompt_916_from_45.txt"
+    reference_starting_prompt_path = root / "input" / "reference_startingprompt.txt"
 
     def _read(p: Path) -> str:
         try:
@@ -122,6 +131,8 @@ def _repository_generic_config() -> dict[str, str]:
         "background_variant": _read(background_variant_path) or "{}",
         "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
         "conversion_916_prompt": _read(conversion_916_path),
+        "reference_starting_prompt": _read(reference_starting_prompt_path),
+        "reference_product_master_doc": "",
     }
 
 
@@ -130,7 +141,7 @@ def _empty_config() -> dict[str, str]:
 
 
 def get_generic_config() -> dict[str, Any]:
-    """Read the global eight-file dashboard config from MongoDB."""
+    """Read the global dashboard config file set from MongoDB."""
     try:
         doc = get_sync_db()[COLL_USER_CONFIGS].find_one(
             {
@@ -147,7 +158,7 @@ def get_generic_config() -> dict[str, Any]:
 
 
 def validate_config_files(files: dict[str, Any]) -> dict[str, str]:
-    """Accept only the eight bounded text configuration files."""
+    """Accept only the known bounded text configuration files."""
     if not isinstance(files, dict):
         raise ValueError("Config must be an object")
     unknown = set(files) - set(CONFIG_KEYS)
@@ -171,12 +182,21 @@ def validate_config_files(files: dict[str, Any]) -> dict[str, str]:
 
 def ensure_generic_config() -> None:
     """Seed bundled defaults into MongoDB once; subsequent reads are DB-only."""
-    if get_config_doc(GENERIC_CONFIG_OWNER_TYPE, GENERIC_CONFIG_OWNER_ID):
-        return
+    existing = get_config_doc(GENERIC_CONFIG_OWNER_TYPE, GENERIC_CONFIG_OWNER_ID)
+    defaults = _repository_generic_config()
+    if existing:
+        # Backfill only keys added after this deployment was first bootstrapped.
+        stored = set(existing.get("files") or {})
+        missing = {
+            key: value for key, value in defaults.items() if key not in stored
+        }
+        if not missing:
+            return
+        defaults = missing
     create_or_update_config(
         owner_type=GENERIC_CONFIG_OWNER_TYPE,
         owner_id=GENERIC_CONFIG_OWNER_ID,
-        files=_repository_generic_config(),
+        files=defaults,
         actor_user_id="system",
         config_scope="global",
         config_mode="full",
