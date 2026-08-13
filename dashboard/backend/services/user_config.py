@@ -10,6 +10,24 @@ from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_USER_CONFIGS
 
 
+class ConfigVersionConflict(ValueError):
+    """Raised when a config write is based on a stale expected_version."""
+
+    def __init__(self, current_version: int) -> None:
+        super().__init__("config_version_conflict")
+        self.current_version = int(current_version)
+
+
+def parse_expected_version(payload: dict[str, Any]) -> int | None:
+    raw = payload.get("expected_version")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("expected_version must be an integer") from exc
+
+
 CONFIG_KEYS = [
     "product_master_doc",
     "starting_prompt",
@@ -230,6 +248,7 @@ def create_or_update_config(
     change_reason: str = "manual_edit",
     org_id: str | None = None,
     create_version: bool = True,
+    expected_version: int | None = None,
 ) -> dict[str, Any]:
     """Create or update a config doc in owner schema."""
     files = validate_config_files(files)
@@ -240,6 +259,11 @@ def create_or_update_config(
         "owner_id": owner_id,
         "is_active": True,
     })
+    current_version = int(existing.get("version") or 1) if existing else 0
+    if expected_version is not None and existing is not None:
+        if int(expected_version) != current_version:
+            raise ConfigVersionConflict(current_version)
+    next_version = current_version + 1
 
     update_entries = {}
     files_obj = {}
@@ -277,6 +301,7 @@ def create_or_update_config(
                 "updated_by_user_id": actor_user_id,
                 "updated_at": now,
                 "config_mode": config_mode,
+                "version": next_version,
             }
         }
         coll.update_one({"_id": existing["_id"]}, update_doc)
@@ -293,6 +318,7 @@ def create_or_update_config(
             "is_active": True,
             "created_at": now,
             "updated_at": now,
+            "version": 1,
             "files": files_obj,
         }
         try:
@@ -441,7 +467,12 @@ def get_user_config(user_id: str) -> dict[str, Any]:
     return resolve_effective_config_for_user(user_id)
 
 
-def set_user_config(user_id: str, config: dict[str, Any], actor_user_id: str | None = None) -> dict[str, Any]:
+def set_user_config(
+    user_id: str,
+    config: dict[str, Any],
+    actor_user_id: str | None = None,
+    expected_version: int | None = None,
+) -> dict[str, Any]:
     """Backward-compatible: writes config and returns resolved flat config."""
     actor = actor_user_id or user_id
     return create_or_update_config(
@@ -452,6 +483,7 @@ def set_user_config(user_id: str, config: dict[str, Any], actor_user_id: str | N
         config_scope="personal",
         config_mode="full",
         source="manual",
+        expected_version=expected_version,
     )
 
 

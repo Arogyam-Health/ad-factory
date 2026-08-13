@@ -9,8 +9,10 @@ from dashboard.backend.services.user_config import (
     delete_user_config,
     get_user_config,
     has_custom_config,
+    parse_expected_version,
     set_user_config,
     validate_config_files,
+    ConfigVersionConflict,
 )
 
 router = APIRouter()
@@ -34,8 +36,19 @@ def save_config(
     try:
         config = validate_config_files(payload.get("config", payload))
         updated = set_user_config(
-            user["user_id"], config, actor_user_id=user["user_id"]
+            user["user_id"],
+            config,
+            actor_user_id=user["user_id"],
+            expected_version=parse_expected_version(payload),
         )
+    except ConfigVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "config_version_conflict",
+                "current_version": exc.current_version,
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

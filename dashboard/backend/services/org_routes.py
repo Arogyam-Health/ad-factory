@@ -29,8 +29,10 @@ from dashboard.backend.services.user_config import (
     create_or_update_config,
     resolve_effective_config,
     get_generic_config,
+    parse_expected_version,
     validate_config_files,
     CONFIG_KEYS,
+    ConfigVersionConflict,
 )
 
 router = APIRouter()
@@ -392,7 +394,16 @@ def update_org_config(
             actor_email=email,
             change_reason="manual_edit",
             org_id=org_id,
+            expected_version=parse_expected_version(payload),
         )
+    except ConfigVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "config_version_conflict",
+                "current_version": exc.current_version,
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

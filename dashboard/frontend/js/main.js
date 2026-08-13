@@ -710,8 +710,8 @@ document.querySelectorAll(".card-input-prompts .input-prompt-card").forEach((car
           ? `/api/orgs/${orgId}/config`
           : "/api/user/config";
         const saveBodyFn = (text) => isOrg && orgId
-          ? { config: { [configKey]: text } }
-          : { [configKey]: text };
+          ? { config: { [configKey]: text }, expected_version: data?.version }
+          : { [configKey]: text, expected_version: data?.version };
         showPromptFullscreen(title, content, {
           saveUrl: saveUrl,
           saveMethod: "PUT",
@@ -755,8 +755,8 @@ document.querySelectorAll(".card-files .input-prompt-card").forEach((card) => {
           ? `/api/orgs/${orgId}/config`
           : "/api/user/config";
         const saveBodyFn = (text) => isOrg && orgId
-          ? { config: { [configKey]: text } }
-          : { [configKey]: text };
+          ? { config: { [configKey]: text }, expected_version: data?.version }
+          : { [configKey]: text, expected_version: data?.version };
         showPromptFullscreen(title, content, {
           saveUrl: saveUrl,
           saveMethod: "PUT",

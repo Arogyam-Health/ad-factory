@@ -268,6 +268,45 @@ class MongoDashboardConfigTests(unittest.TestCase):
         self.assertNotIn("user_configs", _COLLECTION_KINDS)
         self.assertNotIn("config_versions", _COLLECTION_KINDS)
 
+    def test_stale_expected_version_is_rejected(self) -> None:
+        from dashboard.backend.services.user_config import (
+            ConfigVersionConflict,
+            create_or_update_config,
+        )
+
+        db = _DB(
+            {
+                "_id": "cfg_personal",
+                "owner_type": "user",
+                "owner_id": "usr_1",
+                "is_active": True,
+                "version": 3,
+                "files": {
+                    "starting_prompt": {
+                        "content": "old",
+                        "content_type": "text/plain",
+                        "updated_at": 1,
+                    }
+                },
+            }
+        )
+        with patch(
+            "dashboard.backend.services.user_config.get_sync_db", return_value=db
+        ):
+            with self.assertRaises(ConfigVersionConflict) as raised:
+                create_or_update_config(
+                    owner_type="user",
+                    owner_id="usr_1",
+                    files={"starting_prompt": "new"},
+                    actor_user_id="usr_1",
+                    expected_version=1,
+                )
+        self.assertEqual(raised.exception.current_version, 3)
+        self.assertEqual(
+            db.collection.document["files"]["starting_prompt"]["content"],
+            "old",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

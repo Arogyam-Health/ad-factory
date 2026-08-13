@@ -706,6 +706,8 @@ def get_effective_config(
                 "can_rollback": can_edit,
                 "can_copy": role == "owner" or can_edit,
                 "config_id": config_id,
+                "version": int(doc.get("version") or 1) if doc else 0,
+                "updated_at": doc.get("updated_at") if doc else 0,
                 "available_orgs": available_orgs,
             }
         else:
@@ -738,6 +740,8 @@ def get_effective_config(
                 "can_rollback": can_edit,
                 "can_copy": role in ("owner", "config_admin"),
                 "config_id": config_id,
+                "version": int(doc.get("version") or 1) if doc else 0,
+                "updated_at": doc.get("updated_at") if doc else 0,
                 "available_orgs": available_orgs,
             }
 
@@ -776,5 +780,7 @@ def get_effective_config(
         "can_rollback": True,
         "can_copy": len(available_orgs) > 0,
         "config_id": config_id,
+        "version": int(doc.get("version") or 1) if doc else 0,
+        "updated_at": doc.get("updated_at") if doc else 0,
         "available_orgs": available_orgs,
     }

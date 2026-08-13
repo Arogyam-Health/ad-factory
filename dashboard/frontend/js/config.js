@@ -270,13 +270,13 @@ async function saveAllConfigs() {
       await fetchJSON(`/api/orgs/${orgId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config: nextConfig }),
+        body: JSON.stringify({ config: nextConfig, expected_version: currentData?.version }),
       });
     } else {
       await fetchJSON("/api/user/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config: nextConfig }),
+        body: JSON.stringify({ config: nextConfig, expected_version: currentData?.version }),
       });
     }
     status("All configs saved", "success");
@@ -284,7 +284,13 @@ async function saveAllConfigs() {
     await loadConfigForSource(currentSource);
     renderConfigPage();
   } catch (err) {
-    status(`Save failed: ${String(err)}`, "error");
+    const message = String(err);
+    status(
+      message.includes("409")
+        ? "This config was saved by someone else. Reload and try again."
+        : `Save failed: ${message}`,
+      "error",
+    );
   } finally {
     btn.disabled = false;
     btn.textContent = "Save Changes";
