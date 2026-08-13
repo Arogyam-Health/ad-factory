@@ -122,6 +122,14 @@ class LocalOutputLifecycleTests(unittest.TestCase):
         receipt = self.state.delete_output("output-11", operation_id="delete-output")
         self.assertEqual(receipt["status"], "deleted")
         self.assertTrue(receipt["event_id"].startswith("evt_"))
+        self.assertEqual(receipt["run_id"], "run-11")
+        with self.state._connect() as conn:
+            live = conn.execute(
+                "SELECT output_id FROM outputs WHERE status != 'deleted'"
+            ).fetchall()
+            stored = conn.execute("SELECT status FROM outputs").fetchone()
+        self.assertEqual(live, [])
+        self.assertEqual(stored["status"], "deleted")
 
     def test_prompt_xlsx_round_trip_creates_immutable_versions(self) -> None:
         from local_agent_runtime.lifecycle import export_prompt_xlsx, import_prompt_xlsx

@@ -199,6 +199,9 @@ class StructuredBrowserGenerationTests(unittest.TestCase):
                     ],
                     expected,
                 )
+                self.assertFalse(
+                    (self.paths.staging / "structured-browser" / job_id).exists()
+                )
 
     def test_batch_45_processes_each_prompt_with_the_same_explicit_set(self) -> None:
         from local_agent_runtime.structured_browser import (
@@ -258,7 +261,7 @@ class StructuredBrowserGenerationTests(unittest.TestCase):
                     source = call["manifest"]["entries"]
                     self.assertEqual(len(source), 1)
                     self.assertEqual(source[0]["role"], "source_creative")
-                    conversion_text = Path(call["prompt_path"]).read_text(encoding="utf-8")
+                    conversion_text = call["prompt_text"]
                     self.assertIn(self.conversion_prompt_text, conversion_text)
                     self.assertNotIn("ORIGINAL 4:5 PROMPT BODY", conversion_text)
                     self.assertIn(call["prompt_id"], conversion_text)
@@ -324,9 +327,7 @@ class StructuredBrowserGenerationTests(unittest.TestCase):
                     ],
                     ["source_creative"],
                 )
-                conversion_text = Path(browser.calls[0]["prompt_path"]).read_text(
-                    encoding="utf-8"
-                )
+                conversion_text = browser.calls[0]["prompt_text"]
                 self.assertIn(self.conversion_prompt_text, conversion_text)
                 self.assertNotIn("ORIGINAL 4:5 PROMPT BODY", conversion_text)
                 self.assertIn(self.prompt_ids[0], conversion_text)
@@ -428,6 +429,33 @@ class StructuredBrowserGenerationTests(unittest.TestCase):
         expected = [second.resolve(), first.resolve()]
         self.assertEqual(chatgpt_manifest(manifest), expected)
         self.assertEqual(gemini_manifest(manifest), expected)
+
+    def test_constructor_assets_work_without_persisted_run_settings(self) -> None:
+        from local_agent_runtime.structured_browser import (
+            DeterministicFakeBrowser,
+            StructuredBrowserExecutor,
+        )
+
+        with self.state._connect() as conn:
+            conn.execute(
+                "DELETE FROM run_entries WHERE role IN ('structured_settings', 'conversion_prompt')"
+            )
+            conn.commit()
+        job_id = "job-ephemeral-settings"
+        self._record_job(job_id, engine="chatgpt", mode="45", prompt_id=self.prompt_ids[0])
+        result = StructuredBrowserExecutor(
+            self.state,
+            browser=DeterministicFakeBrowser(),
+            product_assets=[
+                {
+                    "resource_id": self.products[0].resource_id,
+                    "version": self.products[0].version,
+                }
+            ],
+            conversion_prompt_text=self.conversion_prompt_text,
+        ).execute(job_id)
+        self.assertEqual(result["status"], "completed")
+        self.assertFalse((self.paths.staging / "structured-browser" / job_id).exists())
 
 
 if __name__ == "__main__":

@@ -127,7 +127,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("reconciledProductIds", reference)
         self.assertIn("await localDataPlane.listRuns(", runs)
         self.assertIn('fetchJSON("/api/runs/reconcile-local"', runs)
-        self.assertIn("localRunIds.has(run.run_id)", runs)
+        self.assertIn("confirm: true", runs)
+        self.assertIn("removeMissingRuns", runs)
+        self.assertNotIn("Hidden ${inventory.hidden}", runs)
 
 
 if __name__ == "__main__":

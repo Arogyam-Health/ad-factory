@@ -1624,8 +1624,8 @@ def test_local_agent_responsiveness_contract() -> int:
 
     failed += ok("class JobProgressReporter" in local_agent and "reporter.submit(clean)" in local_agent,
                  "terminal output is decoupled from Render progress requests")
-    failed += ok("publish_local_artifacts" in local_agent and "queue_projection" in agent_storage,
-                 "local agent publishes metadata projections from durable local artifacts")
+    failed += ok("queue_projection" in agent_storage and "flush_terminal_outbox" in local_agent,
+                 "local agent publishes metadata projections from the durable outbox")
     failed += ok('parser.add_argument("--sleep-after-download", type=float, default=0.0)' in chatgpt,
                  "ChatGPT automation has no default post-download sleep")
     failed += ok("time.sleep(settle_wait)" not in chatgpt and "wait_for_composer_stability" in chatgpt,
@@ -1636,16 +1636,16 @@ def test_local_agent_responsiveness_contract() -> int:
                  "active job status excludes local job payload content")
     failed += ok("refreshStructuredLocalOutputs" in runs_js,
                  "dashboard resolves active output metadata from localhost")
-    failed += ok('request_path in {"/artifacts", "/manifest"}' in artifact_server and '"Access-Control-Allow-Private-Network", "true"' in artifact_server,
-                 "separate local artifact server exposes a PNA-safe manifest")
+    failed += ok("legacy_artifact_plane_removed" in artifact_server and '"Access-Control-Allow-Private-Network", "true"' in artifact_server,
+                 "local content server retires the legacy artifact plane and keeps PNA headers")
     failed += ok("requests.Session()" in local_agent and "_API_SESSIONS = threading.local()" in local_agent,
                  "local agent reuses TLS connections per worker thread")
     failed += ok("record_terminal_outbox" in local_agent and "pending_outbox" in agent_storage,
                  "terminal updates remain pending in a durable outbox")
-    failed += ok("adFactoryLocalArtifacts" in runs_js and "refreshLocalArtifactManifest" in runs_js,
-                 "dashboard restores and refreshes local artifacts after reload")
+    failed += ok("refreshLocalArtifactManifest" not in runs_js and "purgeLegacyArtifactCache" in runs_js,
+                 "dashboard no longer restores a competing legacy artifact manifest")
     failed += ok("applyLocalArtifactsToRuns" in runs_js and "run[filesKey].push(image.url)" in runs_js,
-                 "restored local artifacts are merged into matching run galleries")
+                 "local CAS outputs are merged into matching run galleries")
     failed += ok("applyLocalArtifactsToRuns();" in reference_flow_js,
                  "workspace run reload preserves local artifact mappings")
     failed += ok("runRenderVersion" in runs_js and "renderVersion !== runRenderVersion" in runs_js,
@@ -1656,12 +1656,12 @@ def test_local_agent_responsiveness_contract() -> int:
                  "disconnect cleanup does not cancel healthy running jobs")
     failed += ok("transient Render error must not freeze" in runs_js,
                  "transient job-status failures do not stop dashboard polling")
-    failed += ok("def do_DELETE" in artifact_server and 'request_path == "/download-batches"' in artifact_server,
-                 "separate artifact server supports durable deletion and streamed batch ZIPs")
+    failed += ok("legacy_artifact_plane_removed" in artifact_server and "def do_DELETE" in artifact_server,
+                 "legacy artifact deletion and batch ZIP routes are gone")
     failed += ok("AgentWebSocketClient" in local_agent and "job_available" in agent_transport,
                  "agent uses WebSocket job notifications with HTTP fallback")
-    failed += ok('request_path == "/events"' in artifact_server and "EventSource" in runs_js,
-                 "dashboard receives local artifact changes over SSE")
+    failed += ok("localDataPlane.streamEvents" in runs_js and "/v1/events?after=" in (ROOT / "dashboard" / "frontend" / "js" / "local-data-plane.js").read_text(encoding="utf-8"),
+                 "dashboard receives local content changes over the authenticated data-plane stream")
     failed += ok("localDataPlane.deleteOutput" in images_js and "refreshStructuredLocalOutputs" in images_js,
                  "structured image deletion removes the local file and refreshes authoritative metadata")
     failed += ok("localDataPlane.downloadRun" in runs_js and "selectedRuns" in runs_js,
@@ -1688,6 +1688,17 @@ def test_local_agent_responsiveness_contract() -> int:
                  "image-generation toolbar defaults to the visible run when no batch is selected")
     failed += ok("doc and _mongo_run_has_dashboard_manifest(doc)" in app_py,
                  "run detail does not treat Mongo owner stubs as completed manifests")
+    data_plane = (ROOT / "local_agent_runtime" / "data_plane.py").read_text(encoding="utf-8")
+    failed += ok("out.status != 'deleted'" in data_plane,
+                 "deleted local outputs stay out of the dashboard listing")
+    failed += ok('event_type") or "") == "output.deleted"' in local_agent,
+                 "deleted outputs flush to Mongo through the agent outbox")
+    failed += ok("reset-local-data" in local_agent and "def reset_local_data" in agent_storage,
+                 "local agent can wipe run content without touching device config")
+    failed += ok("expected_version" in (ROOT / "dashboard" / "frontend" / "js" / "config.js").read_text(encoding="utf-8"),
+                 "config saves carry an expected_version concurrency token")
+    failed += ok("Remove ${uniqueIds.length} missing run" in runs_js,
+                 "missing local runs require an explicit remove action")
     main_js = (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(encoding="utf-8")
     failed += ok(
         'fetchJSON("/api/runs/allocate-copy"' in main_js

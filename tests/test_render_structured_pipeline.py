@@ -138,6 +138,11 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(result["model"], "opencode/big-pickle")
         self.assertEqual(len(result["prompts"]), 1)
         self.assertIn("Stay consistent", result["prompts"][0]["text"])
+        self.assertEqual(result["prompts"][0]["concept_angle"], "desired_outcome")
+        self.assertEqual(
+            result["prompts"][0]["display_stem"],
+            "TEST_stress_snacker_EN_desired_outcome",
+        )
         self.assertNotIn("product_assets", calls[0]["request"])
         self.assertNotIn("image", json.dumps(calls[0]["request"]).lower())
 

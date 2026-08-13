@@ -126,18 +126,18 @@ cookie command-line argument for first registration, read it without echoing,
 and unset it immediately. Only one supervisor may use a data root; a lock error
 means another agent is already running there.
 
-Inspect and migrate the older local artifact tree dry-run-first:
+Inspect local storage, reclaim unreferenced CAS objects, or wipe run content
+while keeping device config and the product-image library:
 
 ```bash
-python scripts/local_agent.py storage inspect \
-  --legacy-root "$HOME/ad-factory-agent-output"
-python scripts/local_agent.py storage migrate \
-  --legacy-root "$HOME/ad-factory-agent-output"
-# Review the report, then repeat migrate with --apply.
+python scripts/local_agent.py storage gc
+python scripts/local_agent.py storage gc --apply
+python scripts/local_agent.py reset-local-data --confirm
 ```
 
-`storage gc` reports candidates only and never deletes referenced or unverified
-data.
+`storage gc` reports unreferenced objects first. Re-run with `--apply` to
+delete them and sweep abandoned staging trees. `reset-local-data` also removes
+the retired `~/ad-factory-agent-output` tree.
 
 ## Pair the dashboard
 

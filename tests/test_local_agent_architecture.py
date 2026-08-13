@@ -92,6 +92,67 @@ class LocalAgentStorageTests(unittest.TestCase):
             self.assertFalse(stale.exists())
             self.assertTrue(active.exists())
 
+    def test_reset_local_data_preserves_product_images_and_device_config(self) -> None:
+        from local_agent_runtime.storage import AgentPaths, AgentState
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            legacy = home / "ad-factory-agent-output"
+            legacy.mkdir()
+            (legacy / "old.png").write_bytes(b"dead")
+            paths = AgentPaths(Path(tmp) / "agent")
+            state = AgentState(paths)
+            (paths.config / "agent.json").write_text('{"device_id": "keep-me"}', encoding="utf-8")
+            (paths.staging / "tmp" / "job-1").mkdir(parents=True)
+            (paths.staging / "tmp" / "job-1" / "copy.txt").write_text("staged", encoding="utf-8")
+
+            product_src = paths.staging / "product.png"
+            product_src.write_bytes(b"\x89PNG\r\n\x1a\nproduct")
+            product = state.put_resource(
+                source=product_src,
+                owner_key="user:user-1",
+                kind="product_image",
+                logical_key="hero",
+                operation_id="put-product",
+                media_type="image/png",
+            )
+            prompt_src = paths.staging / "prompt.txt"
+            prompt_src.write_text("prompt body", encoding="utf-8")
+            state.put_resource(
+                source=prompt_src,
+                owner_key="user:user-1",
+                kind="prompt",
+                logical_key="prm_one",
+                operation_id="put-prompt",
+                media_type="text/plain; charset=utf-8",
+            )
+            state.create_run(
+                run_id="run-reset",
+                owner_key="user:user-1",
+                device_id="dev_" + "c" * 32,
+                workspace_id="wrk-reset",
+                run_number=1,
+                flow_type="structured",
+                operation_id="create-reset-run",
+            )
+
+            report = state.reset_local_data(home=home)
+
+            with state._connect() as conn:
+                run_count = conn.execute("SELECT COUNT(*) AS count FROM runs").fetchone()["count"]
+                kinds = [
+                    row["kind"]
+                    for row in conn.execute("SELECT kind FROM resources ORDER BY kind")
+                ]
+            self.assertEqual(run_count, 0)
+            self.assertEqual(kinds, ["product_image"])
+            self.assertTrue((paths.config / "agent.json").exists())
+            self.assertFalse(legacy.exists())
+            self.assertFalse((paths.staging / "tmp" / "job-1").exists())
+            self.assertGreaterEqual(report["deleted_runs"], 1)
+            self.assertTrue(product.path.exists())
+
 
 class RunNumberTests(unittest.TestCase):
     def test_physical_batch_keys_do_not_collide_across_runs(self) -> None:

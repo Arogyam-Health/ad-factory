@@ -308,6 +308,27 @@ console.log(replaceExactOnImageCopy(original, [
         self.assertIn("NEGATIVE CONSTRAINTS", updated)
         self.assertIn("- Do not add badges.", updated)
 
+    def test_cas_outputs_are_the_only_image_source_and_retain_blobs_on_failure(self) -> None:
+        runs = (ROOT / "dashboard/frontend/js/runs.js").read_text(encoding="utf-8")
+        images = (ROOT / "dashboard/frontend/js/images.js").read_text(encoding="utf-8")
+        prompts = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("refreshLocalArtifactManifest", runs)
+        self.assertNotIn("LOCAL_ARTIFACT_CACHE_KEY", runs)
+        self.assertIn("structuredRefreshInFlight", runs)
+        self.assertIn("previousByRun.get(run.run_id)", runs)
+        self.assertIn('run.local_device_status = "unavailable"', runs)
+        self.assertIn("prompt_file: mapped?.prompt_file || \"\"", runs)
+        self.assertIn("display_name: outputDisplayName(output, promptNames)", runs)
+        self.assertIn("imageItem.display_name", images)
+        self.assertIn("item.display_name || item.prompt_id", prompts)
+        self.assertIn(
+            "`/api/runs/${encodeURIComponent(run.run_id)}/prompts/${encodeURIComponent(prompt.prompt_id)}`",
+            prompts,
+        )
+        self.assertIn("method: \"PATCH\"", prompts)
+
 
 if __name__ == "__main__":
     unittest.main()

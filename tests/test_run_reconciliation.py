@@ -89,6 +89,7 @@ class RunReconciliationTests(unittest.TestCase):
             "owner_type": "user",
             "owner_id": "user-1",
             "local_run_ids": ["run-local"],
+            "confirm": True,
         }
         with (
             patch("dashboard.backend.routes.runs.get_sync_db", return_value=db),
@@ -174,6 +175,171 @@ class RunReconciliationTests(unittest.TestCase):
             }
         )
         self.assertEqual(result["status"], "accepted")
+
+    def test_local_run_reconciliation_is_dry_run_until_confirmed(self) -> None:
+        from dashboard.backend.db.collections import (
+            COLL_AGENT_JOBS,
+            COLL_AGENTS,
+            COLL_IMAGES,
+            COLL_PROMPTS,
+            COLL_RUNS,
+        )
+        from dashboard.backend.routes.runs import reconcile_local_runs
+
+        db = MagicMock()
+        collections = {
+            name: MagicMock()
+            for name in (
+                COLL_AGENT_JOBS,
+                COLL_AGENTS,
+                COLL_IMAGES,
+                COLL_PROMPTS,
+                COLL_RUNS,
+            )
+        }
+        db.__getitem__.side_effect = collections.__getitem__
+        collections[COLL_AGENTS].find_one.return_value = {
+            "agent_id": "agent-1",
+            "device_id": "dev_" + "a" * 32,
+        }
+        collections[COLL_RUNS].find.return_value = [
+            {"run_id": "run-local"},
+            {"run_id": "run-stale"},
+        ]
+
+        with (
+            patch("dashboard.backend.routes.runs.get_sync_db", return_value=db),
+            patch("dashboard.backend.routes.runs.time.time", return_value=1_000.0),
+        ):
+            result = reconcile_local_runs(
+                self.request(),
+                {
+                    "agent_id": "agent-1",
+                    "device_id": "dev_" + "a" * 32,
+                    "owner_type": "user",
+                    "owner_id": "user-1",
+                    "local_run_ids": ["run-local"],
+                },
+            )
+
+        collections[COLL_RUNS].delete_many.assert_not_called()
+        collections[COLL_PROMPTS].delete_many.assert_not_called()
+        self.assertEqual(result["removed"], 0)
+        self.assertEqual(result["pending"], ["run-stale"])
+
+    def test_purge_all_is_user_scoped_and_requires_typed_confirmation(self) -> None:
+        from fastapi import HTTPException
+
+        from dashboard.backend.db.collections import (
+            COLL_AGENT_JOBS,
+            COLL_IMAGES,
+            COLL_PROMPT_DELIVERIES,
+            COLL_PROMPTS,
+            COLL_RENDER_COPY_JOBS,
+            COLL_RUNS,
+        )
+        from dashboard.backend.routes.runs import purge_all_user_runs
+
+        db = MagicMock()
+        collections = {
+            name: MagicMock()
+            for name in (
+                COLL_AGENT_JOBS,
+                COLL_IMAGES,
+                COLL_PROMPT_DELIVERIES,
+                COLL_PROMPTS,
+                COLL_RENDER_COPY_JOBS,
+                COLL_RUNS,
+            )
+        }
+        for collection in collections.values():
+            collection.delete_many.return_value = SimpleNamespace(deleted_count=2)
+        db.__getitem__.side_effect = collections.__getitem__
+
+        with self.assertRaises(HTTPException) as raised:
+            with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+                purge_all_user_runs(self.request(), {})
+        self.assertEqual(raised.exception.status_code, 400)
+
+        with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+            result = purge_all_user_runs(self.request(), {"confirm": "PURGE"})
+
+        for name in collections:
+            collections[name].delete_many.assert_called_once_with({"user_id": "user-1"})
+        self.assertEqual(result["status"], "purged")
+        self.assertEqual(result["runs"], 2)
+
+    def test_prompt_metadata_patch_is_user_and_run_scoped(self) -> None:
+        from dashboard.backend.db.collections import COLL_PROMPTS, COLL_RUNS
+        from dashboard.backend.routes.runs import update_run_prompt_metadata
+
+        db = MagicMock()
+        runs = MagicMock()
+        prompts = MagicMock()
+        db.__getitem__.side_effect = lambda name: {
+            COLL_RUNS: runs,
+            COLL_PROMPTS: prompts,
+        }[name]
+        runs.find_one.return_value = {"run_id": "run-1"}
+        prompts.update_one.return_value = SimpleNamespace(matched_count=1)
+
+        with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+            result = update_run_prompt_metadata(
+                "run-1",
+                "prompt-1",
+                self.request(),
+                {"sha256": "a" * 64, "resource_version": 3},
+            )
+
+        prompts.update_one.assert_called_once()
+        query, update = prompts.update_one.call_args.args
+        self.assertEqual(
+            query,
+            {"user_id": "user-1", "run_id": "run-1", "prompt_id": "prompt-1"},
+        )
+        self.assertEqual(update["$set"]["sha256"], "a" * 64)
+        self.assertEqual(update["$set"]["resource_version"], 3)
+        self.assertEqual(result["status"], "updated")
+
+    def test_failed_purge_marks_run_visible_for_retry(self) -> None:
+        from dashboard.backend.agent.service import fail_job
+        from dashboard.backend.db.collections import COLL_AGENT_JOBS, COLL_RUNS
+
+        db = MagicMock()
+        jobs = MagicMock()
+        runs = MagicMock()
+        db.__getitem__.side_effect = lambda name: {
+            COLL_AGENT_JOBS: jobs,
+            COLL_RUNS: runs,
+        }[name]
+        jobs.find_one.return_value = {
+            "job_type": "purge_run",
+            "run_id": "run-1",
+            "client_operation_id": "purge_abc",
+        }
+
+        with (
+            patch(
+                "dashboard.backend.agent.service._terminal_job_update",
+                return_value=True,
+            ),
+            patch("dashboard.backend.agent.service.get_sync_db", return_value=db),
+        ):
+            self.assertTrue(
+                fail_job(
+                    "job-1",
+                    "agent-1",
+                    "dev_" + "a" * 32,
+                    1,
+                    "evt-fail",
+                    "local_execution_failed",
+                )
+            )
+
+        runs.update_one.assert_called_once()
+        query, update = runs.update_one.call_args.args
+        self.assertEqual(query["run_id"], "run-1")
+        self.assertEqual(update["$set"]["status"], "purge_failed")
 
 
 if __name__ == "__main__":
