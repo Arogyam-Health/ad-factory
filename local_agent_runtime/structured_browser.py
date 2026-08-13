@@ -294,6 +294,23 @@ class StructuredBrowserExecutor:
             raise ValueError("No matching local structured prompt is available")
         return prompts
 
+    @staticmethod
+    def _display_stem(prompt: dict[str, Any]) -> str:
+        """Read the canonical stem Render assigned, falling back to the prompt id."""
+        raw = prompt.get("metadata_json")
+        metadata: dict[str, Any] = {}
+        if isinstance(raw, str) and raw:
+            try:
+                metadata = json.loads(raw)
+            except json.JSONDecodeError:
+                metadata = {}
+        elif isinstance(raw, dict):
+            metadata = raw
+        stem = re.sub(
+            r"[^A-Za-z0-9_.-]+", "_", str(metadata.get("display_stem") or "")
+        ).strip("_")
+        return stem or str(prompt.get("prompt_id") or "prompt")
+
     def _existing_output(
         self, run_id: str, prompt_id: str, aspect_ratio: str
     ) -> dict[str, Any] | None:
@@ -323,6 +340,7 @@ class StructuredBrowserExecutor:
         aspect_ratio: str,
         prompt_content: bytes,
         resources: list[LocalResource],
+        display_stem: str = "",
     ) -> tuple[Path, Path, Path, dict[str, Any]]:
         phase = "916" if aspect_ratio == "9:16" else "45"
         root = (
@@ -336,7 +354,9 @@ class StructuredBrowserExecutor:
         output = root / "output"
         uploads.mkdir(parents=True, exist_ok=True)
         output.mkdir(parents=True, exist_ok=True)
-        prompt_path = root / "prompt.txt"
+        # The automation derives the generated image name from this stem, so the
+        # downloaded creative inherits the canonical prompt name.
+        prompt_path = root / f"{display_stem or 'prompt'}.txt"
         prompt_path.write_bytes(prompt_content)
         upload_set_id = self._stable_id("ups_", job_id, prompt_id, aspect_ratio)
         manifest_entries = []
@@ -394,8 +414,12 @@ class StructuredBrowserExecutor:
         source_output_version: int | None,
         source_output_id: str | None = None,
         conversion_prompt: LocalResource | None = None,
+        display_stem: str = "",
     ) -> dict[str, Any]:
         phase = "916" if aspect_ratio == "9:16" else "45"
+        display_name = (
+            f"{display_stem}_{aspect_ratio.replace(':', '_')}" if display_stem else ""
+        )
         temporary = self.state.paths.staging / f".browser-output-{uuid.uuid4().hex}.png"
         temporary.write_bytes(content)
         output_id = self._stable_id("out_", run_id, prompt_id, aspect_ratio)
@@ -412,6 +436,7 @@ class StructuredBrowserExecutor:
                     "item_id": item_id,
                     "aspect_ratio": aspect_ratio,
                     "attempt": 1,
+                    **({"display_name": display_name} if display_name else {}),
                     **(
                         {
                             "source_output_id": source_output_id,
@@ -586,6 +611,7 @@ class StructuredBrowserExecutor:
                         aspect_ratio=aspect_ratio,
                         prompt_content=prompt_content,
                         resources=uploads,
+                        display_stem=self._display_stem(prompt),
                     )
                     content: bytes | None = None
                     for attempt in range(1, self.max_attempts + 1):
@@ -618,6 +644,7 @@ class StructuredBrowserExecutor:
                         conversion_prompt=(
                             conversion_prompt if aspect_ratio == "9:16" else None
                         ),
+                        display_stem=self._display_stem(prompt),
                     )
                     completed_count += 1
                     progress = self._projection(

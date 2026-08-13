@@ -30,7 +30,9 @@ export async function fetchJSON(url, init = {}) {
     }
     if (!res.ok) {
       const detail = data?.detail || data || res.statusText;
-      throw new Error(`${res.status}: ${detail}`);
+      // Name the endpoint: a bare status code makes a failing bootstrap request
+      // impossible to identify from the status log alone.
+      throw new Error(`${res.status} ${url}: ${detail}`);
     }
     if (cacheable) cache.set(key, { data, ts: Date.now() });
     return data;

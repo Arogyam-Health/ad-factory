@@ -294,11 +294,10 @@ export function buildImageGallery(run, imagesData) {
     }
 
     if (imageItem.prompt_file) {
-      const promptLink = document.createElement("a");
-      promptLink.href = imageItem.prompt_url || `/output/${imageItem.prompt_file.replace(/^output\//, "")}`;
-      promptLink.target = "_blank";
-      promptLink.textContent = imageItem.prompt_file;
-      promptBox.appendChild(promptLink);
+      const promptName = document.createElement("div");
+      promptName.className = "image-prompt-name";
+      promptName.textContent = imageItem.prompt_file;
+      promptBox.appendChild(promptName);
     }
 
     const promptFullscreenBtn = document.createElement("button");
@@ -363,7 +362,7 @@ export function buildImageGallery(run, imagesData) {
         appendLog(`Deleted image: ${path.split("/").pop()}`);
         card.remove();
         invalidateRuns();
-        import("./runs.js").then((module) => module.refreshLocalArtifactManifest());
+        import("./runs.js").then((module) => module.refreshStructuredLocalOutputs());
       } catch (err) {
         appendLog(`Delete error: ${String(err)}`);
         imgDeleteBtn.disabled = false;
@@ -403,10 +402,11 @@ export function buildImageGallery(run, imagesData) {
           throw new Error("Legacy image replacement is unavailable on the authoritative local device.");
         }
         await localDataPlane.replaceOutput(imageItem.output_id, file, run.device_id);
-        URL.revokeObjectURL(url);
-        img.src = await localDataPlane.outputObjectUrl(imageItem.output_id, run.device_id);
         appendLog(`Replaced image: ${path.split("/").pop()}`);
         invalidateRuns();
+        // The refresh owns every object URL, so it swaps in the new version without
+        // revoking one that this card is still displaying.
+        await import("./runs.js").then((module) => module.refreshStructuredLocalOutputs());
       } catch (err) {
         appendLog(`Replace error: ${String(err)}`);
       } finally {

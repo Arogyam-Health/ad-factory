@@ -2,22 +2,18 @@ from __future__ import annotations
 
 import json
 import hmac
-import mimetypes
 import os
-import shutil
-import tempfile
 import threading
 import time
 import urllib.parse
 import uuid
-import zipfile
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 from .data_plane import LocalDataPlane, load_or_create_internal_token
-from .storage import AgentPaths, AgentState, artifact_access_token
+from .storage import AgentPaths, AgentState
 
 
 @dataclass(frozen=True)
@@ -106,16 +102,6 @@ class ArtifactServer:
         self._thread = None
         self._server = None
 
-    def owner_manifest(self, owner: str) -> dict[str, Any]:
-        manifest = self.state.manifest(self.url, owner_key=owner)
-        capability = urllib.parse.urlencode({
-            "owner": owner,
-            "token": artifact_access_token(self.config.paths, owner),
-        })
-        for image in manifest["images"]:
-            image["url"] = f"{self.url}/files/{image['artifact_id']}?{capability}"
-        return manifest
-
     def _handler_class(self):
         service = self
 
@@ -132,15 +118,6 @@ class ArtifactServer:
             def _origin_allowed(self) -> bool:
                 origin = self._origin()
                 return not origin or origin in service.config.allowed_origins
-
-            def _authorized_owner(self) -> str | None:
-                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-                owner = str((query.get("owner") or [""])[0])
-                token = str((query.get("token") or [""])[0])
-                if not owner or not token:
-                    return None
-                expected = artifact_access_token(service.config.paths, owner)
-                return owner if hmac.compare_digest(token, expected) else None
 
             def _cors_headers(self) -> None:
                 origin = self._origin()
@@ -196,147 +173,20 @@ class ArtifactServer:
                         },
                     )
                     return
-                owner = self._authorized_owner()
-                if owner is None:
-                    self._error(401, "invalid_capability", "A valid artifact capability is required")
-                    return
-                if request_path in {"/artifacts", "/manifest"}:
-                    self._json(200, service.owner_manifest(owner))
-                    return
-                if request_path == "/events":
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/event-stream")
-                    self.send_header("Connection", "keep-alive")
-                    self._cors_headers()
-                    self.end_headers()
-                    last_sequence = -1
-                    last_heartbeat = 0.0
-                    try:
-                        while True:
-                            sequence = service.state.change_sequence()
-                            now = time.time()
-                            if sequence != last_sequence:
-                                self.wfile.write(f"event: artifacts\ndata: {sequence}\n\n".encode("utf-8"))
-                                self.wfile.flush()
-                                last_sequence = sequence
-                            elif now - last_heartbeat >= 15:
-                                self.wfile.write(b": heartbeat\n\n")
-                                self.wfile.flush()
-                                last_heartbeat = now
-                            time.sleep(0.25)
-                    except (BrokenPipeError, ConnectionResetError):
-                        pass
-                    return
-                if request_path == "/download-batches":
-                    query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-                    requested_run_ids = {value for value in query.get("run_id", []) if value}
-                    if not requested_run_ids:
-                        self._error(400, "run_ids_required", "At least one run_id is required")
-                        return
-                    images = [
-                        item for item in service.owner_manifest(owner)["images"]
-                        if str(item.get("run_id") or "") in requested_run_ids
-                    ]
-                    if not images:
-                        self._error(404, "artifacts_not_found", "No local files found for selected runs")
-                        return
-                    temporary = tempfile.NamedTemporaryFile(prefix="ad-factory-", suffix=".zip", delete=False)
-                    temporary_path = Path(temporary.name)
-                    temporary.close()
-                    try:
-                        with zipfile.ZipFile(temporary_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                            for item in images:
-                                path = service.config.paths.root / str(item["path"])
-                                if path.is_file():
-                                    archive.write(
-                                        path,
-                                        arcname=(
-                                            f"v{item['run_number']}-{item['run_id']}/"
-                                            f"{item['prompt_id']}/{str(item['aspect_ratio']).replace(':', '_')}/"
-                                            f"{item['filename']}"
-                                        ),
-                                    )
-                        filename_part = "_".join(sorted(requested_run_ids))
-                        filename_part = "".join(ch for ch in filename_part if ch.isalnum() or ch in "-_") or "runs"
-                        self.send_response(200)
-                        self.send_header("Content-Type", "application/zip")
-                        self.send_header("Content-Disposition", f'attachment; filename="ad_factory_{filename_part}.zip"')
-                        self.send_header("Content-Length", str(temporary_path.stat().st_size))
-                        self._cors_headers()
-                        self.end_headers()
-                        with temporary_path.open("rb") as source:
-                            shutil.copyfileobj(source, self.wfile, length=1024 * 1024)
-                    finally:
-                        temporary_path.unlink(missing_ok=True)
-                    return
-                if request_path.startswith("/revisions/"):
-                    revision_id = urllib.parse.unquote(request_path.removeprefix("/revisions/"))
-                    revision = service.state.revision(revision_id)
-                    if revision is None:
-                        self._error(404, "revision_not_found", "Revision not found")
-                        return
-                    artifact = service.state.artifact_record(str(revision.get("artifact_id") or ""))
-                    if artifact is None or artifact.get("owner_key") != owner:
-                        self._error(404, "revision_not_found", "Revision not found")
-                        return
-                    capability = urllib.parse.urlencode({
-                        "owner": owner,
-                        "token": artifact_access_token(service.config.paths, owner),
-                    })
-                    revision["status_url"] = f"{service.url}/revisions/{revision_id}?{capability}"
-                    self._json(200, revision)
-                    return
-                if request_path.startswith("/files/"):
-                    artifact_id = urllib.parse.unquote(request_path.removeprefix("/files/"))
-                    if not artifact_id or "/" in artifact_id or ".." in artifact_id:
-                        self._error(400, "invalid_artifact_id", "Invalid artifact ID")
-                        return
-                    path = service.state.artifact_path(artifact_id)
-                    record = service.state.artifact_record(artifact_id)
-                    if record is None or record.get("owner_key") != owner or path is None or not path.is_file():
-                        self._error(404, "artifact_not_found", "Artifact not found")
-                        return
-                    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-                    self.send_response(200)
-                    self.send_header("Content-Type", content_type)
-                    self.send_header("Content-Length", str(path.stat().st_size))
-                    self._cors_headers()
-                    self.end_headers()
-                    with path.open("rb") as source:
-                        shutil.copyfileobj(source, self.wfile, length=1024 * 1024)
-                    return
-                self._error(404, "not_found", "Endpoint not found")
+                self._error(
+                    410,
+                    "legacy_artifact_plane_removed",
+                    "Artifact content is served only by the scoped /v1 API",
+                )
 
             def do_DELETE(self) -> None:
                 if service.data_plane.dispatch(self):
                     return
                 self._error(
-                    405,
-                    "legacy_read_only",
-                    "Legacy artifact endpoints are read-only; use the scoped /v1 API",
+                    410,
+                    "legacy_artifact_plane_removed",
+                    "Artifact content is served only by the scoped /v1 API",
                 )
-                return
-                if not self._origin_allowed():
-                    self._error(403, "origin_forbidden", "Origin is not allowed")
-                    return
-                owner = self._authorized_owner()
-                if owner is None:
-                    self._error(401, "invalid_capability", "A valid artifact capability is required")
-                    return
-                request_path = urllib.parse.urlparse(self.path).path
-                if not request_path.startswith("/files/"):
-                    self._error(404, "not_found", "Endpoint not found")
-                    return
-                artifact_id = urllib.parse.unquote(request_path.removeprefix("/files/"))
-                record = service.state.artifact_record(artifact_id)
-                if record is None or record.get("owner_key") != owner:
-                    self._error(404, "artifact_not_found", "Artifact not found")
-                    return
-                deleted = service.state.delete_artifact(artifact_id)
-                if not deleted:
-                    self._error(404, "artifact_not_found", "Artifact not found")
-                    return
-                self._json(200, {"status": "deleted", "artifact_id": artifact_id})
 
             def do_POST(self) -> None:
                 if urllib.parse.urlparse(self.path).path == "/_agent/pairing/approvals":
@@ -371,50 +221,10 @@ class ArtifactServer:
                 if service.data_plane.dispatch(self):
                     return
                 self._error(
-                    405,
-                    "legacy_read_only",
-                    "Legacy artifact endpoints are read-only; use the scoped /v1 API",
+                    410,
+                    "legacy_artifact_plane_removed",
+                    "Artifact content is served only by the scoped /v1 API",
                 )
-                return
-                if not self._origin_allowed():
-                    self._error(403, "origin_forbidden", "Origin is not allowed")
-                    return
-                owner = self._authorized_owner()
-                if owner is None:
-                    self._error(401, "invalid_capability", "A valid artifact capability is required")
-                    return
-                request_path = urllib.parse.urlparse(self.path).path
-                if request_path != "/revisions":
-                    self._error(404, "not_found", "Endpoint not found")
-                    return
-                try:
-                    length = int(self.headers.get("Content-Length") or 0)
-                except ValueError:
-                    length = 0
-                if length <= 0 or length > 16 * 1024:
-                    self._error(413, "invalid_body_size", "Revision request must be between 1 byte and 16 KiB")
-                    return
-                try:
-                    payload = json.loads(self.rfile.read(length))
-                    image_path = urllib.parse.urlparse(str(payload.get("image_file") or "")).path
-                    artifact_id = urllib.parse.unquote(image_path.removeprefix("/files/"))
-                    record = service.state.artifact_record(artifact_id)
-                    if record is None or record.get("owner_key") != owner:
-                        raise ValueError("Artifact not found")
-                    revision = service.state.queue_revision(
-                        artifact_id,
-                        str(payload.get("comment") or ""),
-                        str(payload.get("engine") or "chatgpt").lower(),
-                    )
-                except (json.JSONDecodeError, ValueError) as exc:
-                    self._error(400, "invalid_revision", str(exc))
-                    return
-                capability = urllib.parse.urlencode({
-                    "owner": owner,
-                    "token": artifact_access_token(service.config.paths, owner),
-                })
-                revision["status_url"] = f"{service.url}/revisions/{revision['revision_id']}?{capability}"
-                self._json(202, revision)
 
             def do_HEAD(self) -> None:
                 if service.data_plane.dispatch(self):

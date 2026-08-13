@@ -70,48 +70,27 @@ class LocalAgentStorageTests(unittest.TestCase):
             second.acquire()
             second.release()
 
-    def test_artifact_publication_is_idempotent_and_prompt_scoped(self) -> None:
+    def test_abandoned_staging_trees_are_swept_but_recent_work_survives(self) -> None:
+        import os
+        import time
+
         from local_agent_runtime.storage import AgentPaths, AgentState
 
         with tempfile.TemporaryDirectory() as tmp:
             paths = AgentPaths(Path(tmp) / "agent")
             paths.ensure()
             state = AgentState(paths)
-            staging_file = paths.staging / "job-1" / "image.png"
-            staging_file.parent.mkdir(parents=True)
-            staging_file.write_bytes(b"valid-enough-for-storage-test")
+            stale = paths.staging / "structured-browser" / "job-old"
+            active = paths.staging / "structured-browser" / "job-new"
+            for directory in (stale, active):
+                directory.mkdir(parents=True)
+                (directory / "upload.png").write_bytes(b"staged-bytes")
+            old = time.time() - 90000
+            os.utime(stale, (old, old))
 
-            first = state.publish_artifact(
-                source=staging_file,
-                owner_key="user-1",
-                run_id="run-1",
-                run_number=7,
-                job_id="job-1",
-                item_id="item-1",
-                prompt_id="prompt-1",
-                aspect_ratio="4:5",
-                filename="creative.png",
-            )
-            second = state.publish_artifact(
-                source=first.path,
-                owner_key="user-1",
-                run_id="run-1",
-                run_number=7,
-                job_id="job-1",
-                item_id="item-1",
-                prompt_id="prompt-1",
-                aspect_ratio="4:5",
-                filename="creative.png",
-            )
-
-            self.assertEqual(first.artifact_id, second.artifact_id)
-            self.assertEqual(first.path, second.path)
-            self.assertEqual(state.change_sequence(), 1)
-            manifest = state.manifest()
-            self.assertEqual(len(manifest["images"]), 1)
-            self.assertEqual(manifest["images"][0]["run_id"], "run-1")
-            self.assertEqual(manifest["images"][0]["prompt_id"], "prompt-1")
-            self.assertEqual(manifest["artifact_base_url"], "http://127.0.0.1:8765")
+            self.assertEqual(state.sweep_staging(), 1)
+            self.assertFalse(stale.exists())
+            self.assertTrue(active.exists())
 
 
 class RunNumberTests(unittest.TestCase):
@@ -180,49 +159,6 @@ class ScopedPromptNameTests(unittest.TestCase):
                     {job.output_stem.split("__", 1)[0] for job in jobs},
                     {"run_aaaaaaaaaaaa", "run_bbbbbbbbbbbb"},
                 )
-
-    def test_standalone_916_uses_matching_persisted_45_artifact(self) -> None:
-        import scripts.local_agent as local_agent
-        from local_agent_runtime.storage import AgentPaths, AgentState
-
-        with tempfile.TemporaryDirectory() as tmp:
-            paths = AgentPaths(Path(tmp) / "agent")
-            state = AgentState(paths)
-            source = paths.staging / "creative.png"
-            source.write_bytes(b"four-five-image")
-            state.publish_artifact(
-                source=source,
-                owner_key="user-1",
-                run_id="run-1",
-                run_number=1,
-                job_id="job-1",
-                item_id="item-1",
-                prompt_id="prompt-1",
-                aspect_ratio="4:5",
-                filename="run_aaaaaaaaaaaa__HERO_always_hungry_EN_pain_point_4_5.png",
-            )
-            prompt_dir = paths.staging / "prompts"
-            prompt_dir.mkdir(parents=True)
-            prompt_name = "run_aaaaaaaaaaaa__HERO_always_hungry_EN_pain_point.txt"
-            (prompt_dir / prompt_name).write_text("Convert this image.", encoding="utf-8")
-
-            previous_state = local_agent.AGENT_STATE
-            try:
-                local_agent.AGENT_STATE = state
-                prepared = local_agent._prepare_persisted_916_sources(
-                    prompt_916_dir=prompt_dir,
-                    source_916_dir=paths.staging / "sources",
-                    payload={
-                        "owner_key": "user-1",
-                        "prompt_items": [{"name": prompt_name, "run_id": "run-1"}],
-                    },
-                )
-            finally:
-                local_agent.AGENT_STATE = previous_state
-
-            self.assertEqual(len(prepared), 1)
-            source_file = Path(prepared[0]["source_file"])
-            self.assertEqual(source_file.read_text(encoding="utf-8").strip(), str(state.artifact_path(state.manifest()["images"][0]["artifact_id"])))
 
 
 class AgentAuthTests(unittest.TestCase):

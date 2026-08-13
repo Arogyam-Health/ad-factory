@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { appendLog, skeletonRunCard } from "./ui.js";
+import { appendLog, skeletonLocalSection, skeletonRunCard } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { buildImageGallery, showPromptFullscreen } from "./images.js";
 import { buildPromptEditor } from "./prompts.js";
@@ -163,6 +163,15 @@ export async function renderRun(run) {
     fetchImagesData(run.run_id),
     fetchPromptsData(run.run_id),
   ]);
+
+  // Until the first local listing resolves, an empty prompt or image section is
+  // indistinguishable from a run that genuinely has no content.
+  const awaitingLocalContent = Boolean(run.device_id) && !structuredOutputsLoaded;
+  if (awaitingLocalContent) {
+    div.appendChild(skeletonLocalSection("Loading prompts from this machine", 3));
+    div.appendChild(skeletonLocalSection("Loading generated images from this machine", 6));
+    return div;
+  }
 
   const promptActions = document.createElement("div");
   promptActions.className = "prompt-actions";
@@ -347,6 +356,7 @@ function openBatchDropdown() {
 export async function loadRuns() {
   if (state.isRunsLoading) return;
   state.isRunsLoading = true;
+  showRunsSkeletons();
   try {
     let data = await fetchJSON("/api/runs");
     const inventory = await reconcileRunInventory(data.runs || []);
@@ -456,17 +466,25 @@ document.getElementById("refreshRuns")?.addEventListener("click", () => {
 });
 
 const LOCAL_STORAGE_JOB_KEY = "adFactoryActiveJob";
-const LOCAL_ARTIFACT_CACHE_KEY = "adFactoryLocalArtifacts";
-const LOCAL_ARTIFACT_ORIGIN = "http://127.0.0.1:8765";
-let localArtifactOrigin = LOCAL_ARTIFACT_ORIGIN;
-let localArtifactCapability = "";
+const LEGACY_ARTIFACT_CACHE_KEY = "adFactoryLocalArtifacts";
+const STRUCTURED_OUTPUT_POLL_MS = 30000;
 let agentJobPollTimer = null;
-let localArtifactImages = [];
 let structuredLocalImages = [];
-let localArtifactSignature = "";
-let localManifestRefreshInFlight = false;
-let localArtifactEventSource = null;
+let structuredRefreshInFlight = false;
+let structuredRefreshQueued = false;
+let structuredOutputsLoaded = false;
 const localDataEventStreams = new Map();
+
+function purgeLegacyArtifactCache() {
+  try {
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (key && key.startsWith(LEGACY_ARTIFACT_CACHE_KEY)) localStorage.removeItem(key);
+    }
+  } catch {
+    // A blocked storage quota must never prevent the CAS feed from loading.
+  }
+}
 
 function displayBatch(run) {
   return run?.display_batch || (run?.run_number ? `v${run.run_number}` : "") || "-";
@@ -504,43 +522,8 @@ function scopedStorageKey(baseKey) {
   return `${baseKey}:${userId}`;
 }
 
-function currentArtifactCacheKey() {
-  return scopedStorageKey(LOCAL_ARTIFACT_CACHE_KEY);
-}
-
 function currentJobStorageKey() {
   return scopedStorageKey(LOCAL_STORAGE_JOB_KEY);
-}
-
-function artifactSignature(images) {
-  return images.map((image) => {
-    const runIds = Array.isArray(image.run_ids) ? image.run_ids.join(",") : "";
-    return `${image.url || ""}:${image.bytes || 0}:${image.sha256 || ""}:${image.updated_at || image.modified_at || 0}:${image.batch || ""}:${runIds}`;
-  }).join("|");
-}
-
-function setLocalArtifactAccess(value) {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(parsed.hostname)) return;
-    const nextOrigin = parsed.origin;
-    const owner = parsed.searchParams.get("owner") || "";
-    const token = parsed.searchParams.get("token") || "";
-    const nextCapability = owner && token ? new URLSearchParams({ owner, token }).toString() : localArtifactCapability;
-    if (nextOrigin === localArtifactOrigin && nextCapability === localArtifactCapability) return;
-    localArtifactOrigin = nextOrigin;
-    localArtifactCapability = nextCapability;
-    localArtifactEventSource?.close();
-    localArtifactEventSource = null;
-    startLocalArtifactEvents();
-  } catch {
-    // Ignore malformed artifact origins received from stale job metadata.
-  }
-}
-
-function localArtifactUrl(path) {
-  const suffix = localArtifactCapability ? `?${localArtifactCapability}` : "";
-  return `${localArtifactOrigin}${path}${suffix}`;
 }
 
 function appendGenerationResult(data, fallback) {
@@ -594,53 +577,20 @@ function showAgentJobBar(text, spinning = true, job = null) {
   };
 }
 
-function syncLocalAgentArtifacts(job, { authoritative = false } = {}) {
-  const result = job?.result || {};
-  let images = Array.isArray(result.images) ? result.images : [];
-  const capabilityUrl = images.find((image) => image?.url)?.url || result.artifact_base_url;
-  if (capabilityUrl) setLocalArtifactAccess(capabilityUrl);
-  if (!images.length && !authoritative) return false;
-  if (!authoritative) {
-    try {
-      const previous = JSON.parse(localStorage.getItem(currentArtifactCacheKey()) || "null");
-      const previousByUrl = new Map((previous?.images || []).map((image) => [image.url, image]));
-      images = images.map((image) => ({ ...(previousByUrl.get(image.url) || {}), ...image }));
-    } catch {
-      // Ignore malformed previous metadata and replace it below.
-    }
-  }
-  const nextSignature = artifactSignature(images);
-  const changed = nextSignature !== localArtifactSignature;
-  localArtifactImages = images;
-  localArtifactSignature = nextSignature;
-  try {
-    if (images.length) {
-      localStorage.setItem(currentArtifactCacheKey(), JSON.stringify({
-        local_output_dir: result.local_output_dir || "",
-        artifact_base_url: result.artifact_base_url || "http://127.0.0.1:8765",
-        images: images.slice(0, 500),
-        cached_at: Date.now(),
-      }));
-    } else {
-      localStorage.removeItem(currentArtifactCacheKey());
-    }
-  } catch {
-    // Local metadata is an optimization; image files remain on the agent machine.
-  }
-  return changed;
-}
-
 export function applyLocalArtifactsToRuns() {
   if (!state.runsData.length) return;
-  const allImages = [...localArtifactImages, ...structuredLocalImages];
-  const validLocalUrls = new Set(allImages.map((image) => image.url));
+  const validLocalUrls = new Set(structuredLocalImages.map((image) => image.url));
   state.runsData.forEach((run) => {
     if (!Array.isArray(run.image_files)) run.image_files = [];
-    run.image_files = run.image_files.filter((path) => !String(path).startsWith("http://127.0.0.1:") || validLocalUrls.has(path));
+    run.image_files = run.image_files.filter((path) => {
+      const value = String(path);
+      const isLocal = value.startsWith("blob:") || value.startsWith("http://127.0.0.1:");
+      return !isLocal || validLocalUrls.has(value);
+    });
   });
-  allImages.forEach((image) => {
+  structuredLocalImages.forEach((image) => {
     const explicitRunIds = Array.isArray(image.run_ids) ? image.run_ids : (image.run_id ? [image.run_id] : []);
-    let targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
+    const targets = state.runsData.filter((run) => explicitRunIds.includes(run.run_id));
     targets.forEach((run) => {
       const archived = image.status === "archived";
       const filesKey = archived ? "regeneration_queue_files" : "image_files";
@@ -651,10 +601,12 @@ export function applyLocalArtifactsToRuns() {
       const existingItem = run[itemsKey].find((item) => item.path === image.url);
       const localItem = {
         path: image.url,
-        artifact_id: image.artifact_id || "",
+        artifact_id: image.output_id || "",
         output_id: image.output_id || "",
         output_version: image.output_version || 0,
         prompt_id: image.prompt_id || "",
+        prompt_file: image.prompt_file || "",
+        display_name: image.display_name || "",
         aspect_ratio: image.aspect_ratio || "",
         is_local: true,
         is_queued: archived,
@@ -666,7 +618,54 @@ export function applyLocalArtifactsToRuns() {
   });
 }
 
+const promptNameCache = new Map();
+
+async function promptNamesForRun(run, promptIds) {
+  let cached = promptNameCache.get(run.run_id);
+  const missing = promptIds.filter((id) => id && !(cached && cached.has(id)));
+  if (!cached || missing.length) {
+    const items = await localDataPlane.listPrompts(run.run_id, run.device_id);
+    cached = new Map();
+    items.forEach((item) => {
+      if (!item?.prompt_id) return;
+      cached.set(item.prompt_id, {
+        display_name: item.display_name || item.prompt_id,
+        prompt_file: item.prompt_file || `${item.display_name || item.prompt_id}.txt`,
+      });
+    });
+    promptNameCache.set(run.run_id, cached);
+  }
+  return cached;
+}
+
+function outputDisplayName(output, promptNames) {
+  const stem = output.display_name || (() => {
+    const mapped = promptNames.get(output.prompt_id);
+    if (!mapped) return "";
+    const suffix = String(output.aspect_ratio || "").replace(":", "_");
+    return suffix ? `${mapped.display_name}_${suffix}` : mapped.display_name;
+  })();
+  return stem ? `${stem}.png` : "";
+}
+
 export async function refreshStructuredLocalOutputs() {
+  if (structuredRefreshInFlight) {
+    structuredRefreshQueued = true;
+    return;
+  }
+  structuredRefreshInFlight = true;
+  try {
+    await runStructuredOutputRefresh();
+    while (structuredRefreshQueued) {
+      structuredRefreshQueued = false;
+      await runStructuredOutputRefresh();
+    }
+  } finally {
+    structuredRefreshInFlight = false;
+  }
+}
+
+async function runStructuredOutputRefresh() {
   const user = getAuthUser();
   if (!user?.user_id) return;
   const beforeRenderSignature = localOutputRenderSignature(state.runsData);
@@ -685,14 +684,15 @@ export async function refreshStructuredLocalOutputs() {
       image,
     ]),
   );
+  const previousByRun = new Map();
+  structuredLocalImages.forEach((image) => {
+    const bucket = previousByRun.get(image.run_id) || [];
+    bucket.push(image);
+    previousByRun.set(image.run_id, bucket);
+  });
   const next = [];
   for (const run of state.runsData) {
     if (!run?.run_id || !run?.device_id || !run?.agent_id) continue;
-    run.local_device_status = "unavailable";
-    run.image_files = [];
-    run.image_items = [];
-    run.regeneration_queue_files = [];
-    run.regeneration_queue_items = [];
     try {
       await localDataPlane.ensurePaired({
         ownerType: run.owner_type || "user",
@@ -721,7 +721,17 @@ export async function refreshStructuredLocalOutputs() {
         });
       }
       const outputs = await localDataPlane.listOutputs(run.run_id, run.device_id);
+      const promptNames = await promptNamesForRun(
+        run,
+        outputs.map((output) => output.prompt_id),
+      );
+      // Only a completed listing may replace this run's content; a partial or failed
+      // one must leave the previous object URLs attached to their live DOM nodes.
       run.local_device_status = "online";
+      run.image_files = [];
+      run.image_items = [];
+      run.regeneration_queue_files = [];
+      run.regeneration_queue_items = [];
       for (const output of outputs) {
         const key = `${output.output_id}:${output.current_version}`;
         const cached = previous.get(key);
@@ -729,13 +739,15 @@ export async function refreshStructuredLocalOutputs() {
           output.output_id,
           run.device_id,
         );
+        const mapped = promptNames.get(output.prompt_id);
         next.push({
           output_id: output.output_id,
           output_version: output.current_version,
-          artifact_id: output.output_id,
           run_id: run.run_id,
           run_ids: [run.run_id],
           prompt_id: output.prompt_id,
+          prompt_file: mapped?.prompt_file || "",
+          display_name: outputDisplayName(output, promptNames),
           item_id: output.item_id,
           aspect_ratio: output.aspect_ratio,
           status: output.status,
@@ -743,7 +755,8 @@ export async function refreshStructuredLocalOutputs() {
         });
       }
     } catch {
-      // Render metadata remains visible, but content URLs never fall back across devices.
+      run.local_device_status = "unavailable";
+      next.push(...(previousByRun.get(run.run_id) || []));
     }
   }
   const retained = new Set(next.map((image) => image.url));
@@ -753,6 +766,7 @@ export async function refreshStructuredLocalOutputs() {
     }
   });
   structuredLocalImages = next;
+  structuredOutputsLoaded = true;
   applyLocalArtifactsToRuns();
   const afterRenderSignature = localOutputRenderSignature(state.runsData);
   if (
@@ -763,64 +777,13 @@ export async function refreshStructuredLocalOutputs() {
   }
 }
 
-function startLocalArtifactEvents() {
-  if (localArtifactEventSource || !localArtifactCapability || typeof EventSource === "undefined") return;
-  const source = new EventSource(localArtifactUrl("/events"));
-  localArtifactEventSource = source;
-  source.addEventListener("artifacts", () => refreshLocalArtifactManifest());
-  source.onerror = () => {
-    if (localArtifactEventSource !== source) return;
-    source.close();
-    localArtifactEventSource = null;
-    setTimeout(startLocalArtifactEvents, 3000);
-  };
+export function structuredOutputsReady() {
+  return structuredOutputsLoaded;
 }
 
-function restoreCachedLocalArtifacts() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(currentArtifactCacheKey()) || "null");
-    if (cached?.images?.length) {
-      localArtifactImages = cached.images;
-      syncLocalAgentArtifacts({ result: cached });
-      applyLocalArtifactsToRuns();
-    }
-  } catch {
-    localStorage.removeItem(currentArtifactCacheKey());
-  }
-}
-
-export async function refreshLocalArtifactManifest() {
-  if (localManifestRefreshInFlight || !localArtifactCapability) return;
-  localManifestRefreshInFlight = true;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
-  try {
-    const url = new URL(localArtifactUrl("/manifest"));
-    url.searchParams.set("t", String(Date.now()));
-    const response = await fetch(url, {
-      cache: "no-store",
-      mode: "cors",
-      signal: controller.signal,
-    });
-    if (!response.ok) return;
-    const manifest = await response.json();
-    if (!Array.isArray(manifest.images)) return;
-    const changed = syncLocalAgentArtifacts({
-      result: {
-        local_output_dir: manifest.local_output_dir,
-        artifact_base_url: manifest.artifact_base_url,
-        images: manifest.images,
-      },
-    }, { authoritative: true });
-    if (!changed) return;
-    applyLocalArtifactsToRuns();
-    if (state.runsData.length) renderRunCarousel().catch(() => {});
-  } catch {
-    // The local agent may be offline; keep the last cached metadata visible.
-  } finally {
-    clearTimeout(timeout);
-    localManifestRefreshInFlight = false;
-  }
+export function forgetLocalPromptNames(runId) {
+  if (runId) promptNameCache.delete(runId);
+  else promptNameCache.clear();
 }
 
 function escapeHtml(value) {
@@ -861,7 +824,7 @@ function startAgentJobPolling() {
       if (!data.active) {
         if (job.status === "completed") {
           showAgentJobBar("Agent job completed. Refreshing local results.", false);
-          await refreshLocalArtifactManifest();
+          await refreshStructuredLocalOutputs();
           localStorage.removeItem(currentJobStorageKey());
           if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
           return;
@@ -882,7 +845,7 @@ function startAgentJobPolling() {
       const label = status === "cancel_requested" ? "Canceling" : (status === "running" ? "Running" : "Queued");
       const msg = `Agent job ${label}: ${progress || "waiting for pickup..."}`;
       showAgentJobBar(msg, status !== "cancel_requested", job);
-      await refreshLocalArtifactManifest();
+      await refreshStructuredLocalOutputs();
     } catch (err) {
       // Keep polling: a transient Render error must not freeze a stale Running/Canceling banner.
     }
@@ -904,12 +867,9 @@ function checkActiveAgentJob() {
   }
 }
 
-restoreCachedLocalArtifacts();
-refreshLocalArtifactManifest();
+purgeLegacyArtifactCache();
 refreshStructuredLocalOutputs().catch(() => {});
-startLocalArtifactEvents();
-setInterval(refreshLocalArtifactManifest, 10000);
-setInterval(() => refreshStructuredLocalOutputs().catch(() => {}), 10000);
+setInterval(() => refreshStructuredLocalOutputs().catch(() => {}), STRUCTURED_OUTPUT_POLL_MS);
 checkActiveAgentJob();
 fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   if (data?.active && data.job?.job_id) {
@@ -918,7 +878,7 @@ fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
     return;
   }
   if (data?.job && !data.active && data.job.status === "completed") {
-    refreshLocalArtifactManifest();
+    refreshStructuredLocalOutputs().catch(() => {});
     showAgentJobBar("Last local agent job completed.", false);
   }
 }).catch(() => {});

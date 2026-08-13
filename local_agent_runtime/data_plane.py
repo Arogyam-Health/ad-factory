@@ -114,6 +114,18 @@ def load_or_create_internal_token(paths: AgentPaths) -> str:
     return _load_or_create_local_secret(paths.config / "runtime-token", "lrt_", 32)
 
 
+def _decode_metadata(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+    return {}
+
+
 class LocalDataPlane:
     """Owner-scoped localhost API. It never serializes local filesystem paths."""
 
@@ -1640,28 +1652,42 @@ class LocalDataPlane:
         with self.state._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT re.prompt_id, re.resource_id, re.resource_version
-                FROM run_entries re JOIN resources r ON r.resource_id = re.resource_id
+                SELECT re.prompt_id, re.resource_id, re.resource_version,
+                       re.metadata_json AS entry_metadata,
+                       rv.metadata_json AS version_metadata
+                FROM run_entries re
+                JOIN resources r ON r.resource_id = re.resource_id
+                JOIN resource_versions rv
+                  ON rv.resource_id = re.resource_id
+                 AND rv.version = re.resource_version
                 WHERE re.run_id = ? AND r.owner_key = ? AND r.kind = 'prompt'
                 ORDER BY re.position
                 """,
                 (run_id, owner_key),
             ).fetchall()
-        self._json(
-            handler,
-            200,
-            {
-                "items": [
-                    {
-                        "prompt_id": row["prompt_id"],
-                        "resource_id": row["resource_id"],
-                        "resource_version": int(row["resource_version"]),
-                        "status": "ready",
-                    }
-                    for row in rows
-                ]
-            },
-        )
+        items = []
+        for row in rows:
+            metadata = {
+                **_decode_metadata(row["version_metadata"]),
+                **_decode_metadata(row["entry_metadata"]),
+            }
+            display_name = str(metadata.get("display_stem") or row["prompt_id"])
+            items.append(
+                {
+                    "prompt_id": row["prompt_id"],
+                    "resource_id": row["resource_id"],
+                    "resource_version": int(row["resource_version"]),
+                    "display_name": display_name,
+                    "prompt_file": f"{display_name}.txt",
+                    "format": str(metadata.get("format") or ""),
+                    "persona_name": str(metadata.get("persona_name") or ""),
+                    "persona_number": int(metadata.get("persona_number") or 0),
+                    "language": str(metadata.get("language") or ""),
+                    "concept_angle": str(metadata.get("concept_angle") or ""),
+                    "status": "ready",
+                }
+            )
+        self._json(handler, 200, {"items": items})
 
     def _prompt_import(self, handler: Any, owner_key: str, run_id: str) -> None:
         self._session(handler, "prompts:write")
@@ -1951,7 +1977,7 @@ class LocalDataPlane:
 
     @staticmethod
     def _safe_output(row: dict[str, Any]) -> dict[str, Any]:
-        return {
+        safe = {
             key: row[key]
             for key in (
                 "output_id",
@@ -1965,11 +1991,45 @@ class LocalDataPlane:
                 "updated_at",
             )
         }
+        display_name = str(
+            _decode_metadata(row.get("version_metadata")).get("display_name") or ""
+        )
+        if not display_name:
+            stem = str(
+                _decode_metadata(row.get("prompt_metadata")).get("display_stem") or ""
+            )
+            if stem:
+                display_name = f"{stem}_{str(row['aspect_ratio']).replace(':', '_')}"
+        safe["display_name"] = display_name
+        safe["prompt_file"] = (
+            f"{_decode_metadata(row.get('prompt_metadata')).get('display_stem')}.txt"
+            if _decode_metadata(row.get("prompt_metadata")).get("display_stem")
+            else ""
+        )
+        return safe
 
     def _list_outputs(self, handler: Any, owner_key: str, run_id: str) -> None:
         with self.state._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM outputs WHERE run_id = ? ORDER BY created_at",
+                """
+                SELECT out.*,
+                       rv.metadata_json AS version_metadata,
+                       (
+                           SELECT re.metadata_json FROM run_entries re
+                           WHERE re.run_id = out.run_id
+                             AND re.prompt_id = out.prompt_id
+                             AND re.role = 'prompt'
+                           LIMIT 1
+                       ) AS prompt_metadata
+                FROM outputs out
+                LEFT JOIN output_versions ov
+                  ON ov.output_id = out.output_id AND ov.version = out.current_version
+                LEFT JOIN resource_versions rv
+                  ON rv.resource_id = ov.resource_id
+                 AND rv.version = ov.resource_version
+                WHERE out.run_id = ? AND out.status != 'deleted'
+                ORDER BY out.created_at
+                """,
                 (run_id,),
             ).fetchall()
         self._json(

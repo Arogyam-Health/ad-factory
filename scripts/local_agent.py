@@ -35,14 +35,12 @@ from local_agent_runtime.data_plane import (
     load_or_create_device_id,
     load_or_create_internal_token,
 )
-from local_agent_runtime.migration import format_inspection, inspect_legacy_root, migrate_legacy_root
 from local_agent_runtime.storage import (
     AgentPaths,
     AgentState,
     ContentStore,
     InstanceLock,
     LockHeldError,
-    artifact_access_token,
     resolve_data_root,
 )
 from local_agent_runtime.transport import AgentWebSocketClient, JobSignal
@@ -60,7 +58,7 @@ AGENT_ARTIFACT_BASE_URL = f"http://127.0.0.1:{AGENT_ARTIFACT_PORT}"
 SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
 ROOT = Path(__file__).resolve().parent.parent
 AGENT_PATHS = AgentPaths(resolve_data_root())
-LOCAL_OUTPUT_ROOT = AGENT_PATHS.staging
+AGENT_STAGING_ROOT = AGENT_PATHS.staging
 AGENT_STATE: AgentState | None = None
 CONTENT_STORE: ContentStore | None = None
 JOB_SIGNAL = JobSignal()
@@ -189,6 +187,30 @@ def sync_pairing_approvals(*, fetch_remote: bool) -> None:
         )
 
 
+def _prompt_display_stem(prompt: dict[str, Any], prompt_id: str) -> str:
+    """Resolve the human-readable stem shared by a prompt and its generated images."""
+    from scripts.generate_ads import prompt_filename
+
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(prompt.get("display_stem") or "")).strip("_")
+    if stem:
+        return stem
+    concept_angle = str(prompt.get("concept_angle") or "")
+    persona_name = str(prompt.get("persona_name") or "")
+    fmt = str(prompt.get("format") or "")
+    language = str(prompt.get("language") or "")
+    if concept_angle and fmt and language and persona_name:
+        return Path(
+            prompt_filename(
+                fmt,
+                int(prompt.get("persona_number") or 0),
+                persona_name,
+                language,
+                concept_angle,
+            )
+        ).stem
+    return prompt_id
+
+
 def sync_prompt_deliveries() -> None:
     if AGENT_STATE is None:
         return
@@ -256,11 +278,21 @@ def sync_prompt_deliveries() -> None:
                 != expected_sha256
             ):
                 raise ValueError("Prompt delivery integrity check failed")
+            display_stem = _prompt_display_stem(prompt, prompt_id)
             temporary = (
                 AGENT_PATHS.staging
                 / f".delivery-{delivery_id}-{index}-{uuid.uuid4().hex}.tmp"
             )
             temporary.write_text(text, encoding="utf-8")
+            naming = {
+                "format": str(prompt.get("format") or ""),
+                "persona_number": int(prompt.get("persona_number") or 0),
+                "persona_name": str(prompt.get("persona_name") or ""),
+                "language": str(prompt.get("language") or ""),
+                "concept_angle": str(prompt.get("concept_angle") or ""),
+                "display_stem": display_stem,
+                "aspect_ratio": str(prompt.get("aspect_ratio") or "4:5"),
+            }
             try:
                 resource = AGENT_STATE.put_resource(
                     source=temporary,
@@ -268,13 +300,7 @@ def sync_prompt_deliveries() -> None:
                     kind="prompt",
                     logical_key=prompt_id,
                     operation_id=f"delivery:{delivery_id}:prompt:{index}",
-                    metadata={
-                        "run_id": run_id,
-                        "format": str(prompt.get("format") or ""),
-                        "persona_number": int(prompt.get("persona_number") or 0),
-                        "language": str(prompt.get("language") or ""),
-                        "aspect_ratio": str(prompt.get("aspect_ratio") or "4:5"),
-                    },
+                    metadata={"run_id": run_id, **naming},
                     media_type="text/plain; charset=utf-8",
                 )
             finally:
@@ -292,11 +318,7 @@ def sync_prompt_deliveries() -> None:
                 aspect_ratio=str(prompt.get("aspect_ratio") or "4:5"),
                 position=position + index + 1,
                 operation_id=f"delivery:{delivery_id}:entry:{index}",
-                metadata={
-                    "format": str(prompt.get("format") or ""),
-                    "persona_name": str(prompt.get("persona_name") or ""),
-                    "language": str(prompt.get("language") or ""),
-                },
+                metadata=naming,
             )
             prompt_ids.append(prompt_id)
         acknowledged = api_request(
@@ -526,86 +548,6 @@ def _prompt_browser_path(browser: str) -> str | None:
     return None
 
 
-def publish_local_artifacts(job_root: Path, payload: dict[str, Any], job_id: str) -> list[dict[str, Any]]:
-    if AGENT_STATE is None:
-        return []
-    prompt_items = [item for item in (payload.get("prompt_items") or []) if isinstance(item, dict)]
-    items_by_stem = {
-        Path(str(item.get("name") or "")).stem: item
-        for item in prompt_items
-        if str(item.get("name") or "").strip()
-    }
-    run_ids = [str(value) for value in (payload.get("run_ids") or []) if str(value).strip()]
-    owner_key = str(payload.get("owner_key") or "local")
-    access_token = artifact_access_token(AGENT_PATHS, owner_key)
-    access_query = urllib.parse.urlencode({"owner": owner_key, "token": access_token})
-    published: list[dict[str, Any]] = []
-    for path in sorted(job_root.glob("generated_images/**/*")):
-        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-            continue
-        if any(part in {"debug", ".browser_downloads", "to_be_regenerated"} for part in path.parts):
-            continue
-        output_stem = re.sub(r"_(?:4_5|9_16)$", "", path.stem)
-        item = items_by_stem.get(output_stem)
-        if item is None and len(prompt_items) == 1:
-            item = prompt_items[0]
-        if item is None and len(run_ids) == 1:
-            fallback_name = output_stem + ".txt"
-            item = {
-                "item_id": "item_" + hashlib.sha256(f"{run_ids[0]}:{fallback_name}".encode()).hexdigest()[:20],
-                "run_id": run_ids[0],
-                "run_number": _batch_number(str(payload.get("batch_name") or "")),
-                "prompt_id": hashlib.sha256(fallback_name.encode()).hexdigest()[:16],
-                "name": fallback_name,
-            }
-        if item is None:
-            print(f"  [agent] Skipping unmapped artifact {path.name}; no unique prompt item", flush=True)
-            continue
-        aspect_ratio = "9:16" if "9_16" in path.parts else "4:5"
-        artifact = AGENT_STATE.publish_artifact(
-            source=path,
-            owner_key=owner_key,
-            run_id=str(item.get("run_id") or "unknown-run"),
-            run_number=int(item.get("run_number") or _batch_number(str(payload.get("batch_name") or ""))),
-            job_id=job_id,
-            item_id=str(item.get("item_id") or "unknown-item"),
-            prompt_id=str(item.get("prompt_id") or "unknown-prompt"),
-            aspect_ratio=aspect_ratio,
-            filename=path.name,
-        )
-        published.append({
-            "artifact_id": artifact.artifact_id,
-            "name": artifact.path.name,
-            "path": artifact.path.relative_to(AGENT_PATHS.root).as_posix(),
-            "url": f"{AGENT_ARTIFACT_BASE_URL.rstrip('/')}/files/{artifact.artifact_id}?{access_query}",
-            "bytes": artifact.path.stat().st_size,
-            "modified_at": artifact.path.stat().st_mtime_ns,
-            "run_id": str(item.get("run_id") or ""),
-            "run_ids": [str(item.get("run_id") or "")],
-            "prompt_id": str(item.get("prompt_id") or ""),
-            "item_id": str(item.get("item_id") or ""),
-            "aspect_ratio": aspect_ratio,
-        })
-    return published
-
-
-def _batch_number(batch: str) -> int:
-    match = re.match(r"^v(\d+)(?:-|$)", batch, flags=re.IGNORECASE)
-    return int(match.group(1)) if match else 0
-
-
-def _generated_artifact_signature(job_root: Path) -> tuple[tuple[str, int, int], ...]:
-    signature = []
-    for path in sorted(job_root.glob("generated_images/**/*")):
-        if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-            continue
-        if any(part in {"debug", ".browser_downloads", "to_be_regenerated"} for part in path.parts):
-            continue
-        stat = path.stat()
-        signature.append((path.relative_to(job_root).as_posix(), stat.st_size, stat.st_mtime_ns))
-    return tuple(signature)
-
-
 class JobProgressReporter:
     """Coalesce remote updates so Render latency never blocks terminal output."""
 
@@ -692,59 +634,6 @@ def _prepare_916_conversion_prompts(
         created.append({"prompt_path": str(prompt_path), "source_file": str(source_path)})
 
     return created
-
-
-def _prepare_persisted_916_sources(
-    *,
-    prompt_916_dir: Path,
-    source_916_dir: Path,
-    payload: dict[str, Any],
-) -> list[dict[str, str]]:
-    if AGENT_STATE is None:
-        return []
-    owner_key = str(payload.get("owner_key") or "local")
-    artifacts = [
-        item for item in AGENT_STATE.manifest(owner_key=owner_key)["images"]
-        if str(item.get("aspect_ratio") or "") == "4:5"
-    ]
-    prompt_items = [item for item in (payload.get("prompt_items") or []) if isinstance(item, dict)]
-    prepared: list[dict[str, str]] = []
-    source_916_dir.mkdir(parents=True, exist_ok=True)
-    for item in prompt_items:
-        prompt_path = prompt_916_dir / Path(str(item.get("name") or "")).name
-        if not prompt_path.is_file():
-            continue
-        run_id = str(item.get("run_id") or "")
-        prompt_stem = prompt_path.stem
-        unscoped_stem = prompt_stem.split("__", 1)[-1]
-        candidates = [artifact for artifact in artifacts if str(artifact.get("run_id") or "") == run_id]
-        matched = next(
-            (
-                artifact for artifact in candidates
-                if re.sub(r"_(?:4_5|9_16)$", "", Path(str(artifact.get("filename") or "")).stem) == prompt_stem
-            ),
-            None,
-        )
-        if matched is None:
-            matched = next(
-                (
-                    artifact for artifact in candidates
-                    if re.sub(r"_(?:4_5|9_16)$", "", Path(str(artifact.get("filename") or "")).stem).split("__", 1)[-1]
-                    == unscoped_stem
-                ),
-                None,
-            )
-        if matched is None and len(candidates) == 1:
-            matched = candidates[0]
-        if matched is None:
-            continue
-        image_path = AGENT_STATE.artifact_path(str(matched["artifact_id"]))
-        if image_path is None or not image_path.is_file():
-            continue
-        source_path = source_916_dir / f"{prompt_stem}.images.txt"
-        source_path.write_text(str(image_path.resolve()) + "\n", encoding="utf-8")
-        prepared.append({"prompt_path": str(prompt_path), "source_file": str(source_path)})
-    return prepared
 
 
 def launch_browser_cdp(browser: str, port: int = 9222, profile_dir: Path | None = None) -> None:
@@ -889,7 +778,7 @@ def execute_job(job: dict[str, Any]) -> None:
             report_job_terminal(job_id, "complete")
 
         elif job_type in {"run_chatgpt_batch", "run_browser_batch", "execute_run"}:
-            _run_browser_batch_job(job_id, parameters)
+            report_job_terminal(job_id, "fail", error_code="legacy_job_type_retired")
 
         elif job_type == "run_916_conversion":
             _run_script_job(
@@ -1177,204 +1066,6 @@ def _browser_automation_cmd(
     )
 
 
-def _materialize_job_context(
-    job_id: str,
-    *,
-    prompt_45_dir: Path,
-    prompt_916_dir: Path,
-    input_dir: Path,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    if AGENT_STATE is None:
-        raise RuntimeError("Local agent state is unavailable")
-    context = AGENT_STATE.resolve_job_context(job_id)
-    run = context["run"]
-    prompt_items: list[dict[str, Any]] = []
-    for index, entry in enumerate(context["entries"], start=1):
-        source = Path(entry["local_path"])
-        kind = str(entry.get("kind") or "")
-        role = str(entry.get("role") or "")
-        aspect_ratio = str(entry.get("aspect_ratio") or "")
-        if kind in {"prompt", "revision_prompt"}:
-            target_root = prompt_916_dir if aspect_ratio == "9:16" else prompt_45_dir
-            prompt_id = str(entry.get("prompt_id") or entry.get("entry_id") or index)
-            filename = re.sub(r"[^A-Za-z0-9_.-]+", "_", prompt_id) + ".txt"
-            target = target_root / filename
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-            prompt_items.append(
-                {
-                    "item_id": str(entry.get("item_id") or entry.get("entry_id") or index),
-                    "run_id": str(run["run_id"]),
-                    "run_number": int(run["run_number"]),
-                    "prompt_id": prompt_id,
-                    "name": filename,
-                }
-            )
-        elif role in {"product", "logo", "reference", "source_creative", "replacement"}:
-            suffix = source.suffix if source.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} else ".bin"
-            target = input_dir / f"{index:04d}_{entry['resource_id']}{suffix}"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-    return run, prompt_items
-
-
-def _run_browser_batch_job(job_id: str, payload: dict[str, Any]) -> None:
-    engine = str(payload.get("engine") or "chatgpt").strip().lower()
-    if engine not in {"chatgpt", "gemini"}:
-        raise ValueError(f"Unsupported local browser engine: {engine}")
-    engine_label = "Gemini" if engine == "gemini" else "ChatGPT"
-    script_path = SCRIPT_DIR / ("gemini_web_automation.py" if engine == "gemini" else "chatgpt_web_sutomation.py")
-    if not script_path.exists():
-        report_job_terminal(job_id, "fail", error_code="automation_unavailable")
-        return
-
-    cdp = check_cdp()
-    for _ in range(30 if engine == "chatgpt" else 1):
-        if cdp.get("available") or engine == "gemini":
-            break
-        time.sleep(1)
-        cdp = check_cdp()
-    if engine == "chatgpt" and not cdp.get("available"):
-        report_job_terminal(job_id, "fail", error_code="browser_unavailable")
-        return
-
-    mode = str(payload.get("mode") or "45")
-    job_root = AGENT_PATHS.staging / "jobs" / job_id
-    prompt_45_dir = job_root / "prompts_45"
-    prompt_916_dir = job_root / "prompts_916"
-    source_916_dir = job_root / "sources_916"
-    input_dir = job_root / "input_images"
-    job_root.mkdir(parents=True, exist_ok=True)
-    run, prompt_items = _materialize_job_context(
-        job_id,
-        prompt_45_dir=prompt_45_dir,
-        prompt_916_dir=prompt_916_dir,
-        input_dir=input_dir,
-    )
-    batch_name = str(run.get("display_batch") or f"v{run.get('run_number')}").replace("/", "_")
-    out_45_dir = job_root / "generated_images" / batch_name / "4_5"
-    out_916_dir = job_root / "generated_images" / batch_name / "9_16"
-    payload = {
-        **payload,
-        "owner_key": str(run["owner_key"]),
-        "run_ids": [str(run["run_id"])],
-        "batch_name": batch_name,
-        "prompt_items": prompt_items,
-    }
-    (job_root / ".agent-job.json").write_text(
-        json.dumps({
-            "job_id": job_id,
-            "batch": batch_name,
-            "run_ids": [str(item) for item in (payload.get("run_ids") or [])],
-            "owner_key": str(payload.get("owner_key") or "local"),
-            "prompt_items": prompt_items,
-            "created_at": time.time(),
-        }, ensure_ascii=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
-    api_request(
-        "POST",
-        f"/api/agents/jobs/{job_id}/progress",
-        {
-            "progress_code": "starting",
-            "fence": ACTIVE_JOB_FENCES.get(job_id, 0),
-        },
-        token=AGENT_TOKEN,
-    )
-
-    logs: list[str] = []
-    warnings: list[str] = [str(item) for item in (payload.get("warnings") or []) if str(item).strip()]
-    if mode in {"45", "both"}:
-        if not any(prompt_45_dir.glob("*.txt")):
-            report_job_terminal(job_id, "fail", error_code="local_prompt_missing")
-            return
-        code, tail = _run_and_stream(
-            job_id,
-            _browser_automation_cmd(engine, script_path, prompt_45_dir, out_45_dir, input_dir, payload, "4:5"),
-            ROOT,
-            artifact_root=job_root,
-            payload=payload,
-        )
-        logs.append(tail)
-        if code != 0:
-            report_job_terminal(job_id, "fail", error_code="automation_failed")
-            return
-
-    if mode in {"916", "both"}:
-        prepared_916 = _prepare_persisted_916_sources(
-            prompt_916_dir=prompt_916_dir,
-            source_916_dir=source_916_dir,
-            payload=payload,
-        ) if mode == "916" else []
-        if mode == "both" and not any(prompt_916_dir.glob("*.txt")):
-            prepared_916 = _prepare_916_conversion_prompts(
-                out_45_dir=out_45_dir,
-                prompt_916_dir=prompt_916_dir,
-                source_916_dir=source_916_dir,
-                template_text=str(payload.get("conversion_916_template") or ""),
-            )
-            if prepared_916:
-                msg = f"Prepared {len(prepared_916)} 9:16 conversion prompt(s) from local 4:5 output."
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress_code": "converting", "fence": ACTIVE_JOB_FENCES.get(job_id, 0)}, token=AGENT_TOKEN)
-
-        if not any(prompt_916_dir.glob("*.txt")):
-            if mode == "both":
-                warning = "Skipped 9:16 phase: no generated 4:5 images or conversion template were available."
-                warnings.append(warning)
-                api_request("POST", f"/api/agents/jobs/{job_id}/progress", {"progress_code": "conversion_skipped", "fence": ACTIVE_JOB_FENCES.get(job_id, 0)}, token=AGENT_TOKEN)
-            else:
-                report_job_terminal(job_id, "fail", error_code="local_prompt_missing")
-                return
-        elif mode == "916" and not prepared_916:
-            report_job_terminal(job_id, "fail", error_code="local_source_missing")
-            return
-        elif prepared_916:
-            for item in prepared_916:
-                prompt_path = Path(item["prompt_path"])
-                source_file = Path(item["source_file"])
-                code, tail = _run_and_stream(
-                    job_id,
-                    _browser_automation_cmd(
-                        engine,
-                        script_path,
-                        prompt_916_dir,
-                        out_916_dir,
-                        input_dir,
-                        payload,
-                        "9:16",
-                        prompt_glob=prompt_path.name,
-                        image_source_file=source_file,
-                    ),
-                    ROOT,
-                    artifact_root=job_root,
-                    payload=payload,
-                )
-                logs.append(tail)
-                if code != 0:
-                    report_job_terminal(job_id, "fail", error_code="automation_failed")
-                    return
-        else:
-            upload_dir = out_45_dir if out_45_dir.exists() else input_dir
-            code, tail = _run_and_stream(
-                job_id,
-                _browser_automation_cmd(engine, script_path, prompt_916_dir, out_916_dir, upload_dir, payload, "9:16"),
-                ROOT,
-                artifact_root=job_root,
-                payload=payload,
-            )
-            logs.append(tail)
-            if code != 0:
-                report_job_terminal(job_id, "fail", error_code="automation_failed")
-                return
-
-    log_tail = "\n".join(logs)[-4000:]
-    (AGENT_PATHS.logs / f"{job_id}.log").write_text(log_tail + ("\n" if log_tail else ""), encoding="utf-8")
-    publish_local_artifacts(job_root, payload, job_id)
-    report_job_terminal(job_id, "complete")
-    shutil.rmtree(job_root, ignore_errors=True)
-
-
 def _execute_next_output_revision() -> bool:
     if AGENT_STATE is None:
         return False
@@ -1465,85 +1156,8 @@ def _execute_next_output_revision() -> bool:
     return True
 
 
-def _execute_next_local_revision() -> bool:
-    if AGENT_STATE is None:
-        return False
-    revision = AGENT_STATE.claim_next_revision()
-    if revision is None:
-        return False
-    revision_id = str(revision["revision_id"])
-    artifact_id = str(revision["artifact_id"])
-    try:
-        artifact = AGENT_STATE.artifact_record(artifact_id)
-        image_path = AGENT_STATE.artifact_path(artifact_id)
-        if artifact is None or image_path is None or not image_path.is_file():
-            raise RuntimeError("Original artifact is unavailable")
-        engine = str(revision.get("engine") or "chatgpt").lower()
-        if engine == "chatgpt" and not check_cdp().get("available"):
-            raise RuntimeError(f"No local Chrome CDP browser is available at {AGENT_CDP_URL}")
-        work_root = AGENT_PATHS.staging / "revisions" / revision_id
-        prompt_dir = work_root / "prompts"
-        output_dir = work_root / "output"
-        prompt_dir.mkdir(parents=True, exist_ok=True)
-        source_file = work_root / "source.images.txt"
-        source_file.write_text(str(image_path.resolve()) + "\n", encoding="utf-8")
-        prompt_path = prompt_dir / f"{Path(str(artifact['filename'])).stem}.txt"
-        prompt_path.write_text(
-            "Edit the uploaded current ad image. Apply this revision exactly while preserving everything not requested:\n\n"
-            + str(revision["comment"]).strip()
-            + "\n\nReturn only the revised image.\n",
-            encoding="utf-8",
-        )
-        script_path = SCRIPT_DIR / ("gemini_web_automation.py" if engine == "gemini" else "chatgpt_web_sutomation.py")
-        command = _browser_automation_cmd(
-            engine,
-            script_path,
-            prompt_dir,
-            output_dir,
-            work_root,
-            {},
-            str(artifact.get("aspect_ratio") or "4:5"),
-            prompt_glob=prompt_path.name,
-            image_source_file=source_file,
-        )
-        print(f"  [agent] Running local revision {revision_id} with {engine}", flush=True)
-        result = subprocess.run(
-            command,
-            cwd=str(ROOT),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=900,
-        )
-        if result.stdout:
-            print(result.stdout[-4000:], flush=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"{engine} revision exited {result.returncode}")
-        candidates = [
-            path for path in output_dir.rglob("*")
-            if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
-            and not any(part in {"debug", ".browser_downloads"} for part in path.parts)
-        ]
-        if not candidates:
-            raise RuntimeError("Revision completed without producing an image")
-        history_dir = image_path.parent / "revisions" / revision_id
-        history_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(image_path, history_dir / f"original{image_path.suffix}")
-        replacement = max(candidates, key=lambda path: path.stat().st_mtime_ns)
-        temporary = image_path.with_name(f".{image_path.name}.{uuid.uuid4().hex}.tmp")
-        shutil.copy2(replacement, temporary)
-        os.replace(temporary, image_path)
-        AGENT_STATE.refresh_artifact(artifact_id)
-        AGENT_STATE.finish_revision(revision_id)
-        shutil.rmtree(work_root, ignore_errors=True)
-    except Exception as exc:
-        AGENT_STATE.finish_revision(revision_id, error=str(exc))
-        print(f"  [agent] Revision {revision_id} failed: {exc}", flush=True)
-    return True
-
-
 def _configure_runtime(args: argparse.Namespace) -> None:
-    global AGENT_API_BASE, AGENT_SESSION_COOKIE, POLL_INTERVAL, LOCAL_OUTPUT_ROOT, AGENT_CDP_URL, AGENT_ARTIFACT_PORT, AGENT_ARTIFACT_BASE_URL
+    global AGENT_API_BASE, AGENT_SESSION_COOKIE, POLL_INTERVAL, AGENT_STAGING_ROOT, AGENT_CDP_URL, AGENT_ARTIFACT_PORT, AGENT_ARTIFACT_BASE_URL
     global AGENT_PATHS, AGENT_STATE, CONTENT_STORE
 
     if args.api_base:
@@ -1557,7 +1171,7 @@ def _configure_runtime(args: argparse.Namespace) -> None:
     AGENT_PATHS.ensure()
     AGENT_STATE = AgentState(AGENT_PATHS)
     CONTENT_STORE = ContentStore(AGENT_PATHS)
-    LOCAL_OUTPUT_ROOT = AGENT_PATHS.staging
+    AGENT_STAGING_ROOT = AGENT_PATHS.staging
     AGENT_CDP_URL = f"http://127.0.0.1:{args.cdp_port}"
     os.environ["AGENT_CDP_URL"] = AGENT_CDP_URL
     AGENT_ARTIFACT_PORT = args.artifact_port
@@ -1786,7 +1400,7 @@ def register_and_run(args: argparse.Namespace) -> None:
     while True:
         try:
             signaled = JOB_SIGNAL.wait(1.0)
-            if _execute_next_output_revision() or _execute_next_local_revision():
+            if _execute_next_output_revision():
                 continue
             now = time.time()
             sync_pairing_approvals(fetch_remote=now >= next_pairing_poll)
@@ -1841,7 +1455,6 @@ def _wait_for_artifact_server(port: int, expected_root: Path, timeout: float = 1
 
 def run_supervisor(args: argparse.Namespace) -> None:
     _configure_runtime(args)
-    artifact_access_token(AGENT_PATHS, "bootstrap")
     lock = InstanceLock(AGENT_PATHS)
     try:
         lock.acquire()
@@ -1892,29 +1505,18 @@ def run_supervisor(args: argparse.Namespace) -> None:
 
 def _run_storage_command(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(prog="local_agent.py storage")
-    parser.add_argument("action", choices=["inspect", "migrate", "gc"])
-    parser.add_argument("--legacy-root", default=str(Path.home() / "ad-factory-agent-output"))
+    parser.add_argument("action", choices=["gc"])
     parser.add_argument("--data-dir", default=str(resolve_data_root()))
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
-    report = inspect_legacy_root(Path(args.legacy_root))
-    if args.action == "inspect":
-        print(format_inspection(report))
-        return
-    if args.action == "migrate":
-        migration = migrate_legacy_root(
-            Path(args.legacy_root),
-            AgentPaths(resolve_data_root(args.data_dir)),
-            apply=args.apply,
-        )
-        print(format_inspection(migration))
-        if not args.apply:
-            print("Dry run only. Re-run with --apply after reviewing the report.")
-        else:
-            print("Legacy source files were preserved. Unmapped jobs are under legacy/unassigned.")
-        return
-    print(format_inspection({**report, "gc_candidates": 0, "mutated": False}))
-    print("No referenced data was deleted. Garbage collection requires verified migrated ownership.")
+    paths = AgentPaths(resolve_data_root(args.data_dir))
+    state = AgentState(paths)
+    report = state.storage_report()
+    if args.apply:
+        report.update(state.collect_garbage())
+    print(json.dumps({**report, "apply": bool(args.apply)}, indent=2, sort_keys=True))
+    if not args.apply:
+        print("Dry run only. Re-run with --apply to reclaim unreferenced objects.")
 
 
 def main() -> None:

@@ -71,6 +71,24 @@ export function skeletonRunCard() {
   return div;
 }
 
+export function skeletonLocalSection(title, tiles = 4) {
+  const section = document.createElement("div");
+  section.className = "local-skeleton";
+  const heading = document.createElement("div");
+  heading.className = "local-skeleton-title";
+  heading.textContent = title;
+  section.appendChild(heading);
+  const grid = document.createElement("div");
+  grid.className = "local-skeleton-grid";
+  for (let i = 0; i < tiles; i++) {
+    const tile = document.createElement("div");
+    tile.className = "local-skeleton-tile";
+    grid.appendChild(tile);
+  }
+  section.appendChild(grid);
+  return section;
+}
+
 export function showGlobalLoading(msg = "Loading...") {
   let overlay = document.getElementById("globalLoadingOverlay");
   if (!overlay) {

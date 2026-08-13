@@ -5,6 +5,7 @@ import json
 import random
 import re
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 import requests
@@ -460,6 +461,18 @@ def generate_structured_prompt_bundle(
             prompt_id = "prm_" + hashlib.sha256(
                 f"{run_id}:{ad_index}:{language}".encode("utf-8")
             ).hexdigest()[:24]
+            concept_angle = str(concept["concept_angle"])
+            # The stem is what the user reads and what the browser automation writes
+            # to disk; prompt_id stays the stable internal key.
+            display_stem = Path(
+                generate_ads.prompt_filename(
+                    fmt,
+                    int(persona["number"]),
+                    str(persona["name"]),
+                    language,
+                    concept_angle,
+                )
+            ).stem
             prompts.append(
                 {
                     "prompt_id": prompt_id,
@@ -469,6 +482,8 @@ def generate_structured_prompt_bundle(
                     "persona_name": str(persona["name"]),
                     "language": language,
                     "aspect_ratio": "4:5",
+                    "concept_angle": concept_angle,
+                    "display_stem": display_stem,
                     "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 }
             )

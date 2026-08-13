@@ -22,7 +22,7 @@ async function loadLocalPrompts(run) {
       const content = await localDataPlane.promptContent(item.prompt_id, run.device_id);
       return {
         ...item,
-        prompt_file: `${item.prompt_id}.txt`,
+        prompt_file: item.prompt_file || `${item.display_name || item.prompt_id}.txt`,
         full_content: content,
         copy_lines: exactOnImageCopyLines(content),
       };
