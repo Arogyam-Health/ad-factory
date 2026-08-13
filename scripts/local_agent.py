@@ -796,6 +796,7 @@ def execute_job(job: dict[str, Any]) -> None:
                     str(job.get("run_id") or ""),
                     operation_id=str(job.get("client_operation_id") or job_id),
                     purge_resources=True,
+                    owner_key=owner_key,
                 )
             except ValueError as exc:
                 if str(exc) != "Run not found":
@@ -1553,12 +1554,23 @@ def _run_reset_local_data(argv: list[str]) -> None:
         help="Required. Wipe local runs, prompts, outputs, and staging.",
     )
     parser.add_argument("--data-dir", default=str(resolve_data_root()))
+    parser.add_argument(
+        "--owner",
+        default="",
+        help=(
+            "Reset one account only, as user:<user_id> or org:<org_id>. "
+            "Omit to reset every account sharing this device."
+        ),
+    )
     args = parser.parse_args(argv)
     if not args.confirm:
         raise SystemExit("Refusing to reset without --confirm")
+    owner_key = str(args.owner or "").strip()
+    if owner_key and not re.fullmatch(r"(user|org):[A-Za-z0-9_-]{1,128}", owner_key):
+        raise SystemExit("--owner must look like user:<id> or org:<id>")
     paths = AgentPaths(resolve_data_root(args.data_dir))
     state = AgentState(paths)
-    report = state.reset_local_data()
+    report = state.reset_local_data(owner_key=owner_key or None)
     print(json.dumps(report, indent=2, sort_keys=True))
 
 

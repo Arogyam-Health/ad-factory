@@ -153,6 +153,63 @@ class LocalAgentStorageTests(unittest.TestCase):
             self.assertGreaterEqual(report["deleted_runs"], 1)
             self.assertTrue(product.path.exists())
 
+    def test_one_account_cannot_delete_or_reset_another_accounts_local_runs(self) -> None:
+        from local_agent_runtime.storage import AgentPaths, AgentState
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AgentPaths(Path(tmp) / "agent")
+            state = AgentState(paths)
+            for index, owner in enumerate(("user:user-a", "user:user-b"), start=1):
+                state.create_run(
+                    run_id=f"run-{owner.split(':')[1]}",
+                    owner_key=owner,
+                    device_id="dev_" + "d" * 32,
+                    workspace_id=f"wrk-{index}",
+                    run_number=index,
+                    flow_type="structured",
+                    operation_id=f"create-{index}",
+                )
+
+            with self.assertRaises(ValueError):
+                state.delete_run(
+                    "run-user-b",
+                    operation_id="cross-account-delete",
+                    purge_resources=True,
+                    owner_key="user:user-a",
+                )
+
+            state.delete_run(
+                "run-user-a",
+                operation_id="own-delete",
+                purge_resources=True,
+                owner_key="user:user-a",
+            )
+            with state._connect() as conn:
+                remaining = [
+                    str(row["run_id"])
+                    for row in conn.execute("SELECT run_id FROM runs ORDER BY run_id")
+                ]
+            self.assertEqual(remaining, ["run-user-b"])
+
+            state.create_run(
+                run_id="run-user-a-2",
+                owner_key="user:user-a",
+                device_id="dev_" + "d" * 32,
+                workspace_id="wrk-3",
+                run_number=2,
+                flow_type="structured",
+                operation_id="create-3",
+            )
+            report = state.reset_local_data(owner_key="user:user-a")
+            with state._connect() as conn:
+                survivors = [
+                    str(row["run_id"])
+                    for row in conn.execute("SELECT run_id FROM runs ORDER BY run_id")
+                ]
+            self.assertEqual(survivors, ["run-user-b"])
+            self.assertEqual(report["owner_key"], "user:user-a")
+            self.assertFalse(report["staging_removed"])
+
 
 class RunNumberTests(unittest.TestCase):
     def test_physical_batch_keys_do_not_collide_across_runs(self) -> None:

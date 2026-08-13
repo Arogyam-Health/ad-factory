@@ -1439,6 +1439,7 @@ class LocalDataPlane:
                 run_id,
                 operation_id=self._operation_id(handler),
                 purge_resources=True,
+                owner_key=session.owner_key,
             )
             self._json(handler, 200, receipt)
             return

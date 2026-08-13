@@ -38,17 +38,16 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 <script type="module">
 import {{ LocalDataPlaneClient }} from "/js/local-data-plane.js";
 const deviceId = {json.dumps(DEVICE_ID)};
-sessionStorage.setItem(
-  "ad_factory_local_session:" + deviceId,
-  JSON.stringify({{
+try {{
+  const client = new LocalDataPlaneClient({json.dumps(local_origin)});
+  client.storeSession({{
     access_token: "browser-e2e-session",
     expires_at: Date.now() / 1000 + 300,
     device_id: deviceId,
     agent_id: "agent-browser-e2e",
-  }}),
-);
-try {{
-  const client = new LocalDataPlaneClient({json.dumps(local_origin)});
+    owner_type: "user",
+    owner_id: "user-browser-e2e",
+  }});
   const envelope = await client.allocateRun({{
     agentId: "agent-browser-e2e",
     deviceId,

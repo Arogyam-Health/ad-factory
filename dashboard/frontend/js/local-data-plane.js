@@ -1,5 +1,6 @@
 const LOCAL_API_ORIGIN = "http://127.0.0.1:8765";
 const SESSION_PREFIX = "ad_factory_local_session:";
+const ACTIVE_OWNER_PREFIX = "ad_factory_local_owner:";
 const DEFAULT_SCOPES = Object.freeze([
   "manifest:read",
   "content:read",
@@ -11,6 +12,10 @@ const DEFAULT_SCOPES = Object.freeze([
   "revisions:write",
   "delete",
 ]);
+
+function ownerKeyOf(ownerType, ownerId) {
+  return `${ownerType || "user"}:${ownerId || ""}`;
+}
 
 function delay(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -125,10 +130,7 @@ export class LocalDataPlaneClient {
         ));
         session.owner_type = ownerType;
         session.owner_id = ownerId;
-        sessionStorage.setItem(
-          `${SESSION_PREFIX}${session.device_id}`,
-          JSON.stringify(session),
-        );
+        this.storeSession(session);
         return session;
       } catch (error) {
         if (error.status !== 401 || error.code !== "pairing_not_approved") throw error;
@@ -138,18 +140,36 @@ export class LocalDataPlaneClient {
     throw new Error("Local pairing challenge expired");
   }
 
-  session(deviceId) {
-    const raw = sessionStorage.getItem(`${SESSION_PREFIX}${deviceId}`);
+  // Several Google accounts can share one device, so sessions are stored per
+  // owner and reads default to the owner this tab last paired with.
+  storeSession(session) {
+    const owner = ownerKeyOf(session.owner_type, session.owner_id);
+    sessionStorage.setItem(
+      `${SESSION_PREFIX}${session.device_id}:${owner}`,
+      JSON.stringify(session),
+    );
+    sessionStorage.setItem(`${ACTIVE_OWNER_PREFIX}${session.device_id}`, owner);
+  }
+
+  activeOwnerKey(deviceId) {
+    return sessionStorage.getItem(`${ACTIVE_OWNER_PREFIX}${deviceId}`) || "";
+  }
+
+  session(deviceId, ownerKey = "") {
+    const owner = ownerKey || this.activeOwnerKey(deviceId);
+    if (!owner) return null;
+    const storageKey = `${SESSION_PREFIX}${deviceId}:${owner}`;
+    const raw = sessionStorage.getItem(storageKey);
     if (!raw) return null;
     try {
       const session = JSON.parse(raw);
       if (Number(session.expires_at || 0) <= Date.now() / 1000) {
-        sessionStorage.removeItem(`${SESSION_PREFIX}${deviceId}`);
+        sessionStorage.removeItem(storageKey);
         return null;
       }
       return session;
     } catch {
-      sessionStorage.removeItem(`${SESSION_PREFIX}${deviceId}`);
+      sessionStorage.removeItem(storageKey);
       return null;
     }
   }
@@ -157,7 +177,9 @@ export class LocalDataPlaneClient {
   clearSessions() {
     for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
       const key = sessionStorage.key(index);
-      if (key?.startsWith(SESSION_PREFIX)) sessionStorage.removeItem(key);
+      if (key?.startsWith(SESSION_PREFIX) || key?.startsWith(ACTIVE_OWNER_PREFIX)) {
+        sessionStorage.removeItem(key);
+      }
     }
   }
 
@@ -176,13 +198,15 @@ export class LocalDataPlaneClient {
     if (agentId && agent.agent_id !== agentId) {
       throw new Error("The selected run belongs to a different local agent");
     }
-    const current = this.session(info.device_id);
+    const owner = ownerKeyOf(ownerType, ownerId);
+    const current = this.session(info.device_id, owner);
     if (
       current?.agent_id === agent.agent_id
       && current.owner_type === ownerType
       && current.owner_id === ownerId
       && scopes.every((scope) => current.scopes?.includes(scope))
     ) {
+      sessionStorage.setItem(`${ACTIVE_OWNER_PREFIX}${info.device_id}`, owner);
       return { info, agent, session: current };
     }
     const session = await this.pair({
@@ -207,7 +231,9 @@ export class LocalDataPlaneClient {
     const payload = await response.clone().json().catch(() => ({}));
     if (payload?.error?.code !== "invalid_session") return response;
 
-    sessionStorage.removeItem(`${SESSION_PREFIX}${deviceId}`);
+    sessionStorage.removeItem(
+      `${SESSION_PREFIX}${deviceId}:${ownerKeyOf(session.owner_type, session.owner_id)}`,
+    );
     const paired = await this.ensurePaired({
       ownerType: session.owner_type || "user",
       ownerId: session.owner_id,

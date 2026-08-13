@@ -1647,10 +1647,15 @@ class AgentState:
         *,
         operation_id: str,
         purge_resources: bool = False,
+        owner_key: str | None = None,
     ) -> dict[str, Any]:
+        """Delete a run. Pass owner_key so one account cannot purge another's run."""
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            run = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+            run = conn.execute(
+                "SELECT * FROM runs WHERE run_id = ? AND (? IS NULL OR owner_key = ?)",
+                (run_id, owner_key, owner_key),
+            ).fetchone()
             if run is None:
                 operation = conn.execute(
                     "SELECT result_json FROM operations WHERE operation_id = ?",
@@ -1729,40 +1734,72 @@ class AgentState:
         self.garbage_collect_objects()
         return receipt
 
-    def reset_local_data(self, *, home: Path | None = None) -> dict[str, Any]:
-        """Wipe local runs, prompts, outputs and staging. Keep device config and product images."""
+    # Tables that carry owner_key directly; the rest are reached through runs.
+    _OWNED_TABLES = ("jobs", "artifacts", "outbox", "operations", "change_log", "runs")
+
+    def reset_local_data(
+        self, *, home: Path | None = None, owner_key: str | None = None
+    ) -> dict[str, Any]:
+        """Wipe local runs, prompts, outputs and staging. Keep device config and product images.
+
+        Several dashboard accounts can share one device, so pass owner_key to
+        reset a single account instead of every account on the machine.
+        """
         preserved_kinds = ("product_image",)
+        placeholders = ",".join("?" for _ in preserved_kinds)
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            deleted_runs = conn.execute("SELECT COUNT(*) AS count FROM runs").fetchone()["count"]
-            for table in (
-                "upload_set_entries",
-                "upload_sets",
-                "output_versions",
-                "revisions",
-                "outputs",
-                "run_entries",
-                "runs",
-                "jobs",
-                "artifacts",
-                "outbox",
-                "operations",
-                "change_log",
-            ):
-                exists = conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-                    (table,),
-                ).fetchone()
-                if exists is not None:
-                    conn.execute(f"DELETE FROM {table}")
+            owned_runs = [
+                str(row["run_id"])
+                for row in conn.execute(
+                    "SELECT run_id FROM runs WHERE (? IS NULL OR owner_key = ?)",
+                    (owner_key, owner_key),
+                ).fetchall()
+            ]
+            deleted_runs = len(owned_runs)
+            run_filter = f"run_id IN ({','.join('?' for _ in owned_runs)})"
+            if owned_runs:
+                for table, statement in (
+                    (
+                        "upload_set_entries",
+                        "DELETE FROM upload_set_entries WHERE upload_set_id IN "
+                        f"(SELECT upload_set_id FROM upload_sets WHERE {run_filter})",
+                    ),
+                    ("upload_sets", f"DELETE FROM upload_sets WHERE {run_filter}"),
+                    (
+                        "output_versions",
+                        "DELETE FROM output_versions WHERE output_id IN "
+                        f"(SELECT output_id FROM outputs WHERE {run_filter})",
+                    ),
+                    (
+                        "revisions",
+                        "DELETE FROM revisions WHERE output_id IN "
+                        f"(SELECT output_id FROM outputs WHERE {run_filter})",
+                    ),
+                    ("outputs", f"DELETE FROM outputs WHERE {run_filter}"),
+                    ("run_entries", f"DELETE FROM run_entries WHERE {run_filter}"),
+                ):
+                    if self._table_exists(conn, table):
+                        conn.execute(statement, owned_runs)
+            for table in self._OWNED_TABLES:
+                if self._table_exists(conn, table):
+                    conn.execute(
+                        f"DELETE FROM {table} WHERE (? IS NULL OR owner_key = ?)",
+                        (owner_key, owner_key),
+                    )
             leftover = conn.execute(
                 f"""
                 SELECT resource_id FROM resources
-                WHERE kind NOT IN ({",".join("?" for _ in preserved_kinds)})
+                WHERE kind NOT IN ({placeholders})
+                  AND (? IS NULL OR owner_key = ?)
                 """,
-                preserved_kinds,
+                (*preserved_kinds, owner_key, owner_key),
             ).fetchall()
             for row in leftover:
+                conn.execute(
+                    "DELETE FROM resource_versions WHERE resource_id = ?",
+                    (row["resource_id"],),
+                )
                 conn.execute(
                     "DELETE FROM resources WHERE resource_id = ?",
                     (row["resource_id"],),
@@ -1770,21 +1807,24 @@ class AgentState:
             conn.commit()
         reclaimed = self.garbage_collect_objects()
         staging_removed = False
-        if self.paths.staging.exists():
-            shutil.rmtree(self.paths.staging, ignore_errors=True)
-            self.paths.staging.mkdir(parents=True, exist_ok=True)
-            staging_removed = True
-        if self.paths.artifacts.exists():
-            shutil.rmtree(self.paths.artifacts, ignore_errors=True)
-            self.paths.artifacts.mkdir(parents=True, exist_ok=True)
-        legacy_root = (home or Path.home()) / "ad-factory-agent-output"
         legacy_deleted = False
-        if legacy_root.exists() or legacy_root.is_symlink():
-            if legacy_root.is_dir() and not legacy_root.is_symlink():
-                shutil.rmtree(legacy_root, ignore_errors=True)
-            else:
-                legacy_root.unlink(missing_ok=True)
-            legacy_deleted = True
+        # Scratch directories are shared by every account on the device, so only a
+        # device-wide reset may remove them.
+        if owner_key is None:
+            if self.paths.staging.exists():
+                shutil.rmtree(self.paths.staging, ignore_errors=True)
+                self.paths.staging.mkdir(parents=True, exist_ok=True)
+                staging_removed = True
+            if self.paths.artifacts.exists():
+                shutil.rmtree(self.paths.artifacts, ignore_errors=True)
+                self.paths.artifacts.mkdir(parents=True, exist_ok=True)
+            legacy_root = (home or Path.home()) / "ad-factory-agent-output"
+            if legacy_root.exists() or legacy_root.is_symlink():
+                if legacy_root.is_dir() and not legacy_root.is_symlink():
+                    shutil.rmtree(legacy_root, ignore_errors=True)
+                else:
+                    legacy_root.unlink(missing_ok=True)
+                legacy_deleted = True
         return {
             "deleted_runs": int(deleted_runs),
             "deleted_resources": len(leftover),
@@ -1792,7 +1832,18 @@ class AgentState:
             "staging_removed": staging_removed,
             "legacy_output_deleted": legacy_deleted,
             "preserved_kinds": list(preserved_kinds),
+            "owner_key": owner_key or "",
         }
+
+    @staticmethod
+    def _table_exists(conn: Any, table: str) -> bool:
+        return (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table,),
+            ).fetchone()
+            is not None
+        )
 
 
 def _safe_component(value: str) -> str:

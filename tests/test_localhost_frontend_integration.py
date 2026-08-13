@@ -142,12 +142,14 @@ globalThis.fetch = async (url, options = {{}}) => {{
 }};
 const mod = await import({json.dumps(module_uri)});
 const client = new mod.LocalDataPlaneClient();
-sessionStorage.setItem("ad_factory_local_session:dev_" + "a".repeat(32), JSON.stringify({{
+client.storeSession({{
   access_token: "memory-only",
   expires_at: Date.now() / 1000 + 60,
   device_id: "dev_" + "a".repeat(32),
   agent_id: "agent_test",
-}}));
+  owner_type: "user",
+  owner_id: "user_test",
+}});
 await client.allocateRun({{
   agentId: "agent_test",
   deviceId: "dev_" + "a".repeat(32),
