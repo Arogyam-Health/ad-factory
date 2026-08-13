@@ -407,6 +407,23 @@ def flush_terminal_outbox() -> None:
                 return
             AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
             continue
+        if str(event.get("event_type") or "") == "output.deleted":
+            acknowledged = api_request(
+                "POST",
+                "/api/agents/reconciliation/output-deleted",
+                {
+                    "event_id": str(event["event_id"]),
+                    "run_id": str(payload.get("run_id") or ""),
+                    "output_id": str(payload.get("output_id") or ""),
+                },
+                token=AGENT_TOKEN,
+                timeout=20,
+                quiet=True,
+            )
+            if acknowledged is None:
+                return
+            AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
+            continue
         if str(event.get("event_type") or "").startswith(
             ("structured_copy_", "structured_images_", "reference_generation_")
         ):
@@ -726,13 +743,21 @@ def execute_job(job: dict[str, Any]) -> None:
             )
             if not isinstance(image_context, dict):
                 raise RuntimeError("Render image-generation context is unavailable")
-            projection = StructuredBrowserExecutor(
-                AGENT_STATE,
-                product_assets=_local_product_asset_references(owner_key),
-                conversion_prompt_text=str(
-                    image_context.get("conversion_916_prompt") or ""
-                ),
-            ).execute(job_id)
+            job_tmp = AGENT_PATHS.staging / "tmp" / job_id
+            job_tmp.mkdir(parents=True, exist_ok=True)
+            try:
+                conversion_path = job_tmp / "conversion-916.txt"
+                conversion_path.write_text(
+                    str(image_context.get("conversion_916_prompt") or ""),
+                    encoding="utf-8",
+                )
+                projection = StructuredBrowserExecutor(
+                    AGENT_STATE,
+                    product_assets=_local_product_asset_references(owner_key),
+                    conversion_prompt_text=conversion_path.read_text(encoding="utf-8"),
+                ).execute(job_id)
+            finally:
+                shutil.rmtree(job_tmp, ignore_errors=True)
             flush_terminal_outbox()
             if projection.get("status") == "completed":
                 report_job_terminal(job_id, "complete")
@@ -1172,6 +1197,7 @@ def _configure_runtime(args: argparse.Namespace) -> None:
     AGENT_STATE = AgentState(AGENT_PATHS)
     CONTENT_STORE = ContentStore(AGENT_PATHS)
     AGENT_STAGING_ROOT = AGENT_PATHS.staging
+    AGENT_STATE.sweep_staging()
     AGENT_CDP_URL = f"http://127.0.0.1:{args.cdp_port}"
     os.environ["AGENT_CDP_URL"] = AGENT_CDP_URL
     AGENT_ARTIFACT_PORT = args.artifact_port
@@ -1519,9 +1545,29 @@ def _run_storage_command(argv: list[str]) -> None:
         print("Dry run only. Re-run with --apply to reclaim unreferenced objects.")
 
 
+def _run_reset_local_data(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(prog="local_agent.py reset-local-data")
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Required. Wipe local runs, prompts, outputs, and staging.",
+    )
+    parser.add_argument("--data-dir", default=str(resolve_data_root()))
+    args = parser.parse_args(argv)
+    if not args.confirm:
+        raise SystemExit("Refusing to reset without --confirm")
+    paths = AgentPaths(resolve_data_root(args.data_dir))
+    state = AgentState(paths)
+    report = state.reset_local_data()
+    print(json.dumps(report, indent=2, sort_keys=True))
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "storage":
         _run_storage_command(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "reset-local-data":
+        _run_reset_local_data(sys.argv[2:])
         return
     parser = argparse.ArgumentParser(description="Ad Factory Local Playwright Agent")
     parser.add_argument("--api-base", default=AGENT_API_BASE, help="Render backend URL")

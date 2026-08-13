@@ -1465,7 +1465,12 @@ class AgentState:
             event_id = "evt_" + hashlib.sha256(
                 f"{owner_key}\0{operation_id}\0output.deleted".encode("utf-8")
             ).hexdigest()[:32]
-            receipt = {"output_id": output_id, "status": "deleted", "event_id": event_id}
+            receipt = {
+                "output_id": output_id,
+                "run_id": str(row["run_id"]),
+                "status": "deleted",
+                "event_id": event_id,
+            }
             conn.execute(
                 """
                 INSERT INTO outbox(
@@ -1723,6 +1728,71 @@ class AgentState:
             conn.commit()
         self.garbage_collect_objects()
         return receipt
+
+    def reset_local_data(self, *, home: Path | None = None) -> dict[str, Any]:
+        """Wipe local runs, prompts, outputs and staging. Keep device config and product images."""
+        preserved_kinds = ("product_image",)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            deleted_runs = conn.execute("SELECT COUNT(*) AS count FROM runs").fetchone()["count"]
+            for table in (
+                "upload_set_entries",
+                "upload_sets",
+                "output_versions",
+                "revisions",
+                "outputs",
+                "run_entries",
+                "runs",
+                "jobs",
+                "artifacts",
+                "outbox",
+                "operations",
+                "change_log",
+            ):
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    (table,),
+                ).fetchone()
+                if exists is not None:
+                    conn.execute(f"DELETE FROM {table}")
+            leftover = conn.execute(
+                f"""
+                SELECT resource_id FROM resources
+                WHERE kind NOT IN ({",".join("?" for _ in preserved_kinds)})
+                """,
+                preserved_kinds,
+            ).fetchall()
+            for row in leftover:
+                conn.execute(
+                    "DELETE FROM resources WHERE resource_id = ?",
+                    (row["resource_id"],),
+                )
+            conn.commit()
+        reclaimed = self.garbage_collect_objects()
+        staging_removed = False
+        if self.paths.staging.exists():
+            shutil.rmtree(self.paths.staging, ignore_errors=True)
+            self.paths.staging.mkdir(parents=True, exist_ok=True)
+            staging_removed = True
+        if self.paths.artifacts.exists():
+            shutil.rmtree(self.paths.artifacts, ignore_errors=True)
+            self.paths.artifacts.mkdir(parents=True, exist_ok=True)
+        legacy_root = (home or Path.home()) / "ad-factory-agent-output"
+        legacy_deleted = False
+        if legacy_root.exists() or legacy_root.is_symlink():
+            if legacy_root.is_dir() and not legacy_root.is_symlink():
+                shutil.rmtree(legacy_root, ignore_errors=True)
+            else:
+                legacy_root.unlink(missing_ok=True)
+            legacy_deleted = True
+        return {
+            "deleted_runs": int(deleted_runs),
+            "deleted_resources": len(leftover),
+            "reclaimed_objects": len(reclaimed),
+            "staging_removed": staging_removed,
+            "legacy_output_deleted": legacy_deleted,
+            "preserved_kinds": list(preserved_kinds),
+        }
 
 
 def _safe_component(value: str) -> str:

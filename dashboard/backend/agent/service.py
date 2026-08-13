@@ -1045,12 +1045,25 @@ def complete_job(
         db = get_sync_db()
         job = db[COLL_AGENT_JOBS].find_one(
             {"job_id": job_id, "agent_id": agent_id, "device_id": device_id},
-            {"_id": 0, "job_type": 1, "run_id": 1, "client_operation_id": 1},
+            {"_id": 0, "job_type": 1, "run_id": 1, "client_operation_id": 1, "user_id": 1},
         )
         if job and job.get("job_type") == "purge_run":
+            run_id = str(job.get("run_id") or "")
+            user_scope = {"run_id": run_id, "user_id": str(job.get("user_id") or "")}
+            from dashboard.backend.db.collections import (
+                COLL_IMAGES,
+                COLL_PROMPT_DELIVERIES,
+                COLL_PROMPTS,
+                COLL_RENDER_COPY_JOBS,
+            )
+
+            db[COLL_PROMPTS].delete_many(user_scope)
+            db[COLL_IMAGES].delete_many(user_scope)
+            db[COLL_PROMPT_DELIVERIES].delete_many(user_scope)
+            db[COLL_RENDER_COPY_JOBS].delete_many(user_scope)
             db[COLL_RUNS].update_one(
                 {
-                    "run_id": job.get("run_id"),
+                    "run_id": run_id,
                     "deletion_tombstone.operation_id": job.get("client_operation_id"),
                 },
                 {
@@ -1073,7 +1086,7 @@ def fail_job(
     error_code: str,
     error_message: str = "",
 ) -> bool:
-    return _terminal_job_update(
+    failed = _terminal_job_update(
         job_id=job_id,
         agent_id=agent_id,
         device_id=device_id,
@@ -1084,3 +1097,24 @@ def fail_job(
         error_code=error_code,
         error_message=error_message or None,
     )
+    if failed:
+        db = get_sync_db()
+        job = db[COLL_AGENT_JOBS].find_one(
+            {"job_id": job_id, "agent_id": agent_id, "device_id": device_id},
+            {"_id": 0, "job_type": 1, "run_id": 1, "client_operation_id": 1},
+        )
+        if job and job.get("job_type") == "purge_run":
+            db[COLL_RUNS].update_one(
+                {
+                    "run_id": job.get("run_id"),
+                    "deletion_tombstone.operation_id": job.get("client_operation_id"),
+                },
+                {
+                    "$set": {
+                        "status": "purge_failed",
+                        "deletion_tombstone.error_code": error_code or "purge_failed",
+                        "updated_at": time.time(),
+                    }
+                },
+            )
+    return failed

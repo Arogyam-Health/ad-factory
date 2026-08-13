@@ -112,7 +112,7 @@ def list_runs(request: Request) -> dict[str, Any]:
         .find(
             {
                 "user_id": user_id,
-                "status": {"$nin": ["deleted", "deleting"]},
+                "status": {"$nin": ["deleted"]},
             },
             _RUN_PROJECTION,
         )
@@ -226,6 +226,68 @@ def delete_run_prompt_metadata(
     }
 
 
+@router.patch("/api/runs/{run_id}/prompts/{prompt_id}")
+def update_run_prompt_metadata(
+    run_id: str,
+    prompt_id: str,
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
+    user_id = _user_id(request)
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one({"user_id": user_id, "run_id": run_id}, {"_id": 1})
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    updates: dict[str, Any] = {"updated_at": time.time()}
+    if isinstance(payload.get("sha256"), str) and payload["sha256"]:
+        updates["sha256"] = payload["sha256"][:64]
+    if isinstance(payload.get("resource_version"), int):
+        updates["resource_version"] = payload["resource_version"]
+    result = db[COLL_PROMPTS].update_one(
+        {"user_id": user_id, "run_id": run_id, "prompt_id": prompt_id},
+        {"$set": updates},
+    )
+    if not result.matched_count:
+        raise HTTPException(status_code=404, detail="Prompt metadata not found")
+    return {"run_id": run_id, "prompt_id": prompt_id, "status": "updated"}
+
+
+@router.delete("/api/runs/{run_id}/images/{output_id}")
+def delete_run_image_metadata(
+    run_id: str, output_id: str, request: Request
+) -> dict[str, Any]:
+    user_id = _user_id(request)
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one(
+        {"user_id": user_id, "run_id": run_id},
+        {"_id": 0, "image_count": 1},
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    result = db[COLL_IMAGES].delete_one(
+        {
+            "user_id": user_id,
+            "run_id": run_id,
+            "$or": [
+                {"output_id": output_id},
+                {"artifact_id": output_id},
+                {"image_id": output_id},
+            ],
+        }
+    )
+    image_count = max(0, int(run.get("image_count") or 0) - int(result.deleted_count))
+    db[COLL_RUNS].update_one(
+        {"user_id": user_id, "run_id": run_id},
+        {"$set": {"image_count": image_count, "updated_at": time.time()}},
+    )
+    return {
+        "run_id": run_id,
+        "output_id": output_id,
+        "deleted": int(result.deleted_count),
+        "image_count": image_count,
+    }
+
+
 @router.post("/api/runs/reconcile-local")
 def reconcile_local_runs(
     request: Request, payload: dict[str, Any] = Body(...)
@@ -271,7 +333,7 @@ def reconcile_local_runs(
                 "owner_id": owner_id,
                             "copy_job_id": {"$exists": False},
                 "created_at": {"$lt": time.time() - 120},
-                "status": {"$nin": ["queued", "running", "deleting"]},
+                "status": {"$nin": ["queued", "running", "deleting", "purge_failed"]},
             },
             {"_id": 0, "run_id": 1},
         )
@@ -282,8 +344,9 @@ def reconcile_local_runs(
         for row in candidates
         if str(row.get("run_id") or "") not in local_ids
     )
-    if not stale_ids:
-        return {"removed": 0, "run_ids": []}
+    confirm = bool(payload.get("confirm"))
+    if not stale_ids or not confirm:
+        return {"removed": 0, "run_ids": stale_ids, "pending": stale_ids}
 
     content_scope = {
         "user_id": user_id,
@@ -315,6 +378,7 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
             "owner_id": 1,
             "copy_job_id": 1,
             "deletion_tombstone": 1,
+            "status": 1,
         },
     )
     if run and run.get("copy_job_id") and (
@@ -333,7 +397,10 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
         )
     tombstone = run.get("deletion_tombstone") or {}
     operation_id = str(tombstone.get("operation_id") or "")
-    operation_id = operation_id or "purge_" + uuid.uuid4().hex
+    if str(run.get("status") or "") == "purge_failed":
+        operation_id = "purge_" + uuid.uuid4().hex
+    else:
+        operation_id = operation_id or "purge_" + uuid.uuid4().hex
     now = time.time()
     db[COLL_RUNS].update_one(
         {"run_id": run_id, "user_id": user_id},
@@ -349,14 +416,6 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
                 "updated_at": now,
             }
         },
-    )
-    db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
-    db[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
-    db[COLL_PROMPT_DELIVERIES].delete_many(
-        {"user_id": user_id, "run_id": run_id}
-    )
-    db[COLL_RENDER_COPY_JOBS].delete_many(
-        {"user_id": user_id, "run_id": run_id}
     )
     job = create_job(
         agent_id=str(run["agent_id"]),
@@ -376,6 +435,35 @@ def delete_run(run_id: str, request: Request) -> dict[str, Any]:
         "run_id": run_id,
         "tombstone_operation_id": operation_id,
         "purge_job_id": job["job_id"],
+    }
+
+
+@router.post("/api/runs/purge-all")
+def purge_all_user_runs(
+    request: Request, payload: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    user_id = _user_id(request)
+    if str(payload.get("confirm") or "").strip().upper() != "PURGE":
+        raise HTTPException(
+            status_code=400,
+            detail="Type PURGE to confirm deleting every run owned by this account",
+        )
+    db = get_sync_db()
+    scope = {"user_id": user_id}
+    prompts = db[COLL_PROMPTS].delete_many(scope).deleted_count
+    images = db[COLL_IMAGES].delete_many(scope).deleted_count
+    deliveries = db[COLL_PROMPT_DELIVERIES].delete_many(scope).deleted_count
+    copy_jobs = db[COLL_RENDER_COPY_JOBS].delete_many(scope).deleted_count
+    jobs = db[COLL_AGENT_JOBS].delete_many(scope).deleted_count
+    runs = db[COLL_RUNS].delete_many(scope).deleted_count
+    return {
+        "status": "purged",
+        "runs": runs,
+        "prompts": prompts,
+        "images": images,
+        "prompt_deliveries": deliveries,
+        "render_copy_jobs": copy_jobs,
+        "agent_jobs": jobs,
     }
 
 

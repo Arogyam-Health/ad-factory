@@ -8,6 +8,7 @@ _RUNTIME_EXACT_PATHS = {
     "/api/agents/prompt-deliveries/poll",
     "/api/agents/pairing/approvals",
     "/api/agents/reconciliation/prompt-deleted",
+    "/api/agents/reconciliation/output-deleted",
     "/api/agent-runtime/ws",
 }
 

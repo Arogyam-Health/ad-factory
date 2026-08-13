@@ -272,6 +272,17 @@ export class LocalDataPlaneClient {
     return payload.items || [];
   }
 
+  async deleteRun(runId, deviceId) {
+    return readJson(await this.authorizedFetch(
+      `/v1/runs/${encodeURIComponent(runId)}`,
+      {
+        method: "DELETE",
+        headers: { "Idempotency-Key": operationId("delete_run") },
+      },
+      deviceId,
+    ));
+  }
+
   async allocateLocalRun({
     ownerType = "user",
     ownerId,
@@ -785,7 +796,7 @@ if (typeof window !== "undefined") {
     revisionStatus: (...args) => localDataPlane.revisionStatus(...args),
     replaceOutput: (...args) => localDataPlane.replaceOutput(...args),
     deleteOutput: (...args) => localDataPlane.deleteOutput(...args),
-    downloadRun: (...args) => localDataPlane.downloadRun(...args),
+    deleteRun: (...args) => localDataPlane.deleteRun(...args),
     exportBackup: (...args) => localDataPlane.exportBackup(...args),
     restoreBackup: (...args) => localDataPlane.restoreBackup(...args),
     exportSharedConfig: (...args) => localDataPlane.exportSharedConfig(...args),

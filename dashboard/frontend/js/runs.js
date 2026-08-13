@@ -129,6 +129,36 @@ export async function renderRun(run) {
   const header = document.createElement("div");
   header.className = "run-header";
   header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${displayBatch(run)} &middot; prompts ${run.prompt_count} &middot; images ${run.image_count}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
+  if (run.status === "purge_failed" || run.status === "deleting") {
+    const status = document.createElement("span");
+    status.className = `run-status-${run.status}`;
+    status.textContent = run.status === "purge_failed" ? "Purge failed" : "Deleting";
+    header.insertBefore(status, header.querySelector(".run-delete-btn"));
+    if (run.status === "purge_failed") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "ghost-btn run-retry-purge-btn";
+      retry.textContent = "Retry purge";
+      header.insertBefore(retry, header.querySelector(".run-delete-btn"));
+      retry.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        retry.disabled = true;
+        try {
+          await fetchJSON(`/api/runs/${run.run_id}`, {
+            method: "DELETE",
+            headers: { "Idempotency-Key": `delete-${run.run_id}-${Date.now()}` },
+          });
+          appendLog(`Retrying local purge for ${run.run_id}`);
+          invalidateRuns();
+          const { loadRuns } = await import("./runs.js");
+          loadRuns();
+        } catch (err) {
+          appendLog(`Retry purge failed: ${String(err)}`);
+          retry.disabled = false;
+        }
+      });
+    }
+  }
   if (run.device_id && run.local_device_status === "unavailable") {
     const unavailable = document.createElement("span");
     unavailable.className = "run-device-unavailable";
@@ -274,7 +304,7 @@ function updatePreviousRunOptions() {
 
 async function reconcileRunInventory(runs) {
   const user = getAuthUser();
-  if (!user?.user_id) return { removed: 0, hidden: 0, runIds: null };
+  if (!user?.user_id) return { removed: 0, pending: [], pruned: 0 };
   const owners = new Map([
     ["user:" + user.user_id, { ownerType: "user", ownerId: user.user_id }],
   ]);
@@ -285,15 +315,14 @@ async function reconcileRunInventory(runs) {
       owners.set(`org:${ownerId}`, { ownerType, ownerId });
     }
   }
-  let removed = 0;
-  let onlineInventories = 0;
-  const localRunIds = new Set();
+  const mongoIds = new Set(runs.map((run) => run.run_id));
+  const recentCutoff = Date.now() / 1000 - 120;
+  const pending = [];
+  let pruned = 0;
   for (const owner of owners.values()) {
     try {
       const paired = await localDataPlane.ensurePaired(owner);
       const localRuns = await localDataPlane.listRuns(paired.info.device_id);
-      onlineInventories += 1;
-      localRuns.forEach((run) => localRunIds.add(run.run_id));
       const result = await fetchJSON("/api/runs/reconcile-local", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -305,28 +334,87 @@ async function reconcileRunInventory(runs) {
           local_run_ids: localRuns.map((run) => run.run_id),
         }),
       });
-      removed += Number(result.removed || 0);
+      (result.pending || result.run_ids || []).forEach((runId) => {
+        pending.push({
+          run_id: runId,
+          agent_id: paired.agent.agent_id,
+          device_id: paired.info.device_id,
+          owner_type: owner.ownerType,
+          owner_id: owner.ownerId,
+          local_run_ids: localRuns.map((run) => run.run_id),
+        });
+      });
+      for (const local of localRuns) {
+        if (mongoIds.has(local.run_id)) continue;
+        if (Number(local.created_at || 0) >= recentCutoff) continue;
+        await localDataPlane.deleteRun(local.run_id, paired.info.device_id);
+        pruned += 1;
+      }
     } catch {
       // Do not reconcile an owner scope unless its current local inventory is online.
     }
   }
-  if (!onlineInventories) return { removed, hidden: 0, runIds: null };
-  const recentCutoff = Date.now() / 1000 - 120;
-  const visibleIds = new Set(
-    runs
-      .filter((run) => (
-        localRunIds.has(run.run_id)
-        || Boolean(run.copy_job_id)
-        || Number(run.created_at || 0) >= recentCutoff
-        || ["queued", "running"].includes(run.status)
-      ))
-      .map((run) => run.run_id),
-  );
-  return {
-    removed,
-    hidden: Math.max(0, runs.length - visibleIds.size),
-    runIds: visibleIds,
-  };
+  return { removed: 0, pending, pruned };
+}
+
+async function removeMissingRuns(pending) {
+  const unique = new Map();
+  pending.forEach((item) => {
+    unique.set(`${item.agent_id}:${item.device_id}:${item.owner_type}:${item.owner_id}`, item);
+  });
+  let removed = 0;
+  for (const item of unique.values()) {
+    const result = await fetchJSON("/api/runs/reconcile-local", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_id: item.agent_id,
+        device_id: item.device_id,
+        owner_type: item.owner_type,
+        owner_id: item.owner_id,
+        local_run_ids: item.local_run_ids,
+        confirm: true,
+      }),
+    });
+    removed += Number(result.removed || 0);
+  }
+  return removed;
+}
+
+function renderMissingRunsBanner() {
+  const banner = document.getElementById("missingRunsBanner");
+  if (!banner) return;
+  const pending = state.missingLocalRuns || [];
+  const uniqueIds = [...new Set(pending.map((item) => item.run_id).filter(Boolean))];
+  if (!uniqueIds.length) {
+    banner.classList.add("hidden");
+    banner.replaceChildren();
+    return;
+  }
+  banner.classList.remove("hidden");
+  const label = document.createElement("span");
+  label.textContent = `${uniqueIds.length} run${uniqueIds.length === 1 ? "" : "s"} on this account are missing from this machine.`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-btn";
+  button.textContent = `Remove ${uniqueIds.length} missing run${uniqueIds.length === 1 ? "" : "s"}`;
+  button.addEventListener("click", async () => {
+    if (!confirm(`Delete ${uniqueIds.length} dashboard run record${uniqueIds.length === 1 ? "" : "s"} that are not on this machine?`)) {
+      return;
+    }
+    button.disabled = true;
+    try {
+      const removed = await removeMissingRuns(pending);
+      appendLog(`Removed ${removed} missing run${removed === 1 ? "" : "s"} from the dashboard.`);
+      invalidateRuns();
+      const { loadRuns } = await import("./runs.js");
+      loadRuns();
+    } catch (err) {
+      appendLog(`Could not remove missing runs: ${String(err)}`);
+      button.disabled = false;
+    }
+  });
+  banner.replaceChildren(label, button);
 }
 
 function batchSortValue(batch) {
@@ -360,19 +448,13 @@ export async function loadRuns() {
   try {
     let data = await fetchJSON("/api/runs");
     const inventory = await reconcileRunInventory(data.runs || []);
-    if (inventory.removed) {
-      invalidateRuns();
-      data = await fetchJSON("/api/runs", { noCache: true });
-      appendLog(`Removed ${inventory.removed} stale run record${inventory.removed === 1 ? "" : "s"} after local storage reconciliation.`);
+    if (inventory.pruned) {
+      appendLog(`Removed ${inventory.pruned} local run${inventory.pruned === 1 ? "" : "s"} that no longer exist in the dashboard.`);
     }
-    const visibleRuns = inventory.runIds
-      ? (data.runs || []).filter((run) => inventory.runIds.has(run.run_id))
-      : (data.runs || []);
-    if (inventory.hidden) {
-      appendLog(`Hidden ${inventory.hidden} run record${inventory.hidden === 1 ? "" : "s"} that are absent from this machine's local storage.`);
-    }
-    state.runsData = visibleRuns.map(normalizeRun);
+    state.runsData = (data.runs || []).map(normalizeRun);
+    state.missingLocalRuns = inventory.pending || [];
     applyLocalArtifactsToRuns();
+    renderMissingRunsBanner();
     state.currentRunIndex = 0;
     updatePreviousRunOptions();
 

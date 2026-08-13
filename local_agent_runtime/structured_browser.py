@@ -5,6 +5,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import uuid
@@ -58,6 +59,7 @@ class DeterministicFakeBrowser:
                 "prompt_id": prompt_id,
                 "aspect_ratio": aspect_ratio,
                 "prompt_path": prompt_path,
+                "prompt_text": prompt_path.read_text(encoding="utf-8"),
                 "manifest_path": upload_manifest_path,
                 "manifest": manifest,
             }
@@ -536,6 +538,11 @@ class StructuredBrowserExecutor:
         retry_count = 0
         latest: dict[str, Any] | None = None
         error_code = ""
+        job_staging = (
+            self.state.paths.staging
+            / self.workflow_prefix
+            / self._identifier(job_id)
+        )
         try:
             try:
                 _, settings = self._settings(context)
@@ -707,3 +714,5 @@ class StructuredBrowserExecutor:
             )
             self.state.update_job_status(job_id, "failed")
             return failed
+        finally:
+            shutil.rmtree(job_staging, ignore_errors=True)

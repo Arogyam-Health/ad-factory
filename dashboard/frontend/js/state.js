@@ -21,6 +21,7 @@ export const state = {
   isPersonasLoading: false,
   isRunsLoading: false,
   runPollInterval: null,
+  missingLocalRuns: [],
 };
 
 export function getPersonaSelection() {

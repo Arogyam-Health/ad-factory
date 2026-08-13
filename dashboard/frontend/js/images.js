@@ -359,6 +359,14 @@ export function buildImageGallery(run, imagesData) {
           throw new Error("Legacy image content is unavailable on the authoritative local device.");
         }
         await localDataPlane.deleteOutput(imageItem.output_id, run.device_id);
+        try {
+          await fetchJSON(
+            `/api/runs/${encodeURIComponent(run.run_id)}/images/${encodeURIComponent(imageItem.output_id)}`,
+            { method: "DELETE" },
+          );
+        } catch {
+          // Local deletion is authoritative; Mongo reconciliation follows via the outbox.
+        }
         appendLog(`Deleted image: ${path.split("/").pop()}`);
         card.remove();
         invalidateRuns();

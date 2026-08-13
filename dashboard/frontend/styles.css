@@ -1076,6 +1076,31 @@ button.is-loading::after {
   margin-bottom: 4px;
 }
 
+.missing-runs-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-coral) 35%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-coral) 8%, var(--surface));
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.missing-runs-banner.hidden {
+  display: none;
+}
+
+.run-status-purge_failed,
+.run-status-deleting {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-coral);
+}
+
 .run-meta {
   font-size: 11px;
   color: var(--muted);

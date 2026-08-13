@@ -880,6 +880,53 @@ def reconcile_deleted_prompt(
     }
 
 
+@router.post("/api/agents/reconciliation/output-deleted")
+def reconcile_deleted_output(
+    payload: dict[str, Any] = Body(...),
+    agent: dict[str, Any] = Depends(_get_agent_from_header),
+) -> dict[str, Any]:
+    from dashboard.backend.db.client import get_sync_db
+    from dashboard.backend.db.collections import COLL_IMAGES, COLL_RUNS
+
+    run_id = str(payload.get("run_id") or "")
+    output_id = str(payload.get("output_id") or "")
+    if not run_id or not output_id:
+        raise HTTPException(status_code=400, detail="Output identity is required")
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one(
+        {
+            "run_id": run_id,
+            "user_id": str(agent["user_id"]),
+            "agent_id": str(agent["agent_id"]),
+            "device_id": str(agent.get("device_id") or ""),
+        },
+        {"_id": 0, "run_id": 1, "image_count": 1},
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    result = db[COLL_IMAGES].delete_one(
+        {
+            "user_id": str(agent["user_id"]),
+            "run_id": run_id,
+            "$or": [
+                {"output_id": output_id},
+                {"artifact_id": output_id},
+                {"image_id": output_id},
+            ],
+        }
+    )
+    image_count = max(0, int(run.get("image_count") or 0) - int(result.deleted_count))
+    db[COLL_RUNS].update_one(
+        {"run_id": run_id, "user_id": str(agent["user_id"])},
+        {"$set": {"image_count": image_count, "updated_at": time.time()}},
+    )
+    return {
+        "status": "accepted",
+        "deleted": int(result.deleted_count),
+        "image_count": image_count,
+    }
+
+
 @router.get("/api/agents/prompt-deliveries/poll")
 def poll_agent_prompt_deliveries(
     response: Response,

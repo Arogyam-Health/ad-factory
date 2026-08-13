@@ -1146,6 +1146,7 @@ class LocalDataPlane:
                 {"resource_id": resource_id, "status": "deleted"},
             )
             conn.commit()
+        self.state.garbage_collect_objects()
 
     def _document_route(self, handler: Any, path: str) -> None:
         collection = "documents" if path.startswith("/v1/documents") else "configs"
@@ -1788,6 +1789,7 @@ class LocalDataPlane:
             result = self.state.delete_output(
                 output_id, operation_id=self._operation_id(handler)
             )
+            self.state.garbage_collect_objects()
             self._json(handler, 200, result)
             return
         if action == "content" and handler.command in {"GET", "HEAD"}:

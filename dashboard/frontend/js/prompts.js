@@ -375,6 +375,21 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
       );
       prompt.resource_version = result.version;
       prompt.full_content = updatedContent;
+      try {
+        await fetchJSON(
+          `/api/runs/${encodeURIComponent(run.run_id)}/prompts/${encodeURIComponent(prompt.prompt_id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sha256: result.sha256,
+              resource_version: result.version,
+            }),
+          },
+        );
+      } catch {
+        // Local content is authoritative; Mongo metadata is reconciled on the next listing.
+      }
       appendLog(`Saved edits to: ${prompt.prompt_file}`);
       editing = false;
       linesDisplay.style.display = "";
