@@ -103,6 +103,32 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
         self.assertTrue(
             policy._CONTROL_PLANE_ROUTES.isdisjoint(policy._EXACT_CONTENT_ROUTES)
         )
+        for method, path in (
+            ("GET", "/api/config/effective"),
+            ("GET", "/api/config/effective?org_id=org_1"),
+            ("GET", "/api/config/cfg_1/versions"),
+            ("POST", "/api/config/cfg_1/save-version"),
+            ("POST", "/api/config/cfg_1/rollback/ver_1"),
+            ("GET", "/api/user/config"),
+            ("PUT", "/api/user/config"),
+            ("GET", "/api/orgs/org_1/config"),
+            ("PUT", "/api/orgs/org_1/config"),
+            ("POST", "/api/orgs/org_1/configs/copy"),
+            ("GET", "/api/llm-traces"),
+            ("DELETE", "/api/llm-traces/trc_1"),
+            ("POST", "/api/llm-traces/delete-batch"),
+            ("GET", "/api/user/provider-config"),
+            ("PUT", "/api/user/provider-config/opencode"),
+            ("POST", "/api/runs/allocate-copy"),
+            ("POST", "/api/runs/run_1/structured-copy"),
+        ):
+            self.assertFalse(
+                policy.is_render_content_route(method, path),
+                f"{method} {path} must stay on the Mongo control plane",
+            )
+        self.assertTrue(policy.is_render_content_route("POST", "/api/config/provider"))
+        self.assertTrue(policy.is_render_content_route("GET", "/api/generic-config"))
+        self.assertTrue(policy.is_render_content_route("GET", "/api/prompt-file-content"))
 
     def test_app_control_surface_writes_nothing_with_read_only_content_dirs(
         self,

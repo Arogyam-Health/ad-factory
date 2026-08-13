@@ -67,6 +67,14 @@ _CONTROL_PLANE_ROUTES = frozenset(
         "/healthz",
     }
 )
+_CONTROL_PLANE_PREFIXES = (
+    "/api/config/",
+    "/api/user/config",
+    "/api/llm-traces",
+    "/api/user/provider-config",
+    "/api/admin/configs",
+    "/api/admin/provider-configs",
+)
 _EXACT_CONTENT_ROUTES = frozenset(
     {
         "/api/config/provider",
@@ -117,10 +125,31 @@ _RUN_CONTENT_SUFFIXES = (
 )
 
 
+def _normalize_route_path(path: str) -> str:
+    raw = str(path or "").split("?", 1)[0].strip()
+    return "/" + raw.lstrip("/")
+
+
+def _is_control_plane_route(normalized: str) -> bool:
+    path = normalized.rstrip("/") or "/"
+    if path in _CONTROL_PLANE_ROUTES:
+        return True
+    if path.startswith("/api/orgs/") and (
+        path.endswith("/config") or "/configs/" in path
+    ):
+        return True
+    return any(
+        path == prefix.rstrip("/") or path.startswith(prefix)
+        for prefix in _CONTROL_PLANE_PREFIXES
+    )
+
+
 def is_render_content_route(method: str, path: str) -> bool:
     """Return whether a request belongs exclusively on the localhost data plane."""
-    normalized = "/" + str(path or "").lstrip("/")
-    if normalized.rstrip("/") in _CONTROL_PLANE_ROUTES:
+    normalized = _normalize_route_path(path)
+    if normalized.rstrip("/") == "/api/config/provider":
+        return True
+    if _is_control_plane_route(normalized):
         return False
     if normalized in _EXACT_CONTENT_ROUTES:
         return True

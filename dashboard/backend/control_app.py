@@ -38,7 +38,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def control_plane_boundary(request: Request, call_next) -> Response:
-    path = request.url.path
+    path = str(request.scope.get("path") or request.url.path or "").split("?", 1)[0]
     if settings.is_production and path.startswith("/api/") and not path.startswith(
         PUBLIC_API_PREFIXES
     ):
@@ -66,7 +66,9 @@ async def control_plane_boundary(request: Request, call_next) -> Response:
             headers={"Cache-Control": "no-store"},
         )
     response = await call_next(request)
-    if path == "/" or path.endswith(".html") or path.startswith("/js/"):
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    elif path == "/" or path.endswith(".html") or path.startswith("/js/"):
         response.headers["Cache-Control"] = "no-cache"
     return response
 

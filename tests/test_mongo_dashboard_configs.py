@@ -90,6 +90,9 @@ class MongoDashboardConfigTests(unittest.TestCase):
             ("GET", "/api/admin/configs"),
             ("PUT", "/api/user/provider-config/opencode"),
             ("GET", "/api/admin/provider-configs"),
+            ("GET", "/api/llm-traces"),
+            ("POST", "/api/llm-traces/delete-batch"),
+            ("GET", "/api/config/effective?org_id=org_1"),
         )
         for method, path in allowed:
             self.assertFalse(

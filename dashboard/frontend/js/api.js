@@ -18,7 +18,11 @@ export async function fetchJSON(url, init = {}) {
   }
   if (cacheable && inflight.has(key)) return inflight.get(key);
   const request = (async () => {
-    const res = await fetch(url, fetchInit);
+    const res = await fetch(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      ...fetchInit,
+    });
     const raw = await res.text();
     let data = null;
     if (raw) {

@@ -1687,6 +1687,8 @@ def test_local_agent_responsiveness_contract() -> int:
                  "local artifacts attach only by explicit run_ids, not batch name")
     failed += ok("const inflight = new Map()" in api_js and "inflight.has(key)" in api_js,
                  "duplicate startup GET requests share in-flight promises")
+    failed += ok('cache: "no-store"' in api_js and 'credentials: "same-origin"' in api_js,
+                 "dashboard API reads bypass cached 410s from the control plane")
     failed += ok("60000" in reference_flow_js and "Promise.all" in reference_flow_js,
                  "reference persona refresh is parallel and no longer runs every five seconds")
     failed += ok("function selectedOrCurrentRuns()" in runs_js and "state.runsData[state.currentRunIndex]" in runs_js,
