@@ -16,6 +16,8 @@ const defaultsInfoEl = document.getElementById("defaultsInfo");
 let structuredDeviceId = "";
 let inputImageObjectUrls = [];
 let activeStructuredRunId = "";
+const STUDIO_ORG_STORAGE_PREFIX = "adFactoryStudioOrg";
+const COPY_PIPELINE_STORAGE_PREFIX = "adFactoryCopyPipeline";
 
 function structuredOwner() {
   const user = getAuthUser();
@@ -171,10 +173,70 @@ function renderModelOptions(provider, preferredModel = "") {
   setSelectOptions(modelSelectEl, models.length ? models : [""], selected);
 }
 
+function studioOrgStorageKey() {
+  const userId = getAuthUser()?.user_id || "";
+  return userId ? `${STUDIO_ORG_STORAGE_PREFIX}:${userId}` : "";
+}
+
+function persistStudioOrg() {
+  const key = studioOrgStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, studioCurrentOrgId || "personal");
+  } catch {
+    // Storage may be blocked; Studio still works for this tab.
+  }
+}
+
+function restoreStudioOrg() {
+  const key = studioOrgStorageKey();
+  if (!key) return;
+  try {
+    const stored = localStorage.getItem(key) || "";
+    studioCurrentOrgId = stored && stored !== "personal" ? stored : null;
+  } catch {
+    studioCurrentOrgId = null;
+  }
+}
+
+function copyPipelineStorageKey() {
+  const userId = getAuthUser()?.user_id || "";
+  return `${COPY_PIPELINE_STORAGE_PREFIX}:${userId || "anonymous"}`;
+}
+
+function persistCopyPipeline(payload) {
+  try {
+    localStorage.setItem(copyPipelineStorageKey(), JSON.stringify({
+      ...payload,
+      flow: payload.flow || "structured",
+      timestamp: payload.timestamp || Date.now(),
+    }));
+  } catch {
+    // A blocked quota must not stop the live copy job.
+  }
+}
+
+function clearCopyPipeline() {
+  try {
+    localStorage.removeItem(copyPipelineStorageKey());
+  } catch {
+    // ignore
+  }
+}
+
+function readCopyPipeline() {
+  try {
+    return JSON.parse(localStorage.getItem(copyPipelineStorageKey()) || "null");
+  } catch {
+    return null;
+  }
+}
+
 async function initDefaults() {
   showPersonaSkeletons();
   try {
-    const data = await loadDefaults();
+    restoreStudioOrg();
+    const data = await loadDefaults(studioCurrentOrgId || "");
     renderPersonas();
     renderGlobalFormats();
     renderLanguageModes();
@@ -313,6 +375,14 @@ async function initStudioSourceSelector({ reloadInitialPersona = true } = {}) {
   });
   // Style active
   function styleButtons() {
+    const wanted = studioCurrentOrgId || "personal";
+    const known = [...container.querySelectorAll(".studio-source-btn")].some(
+      (b) => b.dataset.source === wanted,
+    );
+    if (!known) {
+      studioCurrentOrgId = null;
+      persistStudioOrg();
+    }
     container.querySelectorAll(".studio-source-btn").forEach(b => {
       const isActive = b.dataset.source === (studioCurrentOrgId || "personal");
       b.style.background = isActive ? "var(--primary-muted)" : "transparent";
@@ -353,6 +423,7 @@ async function initStudioSourceSelector({ reloadInitialPersona = true } = {}) {
     if (!btn) return;
     const src = btn.dataset.source;
     studioCurrentOrgId = src === "personal" ? null : src;
+    persistStudioOrg();
     styleButtons();
     structuredDeviceId = "";
     try {
@@ -484,7 +555,10 @@ async function waitForLocalPromptDelivery(runId, displayBatch) {
       );
       return true;
     }
-    if (run.status === "failed" || run.status === "canceled") return false;
+    if (run.status === "failed" || run.status === "canceled") {
+      clearCopyPipeline();
+      return false;
+    }
   }
   setStatus(
     `Run ${displayBatch}: final prompts are still waiting for the local agent. They will be saved as soon as it comes online.`,
@@ -501,7 +575,8 @@ async function waitForRenderCopy(runId, copyJobId, displayBatch) {
       setStatus(
         `Run ${displayBatch} provider response was processed and final prompts were assembled on Render. Final prompts will be delivered to the registered local agent when it is online.`,
       );
-      await waitForLocalPromptDelivery(runId, displayBatch);
+      const delivered = await waitForLocalPromptDelivery(runId, displayBatch);
+      if (delivered) clearCopyPipeline();
       return job;
     }
     if (job.status === "failed") {
@@ -513,11 +588,13 @@ async function waitForRenderCopy(runId, copyJobId, displayBatch) {
       const traceDetail = detail.trace_persistence_error
         ? ` [trace storage failed: ${detail.trace_persistence_error}]`
         : "";
+      clearCopyPipeline();
       throw new Error(
         `${provider}${model} failed${httpStatus}: ${detail.error_code || job.progress_code || "copy_generation_failed"}${providerDetail}${traceDetail}`,
       );
     }
     if (job.status === "canceled") {
+      clearCopyPipeline();
       throw new Error("Structured copy generation was canceled.");
     }
     const progress = job.progress_code || "generating_copy";
@@ -632,6 +709,12 @@ async function runPipeline() {
           org_id: studioCurrentOrgId || "",
         },
       }),
+    });
+    persistCopyPipeline({
+      runId: envelope.run_id,
+      copyJobId: queued.copy_job_id,
+      displayBatch: envelope.display_batch,
+      flow: "structured",
     });
     setStatus(
       `Run ${envelope.display_batch} is preparing ad copy on Render; the provider request will use the local agent's network. Images are not generated in this step. Job: ${queued.copy_job_id}`,
@@ -855,6 +938,43 @@ document.getElementById("inputImageFiles")?.addEventListener("change", async (ev
   }
 });
 
+async function resumeCopyPipeline() {
+  const saved = readCopyPipeline();
+  if (!saved?.runId || !saved?.copyJobId) return;
+  if (saved.flow && saved.flow !== "structured") return;
+  if (saved.timestamp && Date.now() - Number(saved.timestamp) > 24 * 60 * 60 * 1000) {
+    clearCopyPipeline();
+    return;
+  }
+  activeStructuredRunId = saved.runId;
+  const displayBatch = saved.displayBatch || saved.runId;
+  if (runBtn) {
+    runBtn.disabled = true;
+    runBtn.classList.add("is-loading");
+  }
+  const cancelBtn = document.getElementById("cancelRunBtn");
+  if (cancelBtn) {
+    cancelBtn.style.display = "inline-block";
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "Cancel";
+  }
+  setStatus(`Resuming copy for run ${displayBatch} (${saved.copyJobId}).`);
+  try {
+    await waitForRenderCopy(saved.runId, saved.copyJobId, displayBatch);
+    invalidateRuns();
+    await loadAndRenderRuns();
+  } catch (err) {
+    setStatus(`Failed: ${String(err)}`);
+  } finally {
+    if (cancelBtn) cancelBtn.style.display = "none";
+    stopProgressPolling();
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.classList.remove("is-loading");
+    }
+  }
+}
+
 // Init
 initTheme();
 enhanceAllSelects();
@@ -887,6 +1007,7 @@ initAuth().then(async () => {
     }
   });
   await Promise.all([initDefaults(), loadAndRenderRuns()]);
+  resumeCopyPipeline().catch((err) => setStatus(String(err)));
 }).catch((err) => {
   setStatus(String(err));
 });

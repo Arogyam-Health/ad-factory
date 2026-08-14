@@ -150,6 +150,20 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("removeMissingRuns", runs)
         self.assertNotIn("Hidden ${inventory.hidden}", runs)
 
+    def test_studio_org_and_copy_pipeline_persist_across_reload(self) -> None:
+        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+        state_js = (FRONTEND / "js" / "state.js").read_text(encoding="utf-8")
+        config_js = (FRONTEND / "js" / "config.js").read_text(encoding="utf-8")
+        self.assertIn("adFactoryStudioOrg", main)
+        self.assertIn("adFactoryCopyPipeline", main)
+        self.assertIn("restoreStudioOrg()", main)
+        self.assertIn("persistStudioOrg()", main)
+        self.assertIn("persistCopyPipeline(", main)
+        self.assertIn("resumeCopyPipeline()", main)
+        self.assertIn('loadDefaults(studioCurrentOrgId || "")', main)
+        self.assertIn("org_id=${encodeURIComponent(orgId)}", state_js)
+        self.assertIn("adFactoryStudioOrg:${userId}", config_js)
+
 
 if __name__ == "__main__":
     unittest.main()

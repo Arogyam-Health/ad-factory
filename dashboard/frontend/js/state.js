@@ -113,12 +113,15 @@ function studioDefaultsFromPersonas(personas) {
   };
 }
 
-export async function loadDefaults() {
+export async function loadDefaults(orgId = "") {
   state.isPersonasLoading = true;
   try {
+    const personaUrl = orgId
+      ? `/api/config/persona-summary?org_id=${encodeURIComponent(orgId)}`
+      : "/api/config/persona-summary";
     const [defaultsResult, personaResult] = await Promise.allSettled([
       fetchJSON("/api/defaults", { cache: "no-store" }),
-      fetchJSON("/api/config/persona-summary", { cache: "no-store" }),
+      fetchJSON(personaUrl, { cache: "no-store" }),
     ]);
     const summaryPersonas = mapPersonaSummary(
       personaResult.status === "fulfilled" ? personaResult.value?.personas : null,

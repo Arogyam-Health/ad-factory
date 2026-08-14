@@ -83,7 +83,9 @@ export async function initConfigPage() {
   if (requestedOrgId) {
     currentSource = requestedOrgId;
   } else {
-    currentSource = "personal";
+    const userId = getAuthUser()?.user_id || "";
+    const stored = userId ? (localStorage.getItem(`adFactoryStudioOrg:${userId}`) || "") : "";
+    currentSource = stored && stored !== "personal" ? stored : "personal";
   }
 
   await loadConfigForSource(currentSource);
@@ -163,6 +165,14 @@ function renderConfigPage() {
     btn.addEventListener("click", async () => {
       const src = btn.dataset.source;
       currentSource = src;
+      const userId = getAuthUser()?.user_id || "";
+      if (userId) {
+        try {
+          localStorage.setItem(`adFactoryStudioOrg:${userId}`, src);
+        } catch {
+          // ignore
+        }
+      }
       // Update URL without reload
       const url = new URL(window.location);
       if (src === "personal") {
