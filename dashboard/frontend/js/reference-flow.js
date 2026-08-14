@@ -936,7 +936,7 @@ async function startRun() {
     activeReferenceJobId = queued.job_id;
     $("referenceCancelBtn").disabled = false;
     $("referenceProgressText").textContent = `Run ${envelope.display_batch} queued locally`;
-    appendLog(`Reference run ${envelope.run_id} queued on this device.`);
+    appendLog(`Reference batch ${envelope.display_batch} queued on this device`);
     started = true;
     startPolling();
     invalidateRuns();

@@ -136,13 +136,25 @@ async function fetchPromptsData(runId) {
   }
 }
 
+function isReferenceRun(run) {
+  const flow = String(run?.flow_type || "");
+  return flow === "reference" || flow === "reference_image";
+}
+
 export async function renderRun(run) {
   const div = document.createElement("div");
   div.className = "run run-active";
 
   const header = document.createElement("div");
   header.className = "run-header";
-  header.innerHTML = `<strong>${run.run_id}</strong><span class="run-meta">batch ${displayBatch(run)} &middot; prompts ${run.prompt_count} &middot; images ${run.image_count}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
+  const batch = displayBatch(run);
+  const imageCount = Number(run.image_count || 0);
+  const promptCount = Number(run.prompt_count || 0);
+  const meta = isReferenceRun(run)
+    ? `batch ${batch} &middot; ${imageCount} images &middot; Reference Image Flow`
+    : `batch ${batch} &middot; prompts ${promptCount} &middot; images ${imageCount}`;
+  const title = isReferenceRun(run) ? `batch ${batch}` : run.run_id;
+  header.innerHTML = `<strong title="${run.run_id || ""}">${title}</strong><span class="run-meta">${meta}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
   if (run.status === "purge_failed" || run.status === "deleting") {
     const status = document.createElement("span");
     status.className = `run-status-${run.status}`;
@@ -219,8 +231,10 @@ export async function renderRun(run) {
 
   const promptActions = document.createElement("div");
   promptActions.className = "prompt-actions";
-  buildPromptEditor(run, promptActions, promptsData);
-  div.appendChild(promptActions);
+  if (!isReferenceRun(run)) {
+    buildPromptEditor(run, promptActions, promptsData);
+    div.appendChild(promptActions);
+  }
 
   const galleryContainer = document.createElement("div");
   div.appendChild(galleryContainer);

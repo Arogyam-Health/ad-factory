@@ -2,6 +2,11 @@ import { appendLog } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
 import { localDataPlane } from "./local-data-plane.js";
 
+function isReferenceRun(run) {
+  const flow = String(run?.flow_type || "");
+  return flow === "reference" || flow === "reference_image";
+}
+
 function imageUrl(item, path) {
   const directUrl = item?.url || item?.local_path || item?.file_path || path;
   if (/^(?:blob:|http:\/\/(?:127\.0\.0\.1|localhost):)/i.test(directUrl)) {
@@ -280,6 +285,13 @@ export function buildImageGallery(run, imagesData) {
     fname.title = path;
     card.appendChild(fname);
 
+    if (isReferenceRun(run)) {
+      const meta = document.createElement("div");
+      meta.className = "image-output-meta";
+      const version = imageItem.resource_version || imageItem.version || "";
+      meta.textContent = version ? `${arLabel} · output v${version}` : arLabel;
+      card.appendChild(meta);
+    } else {
     const promptBox = document.createElement("details");
     promptBox.className = "image-prompt-box";
     const promptSummary = document.createElement("summary");
@@ -333,6 +345,7 @@ export function buildImageGallery(run, imagesData) {
     promptPre.textContent = imageItem.prompt_excerpt || "No prompt text available for this image.";
     promptBox.appendChild(promptPre);
     card.appendChild(promptBox);
+    }
 
     selectCheckbox.addEventListener("change", () => {
       if (selectCheckbox.checked) {
@@ -614,6 +627,13 @@ export function buildImageGallery(run, imagesData) {
       fname.title = path;
       card.appendChild(fname);
 
+      if (isReferenceRun(run)) {
+        const meta = document.createElement("div");
+        meta.className = "image-output-meta";
+        const version = queueItem.resource_version || queueItem.version || "";
+        meta.textContent = version ? `${arLabel} · output v${version}` : arLabel;
+        card.appendChild(meta);
+      } else {
       const promptBox = document.createElement("details");
       promptBox.className = "image-prompt-box";
       const promptSummary = document.createElement("summary");
@@ -657,6 +677,7 @@ export function buildImageGallery(run, imagesData) {
       promptPre.textContent = queueItem.prompt_excerpt || "No prompt text available.";
       promptBox.appendChild(promptPre);
       card.appendChild(promptBox);
+      }
 
       selectCheckbox.addEventListener("change", () => {
         if (selectCheckbox.checked) {
