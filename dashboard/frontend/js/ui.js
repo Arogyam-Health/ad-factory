@@ -71,6 +71,27 @@ export function skeletonRunCard() {
   return div;
 }
 
+export function skeletonBlock(lines = 3) {
+  const wrap = document.createElement("div");
+  wrap.className = "page-skeleton";
+  wrap.setAttribute("aria-hidden", "true");
+  const widths = ["70%", "90%", "55%", "80%", "40%"];
+  for (let i = 0; i < lines; i++) {
+    const line = document.createElement("div");
+    line.className = "skeleton-line";
+    line.style.width = widths[i % widths.length];
+    line.style.marginTop = i ? "8px" : "0";
+    wrap.appendChild(line);
+  }
+  return wrap;
+}
+
+export function showElementSkeleton(el, lines = 4) {
+  if (!el) return;
+  el.innerHTML = "";
+  el.appendChild(skeletonBlock(lines));
+}
+
 export function skeletonLocalSection(title, tiles = 4) {
   const section = document.createElement("div");
   section.className = "local-skeleton";

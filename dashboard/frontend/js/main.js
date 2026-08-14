@@ -1,5 +1,5 @@
 import { state, getPersonaSelection, getFormatsByPersona, getHypothesisConfig, loadDefaults } from "./state.js";
-import { setStatus, setSelectOptions, appendLog } from "./ui.js";
+import { setStatus, setSelectOptions, appendLog, showElementSkeleton, skeletonBlock } from "./ui.js";
 import { renderPersonas, showPersonaSkeletons, renderGlobalFormats, renderLanguageModes, renderFormatPatterns } from "./personas.js";
 import { renderHypothesisUI } from "./hypothesis.js";
 import { loadRuns as loadAndRenderRuns, showRunsSkeletons } from "./runs.js";
@@ -232,8 +232,28 @@ function readCopyPipeline() {
   }
 }
 
+function paintStorageHint() {
+  const storageInfo = document.getElementById("storageInfo");
+  if (storageInfo) {
+    storageInfo.innerHTML = '<p class="hint">Content is stored on the paired local device. Render retains metadata only.</p>';
+  }
+}
+
 async function initDefaults() {
   showPersonaSkeletons();
+  showElementSkeleton(document.getElementById("hypothesisSummary"), 2);
+  showElementSkeleton(document.getElementById("defaultsInfo"), 2);
+  showElementSkeleton(document.getElementById("storageInfo"), 2);
+  const refList = document.getElementById("referencePersonaList");
+  if (refList && !refList.querySelector(".reference-persona-card")) {
+    showElementSkeleton(refList, 3);
+  }
+  const executionCard = document.querySelector(".card-execution");
+  if (executionCard && !document.getElementById("executionSkeleton")) {
+    const sk = skeletonBlock(4);
+    sk.id = "executionSkeleton";
+    executionCard.appendChild(sk);
+  }
   try {
     restoreStudioOrg();
     const data = await loadDefaults(studioCurrentOrgId || "");
@@ -242,9 +262,13 @@ async function initDefaults() {
     renderLanguageModes();
     renderFormatPatterns();
     renderHypothesisUI();
-    const localImages = await loadStructuredAssets();
-
-    defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}, local product images=${localImages.length} file(s)`;
+    defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}`;
+    paintStorageHint();
+    loadStructuredAssets().then((localImages) => {
+      if (defaultsInfoEl) {
+        defaultsInfoEl.textContent = `Using defaults: product=${data.default_files.product_info}, mechanism=${data.default_files.playbook}, local product images=${localImages.length} file(s)`;
+      }
+    }).catch(() => {});
 
     initStudioSourceSelector({ reloadInitialPersona: false }).catch(() => {});
 
@@ -278,6 +302,10 @@ async function initDefaults() {
     renderModelOptions(defaultProvider, defaultModel);
   } catch (err) {
     setStatus(`Failed to load defaults: ${String(err)}`);
+  } finally {
+    document.getElementById("executionSkeleton")?.remove();
+    const storageInfo = document.getElementById("storageInfo");
+    if (storageInfo?.querySelector(".page-skeleton")) paintStorageHint();
   }
 
 }
@@ -1060,7 +1088,3 @@ window.addEventListener("hashchange", () => {
   }
 });
 
-const storageInfo = document.getElementById("storageInfo");
-if (storageInfo) {
-  storageInfo.innerHTML = '<p class="hint">Content is stored on the paired local device. Render retains metadata only.</p>';
-}

@@ -1,5 +1,6 @@
 import { fetchJSON, clearCache } from "./api.js";
 import { getAuthUser, isAuthenticated } from "./auth.js";
+import { showElementSkeleton } from "./ui.js";
 
 const CONFIG_KEYS = [
   "product_master_doc",
@@ -67,6 +68,9 @@ export async function initConfigPage() {
       </div>`;
     return;
   }
+
+  showElementSkeleton(document.getElementById("cfgEditors"), 6);
+  showElementSkeleton(document.getElementById("cfgTabs"), 1);
 
   // Load available sources
   try {

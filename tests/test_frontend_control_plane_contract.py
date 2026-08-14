@@ -193,6 +193,26 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("changed_by_display_name", versions)
         self.assertIn("changed_by_display_name", config)
 
+    def test_studio_init_does_not_block_on_local_assets_and_pages_show_skeletons(self) -> None:
+        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+        ui = (FRONTEND / "js" / "ui.js").read_text(encoding="utf-8")
+        config = (FRONTEND / "js" / "config.js").read_text(encoding="utf-8")
+        profile = (FRONTEND / "js" / "profile.js").read_text(encoding="utf-8")
+        traces = (FRONTEND / "traces.html").read_text(encoding="utf-8")
+        orgs = (FRONTEND / "organizations.html").read_text(encoding="utf-8")
+        init_start = main.index("async function initDefaults()")
+        init_end = main.index("\nfunction populateGoogleModels", init_start)
+        init_defaults = main[init_start:init_end]
+        self.assertIn("loadStructuredAssets().then(", init_defaults)
+        self.assertNotIn("await loadStructuredAssets(", init_defaults)
+        self.assertIn("showElementSkeleton", init_defaults)
+        self.assertIn("export function skeletonBlock", ui)
+        self.assertIn("export function showElementSkeleton", ui)
+        self.assertIn("showElementSkeleton(document.getElementById(\"cfgEditors\")", config)
+        self.assertIn("showElementSkeleton(panel", profile)
+        self.assertIn("page-skeleton", traces)
+        self.assertIn("page-skeleton", orgs)
+
 
 if __name__ == "__main__":
     unittest.main()

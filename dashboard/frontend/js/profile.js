@@ -1,6 +1,6 @@
 import { fetchJSON, clearCache } from "./api.js";
 import { getAuthUser, isAuthenticated } from "./auth.js";
-import { setStatus, showGlobalLoading, hideGlobalLoading } from "./ui.js";
+import { setStatus, showElementSkeleton } from "./ui.js";
 
 export async function renderProfilePanel() {
   const panel = document.getElementById("profilePanel");
@@ -12,7 +12,7 @@ export async function renderProfilePanel() {
     return;
   }
 
-  showGlobalLoading("Loading profile...");
+  showElementSkeleton(panel, 5);
   try {
     const [orgData, providerConfigs] = await Promise.all([
       fetchJSON("/api/orgs/me").catch(() => null),
@@ -21,8 +21,6 @@ export async function renderProfilePanel() {
     renderProfile(panel, user, orgData, providerConfigs);
   } catch (err) {
     panel.innerHTML = `<div class="profile-empty"><p>Failed to load profile data.</p></div>`;
-  } finally {
-    hideGlobalLoading();
   }
 }
 

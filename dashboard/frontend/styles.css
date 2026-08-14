@@ -1889,6 +1889,12 @@ button.is-loading::after {
   pointer-events: none;
 }
 
+.page-skeleton {
+  animation: skeletonPulse 1.2s ease-in-out infinite;
+  pointer-events: none;
+  padding: 0.35rem 0;
+}
+
 .skeleton-line {
   height: 12px;
   border-radius: 5px;
