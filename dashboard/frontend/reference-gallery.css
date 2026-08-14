@@ -141,48 +141,6 @@ body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-select-label {
   }
 }
 
-.live-gallery {
-  margin: 12px 0;
-  padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--accent-teal) 30%, var(--line));
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--accent-teal) 5%, var(--surface));
-}
-
-.live-gallery .image-grid {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-.live-gallery .image-card {
-  cursor: pointer;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.live-gallery .image-wrap {
-  min-height: 180px;
-  max-height: 350px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 8px;
-  background: var(--surface-2);
-}
-
-.live-gallery .gallery-thumb {
-  width: 100%;
-  height: auto;
-  max-height: 350px;
-  object-fit: contain;
-}
-
-.live-gallery .image-filename {
-  padding: 6px 4px 2px;
-  font-size: 10px;
-  line-height: 1.3;
-}
-
 @media (max-width: 720px) {
   body:has(#referenceFlowPanel:not(.hidden)) .card-runs .image-grid {
     grid-template-columns: 1fr;

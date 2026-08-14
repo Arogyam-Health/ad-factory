@@ -492,6 +492,13 @@ class RunReconciliationTests(unittest.TestCase):
         query = runs.find.call_args.args[0]
         self.assertEqual(query["flow_type"], {"$nin": ["reference", "reference_image"]})
 
+        request.query_params = {}
+        with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+            list_runs(request)
+        query = runs.find.call_args.args[0]
+        self.assertEqual(query["user_id"], "user-1")
+        self.assertNotIn("flow_type", query)
+
 
 if __name__ == "__main__":
     unittest.main()

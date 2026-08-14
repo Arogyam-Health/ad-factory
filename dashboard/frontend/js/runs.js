@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { appendLog, skeletonLocalSection, skeletonRunCard } from "./ui.js";
 import { fetchJSON, invalidateRuns } from "./api.js";
-import { buildImageGallery, showPromptFullscreen } from "./images.js";
+import { buildImageGallery, syncImageGallery, showPromptFullscreen } from "./images.js";
 import { buildPromptEditor } from "./prompts.js";
 import { refreshSelect } from "./custom-select.js";
 import { getAuthUser } from "./auth.js";
@@ -329,9 +329,7 @@ function patchVisibleRunCard(div, run) {
   }
   const galleryContainer = div.querySelector(".run-gallery");
   if (!galleryContainer) return;
-  galleryContainer.replaceChildren();
-  const gallery = buildImageGallery(run, []);
-  if (gallery) galleryContainer.appendChild(gallery);
+  syncImageGallery(galleryContainer, run, []);
 }
 
 export function showRunsSkeletons(count = 2) {
@@ -380,20 +378,22 @@ function updatePreviousRunOptions() {
   });
 }
 
-async function reconcileRunInventory(runs) {
+async function reconcileRunInventory(visibleRuns, allRuns) {
   const user = getAuthUser();
   if (!user?.user_id) return { removed: 0, pending: [], pruned: 0 };
+  const catalog = Array.isArray(allRuns) ? allRuns : visibleRuns;
+  const canPrune = Array.isArray(allRuns);
   const owners = new Map([
     ["user:" + user.user_id, { ownerType: "user", ownerId: user.user_id }],
   ]);
-  for (const run of runs) {
+  for (const run of catalog) {
     const ownerType = run.owner_type || "user";
     const ownerId = run.owner_id || user.user_id;
     if (ownerType === "org" && ownerId) {
       owners.set(`org:${ownerId}`, { ownerType, ownerId });
     }
   }
-  const mongoIds = new Set(runs.map((run) => run.run_id));
+  const mongoIds = new Set(catalog.map((run) => run.run_id));
   const recentCutoff = Date.now() / 1000 - 120;
   const pending = [];
   let pruned = 0;
@@ -422,6 +422,7 @@ async function reconcileRunInventory(runs) {
           local_run_ids: localRuns.map((run) => run.run_id),
         });
       });
+      if (!canPrune) continue;
       for (const local of localRuns) {
         if (mongoIds.has(local.run_id)) continue;
         if (Number(local.created_at || 0) >= recentCutoff) continue;
@@ -538,7 +539,15 @@ async function loadRunsOnce(flow) {
   showRunsSkeletons();
   try {
     let data = await fetchJSON(`/api/runs?flow=${encodeURIComponent(flow)}`);
-    const inventory = await reconcileRunInventory(data.runs || []);
+    let allRuns = null;
+    try {
+      const otherFlow = flow === "reference" ? "structured" : "reference";
+      const other = await fetchJSON(`/api/runs?flow=${encodeURIComponent(otherFlow)}`);
+      allRuns = [...(data.runs || []), ...(other.runs || [])];
+    } catch {
+      allRuns = null;
+    }
+    const inventory = await reconcileRunInventory(data.runs || [], allRuns);
     if (inventory.pruned) {
       appendLog(`Removed ${inventory.pruned} local run${inventory.pruned === 1 ? "" : "s"} that no longer exist in the dashboard.`);
     }
@@ -645,13 +654,27 @@ document.getElementById("refreshRuns")?.addEventListener("click", () => {
 
 const LOCAL_STORAGE_JOB_KEY = "adFactoryActiveJob";
 const LEGACY_ARTIFACT_CACHE_KEY = "adFactoryLocalArtifacts";
-const STRUCTURED_OUTPUT_POLL_MS = 30000;
 let agentJobPollTimer = null;
 let structuredLocalImages = [];
 let structuredRefreshInFlight = false;
 let structuredRefreshQueued = false;
 let structuredOutputsLoaded = false;
 const localDataEventStreams = new Map();
+const outputWatchReasons = new Set();
+
+export function watchLocalOutputs(reason) {
+  if (!reason) return;
+  outputWatchReasons.add(reason);
+}
+
+export function unwatchLocalOutputs(reason) {
+  outputWatchReasons.delete(reason);
+  if (outputWatchReasons.size) return;
+  for (const stream of localDataEventStreams.values()) {
+    stream.controller.abort();
+  }
+  localDataEventStreams.clear();
+}
 
 function purgeLegacyArtifactCache() {
   try {
@@ -884,7 +907,7 @@ async function runStructuredOutputRefresh({ render = true } = {}) {
         deviceId: run.device_id,
         agentId: run.agent_id,
       });
-      if (!localDataEventStreams.has(run.device_id)) {
+      if (outputWatchReasons.size && !localDataEventStreams.has(run.device_id)) {
         const controller = new AbortController();
         const stream = { controller, cursor: 0 };
         localDataEventStreams.set(run.device_id, stream);
@@ -990,10 +1013,12 @@ function hideAgentJobBar() {
   if (bar) bar.classList.add("hidden");
   localStorage.removeItem(currentJobStorageKey());
   if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
+  unwatchLocalOutputs("structured");
 }
 
 function startAgentJobPolling() {
   if (agentJobPollTimer) return;
+  watchLocalOutputs("structured");
   showAgentJobBar("Agent job in progress...");
   agentJobPollTimer = setInterval(async () => {
     try {
@@ -1013,6 +1038,7 @@ function startAgentJobPolling() {
           await refreshStructuredLocalOutputs();
           localStorage.removeItem(currentJobStorageKey());
           if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
+          unwatchLocalOutputs("structured");
           return;
         }
         if (job.status === "canceled") {
@@ -1024,6 +1050,7 @@ function startAgentJobPolling() {
         showAgentJobBar(`Agent job failed: ${job.error_message || job.error_code || "unknown error"}`, false, job);
         localStorage.removeItem(currentJobStorageKey());
         if (agentJobPollTimer) { clearInterval(agentJobPollTimer); agentJobPollTimer = null; }
+        unwatchLocalOutputs("structured");
         return;
       }
       const progress = job.progress_code || "";
@@ -1055,7 +1082,6 @@ function checkActiveAgentJob() {
 
 purgeLegacyArtifactCache();
 refreshStructuredLocalOutputs().catch(() => {});
-setInterval(() => refreshStructuredLocalOutputs().catch(() => {}), STRUCTURED_OUTPUT_POLL_MS);
 checkActiveAgentJob();
 fetchJSON("/api/batch/job-status", { cache: "no-store" }).then((data) => {
   if (data?.active && data.job?.job_id) {

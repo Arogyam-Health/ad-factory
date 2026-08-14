@@ -1,7 +1,7 @@
 import { clearCache, fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 import { appendLog } from "./ui.js";
-import { loadRuns } from "./runs.js";
+import { loadRuns, refreshStructuredLocalOutputs, unwatchLocalOutputs, watchLocalOutputs } from "./runs.js";
 import { showPromptFullscreen } from "./images.js";
 import { localDataPlane } from "./local-data-plane.js";
 import { checkAuth, getAuthUser } from "./auth.js";
@@ -15,13 +15,13 @@ let referenceItems = [];
 let workspace = null;
 let activeRunId = "";
 let statusTimer = null;
+let pollGeneration = 0;
 let personaTimer = null;
 let lastStatusSignature = "";
 let referenceDeviceId = "";
 let activeReferenceJobId = "";
 let referenceObjectUrls = [];
 let referenceProductObjectUrls = [];
-let referenceOutputObjectUrls = [];
 const REFERENCE_PRODUCT_IDS_KEY = "reference-workspace-product-assets";
 const PAIRING_BACKOFFS_MS = [2000, 5000, 15000];
 let pairingBackoffIndex = 0;
@@ -129,7 +129,7 @@ function setWorkspaceMode(mode) {
     ? "Launch Chrome, run the selected reference jobs, inspect persona-grouped outputs, revise images, and download reference batches."
     : "Generate, inspect, revise, and download structured-flow batches.";
   $("referenceWorkspaceActions").classList.toggle("hidden", !reference);
-  $("referenceProgressArea").classList.toggle("hidden", !reference);
+  $("referenceProgressArea").classList.toggle("hidden", !reference || !referenceRunInFlight);
   ["batchGen45", "batchGenBoth", "batchGen916"].forEach((id) => $(id)?.classList.toggle("hidden", reference));
 }
 
@@ -192,6 +192,8 @@ function setFlow(mode) {
     activeRunId = "";
     activeReferenceJobId = "";
   }
+  $("referenceLiveGallery")?.replaceChildren();
+  $("referenceLiveGallery")?.classList.add("hidden");
   $("structuredFlowTab").classList.toggle("active", !reference);
   $("referenceFlowTab").classList.toggle("active", reference);
   $("structuredFlowPanel").classList.toggle("hidden", reference);
@@ -635,76 +637,6 @@ function openWorkspaceText(kind) {
   }
 }
 
-function renderLiveGallery(outputs) {
-  const container = $("referenceLiveGallery");
-  if (!container) return;
-  if (!outputs?.length) {
-    container.classList.add("hidden");
-    container.innerHTML = "";
-    return;
-  }
-  container.classList.remove("hidden");
-  container.innerHTML = "";
-  const header = document.createElement("div");
-  header.className = "gallery-header";
-  header.innerHTML = `<strong>Generated so far (${outputs.length})</strong>`;
-  container.appendChild(header);
-  const grid = document.createElement("div");
-  grid.className = "image-grid";
-  outputs.forEach((output) => {
-    const url = output.object_url || "";
-    const card = document.createElement("div");
-    card.className = "image-card";
-    card.dataset.outputId = output.output_id;
-    const is916 = output.aspect_ratio === "9:16";
-    card.dataset.aspect = is916 ? "9_16" : "4_5";
-    const imgWrap = document.createElement("div");
-    imgWrap.className = "image-wrap";
-    const img = document.createElement("img");
-    img.className = "gallery-thumb";
-    img.loading = "lazy";
-    img.src = url;
-    img.alt = output.output_id;
-    imgWrap.appendChild(img);
-    card.appendChild(imgWrap);
-    const badge = document.createElement("span");
-    badge.className = `aspect-badge ${is916 ? "ar-916" : "ar-45"}`;
-    badge.textContent = is916 ? "9:16" : "4:5";
-    card.appendChild(badge);
-    const fname = document.createElement("div");
-    fname.className = "image-filename";
-    fname.textContent = `${output.output_id} · v${output.current_version}`;
-    fname.title = output.output_id;
-    card.appendChild(fname);
-    card.addEventListener("click", (event) => {
-      if (event.target.closest("button") || event.target.closest("input") || event.target.closest("details") || event.target.closest("label")) return;
-      if (url) window.open(url, "_blank");
-    });
-    grid.appendChild(card);
-  });
-  container.appendChild(grid);
-}
-
-async function loadLiveOutputs() {
-  if (!activeRunId || !referenceDeviceId) return [];
-  referenceOutputObjectUrls.forEach((url) => URL.revokeObjectURL(url));
-  referenceOutputObjectUrls = [];
-  const outputs = await localDataPlane.listOutputs(activeRunId, referenceDeviceId);
-  await Promise.all(outputs.map(async (output) => {
-    try {
-      output.object_url = await localDataPlane.outputObjectUrl(
-        output.output_id,
-        referenceDeviceId,
-        output.current_version,
-      );
-      referenceOutputObjectUrls.push(output.object_url);
-    } catch {
-      output.object_url = "";
-    }
-  }));
-  return outputs;
-}
-
 function showStatus(payload) {
   const completed = Number(payload.completed_jobs || 0);
   const total = Number(payload.total_jobs || 0);
@@ -721,8 +653,14 @@ function showStatus(payload) {
 }
 
 function stopPolling() {
-  if (statusTimer) clearInterval(statusTimer);
+  pollGeneration += 1;
+  if (statusTimer) {
+    clearInterval(statusTimer);
+    clearTimeout(statusTimer);
+  }
   statusTimer = null;
+  unwatchLocalOutputs("reference");
+  $("referenceProgressArea")?.classList.toggle("hidden", true);
 }
 
 function isUnreachableAgentError(error) {
@@ -732,7 +670,8 @@ function isUnreachableAgentError(error) {
 }
 
 async function pollStatus() {
-  if (!activeRunId) return;
+  const pollTicket = pollGeneration;
+  if (!activeRunId || activeMode() !== "reference") return;
   try {
     const ownerId = getAuthUser()?.user_id || "";
     const owner = ownerId ? `user:${ownerId}` : "";
@@ -740,20 +679,28 @@ async function pollStatus() {
       await ensureReferenceLocal();
     }
     const run = await fetchJSON(`/api/runs/${activeRunId}?t=${Date.now()}`);
-    const generation = run.image_generation || {};
+    if (pollTicket !== pollGeneration || activeMode() !== "reference") return;
+    const imageGeneration = run.image_generation || {};
     const data = {
-      ...generation,
-      status: generation.status || run.status,
-      phase: generation.status === "running" ? "local generation" : generation.status,
-      completed_jobs: generation.completed_count || 0,
-      total_jobs: generation.total_count || 0,
-      failures: generation.status === "failed" ? 1 : 0,
-      message: generation.status === "completed"
+      ...imageGeneration,
+      status: imageGeneration.status || run.status,
+      phase: imageGeneration.status === "running" ? "local generation" : imageGeneration.status,
+      completed_jobs: imageGeneration.completed_count || 0,
+      total_jobs: imageGeneration.total_count || 0,
+      failures: imageGeneration.status === "failed" ? 1 : 0,
+      message: imageGeneration.status === "completed"
         ? "Reference generation completed"
-        : `Local Reference generation ${generation.completed_count || 0}/${generation.total_count || 0}`,
+        : `Local Reference generation ${imageGeneration.completed_count || 0}/${imageGeneration.total_count || 0}`,
     };
     showStatus(data);
-    renderLiveGallery(await loadLiveOutputs());
+    if (
+      pollTicket === pollGeneration
+      && activeMode() === "reference"
+      && ["queued", "running"].includes(String(data.status || ""))
+    ) {
+      await refreshStructuredLocalOutputs();
+    }
+    if (pollTicket !== pollGeneration || activeMode() !== "reference") return;
     pairingBackoffIndex = 0;
     pairingErrorSticky = "";
     if (["completed", "failed", "canceled"].includes(data.status)) {
@@ -784,8 +731,10 @@ async function pollStatus() {
       stopPolling();
       const wait = PAIRING_BACKOFFS_MS[pairingBackoffIndex];
       pairingBackoffIndex = Math.min(pairingBackoffIndex + 1, PAIRING_BACKOFFS_MS.length - 1);
+      const retryGeneration = pollGeneration;
       statusTimer = window.setTimeout(() => {
         statusTimer = null;
+        if (retryGeneration !== pollGeneration || activeMode() !== "reference") return;
         startPolling();
       }, wait);
       return;
@@ -795,7 +744,10 @@ async function pollStatus() {
 }
 
 function startPolling() {
+  if (activeMode() !== "reference") return;
   stopPolling();
+  watchLocalOutputs("reference");
+  $("referenceProgressArea")?.classList.remove("hidden");
   pollStatus();
   statusTimer = setInterval(pollStatus, 1500);
 }
@@ -838,6 +790,7 @@ async function startRun() {
       return;
     }
     $("referenceCancelBtn").disabled = true;
+    $("referenceProgressArea")?.classList.remove("hidden");
     $("referenceProgressBar").style.width = "2%";
     $("referenceProgressText").textContent = "Preparing reference run…";
     await ensureReferenceLocal();

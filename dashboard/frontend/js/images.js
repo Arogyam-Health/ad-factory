@@ -208,7 +208,7 @@ export function buildImageGallery(run, imagesData) {
     }
   });
 
-  activeImageFiles.forEach((path) => {
+  function appendActivePath(path) {
     const imageItem = imageItemsByPath.get(path) || { path, prompt_file: "", regenerate_prompt_file: "", prompt_excerpt: "" };
     const dbItem = imageByPath.get(path);
     Object.assign(imageItem, dbItem);
@@ -437,7 +437,11 @@ export function buildImageGallery(run, imagesData) {
     });
 
     grid.appendChild(card);
-  });
+  }
+
+  activeImageFiles.forEach(appendActivePath);
+  gal._appendActivePaths = (paths) => paths.forEach(appendActivePath);
+  gal._imageItemsByPath = imageItemsByPath;
 
   gal.appendChild(grid);
   updateSelectedCount();
@@ -723,6 +727,33 @@ export function buildImageGallery(run, imagesData) {
   }
 
   return gal;
+}
+
+export function syncImageGallery(container, run, imagesData = []) {
+  if (!container) return;
+  const files = Array.isArray(run?.image_files) ? run.image_files : [];
+  let gallery = container.querySelector(".image-gallery");
+  if (!gallery) {
+    gallery = buildImageGallery(run, imagesData);
+    if (gallery) container.appendChild(gallery);
+    return;
+  }
+  const header = gallery.querySelector(".gallery-header strong");
+  if (header) header.textContent = `Generated Images (${files.length})`;
+  if (typeof gallery._appendActivePaths !== "function") return;
+  const grid = gallery.querySelector(".image-grid");
+  if (!grid) return;
+  const known = new Set(
+    [...grid.querySelectorAll(":scope > .image-card")].map((card) => card.dataset.path),
+  );
+  [...grid.querySelectorAll(":scope > .image-card")].forEach((card) => {
+    if (card.dataset.path && !files.includes(card.dataset.path)) card.remove();
+  });
+  (run.image_items || []).forEach((item) => {
+    if (item?.path) gallery._imageItemsByPath.set(item.path, item);
+  });
+  const newcomers = files.filter((path) => path && !known.has(path));
+  if (newcomers.length) gallery._appendActivePaths(newcomers);
 }
 
 export function showPromptFullscreen(title, promptText, opts = {}) {
