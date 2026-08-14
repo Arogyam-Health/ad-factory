@@ -178,6 +178,18 @@ class ChatGPTImageReadinessTests(unittest.TestCase):
                     quiet_seconds=0,
                 )
 
+    def test_default_image_wait_is_thirty_minutes(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        chatgpt = (root / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
+        gemini = (root / "scripts" / "gemini_web_automation.py").read_text(encoding="utf-8")
+        agent = (root / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        self.assertIn("default=1800", chatgpt)
+        self.assertIn("default=1800", gemini)
+        self.assertIn('payload.get("timeout") or 1800', agent)
+        self.assertIn("timeout=1900", agent)
+        self.assertNotIn("default=420", chatgpt)
+        self.assertNotIn("default=420", gemini)
+
 
 if __name__ == "__main__":
     unittest.main()

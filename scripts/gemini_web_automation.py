@@ -115,7 +115,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--aspect-ratio", default="4:5", choices=["4:5", "9:16"],
                         help="Aspect ratio for output images; 4:5 (default) or 9:16")
-    parser.add_argument("--timeout", type=int, default=420, help="Generation timeout per prompt")
+    parser.add_argument("--timeout", type=int, default=1800, help="Generation timeout per prompt")
     parser.add_argument("--download-timeout", type=int, default=180)
     parser.add_argument("--sleep-after-download", type=float, default=3.0)
     parser.add_argument("--min-image-bytes", type=int, default=20_000)
@@ -2762,7 +2762,7 @@ def wait_for_generated_image(page: Page, baseline_srcs: set[str], timeout: int) 
                 return marked_src
             print(f"  [wait-img] Still waiting... candidate count={last_seen_count}")
             next_log = time.time() + 10
-        time.sleep(2.0)
+        time.sleep(0.5)
     marked_src = mark_largest_generated_image(page)
     if marked_src:
         print("  [wait-img] Timeout reached, but visible image found; proceeding to download it.")

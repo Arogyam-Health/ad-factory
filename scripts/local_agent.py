@@ -1009,7 +1009,7 @@ def _chatgpt_cmd(
         "--prompt-dir", str(prompt_dir),
         "--prompt-glob", prompt_glob,
         "--out-dir", str(out_dir),
-        "--timeout", str(int(payload.get("timeout") or 420)),
+        "--timeout", str(int(payload.get("timeout") or 1800)),
         "--download-timeout", str(int(payload.get("download_timeout") or 90)),
         "--manual-login-timeout", str(int(payload.get("manual_login_timeout") or 180)),
         "--cdp-url", str(payload.get("cdp_url") or AGENT_CDP_URL),
@@ -1047,7 +1047,7 @@ def _gemini_cmd(
         "--prompt-dir", str(prompt_dir),
         "--prompt-glob", prompt_glob,
         "--out-dir", str(out_dir),
-        "--timeout", str(int(payload.get("timeout") or 420)),
+        "--timeout", str(int(payload.get("timeout") or 1800)),
         "--download-timeout", str(int(payload.get("download_timeout") or 180)),
         "--manual-login-timeout", str(int(payload.get("manual_login_timeout") or 180)),
         "--aspect-ratio", aspect_ratio,
@@ -1218,7 +1218,7 @@ def _execute_next_output_revision() -> bool:
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=900,
+            timeout=1900,
         )
         log_path = _write_revision_log(revision_id, command, result)
         if result.returncode != 0:

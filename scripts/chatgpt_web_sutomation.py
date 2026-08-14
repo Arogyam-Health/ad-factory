@@ -216,7 +216,7 @@ def parse_args() -> argparse.Namespace:
         help="Optional directory of reference images to upload. If empty, no directory upload is used.",
     )
     parser.add_argument("--out-dir", required=True)
-    parser.add_argument("--timeout", type=int, default=420, help="Generation timeout per prompt")
+    parser.add_argument("--timeout", type=int, default=1800, help="Generation timeout per prompt")
     parser.add_argument("--download-timeout", type=int, default=90)
     parser.add_argument("--sleep-after-download", type=float, default=0.0)
     parser.add_argument("--min-image-bytes", type=int, default=20_000)
