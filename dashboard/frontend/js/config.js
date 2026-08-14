@@ -157,7 +157,6 @@ function renderConfigPage() {
     <span class="cfg-meta-item"><strong>Mode:</strong> ${esc(mode)}</span>
     ${org ? `<span class="cfg-meta-item"><strong>Org:</strong> ${esc(org.name || "")}</span>` : ""}
     <span class="cfg-meta-item"><strong>Can Edit:</strong> ${canEdit ? "Yes" : "No"}</span>
-    ${configId ? `<span class="cfg-meta-item"><strong>Config ID:</strong> <code style="font-size:0.75rem;background:var(--surface-2);padding:1px 6px;border-radius:4px">${esc(configId)}</code></span>` : ""}
   `;
 
   // Wire source buttons
@@ -467,7 +466,7 @@ async function loadVersionHistory(configId, canRollback) {
           ${versions.map(v => `
             <tr>
               <td style="white-space:nowrap">${v.created_at ? new Date(v.created_at * 1000).toLocaleString() : "—"}</td>
-              <td>${esc(v.changed_by_email || v.changed_by_user_id || "—")}</td>
+              <td>${esc(v.changed_by_display_name || v.changed_by_email || "—")}</td>
               <td>
                 <div class="cfg-version-keys">
                   ${(v.changed_keys || []).map(k => `<span class="cfg-version-key-tag">${esc(KEY_LABELS[k] || k)}</span>`).join("")}

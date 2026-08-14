@@ -175,6 +175,24 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             plane,
         )
 
+    def test_user_facing_pages_hide_mongo_ids(self) -> None:
+        profile = (FRONTEND / "js" / "profile.js").read_text(encoding="utf-8")
+        config = (FRONTEND / "js" / "config.js").read_text(encoding="utf-8")
+        orgs = (FRONTEND / "organizations.html").read_text(encoding="utf-8")
+        org_routes = (ROOT / "dashboard" / "backend" / "services" / "org_routes.py").read_text(
+            encoding="utf-8"
+        )
+        versions = (
+            ROOT / "dashboard" / "backend" / "services" / "config_version_service.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("ID: <code>${escapeHtml(user.user_id", profile)
+        self.assertNotIn("Config ID:", config)
+        self.assertNotIn("ID: ${esc(m.user_id)}", orgs)
+        self.assertNotIn("${esc(org.org_id)}</code>", orgs)
+        self.assertIn('"display_name"', org_routes)
+        self.assertIn("changed_by_display_name", versions)
+        self.assertIn("changed_by_display_name", config)
+
 
 if __name__ == "__main__":
     unittest.main()

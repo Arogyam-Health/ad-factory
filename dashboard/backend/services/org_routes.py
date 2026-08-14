@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_ORGS, COLL_ORG_MEMBERS, COLL_ORG_INVITES, COLL_USER_CONFIGS
+from dashboard.backend.db.collections import COLL_ORGS, COLL_ORG_MEMBERS, COLL_ORG_INVITES, COLL_USER_CONFIGS, COLL_USERS
 from dashboard.backend.services.org_helper import (
     get_user_default_org,
     get_user_org_membership,
@@ -208,16 +208,27 @@ def get_org_members(
     _get_active_user_org(org_id, user_id)
 
     memberships = get_org_memberships(org_id)
+    db = get_sync_db()
+    user_ids = [mem["user_id"] for mem in memberships if mem.get("user_id")]
+    users_by_id = {
+        doc["user_id"]: doc
+        for doc in db[COLL_USERS].find(
+            {"user_id": {"$in": user_ids}},
+            {"_id": 0, "user_id": 1, "display_name": 1, "email": 1},
+        )
+    }
 
     members = []
     for mem in memberships:
         uid = mem["user_id"]
         permissions = get_role_permissions(mem.get("role", "creator"))
+        user_doc = users_by_id.get(uid) or {}
 
         member_info = {
             "membership_id": mem.get("membership_id", ""),
             "user_id": uid,
-            "email": mem.get("email", ""),
+            "email": mem.get("email", "") or user_doc.get("email", ""),
+            "display_name": user_doc.get("display_name", "") or mem.get("email", ""),
             "role": mem.get("role", "creator"),
             "status": mem.get("status", "active"),
             "joined_at": mem.get("joined_at", 0),

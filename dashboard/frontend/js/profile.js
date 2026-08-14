@@ -44,9 +44,6 @@ async function renderProfile(panel, user, orgData, providerConfigs) {
     <div class="profile-user-info">
       <h2 class="profile-user-name">${escapeHtml(user.display_name || "User")}</h2>
       <p class="profile-user-email">${escapeHtml(user.email || "")}</p>
-      <div class="profile-user-meta">
-        <span class="profile-meta-item">ID: <code>${escapeHtml(user.user_id || "")}</code></span>
-      </div>
     </div>
   `;
   container.appendChild(userCard);

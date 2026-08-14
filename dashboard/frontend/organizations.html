@@ -292,8 +292,7 @@
               <span class="org-expand-icon" style="font-size:0.7rem;color:var(--muted);transition:transform 0.2s">&#9660;</span>
             </div>
             <div style="font-size:0.8rem;color:var(--muted)">
-              ${org.domain ? `<span>&#127757; ${esc(org.domain)}</span> &nbsp;` : ""}
-              <span>ID: <code style="font-size:0.72rem;background:var(--surface-2);padding:1px 6px;border-radius:4px">${esc(org.org_id)}</code></span>
+              ${org.domain ? `<span>&#127757; ${esc(org.domain)}</span>` : ""}
             </div>
           </div>
           <div style="display:flex;gap:0.4rem;flex-wrap:wrap" onclick="event.stopPropagation()">
@@ -589,8 +588,8 @@
             ${members.map(m => `
               <tr>
                 <td>
-                  <div style="font-weight:500;font-size:0.85rem">${esc(m.email)}</div>
-                  <div style="font-size:0.72rem;color:var(--muted)">ID: ${esc(m.user_id)}</div>
+                  <div style="font-weight:500;font-size:0.85rem">${esc(m.display_name || m.email)}</div>
+                  <div style="font-size:0.72rem;color:var(--muted)">${esc(m.email)}</div>
                 </td>
                 <td><span class="role-badge role-${esc(m.role)}">${esc(m.role)}</span></td>
                 <td style="color:var(--muted);font-size:0.8rem">${fmtDate(m.joined_at)}</td>

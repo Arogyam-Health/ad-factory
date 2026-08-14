@@ -7,7 +7,7 @@ import uuid
 from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_CONFIG_VERSIONS, COLL_USER_CONFIGS
+from dashboard.backend.db.collections import COLL_CONFIG_VERSIONS, COLL_USER_CONFIGS, COLL_USERS
 from dashboard.backend.services.user_config import CONFIG_KEYS
 
 
@@ -116,6 +116,19 @@ def create_config_version_before_update(
     return version_doc
 
 
+def _display_names_for_user_ids(user_ids: list[str]) -> dict[str, str]:
+    ids = [uid for uid in user_ids if uid]
+    if not ids:
+        return {}
+    return {
+        doc["user_id"]: str(doc.get("display_name") or "")
+        for doc in get_sync_db()[COLL_USERS].find(
+            {"user_id": {"$in": ids}},
+            {"_id": 0, "user_id": 1, "display_name": 1},
+        )
+    }
+
+
 def get_config_versions(config_id: str, limit: int = 50, offset: int = 0) -> dict:
     coll = get_sync_db()[COLL_CONFIG_VERSIONS]
     total = coll.count_documents({"config_id": config_id})
@@ -124,16 +137,20 @@ def get_config_versions(config_id: str, limit: int = 50, offset: int = 0) -> dic
         {"snapshot": 0},
     ).sort("created_at", -1).skip(offset).limit(limit)
 
+    raw = list(cursor)
+    names = _display_names_for_user_ids([v.get("changed_by_user_id", "") for v in raw])
     versions = []
-    for v in cursor:
+    for v in raw:
+        uid = v.get("changed_by_user_id", "")
         versions.append({
             "version_id": v.get("version_id", ""),
             "config_id": v.get("config_id", ""),
             "owner_type": v.get("owner_type", ""),
             "owner_id": v.get("owner_id", ""),
             "org_id": v.get("org_id"),
-            "changed_by_user_id": v.get("changed_by_user_id", ""),
+            "changed_by_user_id": uid,
             "changed_by_email": v.get("changed_by_email", ""),
+            "changed_by_display_name": names.get(uid, "") or v.get("changed_by_email", ""),
             "change_reason": v.get("change_reason", ""),
             "changed_keys": v.get("changed_keys", []),
             "before_hash": v.get("before_hash", ""),
