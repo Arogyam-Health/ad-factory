@@ -1752,6 +1752,29 @@ def test_local_agent_responsiveness_contract() -> int:
         and "sourceConfig.conversion_916_prompt" in reference_js,
         "reference flow still shares persona seeds and the 9:16 conversion prompt",
     )
+    config_js = (ROOT / "dashboard" / "frontend" / "js" / "config.js").read_text(encoding="utf-8")
+    index_html = (ROOT / "dashboard" / "frontend" / "index.html").read_text(encoding="utf-8")
+    org_routes = (ROOT / "dashboard" / "backend" / "services" / "org_routes.py").read_text(encoding="utf-8")
+    failed += ok(
+        '"reference_starting_prompt"' in config_js
+        and '"reference_product_master_doc"' in config_js,
+        "config page tabs include the reference keys",
+    )
+    failed += ok(
+        'data-flow="reference"' in index_html
+        and 'data-config-key="reference_starting_prompt"' in index_html
+        and "applyFlowConfigCards" in reference_js,
+        "Studio hides cross-flow config cards",
+    )
+    failed += ok(
+        "copy_config(" in org_routes and 'reason="create_org"' in org_routes,
+        "creating an org copies the creator's full config",
+    )
+    failed += ok(
+        "effectiveConfigUrl()" in reference_js
+        and "mongo && existing !== mongo" in reference_js,
+        "reference workspace hydrates from Mongo then pins a local cache",
+    )
 
     return failed
 

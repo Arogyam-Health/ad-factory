@@ -402,6 +402,35 @@ class MongoDashboardConfigTests(unittest.TestCase):
             "old",
         )
 
+    def test_config_page_and_org_create_include_reference_keys(self) -> None:
+        config_js = (ROOT / "dashboard/frontend/js/config.js").read_text(encoding="utf-8")
+        index_html = (ROOT / "dashboard/frontend/index.html").read_text(encoding="utf-8")
+        org_routes = (ROOT / "dashboard/backend/services/org_routes.py").read_text(
+            encoding="utf-8"
+        )
+        reference_js = (ROOT / "dashboard/frontend/js/reference-flow.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"reference_starting_prompt"', config_js)
+        self.assertIn('"reference_product_master_doc"', config_js)
+        self.assertIn("Reference Starting Prompt", config_js)
+        self.assertIn('data-config-key="reference_starting_prompt"', index_html)
+        self.assertIn('data-config-key="reference_product_master_doc"', index_html)
+        self.assertIn('data-flow="reference"', index_html)
+        self.assertIn('data-flow="structured"', index_html)
+        self.assertIn('data-flow="shared"', index_html)
+        self.assertIn("copy_config(", org_routes)
+        self.assertIn('reason="create_org"', org_routes)
+        self.assertIn("effectiveConfigUrl()", reference_js)
+        self.assertIn("mongo && existing !== mongo", reference_js)
+        self.assertIn("applyFlowConfigCards", reference_js)
+        hydrate = reference_js[reference_js.index("async function loadReferenceWorkspace()"):]
+        self.assertLess(
+            hydrate.index("fetchJSON(effectiveConfigUrl())"),
+            hydrate.index("readLocalText("),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

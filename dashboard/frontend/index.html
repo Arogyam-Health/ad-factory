@@ -138,11 +138,11 @@
         <section class="card card-input-prompts" aria-labelledby="promptsHeading">
           <h2 id="promptsHeading">2) Input Prompts</h2>
           <div class="input-prompts-grid">
-            <div class="input-prompt-card" data-prompt-type="starting_prompt">
+            <div class="input-prompt-card" data-prompt-type="starting_prompt" data-flow="structured">
               <strong>Starting Prompt</strong>
               <span>Prepended to all generation prompts</span>
             </div>
-            <div class="input-prompt-card" data-prompt-type="916_conversion">
+            <div class="input-prompt-card" data-prompt-type="916_conversion" data-flow="shared">
               <strong>9:16 Conversion Prompt</strong>
               <span>Converts 4:5 creatives to 9:16</span>
             </div>
@@ -165,35 +165,35 @@
             <div id="studioSourceButtons" style="display:flex;gap:0.35rem;flex-wrap:wrap"></div>
           </div>
           <div class="input-prompts-grid">
-            <div class="input-prompt-card" data-file-path="persona_seeds.json" data-config-key="persona_seeds">
+            <div class="input-prompt-card" data-file-path="persona_seeds.json" data-config-key="persona_seeds" data-flow="shared">
               <strong>Persona Seeds</strong>
               <span>30 personas with tags, guardrails, headline anchors</span>
             </div>
-            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_architecture.json" data-config-key="copy_architecture">
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_architecture.json" data-config-key="copy_architecture" data-flow="structured">
               <strong>Copy Architecture</strong>
               <span>Headline &amp; support line architecture definitions</span>
             </div>
-            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_prompt_templates.json" data-config-key="copy_prompt_templates">
+            <div class="input-prompt-card" data-file-path="dashboard/backend/copy_prompt_templates.json" data-config-key="copy_prompt_templates" data-flow="structured">
               <strong>Copy Prompt Templates</strong>
               <span>System prompts, format rules, schema, angle definitions</span>
             </div>
-            <div class="input-prompt-card" data-file-path="scripts/prompt_assembler_templates.json" data-config-key="prompt_assembler_templates">
+            <div class="input-prompt-card" data-file-path="scripts/prompt_assembler_templates.json" data-config-key="prompt_assembler_templates" data-flow="structured">
               <strong>Prompt Assembler Templates</strong>
               <span>Image prompt assembly blocks (product lock, proof bar, safe zone, etc.)</span>
             </div>
-            <div class="input-prompt-card" data-file-path="background_variant.json" data-config-key="background_variant">
+            <div class="input-prompt-card" data-file-path="background_variant.json" data-config-key="background_variant" data-flow="structured">
               <strong>Background Variants</strong>
               <span>500 background visual variants catalog</span>
             </div>
-            <div class="input-prompt-card" data-file-path="product_master_doc" data-config-key="product_master_doc">
+            <div class="input-prompt-card" data-file-path="product_master_doc" data-config-key="product_master_doc" data-flow="structured">
               <strong>Product Master Doc</strong>
               <span>Product info, claims, ingredient details, use-case definitions</span>
             </div>
-            <div class="input-prompt-card" data-file-path="reference_starting_prompt" data-config-key="reference_starting_prompt">
+            <div class="input-prompt-card" data-file-path="reference_starting_prompt" data-config-key="reference_starting_prompt" data-flow="reference">
               <strong>Reference Starting Prompt</strong>
               <span>Reference flow only — separate from the structured starting prompt</span>
             </div>
-            <div class="input-prompt-card" data-file-path="reference_product_master_doc" data-config-key="reference_product_master_doc">
+            <div class="input-prompt-card" data-file-path="reference_product_master_doc" data-config-key="reference_product_master_doc" data-flow="reference">
               <strong>Reference Product Doc</strong>
               <span>Reference flow only — separate from the structured product master doc</span>
             </div>

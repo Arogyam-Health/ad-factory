@@ -48,6 +48,24 @@ async function readLocalText(collection, logicalKey, fallback = "") {
   }
 }
 
+function studioOrgId() {
+  const src = document.querySelector(".studio-source-btn.active")?.dataset.source;
+  if (src && src !== "personal") return src;
+  const userId = getAuthUser()?.user_id || "";
+  if (userId) {
+    const stored = localStorage.getItem(`adFactoryStudioOrg:${userId}`) || "";
+    if (stored && stored !== "personal") return stored;
+  }
+  return "";
+}
+
+function effectiveConfigUrl() {
+  const orgId = studioOrgId();
+  return orgId
+    ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
+    : "/api/config/effective";
+}
+
 function configText(value) {
   if (typeof value === "string") return value;
   return value && typeof value === "object" ? JSON.stringify(value) : "";
@@ -58,7 +76,7 @@ function configText(value) {
 // account config that seeds a fresh device.
 async function saveReferenceConfigFile(configKey, content) {
   try {
-    const effective = await fetchJSON("/api/config/effective");
+    const effective = await fetchJSON(effectiveConfigUrl());
     const orgId = effective?.owner_type === "org" ? effective?.owner_id : "";
     const path = orgId
       ? `/api/orgs/${encodeURIComponent(orgId)}/config`
@@ -162,12 +180,25 @@ function populateBatchMenu() {
   menu.appendChild(grid);
 }
 
+function applyFlowConfigCards(mode) {
+  document.querySelectorAll("[data-flow]").forEach((el) => {
+    const vis = el.dataset.flow;
+    el.classList.toggle("hidden", vis !== "shared" && vis !== mode);
+  });
+}
+
 function setFlow(mode) {
   const reference = mode === "reference";
   $("structuredFlowTab").classList.toggle("active", !reference);
   $("referenceFlowTab").classList.toggle("active", reference);
-  $("structuredFlowPanel").classList.toggle("hidden", reference);
+  $("structuredFlowPanel")?.classList.remove("hidden");
   $("referenceFlowPanel").classList.toggle("hidden", !reference);
+  document.querySelector(".column-right")?.classList.toggle("hidden", reference);
+  document.querySelectorAll(".column-left > .card").forEach((card) => {
+    const keep = card.classList.contains("card-files") || card.classList.contains("card-input-prompts");
+    card.classList.toggle("hidden", reference && !keep);
+  });
+  applyFlowConfigCards(mode);
   localStorage.setItem("adFactoryFlowMode", mode);
   setWorkspaceMode(mode);
   loadWorkspaceRuns(mode);
@@ -435,24 +466,21 @@ async function loadReferenceWorkspace() {
     await ensureReferenceLocal();
     referenceProductObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     referenceProductObjectUrls = [];
-    const [allProducts, productIds, productDocument, startingPrompt, personaSeed, conversionPrompt, effective] = await Promise.all([
+    const effective = await fetchJSON(effectiveConfigUrl());
+    const sourceConfig = effective?.config || {};
+    const [allProducts, productIds, productDocument, startingPrompt, personaSeed, conversionPrompt] = await Promise.all([
       localDataPlane.listAssets({ kind: "product_image", deviceId: referenceDeviceId }),
       readReferenceProductIds(),
       readLocalText("documents", "reference-product-document"),
       readLocalText("configs", "reference-starting-prompt"),
       readLocalText("configs", "reference-persona-seed"),
       readLocalText("configs", "reference-conversion-916-prompt"),
-      fetchJSON("/api/config/effective"),
     ]);
-    const sourceConfig = effective?.config || {};
-    // The reference flow has its own starting prompt and product document. Only
-    // persona seeds and the 9:16 conversion prompt are shared with the
-    // structured flow, so never seed the other two from structured keys.
     const hydratedText = {
-      productDocument: productDocument || configText(sourceConfig.reference_product_master_doc),
-      startingPrompt: startingPrompt || configText(sourceConfig.reference_starting_prompt),
-      personaSeed: personaSeed || configText(sourceConfig.persona_seeds),
-      conversionPrompt: conversionPrompt || configText(sourceConfig.conversion_916_prompt),
+      productDocument: configText(sourceConfig.reference_product_master_doc) || productDocument,
+      startingPrompt: configText(sourceConfig.reference_starting_prompt) || startingPrompt,
+      personaSeed: configText(sourceConfig.persona_seeds) || personaSeed,
+      conversionPrompt: configText(sourceConfig.conversion_916_prompt) || conversionPrompt,
     };
     const hydrationWrites = [
       [productDocument, "documents", "reference-product-document", hydratedText.productDocument],
@@ -460,11 +488,11 @@ async function loadReferenceWorkspace() {
       [personaSeed, "configs", "reference-persona-seed", hydratedText.personaSeed],
       [conversionPrompt, "configs", "reference-conversion-916-prompt", hydratedText.conversionPrompt],
     ]
-      .filter(([existing, , , fallback]) => !existing && fallback)
-      .map(([, collection, key, fallback]) => localDataPlane.putText(
+      .filter(([existing, , , mongo]) => mongo && existing !== mongo)
+      .map(([, collection, key, mongo]) => localDataPlane.putText(
         collection,
         key,
-        fallback,
+        mongo,
         { deviceId: referenceDeviceId, operationId: `hydrate-${key}` },
       ));
     await Promise.all(hydrationWrites);

@@ -142,6 +142,23 @@ def create_org(
     }
     db[COLL_ORG_MEMBERS].insert_one(membership)
 
+    try:
+        from dashboard.backend.services.config_version_service import copy_config
+
+        copy_config(
+            source_owner_type="user",
+            source_owner_id=user_id,
+            target_owner_type="org",
+            target_owner_id=org_id,
+            actor_user_id=user_id,
+            actor_email=email,
+            mode="replace",
+            reason="create_org",
+            org_id=org_id,
+        )
+    except ValueError:
+        pass
+
     write_audit_event(
         event_type="org_created",
         actor_user_id=user_id,

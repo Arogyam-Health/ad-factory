@@ -10,6 +10,8 @@ const CONFIG_KEYS = [
   "background_variant",
   "prompt_assembler_templates",
   "conversion_916_prompt",
+  "reference_starting_prompt",
+  "reference_product_master_doc",
 ];
 
 const JSON_KEYS = new Set([
@@ -29,6 +31,8 @@ const KEY_LABELS = {
   background_variant: "Background Variant",
   prompt_assembler_templates: "Prompt Assembler Templates",
   conversion_916_prompt: "9:16 Conversion Prompt",
+  reference_starting_prompt: "Reference Starting Prompt",
+  reference_product_master_doc: "Reference Product Doc",
 };
 
 let currentData = null;
