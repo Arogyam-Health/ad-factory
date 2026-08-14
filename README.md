@@ -196,6 +196,8 @@ python scripts/local_agent.py --api-base https://your-app.onrender.com --name my
 # 4. The agent registers with Render and waits for jobs
 ```
 
+Keep `~/ad-factory-agent/config/agent.json`. Restarting the agent reuses that token. Pass a fresh `--session-cookie` only when you intend to rebind this Google account; the control plane reuses one active agent per user+device instead of inserting duplicates.
+
 ### Production mode
 
 Set `DEPLOYMENT_MODE=production` on Render. This enables:

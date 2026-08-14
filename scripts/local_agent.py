@@ -1439,6 +1439,10 @@ def register_and_run(args: argparse.Namespace) -> None:
             AGENT_TOKEN = str(result["token"])
             AGENT_ID = str(result["agent_id"])
             print(f"[agent] Registered: {result['agent_id']}")
+            print(
+                "[agent] Keep ~/ad-factory-agent/config/agent.json. "
+                "Do not pass a fresh --session-cookie unless you intend to rebind this account."
+            )
             _save_agent_token(
                 AGENT_API_BASE,
                 account_user_id,
@@ -1654,7 +1658,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ad Factory Local Playwright Agent")
     parser.add_argument("--api-base", default=AGENT_API_BASE, help="Render backend URL")
     parser.add_argument("--token", default="", help="Existing agent token (skip registration)")
-    parser.add_argument("--session-cookie", default=os.getenv("AD_FACTORY_SESSION", ""), help="Dashboard session cookie used only to register a new agent token")
+    parser.add_argument("--session-cookie", default=os.getenv("AD_FACTORY_SESSION", ""), help="Dashboard session cookie used only to register or rebind. Keep ~/ad-factory-agent/config/agent.json; omit this unless you intend to rebind the Google account.")
     parser.add_argument("--name", default="local-agent", help="Agent name")
     parser.add_argument("--poll-interval", type=float, default=25.0, help="HTTP fallback interval when WebSocket notifications are unavailable")
     parser.add_argument("--data-dir", default=str(resolve_data_root()), help="Canonical local agent data root")

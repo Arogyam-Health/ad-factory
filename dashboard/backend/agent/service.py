@@ -223,10 +223,48 @@ def register_agent(
         raise ValueError("Invalid device ID")
     if protocol_version and protocol_version != "v1":
         raise ValueError("Unsupported agent protocol")
-    agent_id = "agent_" + generate_token(16)
+    pairing_capable = bool(supports_pairing and device_id and protocol_version == "v1")
     token = generate_token(48)
     token_hash = hash_token(token)
     now = time.time()
+    db = get_sync_db()
+    collection = db[COLL_AGENTS]
+    existing = None
+    if pairing_capable:
+        existing = collection.find_one(
+            {
+                "user_id": user_id,
+                "device_id": device_id,
+                "is_active": True,
+                "supports_pairing": True,
+            }
+        )
+    if existing:
+        agent_id = str(existing["agent_id"])
+        collection.update_one(
+            {"agent_id": agent_id},
+            {
+                "$set": {
+                    "name": agent_name,
+                    "token_hash": token_hash,
+                    "protocol_version": protocol_version,
+                    "supports_pairing": True,
+                    "is_active": True,
+                    "last_heartbeat_at": now,
+                    "updated_at": now,
+                }
+            },
+        )
+        _deactivate_sibling_agents(db, user_id, device_id, keep_agent_id=agent_id)
+        return {
+            "agent_id": agent_id,
+            "token": token,
+            "name": agent_name,
+            "device_id": device_id,
+            "protocol_version": protocol_version,
+            "supports_pairing": True,
+        }
+    agent_id = "agent_" + generate_token(16)
     doc = {
         "agent_id": agent_id,
         "user_id": user_id,
@@ -234,20 +272,54 @@ def register_agent(
         "token_hash": token_hash,
         "device_id": device_id,
         "protocol_version": protocol_version,
-        "supports_pairing": bool(supports_pairing and device_id and protocol_version == "v1"),
+        "supports_pairing": pairing_capable,
         "is_active": True,
         "last_heartbeat_at": now,
         "created_at": now,
     }
-    get_sync_db()[COLL_AGENTS].insert_one(doc)
+    collection.insert_one(doc)
+    if pairing_capable:
+        _deactivate_sibling_agents(db, user_id, device_id, keep_agent_id=agent_id)
     return {
         "agent_id": agent_id,
         "token": token,
         "name": agent_name,
         "device_id": device_id,
         "protocol_version": protocol_version,
-        "supports_pairing": doc["supports_pairing"],
+        "supports_pairing": pairing_capable,
     }
+
+
+def _deactivate_sibling_agents(
+    db: Any,
+    user_id: str,
+    device_id: str,
+    *,
+    keep_agent_id: str,
+) -> None:
+    if not device_id:
+        return
+    now = time.time()
+    siblings = list(
+        db[COLL_AGENTS].find(
+            {
+                "user_id": user_id,
+                "device_id": device_id,
+                "is_active": True,
+                "agent_id": {"$ne": keep_agent_id},
+            },
+            {"_id": 0, "agent_id": 1},
+        )
+    )
+    sibling_ids = [str(doc["agent_id"]) for doc in siblings if doc.get("agent_id")]
+    if not sibling_ids:
+        return
+    db[COLL_AGENTS].update_many(
+        {"agent_id": {"$in": sibling_ids}},
+        {"$set": {"is_active": False, "updated_at": now}},
+    )
+    db[COLL_AGENT_PAIRINGS].delete_many({"agent_id": {"$in": sibling_ids}})
+    db[COLL_AGENT_JOBS].delete_many({"agent_id": {"$in": sibling_ids}})
 
 
 def authenticate_agent(token: str) -> Optional[dict[str, Any]]:

@@ -30,14 +30,15 @@ export async function refreshAgentStatus() {
 
   try {
     const agents = await fetchJSON("/api/agents");
-    if (!Array.isArray(agents) || agents.length === 0) {
+    const active = Array.isArray(agents) ? agents.filter((a) => a.is_active) : [];
+    if (!active.length) {
       el.innerHTML = `<span class="agent-status-dot offline"></span><span class="agent-status-label">No agents registered</span>`;
       return;
     }
 
-    const online = agents.filter((a) => agentStatus(a) === "online").length;
-    const total = agents.length;
-    const latest = agents[0];
+    const online = active.filter((a) => agentStatus(a) === "online").length;
+    const total = active.length;
+    const latest = active[0];
     const status = agentStatus(latest);
     const statusClass = status === "online" ? "online" : (status === "stale" ? "stale" : "offline");
     const statusLabel = status === "online" ? "Online" : (status === "stale" ? "Stale" : "Offline");
@@ -47,7 +48,7 @@ export async function refreshAgentStatus() {
       <span class="agent-status-label">${online}/${total} agents ${statusLabel}</span>
       <span class="agent-status-detail">${latest.name || "agent"} · ${formatTime(latest.last_heartbeat_at)}</span>
     `;
-    el.title = agents.map((a) =>
+    el.title = active.map((a) =>
       `${a.name || a.agent_id}: ${agentStatus(a)} (${formatTime(a.last_heartbeat_at)})`
     ).join("\n");
   } catch {

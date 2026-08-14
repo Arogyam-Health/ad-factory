@@ -6,8 +6,9 @@ from unittest.mock import patch
 
 
 class _Result:
-    def __init__(self, modified_count: int = 0) -> None:
+    def __init__(self, modified_count: int = 0, deleted_count: int = 0) -> None:
         self.modified_count = modified_count
+        self.deleted_count = deleted_count
 
 
 class _Collection:
@@ -19,9 +20,11 @@ class _Collection:
         for key, expected in query.items():
             actual = doc.get(key)
             if isinstance(expected, dict):
-                if "$gt" in expected and not actual > expected["$gt"]:
+                if "$ne" in expected and actual == expected["$ne"]:
                     return False
                 if "$in" in expected and actual not in expected["$in"]:
+                    return False
+                if "$gt" in expected and not actual > expected["$gt"]:
                     return False
             elif actual != expected:
                 return False
@@ -42,10 +45,25 @@ class _Collection:
         return None
 
     def find(self, query: dict, projection=None):
-        return _Cursor(
-            [self.find_one({"challenge_id": doc["challenge_id"]}, projection) for doc in self.docs
-             if self._matches(doc, query)]
-        )
+        results = []
+        for doc in self.docs:
+            if not self._matches(doc, query):
+                continue
+            result = copy.deepcopy(doc)
+            if projection:
+                for key, include in projection.items():
+                    if include == 0:
+                        result.pop(key, None)
+                    elif include == 1:
+                        pass
+                if any(value == 1 for value in projection.values()):
+                    result = {
+                        key: value
+                        for key, value in result.items()
+                        if projection.get(key) == 1 or key == "_id"
+                    }
+            results.append(result)
+        return _Cursor(results)
 
     def update_one(self, query: dict, update: dict) -> _Result:
         for doc in self.docs:
@@ -53,6 +71,25 @@ class _Collection:
                 doc.update(copy.deepcopy(update.get("$set", {})))
                 return _Result(1)
         return _Result()
+
+    def update_many(self, query: dict, update: dict) -> _Result:
+        count = 0
+        for doc in self.docs:
+            if self._matches(doc, query):
+                doc.update(copy.deepcopy(update.get("$set", {})))
+                count += 1
+        return _Result(count)
+
+    def delete_many(self, query: dict) -> _Result:
+        kept = []
+        deleted = 0
+        for doc in self.docs:
+            if self._matches(doc, query):
+                deleted += 1
+            else:
+                kept.append(doc)
+        self.docs = kept
+        return _Result(deleted_count=deleted)
 
 
 class _Cursor(list):
@@ -124,6 +161,38 @@ class AgentDevicePairingTests(unittest.TestCase):
         self.assertNotIn("capabilities", stored)
         self.assertNotIn("localhost_url", stored)
         self.assertNotIn("local_path", stored)
+
+    def test_register_reuses_one_active_agent_per_user_device(self) -> None:
+        first = self.register()
+        self.db["agents"].insert_one(
+            {
+                "agent_id": "agent_stale_sibling",
+                "user_id": "user-1",
+                "device_id": "dev_" + "a" * 32,
+                "is_active": True,
+                "supports_pairing": True,
+                "name": "old",
+            }
+        )
+        self.db["agent_pairings"].insert_one(
+            {"agent_id": "agent_stale_sibling", "challenge_id": "pch_old"}
+        )
+        self.db["agent_jobs"].insert_one(
+            {"agent_id": "agent_stale_sibling", "job_id": "job_old"}
+        )
+
+        second = self.register()
+        active = [doc for doc in self.db["agents"].docs if doc.get("is_active")]
+
+        self.assertEqual(second["agent_id"], first["agent_id"])
+        self.assertNotEqual(second["token"], first["token"])
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0]["agent_id"], first["agent_id"])
+        self.assertFalse(
+            any(doc.get("is_active") for doc in self.db["agents"].docs if doc["agent_id"] == "agent_stale_sibling")
+        )
+        self.assertEqual(self.db["agent_pairings"].docs, [])
+        self.assertEqual(self.db["agent_jobs"].docs, [])
 
     def test_approval_is_metadata_only_and_pinned_to_agent_device_owner(self) -> None:
         registration = self.register()
