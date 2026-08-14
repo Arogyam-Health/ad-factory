@@ -98,6 +98,11 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
 
         self.assertIn('"invalid_session"', local_client)
         self.assertIn("await this.ensurePaired(", local_client)
+        allocate = local_client.index("async allocateLocalRun(")
+        self.assertLess(
+            local_client.index("await this.ensurePaired(", allocate),
+            local_client.index("await this.allocateRun(", allocate),
+        )
         self.assertIn("clearLocalPairingSessions();", auth)
         self.assertIn("loadStructuredAssets({ silent: false })", main)
 
@@ -126,7 +131,12 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         api = (FRONTEND / "js" / "api.js").read_text(encoding="utf-8")
         self.assertIn('cache: "no-store"', api)
         self.assertIn('credentials: "same-origin"', api)
-        self.assertIn("`hydrate-${key}`", reference)
+        self.assertIn("if (referenceRunInFlight) return;", reference)
+        self.assertLess(
+            reference.index("referenceRunInFlight = true;"),
+            reference.index("await refreshReferencePersonas();"),
+        )
+        self.assertIn("references: referenceDeclarations", reference)
         self.assertIn("reconciledProductIds", reference)
         self.assertIn("await localDataPlane.listRuns(", runs)
         self.assertIn('fetchJSON("/api/runs/reconcile-local"', runs)

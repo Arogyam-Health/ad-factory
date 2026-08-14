@@ -361,6 +361,12 @@ export class LocalDataPlaneClient {
   }) {
     const info = await this.discover();
     const agent = await this.registeredAgent(info.device_id);
+    await this.ensurePaired({
+      ownerType,
+      ownerId,
+      deviceId: info.device_id,
+      agentId: agent.agent_id,
+    });
     const envelope = await this.allocateRun({
       agentId: agent.agent_id,
       deviceId: info.device_id,
@@ -368,12 +374,6 @@ export class LocalDataPlaneClient {
       ownerId,
       flowType,
       settings,
-    });
-    await this.ensurePaired({
-      ownerType,
-      ownerId,
-      deviceId: envelope.device_id,
-      agentId: envelope.agent_id,
     });
     const workspaceId = this.createWorkspaceId();
     await this.createRun({

@@ -26,6 +26,7 @@ const REFERENCE_PRODUCT_IDS_KEY = "reference-workspace-product-assets";
 const PAIRING_BACKOFFS_MS = [2000, 5000, 15000];
 let pairingBackoffIndex = 0;
 let pairingErrorSticky = "";
+let referenceRunInFlight = false;
 
 async function ensureReferenceLocal() {
   const ownerId = getAuthUser()?.user_id || "";
@@ -723,6 +724,7 @@ async function pollStatus() {
     pairingErrorSticky = "";
     if (["completed", "failed", "canceled"].includes(data.status)) {
       stopPolling();
+      referenceRunInFlight = false;
       $("referenceRunBtn").disabled = false;
       $("referenceCancelBtn").disabled = true;
       invalidateRuns();
@@ -755,21 +757,45 @@ function startPolling() {
 }
 
 async function startRun() {
-  await refreshReferencePersonas();
-  await loadReferenceWorkspace();
-  if (!selectedPersonas.size) return appendLog("Select at least one persona.");
-  if (!selectedReferences.size) return appendLog("Select at least one reference image.");
-  if (!selectedProducts.size) return appendLog("Select at least one product image for Reference Image Flow.");
-  if (!workspace?.product_document?.content?.trim()) return appendLog("Store a local Reference product document.");
-  if (!workspace?.starting_prompt?.content?.trim()) return appendLog("Store a local Reference starting prompt.");
-  if (!workspace?.persona_seed?.content?.trim()) return appendLog("Store a local Reference persona config.");
-  if ($("referenceGenerate916").checked && !workspace?.conversion_prompt?.content?.trim()) {
-    return appendLog("Store a local Reference 9:16 conversion prompt.");
-  }
-  $("referenceRunBtn").disabled = true;
-  $("referenceCancelBtn").disabled = true;
-  $("referenceProgressBar").style.width = "2%";
-  $("referenceProgressText").textContent = "Preparing reference run…";
+  const runBtn = $("referenceRunBtn");
+  if (referenceRunInFlight) return;
+  referenceRunInFlight = true;
+  if (runBtn) runBtn.disabled = true;
+  let started = false;
+  try {
+    await refreshReferencePersonas();
+    await loadReferenceWorkspace();
+    if (!selectedPersonas.size) {
+      appendLog("Select at least one persona.");
+      return;
+    }
+    if (!selectedReferences.size) {
+      appendLog("Select at least one reference image.");
+      return;
+    }
+    if (!selectedProducts.size) {
+      appendLog("Select at least one product image for Reference Image Flow.");
+      return;
+    }
+    if (!workspace?.product_document?.content?.trim()) {
+      appendLog("Store a local Reference product document.");
+      return;
+    }
+    if (!workspace?.starting_prompt?.content?.trim()) {
+      appendLog("Store a local Reference starting prompt.");
+      return;
+    }
+    if (!workspace?.persona_seed?.content?.trim()) {
+      appendLog("Store a local Reference persona config.");
+      return;
+    }
+    if ($("referenceGenerate916").checked && !workspace?.conversion_prompt?.content?.trim()) {
+      appendLog("Store a local Reference 9:16 conversion prompt.");
+      return;
+    }
+    $("referenceCancelBtn").disabled = true;
+    $("referenceProgressBar").style.width = "2%";
+    $("referenceProgressText").textContent = "Preparing reference run…";
   try {
     await ensureReferenceLocal();
     const user = getAuthUser();
@@ -911,14 +937,19 @@ async function startRun() {
     $("referenceCancelBtn").disabled = false;
     $("referenceProgressText").textContent = `Run ${envelope.display_batch} queued locally`;
     appendLog(`Reference run ${envelope.run_id} queued on this device.`);
+    started = true;
     startPolling();
     invalidateRuns();
     await loadWorkspaceRuns("reference");
   } catch (error) {
-    $("referenceRunBtn").disabled = false;
     $("referenceCancelBtn").disabled = true;
     $("referenceProgressText").textContent = "Run failed to start";
     appendLog(`Reference flow failed to start: ${String(error)}`);
+  } finally {
+    if (!started) {
+      referenceRunInFlight = false;
+      if (runBtn) runBtn.disabled = false;
+    }
   }
 }
 
