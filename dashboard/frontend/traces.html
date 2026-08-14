@@ -158,6 +158,7 @@
     <div>
       <h1>LLM Traces</h1>
       <div class="breadcrumb"><a href="/">Studio</a> &rsaquo; LLM Traces</div>
+      <p class="hint" style="margin:0.4rem 0 0">Copy LLM calls only. Image and reference runs do not write traces.</p>
     </div>
   </div>
 
@@ -241,7 +242,7 @@
       });
     });
 
-    const LIMIT = 5;
+    let LIMIT = 5;
     let offset = 0;
     let runIdFilter = "";
     let tracesData = [];
@@ -279,6 +280,7 @@
         duration_s: Number((Number(trace.duration_ms || 0) / 1000).toFixed(2)),
         error: trace.error_detail || trace.error_code || "",
       }));
+      if (Number(data.limit) > 0) LIMIT = Number(data.limit);
       renderTraces(data);
     }
 
@@ -289,8 +291,8 @@
       if (!tracesData.length) {
         container.innerHTML = `<div class="empty-state">
           <div class="empty-icon">&#9744;</div>
-          <div class="empty-title">No traces found</div>
-          <div class="empty-desc">${data.total === 0 ? "Run an ad generation to see LLM calls here." : "Try adjusting your filter."}</div>
+          <div class="empty-title">No copy LLM calls yet</div>
+          <div class="empty-desc">${data.total === 0 ? "Image and reference runs do not write traces. Run structured copy generation to see LLM calls here." : "Try adjusting your filter."}</div>
         </div>`;
         pagination.style.display = "none";
         document.getElementById("totalStat").textContent = "0";
@@ -333,6 +335,7 @@
               <div class="trace-row2">
                 <span class="run-id-text" title="${escapeAttr(t.run_id || "")}">${escapeHtml(t.run_id || "")}</span>
                 <span class="timestamp-text">${displayTime}</span>
+                ${t.display_name || t.actor_email ? `<span class="actor-text">${escapeHtml(t.display_name || t.actor_email)}</span>` : ""}
               </div>
             </div>
             <button class="trace-delete-btn" data-file="${escapeAttr(t._file || "")}" title="Delete this trace">&times;</button>

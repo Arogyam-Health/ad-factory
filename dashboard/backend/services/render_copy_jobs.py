@@ -662,6 +662,13 @@ def resume_user_provider_jobs(user_id: str) -> int:
     return resumed
 
 
+def _copy_trace_org_id(job: dict[str, Any]) -> str:
+    if str(job.get("owner_type") or "") == "org":
+        return str(job.get("owner_id") or "")
+    settings = job.get("settings") if isinstance(job.get("settings"), dict) else {}
+    return str(settings.get("org_id") or "")
+
+
 def _record_provider_failure_trace(
     job: dict[str, Any],
     exc: ProviderCallError,
@@ -678,6 +685,7 @@ def _record_provider_failure_trace(
             user_id=str(job["user_id"]),
             run_id=str(job["run_id"]),
             batch=f"v{int(job['run_number'])}",
+            org_id=_copy_trace_org_id(job),
             event={
                 "provider": exc.provider,
                 "model": exc.model,
@@ -765,6 +773,7 @@ def process_next_render_copy_job() -> bool:
                     user_id=str(job["user_id"]),
                     run_id=str(job["run_id"]),
                     batch=f"v{int(job['run_number'])}",
+                    org_id=_copy_trace_org_id(job),
                     event=event,
                 ),
             ),

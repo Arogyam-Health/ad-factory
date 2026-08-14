@@ -775,6 +775,10 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertIn('fetch(`/api/llm-traces?', source)
         self.assertNotIn("localDataPlane.listTraces", source)
         self.assertNotIn("localDataPlane.traceContent", source)
+        self.assertIn("No copy LLM calls yet", source)
+        self.assertIn("Image and reference runs do not write traces", source)
+        self.assertIn("actor_email", source)
+        self.assertIn("display_name", source)
 
     def test_mongo_trace_history_keeps_only_five_sanitized_records(self) -> None:
         from dashboard.backend.services.llm_trace import (
@@ -840,8 +844,12 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                         doc
                         for doc in self.docs
                         if not (
-                            doc.get("user_id") == query.get("user_id")
-                            and doc.get("trace_id") in values
+                            doc.get("trace_id") in values
+                            and all(
+                                doc.get(key) == value
+                                for key, value in query.items()
+                                if key != "trace_id"
+                            )
                         )
                     ]
                 return SimpleNamespace(deleted_count=before - len(self.docs))
@@ -884,6 +892,132 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(len(traces), 5)
         self.assertEqual(traces[0]["run_id"], "run-6")
         self.assertNotIn("api_key", json.dumps(traces).lower())
+
+    def test_org_trace_history_keeps_last_ten_with_actor(self) -> None:
+        from dashboard.backend.services.llm_trace import (
+            list_org_llm_traces,
+            list_traces_for_viewer,
+            record_recent_llm_trace,
+        )
+
+        class Cursor(list):
+            def sort(self, key, direction):
+                return Cursor(
+                    sorted(
+                        self,
+                        key=lambda item: item.get(key, 0),
+                        reverse=direction < 0,
+                    )
+                )
+
+            def skip(self, count):
+                return Cursor(self[count:])
+
+            def limit(self, count):
+                return Cursor(self[:count])
+
+        class Collection:
+            def __init__(self):
+                self.docs = []
+
+            def insert_one(self, doc):
+                self.docs.append(copy.deepcopy(doc))
+
+            def find(self, query, projection):
+                rows = [
+                    copy.deepcopy(doc)
+                    for doc in self.docs
+                    if all(doc.get(key) == value for key, value in query.items())
+                ]
+                if projection:
+                    rows = [
+                        {
+                            key: value
+                            for key, value in row.items()
+                            if projection.get(key) == 1
+                        }
+                        for row in rows
+                    ]
+                return Cursor(rows)
+
+            def delete_many(self, query):
+                before = len(self.docs)
+                trace_filter = query.get("trace_id")
+                if isinstance(trace_filter, dict) and "$in" in trace_filter:
+                    values = set(trace_filter["$in"])
+                    self.docs = [
+                        doc
+                        for doc in self.docs
+                        if not (
+                            doc.get("trace_id") in values
+                            and all(
+                                doc.get(key) == value
+                                for key, value in query.items()
+                                if key != "trace_id"
+                            )
+                        )
+                    ]
+                return SimpleNamespace(deleted_count=before - len(self.docs))
+
+        class Users:
+            def find_one(self, query, projection=None):
+                return {"email": "ada@example.com", "display_name": "Ada Lovelace"}
+
+        collection = Collection()
+        db = {"llm_traces": collection, "users": Users()}
+        event = {
+            "provider": "opencode",
+            "model": "opencode/mimo-v2.5-free",
+            "api_model": "mimo-v2.5-free",
+            "endpoint": "https://opencode.ai/zen/v1/chat/completions",
+            "label": "copy",
+            "status": "completed",
+            "http_status": 200,
+            "duration_ms": 12,
+            "request": {"task": "copy", "planned_ad_count": 1, "languages": ["EN"]},
+            "response": {"usage": {}},
+        }
+        with patch(
+            "dashboard.backend.services.llm_trace.get_sync_db",
+            return_value=db,
+        ):
+            for index in range(12):
+                record_recent_llm_trace(
+                    user_id=f"user-{index % 3}",
+                    run_id=f"run-{index}",
+                    batch=f"v{index}",
+                    org_id="org_shared",
+                    event=event,
+                )
+            traces = list_org_llm_traces("org_shared")
+            with patch(
+                "dashboard.backend.services.org_helper.get_user_default_org",
+                return_value={
+                    "org_id": "org_shared",
+                    "config_mode": "shared_org_config",
+                },
+            ):
+                listed = list_traces_for_viewer("user-0")
+
+        self.assertEqual(len(collection.docs), 10)
+        self.assertEqual(len(traces), 10)
+        self.assertEqual(traces[0]["run_id"], "run-11")
+        self.assertEqual(traces[0]["actor_email"], "ada@example.com")
+        self.assertEqual(traces[0]["display_name"], "Ada Lovelace")
+        self.assertEqual(listed["scope"], "org")
+        self.assertEqual(listed["limit"], 10)
+        self.assertEqual(len(listed["traces"]), 10)
+
+        with patch(
+            "dashboard.backend.services.llm_trace.get_sync_db",
+            return_value=db,
+        ), patch(
+            "dashboard.backend.services.org_helper.get_user_default_org",
+            return_value={"org_id": "org_personal", "config_mode": "individual_member_config"},
+        ):
+            personal = list_traces_for_viewer("user-1")
+        self.assertEqual(personal["scope"], "personal")
+        self.assertEqual(personal["limit"], 5)
 
     def test_delivery_and_render_jobs_have_ttl_indexes(self) -> None:
         from dashboard.backend.db.collections import (

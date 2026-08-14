@@ -5,10 +5,68 @@ import uuid
 from typing import Any
 
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_LLM_TRACES
+from dashboard.backend.db.collections import COLL_LLM_TRACES, COLL_USERS
 
 
 MAX_RECENT_TRACES_PER_USER = 5
+MAX_RECENT_TRACES_PER_ORG = 10
+
+_TRACE_PROJECTION = {
+    "_id": 0,
+    "trace_id": 1,
+    "run_id": 1,
+    "batch": 1,
+    "provider": 1,
+    "model": 1,
+    "api_model": 1,
+    "endpoint": 1,
+    "label": 1,
+    "status": 1,
+    "http_status": 1,
+    "duration_ms": 1,
+    "error_code": 1,
+    "error_detail": 1,
+    "request": 1,
+    "response": 1,
+    "created_at": 1,
+    "org_id": 1,
+    "actor_email": 1,
+    "display_name": 1,
+}
+
+
+def _actor_fields(user_id: str) -> dict[str, str]:
+    try:
+        user = get_sync_db()[COLL_USERS].find_one(
+            {"user_id": user_id},
+            {"_id": 0, "email": 1, "display_name": 1},
+        ) or {}
+    except Exception:
+        user = {}
+    return {
+        "actor_email": str(user.get("email") or "")[:320],
+        "display_name": str(user.get("display_name") or "")[:200],
+    }
+
+
+def _prune_stale(collection: Any, query: dict[str, Any], keep: int) -> None:
+    stale = list(
+        collection.find(
+            query,
+            {"_id": 0, "trace_id": 1, "created_at": 1},
+        )
+        .sort("created_at", -1)
+        .skip(keep)
+    )
+    stale_ids = [
+        str(item.get("trace_id") or "")
+        for item in stale
+        if str(item.get("trace_id") or "")
+    ]
+    if stale_ids:
+        prune_query = dict(query)
+        prune_query["trace_id"] = {"$in": stale_ids}
+        collection.delete_many(prune_query)
 
 
 def record_recent_llm_trace(
@@ -17,6 +75,7 @@ def record_recent_llm_trace(
     run_id: str,
     batch: str,
     event: dict[str, Any],
+    org_id: str = "",
 ) -> dict[str, Any]:
     now = time.time()
     request = event.get("request")
@@ -25,10 +84,15 @@ def record_recent_llm_trace(
     response = response if isinstance(response, dict) else {}
     usage = response.get("usage")
     usage = usage if isinstance(usage, dict) else {}
+    clean_org_id = str(org_id or "")[:80]
+    actor = _actor_fields(user_id)
     doc = {
         "trace_id": "trc_" + uuid.uuid4().hex,
         "user_id": user_id,
         "run_id": run_id,
+        "org_id": clean_org_id,
+        "actor_email": actor["actor_email"],
+        "display_name": actor["display_name"],
         "batch": str(batch or "")[:100],
         "provider": str(event.get("provider") or "")[:50],
         "model": str(event.get("model") or "")[:256],
@@ -79,24 +143,23 @@ def record_recent_llm_trace(
         {"user_id": user_id, "trace_id": {"$exists": False}}
     )
     collection.insert_one(doc)
-    stale = list(
-        collection.find(
+    if clean_org_id:
+        _prune_stale(
+            collection,
+            {"org_id": clean_org_id},
+            MAX_RECENT_TRACES_PER_ORG,
+        )
+    else:
+        _prune_stale(
+            collection,
             {"user_id": user_id},
-            {"_id": 0, "trace_id": 1, "created_at": 1},
+            MAX_RECENT_TRACES_PER_USER,
         )
-        .sort("created_at", -1)
-        .skip(MAX_RECENT_TRACES_PER_USER)
-    )
-    stale_ids = [
-        str(item.get("trace_id") or "")
-        for item in stale
-        if str(item.get("trace_id") or "")
-    ]
-    if stale_ids:
-        collection.delete_many(
-            {"user_id": user_id, "trace_id": {"$in": stale_ids}}
-        )
-    return {key: value for key, value in doc.items() if key != "user_id"}
+    return {
+        key: value
+        for key, value in doc.items()
+        if key != "user_id"
+    }
 
 
 def list_recent_llm_traces(
@@ -109,32 +172,49 @@ def list_recent_llm_traces(
         query["run_id"] = run_id
     return list(
         get_sync_db()[COLL_LLM_TRACES]
-        .find(
-            query,
-            {
-                "_id": 0,
-                "user_id": 0,
-                "trace_id": 1,
-                "run_id": 1,
-                "batch": 1,
-                "provider": 1,
-                "model": 1,
-                "api_model": 1,
-                "endpoint": 1,
-                "label": 1,
-                "status": 1,
-                "http_status": 1,
-                "duration_ms": 1,
-                "error_code": 1,
-                "error_detail": 1,
-                "request": 1,
-                "response": 1,
-                "created_at": 1,
-            },
-        )
+        .find(query, _TRACE_PROJECTION)
         .sort("created_at", -1)
         .limit(MAX_RECENT_TRACES_PER_USER)
     )
+
+
+def list_org_llm_traces(
+    org_id: str,
+    *,
+    run_id: str = "",
+) -> list[dict[str, Any]]:
+    query: dict[str, Any] = {"org_id": org_id}
+    if run_id:
+        query["run_id"] = run_id
+    return list(
+        get_sync_db()[COLL_LLM_TRACES]
+        .find(query, _TRACE_PROJECTION)
+        .sort("created_at", -1)
+        .limit(MAX_RECENT_TRACES_PER_ORG)
+    )
+
+
+def list_traces_for_viewer(
+    user_id: str,
+    *,
+    run_id: str = "",
+) -> dict[str, Any]:
+    from dashboard.backend.services.org_helper import get_user_default_org
+
+    org = get_user_default_org(user_id) or {}
+    if org.get("config_mode") == "shared_org_config" and org.get("org_id"):
+        traces = list_org_llm_traces(str(org["org_id"]), run_id=run_id)
+        return {
+            "traces": traces,
+            "scope": "org",
+            "limit": MAX_RECENT_TRACES_PER_ORG,
+        }
+    traces = list_recent_llm_traces(user_id, run_id=run_id)
+    return {
+        "traces": traces,
+        "scope": "personal",
+        "limit": MAX_RECENT_TRACES_PER_USER,
+    }
 
 
 def delete_recent_llm_traces(

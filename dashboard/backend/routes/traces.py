@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.services.llm_trace import (
     delete_recent_llm_traces,
-    list_recent_llm_traces,
+    list_traces_for_viewer,
 )
 
 
@@ -20,16 +20,18 @@ def get_llm_traces(
     run_id: str = "",
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    traces = list_recent_llm_traces(
+    listed = list_traces_for_viewer(
         str(user["user_id"]),
         run_id=str(run_id or "")[:200],
     )
+    traces = listed["traces"]
     response.headers["Cache-Control"] = "no-store"
     return {
         "traces": traces,
         "total": len(traces),
         "offset": 0,
-        "limit": 5,
+        "limit": listed["limit"],
+        "scope": listed["scope"],
     }
 
 
@@ -63,7 +65,7 @@ def delete_llm_trace_batch(
     trace_ids = payload.get("trace_ids")
     if (
         not isinstance(trace_ids, list)
-        or len(trace_ids) > 5
+        or len(trace_ids) > 10
         or any(
             not isinstance(value, str)
             or not value.startswith("trc_")
