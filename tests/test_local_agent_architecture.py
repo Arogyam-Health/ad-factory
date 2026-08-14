@@ -343,6 +343,16 @@ class AgentAuthTests(unittest.TestCase):
         self.assertFalse(is_agent_runtime_path("/api/agents"))
         self.assertFalse(is_agent_runtime_path("/api/agents/jobs/job-1/cancel"))
 
+    def test_connected_websocket_still_sends_http_heartbeat(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "scripts" / "local_agent.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'api_request("POST", "/api/agents/heartbeat"',
+            source,
+        )
+        self.assertNotIn("if not WS_CLIENT.connected and now - last_heartbeat", source)
+
 
 if __name__ == "__main__":
     unittest.main()

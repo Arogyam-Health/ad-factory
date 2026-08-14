@@ -158,6 +158,14 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("} finally {", start_run)
         self.assertIn('.input-prompt-card[data-flow]', reference)
         self.assertNotIn('querySelectorAll("[data-flow]")', reference)
+        set_flow = reference[
+            reference.index("function setFlow(mode)") :
+            reference.index("function renderPersonas")
+        ]
+        self.assertIn('structuredFlowPanel").classList.toggle("hidden", reference)', set_flow)
+        self.assertNotIn("card-files", set_flow)
+        self.assertIn("studioOrgId()", reference[reference.index("async function refreshReferencePersonas"):reference.index("function startPersonaSync")])
+        self.assertIn("/api/config/persona-summary?org_id=", reference)
         custom = (FRONTEND / "js" / "custom-select.js").read_text(encoding="utf-8")
         self.assertIn("document.body.appendChild(menu)", custom)
         styles = (FRONTEND / "styles.css").read_text(encoding="utf-8")

@@ -1507,14 +1507,14 @@ def register_and_run(args: argparse.Namespace) -> None:
             sync_pairing_approvals(fetch_remote=now >= next_pairing_poll)
             if now >= next_pairing_poll:
                 next_pairing_poll = now + POLL_INTERVAL
+            if now - last_heartbeat >= 30:
+                api_request("POST", "/api/agents/heartbeat", token=AGENT_TOKEN, timeout=20, quiet=True)
+                last_heartbeat = now
             if not signaled and now < next_http_poll:
                 continue
             next_http_poll = now + POLL_INTERVAL
             flush_terminal_outbox()
             sync_prompt_deliveries()
-            if not WS_CLIENT.connected and now - last_heartbeat >= 30:
-                api_request("POST", "/api/agents/heartbeat", token=AGENT_TOKEN, timeout=20, quiet=True)
-                last_heartbeat = now
             jobs = api_request("GET", "/api/agents/jobs/poll", token=AGENT_TOKEN, timeout=30, quiet=True)
             if jobs is None:
                 connection_was_down = True

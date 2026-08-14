@@ -140,6 +140,20 @@ def _empty_config() -> dict[str, str]:
     return dict(_EMPTY_BY_KEY)
 
 
+_EMPTY_OVERRIDE_PLACEHOLDERS = frozenset({"", "{}", "[]"})
+
+
+def _has_config_override(value: Any) -> bool:
+    """True when a stored file should replace the bundled generic default."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip() not in _EMPTY_OVERRIDE_PLACEHOLDERS
+    if isinstance(value, (dict, list)):
+        return bool(value)
+    return True
+
+
 def get_generic_config() -> dict[str, Any]:
     """Read the global dashboard config file set from MongoDB."""
     try:
@@ -417,7 +431,7 @@ def resolve_effective_config_for_user(user_id: str) -> dict[str, Any]:
     merged = dict(generic)
     for k in CONFIG_KEYS:
         val = user_files.get(k, "")
-        if val:  # non-empty overrides generic
+        if _has_config_override(val):
             merged[k] = val
 
     return merged
@@ -446,7 +460,7 @@ def resolve_effective_config(
         merged = dict(generic)
         for k in CONFIG_KEYS:
             val = override_config.get(k, "")
-            if val:
+            if _has_config_override(val):
                 merged[k] = val
         return merged
 

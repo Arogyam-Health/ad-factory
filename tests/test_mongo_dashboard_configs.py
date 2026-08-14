@@ -433,6 +433,17 @@ class MongoDashboardConfigTests(unittest.TestCase):
             hydrate.index("readLocalText("),
         )
 
+    def test_empty_json_placeholders_do_not_override_generic_catalogs(self) -> None:
+        from dashboard.backend.services.user_config import _has_config_override
+
+        self.assertFalse(_has_config_override(""))
+        self.assertFalse(_has_config_override("{}"))
+        self.assertFalse(_has_config_override("[]"))
+        self.assertFalse(_has_config_override({}))
+        self.assertFalse(_has_config_override([]))
+        self.assertTrue(_has_config_override('{"variants": []}'))
+        self.assertTrue(_has_config_override('[{"persona_number": 1}]'))
+
 
 if __name__ == "__main__":
     unittest.main()

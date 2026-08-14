@@ -191,13 +191,8 @@ function setFlow(mode) {
   const reference = mode === "reference";
   $("structuredFlowTab").classList.toggle("active", !reference);
   $("referenceFlowTab").classList.toggle("active", reference);
-  $("structuredFlowPanel")?.classList.remove("hidden");
+  $("structuredFlowPanel").classList.toggle("hidden", reference);
   $("referenceFlowPanel").classList.toggle("hidden", !reference);
-  document.querySelector(".column-right")?.classList.toggle("hidden", reference);
-  document.querySelectorAll(".column-left > .card").forEach((card) => {
-    const keep = card.classList.contains("card-files") || card.classList.contains("card-input-prompts");
-    card.classList.toggle("hidden", reference && !keep);
-  });
   applyFlowConfigCards(mode);
   localStorage.setItem("adFactoryFlowMode", mode);
   setWorkspaceMode(mode);
@@ -237,9 +232,13 @@ function renderPersonas(personas = state.defaultData?.personas || []) {
 
 async function refreshReferencePersonas({ silent = true } = {}) {
   try {
+    const orgId = studioOrgId();
+    const personaUrl = orgId
+      ? `/api/config/persona-summary?org_id=${encodeURIComponent(orgId)}`
+      : "/api/config/persona-summary";
     const [defaultsResult, summaryResult] = await Promise.allSettled([
       fetchJSON("/api/defaults", { cache: "no-store" }),
-      fetchJSON("/api/config/persona-summary", { cache: "no-store" }),
+      fetchJSON(personaUrl, { cache: "no-store" }),
     ]);
     const defaults = defaultsResult.status === "fulfilled" ? defaultsResult.value : {};
     const summary = summaryResult.status === "fulfilled" ? summaryResult.value : {};
@@ -250,6 +249,9 @@ async function refreshReferencePersonas({ silent = true } = {}) {
         name: String(entry.name || `Persona ${entry.number}`),
         core_pattern: entry.core_pattern || "",
       })).filter((persona) => persona.number);
+    }
+    if (!personas.length && Array.isArray(state.defaultData?.personas)) {
+      personas = state.defaultData.personas;
     }
     renderPersonas(personas);
     if (!silent) appendLog("Reference personas refreshed from the effective config.");

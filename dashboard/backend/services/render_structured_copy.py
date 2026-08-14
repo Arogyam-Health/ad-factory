@@ -60,6 +60,38 @@ def _json_config(value: Any, fallback: Any) -> Any:
     return parsed if isinstance(parsed, type(fallback)) else fallback
 
 
+_BUNDLED_BACKGROUNDS: dict[str, Any] | None = None
+
+
+def _bundled_backgrounds() -> dict[str, Any]:
+    global _BUNDLED_BACKGROUNDS
+    if _BUNDLED_BACKGROUNDS is None:
+        try:
+            parsed = json.loads(generate_ads.BACKGROUNDS_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            parsed = {}
+        _BUNDLED_BACKGROUNDS = parsed if isinstance(parsed, dict) else {}
+    return _BUNDLED_BACKGROUNDS
+
+
+def _resolve_backgrounds(effective_config: dict[str, Any]) -> dict[str, Any]:
+    stored = _json_config(effective_config.get("background_variant"), {})
+    if isinstance(stored, dict) and isinstance(stored.get("variants"), list) and stored["variants"]:
+        return stored
+    bundled = _bundled_backgrounds()
+    return bundled if bundled.get("variants") else stored
+
+
+def _pick_background_slot(backgrounds: dict[str, Any], fmt: str, seed: int) -> dict[str, Any]:
+    try:
+        return generate_ads.pick_background_slot(backgrounds, fmt, seed)
+    except RuntimeError:
+        bundled = _bundled_backgrounds()
+        if bundled is not backgrounds:
+            return generate_ads.pick_background_slot(bundled, fmt, seed)
+        raise
+
+
 def _persona_map(effective_config: dict[str, Any]) -> dict[int, dict[str, Any]]:
     seeds = _json_config(effective_config.get("persona_seeds"), [])
     values = seeds if isinstance(seeds, list) else list(seeds.values())
@@ -568,7 +600,7 @@ def generate_structured_prompt_bundle(
             error_detail=_safe_model_output_detail(error, response),
         )
 
-    backgrounds = _json_config(effective_config.get("background_variant"), {})
+    backgrounds = _resolve_backgrounds(effective_config)
     templates = _json_config(
         effective_config.get("prompt_assembler_templates"), {}
     ) or None
@@ -600,7 +632,7 @@ def generate_structured_prompt_bundle(
                 selected_background = _background(
                     generate_ads.get_background_by_id(backgrounds, fmt, slot_id)
                 ) if slot_id else _background(
-                    generate_ads.pick_background_slot(
+                    _pick_background_slot(
                         backgrounds,
                         fmt,
                         int(run_number) + ad_index - 1,
@@ -608,7 +640,7 @@ def generate_structured_prompt_bundle(
                 )
             except RuntimeError:
                 selected_background = _background(
-                    generate_ads.pick_background_slot(
+                    _pick_background_slot(
                         backgrounds,
                         fmt,
                         int(run_number) + ad_index - 1,
@@ -627,7 +659,7 @@ def generate_structured_prompt_bundle(
             selected_background, background_seed = background_cache[cache_key]
         else:
             selected_background = _background(
-                generate_ads.pick_background_slot(
+                _pick_background_slot(
                     backgrounds,
                     fmt,
                     int(run_number) + ad_index - 1,

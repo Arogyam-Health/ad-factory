@@ -688,6 +688,54 @@ class ProviderRelayTests(unittest.TestCase):
         complete.assert_called_once()
         fail.assert_not_called()
 
+    def test_missing_backgrounds_does_not_retry_another_model(self) -> None:
+        from dashboard.backend.services import render_copy_jobs
+
+        job = {
+            "copy_job_id": "copy-1",
+            "run_id": "run-1",
+            "run_number": 1,
+            "user_id": "user-1",
+            "settings": {
+                "provider": "opencode",
+                "model": "opencode/big-pickle",
+            },
+        }
+        with (
+            patch.object(render_copy_jobs, "_claim_next_job", return_value=job),
+            patch.object(
+                render_copy_jobs,
+                "get_materialized_provider_config",
+                return_value={"api_key": "secret"},
+            ),
+            patch.object(
+                render_copy_jobs,
+                "generate_structured_prompt_bundle",
+                side_effect=RuntimeError("No background variants found for format HERO"),
+            ) as generate,
+            patch.object(render_copy_jobs, "resolve_effective_config", return_value={}),
+            patch.object(render_copy_jobs, "collect_copy_reuse_locks", return_value={}),
+            patch.object(
+                render_copy_jobs,
+                "provider_generate_callable",
+                return_value=lambda *args, **kwargs: {},
+            ),
+            patch.object(render_copy_jobs, "_persist_copy_last_error") as persist,
+            patch.object(render_copy_jobs, "get_sync_db") as get_db,
+            patch.object(render_copy_jobs, "_complete_job") as complete,
+            patch.object(render_copy_jobs, "_fail_job") as fail,
+        ):
+            get_db.return_value.__getitem__.return_value.find_one.return_value = {
+                "status": "running"
+            }
+            self.assertTrue(render_copy_jobs.process_next_render_copy_job())
+
+        self.assertEqual(generate.call_count, 1)
+        persist.assert_not_called()
+        complete.assert_not_called()
+        fail.assert_called_once()
+        self.assertIn("No background variants found", fail.call_args.kwargs["error_detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

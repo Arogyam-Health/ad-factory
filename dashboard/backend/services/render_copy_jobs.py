@@ -932,6 +932,16 @@ def process_next_render_copy_job() -> bool:
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}".strip()[:2000]
+        if "No background variants found" in detail or "Background id not found" in detail:
+            _fail_job(
+                job,
+                error_code="copy_configuration_invalid",
+                provider=str(settings.get("provider") or ""),
+                model=str(settings.get("model") or ""),
+                error_detail=detail,
+                last_error=detail,
+            )
+            return True
         fallback_model = next_free_opencode_model(
             str(settings.get("model") or "")
         )

@@ -146,6 +146,65 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertNotIn("product_assets", calls[0]["request"])
         self.assertNotIn("image", json.dumps(calls[0]["request"]).lower())
 
+    def test_empty_background_catalog_falls_back_to_bundled_hero_variants(self) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            generate_structured_prompt_bundle,
+        )
+
+        def generate(request: dict, repair: bool = False) -> dict:
+            return {
+                "ads": [
+                    {
+                        "concept_angle": "desired_outcome",
+                        "copy": {
+                            "EN": {
+                                "headline": "Keep the routine simple",
+                                "support_line": "Five minutes that fit real life.",
+                                "trust_line": "Built around verified product facts",
+                                "cta": "Learn more",
+                            }
+                        },
+                    }
+                ]
+            }
+
+        result = generate_structured_prompt_bundle(
+            run_id="run-hero-fallback",
+            run_number=8,
+            settings={
+                "selected_personas": [3],
+                "global_formats": ["HERO"],
+                "formats_by_persona": {},
+                "multiplier": 1,
+                "language_mode": "EN",
+            },
+            effective_config={
+                "product_master_doc": "Verified product facts.",
+                "persona_seeds": json.dumps(
+                    [
+                        {
+                            "persona_number": 3,
+                            "persona_name": "Stress Snacker",
+                            "core_pattern": "Stress creates food urges.",
+                            "relevant_ok_kit_role": "A practical routine.",
+                            "why_it_failed": "Old plans were difficult.",
+                            "guardrail": "Do not claim treatment.",
+                        }
+                    ]
+                ),
+                "background_variant": "{}",
+                "prompt_assembler_templates": "{}",
+            },
+            provider_name="opencode",
+            provider_model="opencode/big-pickle",
+            generate=generate,
+        )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["prompt_count"], 1)
+        self.assertEqual(result["prompts"][0]["format"], "HERO")
+        self.assertTrue(result["prompts"][0]["background_id"])
+
     def test_copy_settings_whitelist_accepts_studio_controls(self) -> None:
         from dashboard.backend.services.render_copy_jobs import validate_copy_settings
 
