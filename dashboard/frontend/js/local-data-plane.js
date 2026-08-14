@@ -1,6 +1,7 @@
 const LOCAL_API_ORIGIN = "http://127.0.0.1:8765";
 const SESSION_PREFIX = "ad_factory_local_session:";
 const ACTIVE_OWNER_PREFIX = "ad_factory_local_owner:";
+const PAIRING_WAIT_MS = 600_000;
 const DEFAULT_SCOPES = Object.freeze([
   "manifest:read",
   "content:read",
@@ -15,6 +16,46 @@ const DEFAULT_SCOPES = Object.freeze([
 
 function ownerKeyOf(ownerType, ownerId) {
   return `${ownerType || "user"}:${ownerId || ""}`;
+}
+
+function storageGet(key) {
+  try {
+    const local = window.localStorage?.getItem(key);
+    if (local) return local;
+  } catch {
+    /* ignore */
+  }
+  try {
+    return window.sessionStorage?.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    window.sessionStorage.removeItem(key);
+  } catch {
+    try {
+      window.sessionStorage.setItem(key, value);
+    } catch {
+      /* ignore quota / private-mode failures */
+    }
+  }
+}
+
+function storageRemove(key) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
 }
 
 function delay(milliseconds) {
@@ -113,7 +154,7 @@ export class LocalDataPlaneClient {
 
     const deadline = Math.min(
       Number(challenge.expires_at || 0) * 1000,
-      Date.now() + 120_000,
+      Date.now() + PAIRING_WAIT_MS,
     );
     while (Date.now() < deadline) {
       try {
@@ -144,41 +185,44 @@ export class LocalDataPlaneClient {
   // owner and reads default to the owner this tab last paired with.
   storeSession(session) {
     const owner = ownerKeyOf(session.owner_type, session.owner_id);
-    sessionStorage.setItem(
+    storageSet(
       `${SESSION_PREFIX}${session.device_id}:${owner}`,
       JSON.stringify(session),
     );
-    sessionStorage.setItem(`${ACTIVE_OWNER_PREFIX}${session.device_id}`, owner);
+    storageSet(`${ACTIVE_OWNER_PREFIX}${session.device_id}`, owner);
   }
 
   activeOwnerKey(deviceId) {
-    return sessionStorage.getItem(`${ACTIVE_OWNER_PREFIX}${deviceId}`) || "";
+    return storageGet(`${ACTIVE_OWNER_PREFIX}${deviceId}`) || "";
   }
 
   session(deviceId, ownerKey = "") {
     const owner = ownerKey || this.activeOwnerKey(deviceId);
     if (!owner) return null;
     const storageKey = `${SESSION_PREFIX}${deviceId}:${owner}`;
-    const raw = sessionStorage.getItem(storageKey);
+    const raw = storageGet(storageKey);
     if (!raw) return null;
     try {
       const session = JSON.parse(raw);
       if (Number(session.expires_at || 0) <= Date.now() / 1000) {
-        sessionStorage.removeItem(storageKey);
+        storageRemove(storageKey);
         return null;
       }
       return session;
     } catch {
-      sessionStorage.removeItem(storageKey);
+      storageRemove(storageKey);
       return null;
     }
   }
 
   clearSessions() {
-    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
-      const key = sessionStorage.key(index);
-      if (key?.startsWith(SESSION_PREFIX) || key?.startsWith(ACTIVE_OWNER_PREFIX)) {
-        sessionStorage.removeItem(key);
+    const prefixes = [SESSION_PREFIX, ACTIVE_OWNER_PREFIX];
+    for (const store of [window.localStorage, window.sessionStorage]) {
+      for (let index = store.length - 1; index >= 0; index -= 1) {
+        const key = store.key(index);
+        if (prefixes.some((prefix) => key?.startsWith(prefix))) {
+          store.removeItem(key);
+        }
       }
     }
   }
@@ -206,7 +250,7 @@ export class LocalDataPlaneClient {
       && current.owner_id === ownerId
       && scopes.every((scope) => current.scopes?.includes(scope))
     ) {
-      sessionStorage.setItem(`${ACTIVE_OWNER_PREFIX}${info.device_id}`, owner);
+      storageSet(`${ACTIVE_OWNER_PREFIX}${info.device_id}`, owner);
       return { info, agent, session: current };
     }
     const session = await this.pair({
@@ -231,7 +275,7 @@ export class LocalDataPlaneClient {
     const payload = await response.clone().json().catch(() => ({}));
     if (payload?.error?.code !== "invalid_session") return response;
 
-    sessionStorage.removeItem(
+    storageRemove(
       `${SESSION_PREFIX}${deviceId}:${ownerKeyOf(session.owner_type, session.owner_id)}`,
     );
     const paired = await this.ensurePaired({

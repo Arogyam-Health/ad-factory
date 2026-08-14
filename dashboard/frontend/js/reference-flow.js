@@ -23,6 +23,9 @@ let referenceObjectUrls = [];
 let referenceProductObjectUrls = [];
 let referenceOutputObjectUrls = [];
 const REFERENCE_PRODUCT_IDS_KEY = "reference-workspace-product-assets";
+const PAIRING_BACKOFFS_MS = [2000, 5000, 15000];
+let pairingBackoffIndex = 0;
+let pairingErrorSticky = "";
 
 async function ensureReferenceLocal() {
   const ownerId = getAuthUser()?.user_id || "";
@@ -687,10 +690,20 @@ function stopPolling() {
   statusTimer = null;
 }
 
+function isUnreachableAgentError(error) {
+  return /failed to fetch|networkerror|pairing challenge expired|offline|load failed/i.test(
+    String(error?.message || error || ""),
+  );
+}
+
 async function pollStatus() {
   if (!activeRunId) return;
   try {
-    await ensureReferenceLocal();
+    const ownerId = getAuthUser()?.user_id || "";
+    const owner = ownerId ? `user:${ownerId}` : "";
+    if (!referenceDeviceId || !localDataPlane.session(referenceDeviceId, owner)) {
+      await ensureReferenceLocal();
+    }
     const run = await fetchJSON(`/api/runs/${activeRunId}?t=${Date.now()}`);
     const generation = run.image_generation || {};
     const data = {
@@ -706,6 +719,8 @@ async function pollStatus() {
     };
     showStatus(data);
     renderLiveGallery(await loadLiveOutputs());
+    pairingBackoffIndex = 0;
+    pairingErrorSticky = "";
     if (["completed", "failed", "canceled"].includes(data.status)) {
       stopPolling();
       $("referenceRunBtn").disabled = false;
@@ -714,6 +729,21 @@ async function pollStatus() {
       await loadWorkspaceRuns("reference");
     }
   } catch (error) {
+    if (isUnreachableAgentError(error)) {
+      const line = `Reference status error: ${String(error)}`;
+      if (pairingErrorSticky !== line) {
+        pairingErrorSticky = line;
+        appendLog(line);
+      }
+      stopPolling();
+      const wait = PAIRING_BACKOFFS_MS[pairingBackoffIndex];
+      pairingBackoffIndex = Math.min(pairingBackoffIndex + 1, PAIRING_BACKOFFS_MS.length - 1);
+      statusTimer = window.setTimeout(() => {
+        statusTimer = null;
+        startPolling();
+      }, wait);
+      return;
+    }
     appendLog(`Reference status error: ${String(error)}`);
   }
 }

@@ -36,6 +36,7 @@ PAIRING_SCOPES = frozenset(
 )
 _DEVICE_ID_RE = re.compile(r"^dev_[a-f0-9]{32}$")
 _CHALLENGE_ID_RE = re.compile(r"^pch_[A-Za-z0-9_-]{16,80}$")
+_PAIRING_CHALLENGE_TTL_SECONDS = 600
 _RUN_SETTING_KEYS = frozenset(
     {
         "ad_multiplier",
@@ -572,7 +573,7 @@ def request_pairing_approval(
     ):
         raise ValueError("Pairing challenge was already submitted")
     now = time.time()
-    expires_at = datetime.fromtimestamp(now + 120, tz=timezone.utc)
+    expires_at = datetime.fromtimestamp(now + _PAIRING_CHALLENGE_TTL_SECONDS, tz=timezone.utc)
     doc = {
         "challenge_id": challenge_id,
         "challenge_hash": digest,

@@ -26,7 +26,7 @@ class ArtifactServerConfig:
     )
     max_upload_bytes: int = 25 * 1024 * 1024
     max_request_bytes: int = 100 * 1024 * 1024
-    challenge_ttl_seconds: int = 120
+    challenge_ttl_seconds: int = 600
     session_ttl_seconds: int = 15 * 60
 
 

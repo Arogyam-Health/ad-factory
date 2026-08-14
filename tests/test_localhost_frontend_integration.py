@@ -19,7 +19,7 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
             "/v1/pairing/challenges",
             "/api/agents/pairing/challenges",
             "/v1/pairing/sessions",
-            "sessionStorage",
+            "localStorage",
             "credentials: \"same-origin\"",
         ):
             self.assertIn(fragment, source)
@@ -38,6 +38,9 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         )
         self.assertIn('from "./local-data-plane.js"', main)
         self.assertIn('from "./local-data-plane.js"', reference)
+        self.assertIn("localDataPlane.session(referenceDeviceId, owner)", reference)
+        self.assertIn("PAIRING_BACKOFFS_MS", reference)
+        self.assertNotIn("await ensureReferenceLocal();\n    const run = await fetchJSON", reference)
 
     def test_legacy_scripts_can_call_safe_global_client(self) -> None:
         source = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
@@ -124,11 +127,21 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         ).resolve().as_uri()
         script = f"""
 globalThis.window = globalThis;
+globalThis.localStorage = {{
+  values: new Map(),
+  getItem(key) {{ return this.values.get(key) || null; }},
+  setItem(key, value) {{ this.values.set(key, value); }},
+  removeItem(key) {{ this.values.delete(key); }},
+  key(index) {{ return [...this.values.keys()][index] || null; }},
+  get length() {{ return this.values.size; }},
+}};
 globalThis.sessionStorage = {{
   values: new Map(),
   getItem(key) {{ return this.values.get(key) || null; }},
   setItem(key, value) {{ this.values.set(key, value); }},
   removeItem(key) {{ this.values.delete(key); }},
+  key(index) {{ return [...this.values.keys()][index] || null; }},
+  get length() {{ return this.values.size; }},
 }};
 const calls = [];
 globalThis.fetch = async (url, options = {{}}) => {{
