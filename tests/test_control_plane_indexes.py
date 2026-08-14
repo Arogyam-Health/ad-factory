@@ -103,6 +103,25 @@ class ControlPlaneIndexTests(unittest.TestCase):
             JOB_OPERATION_PARTIAL_FILTER,
         )
 
+    def test_shared_run_number_indexes_are_dropped_so_flows_can_reuse_vN(self) -> None:
+        from dashboard.backend.db.collections import COLL_RUN_COUNTERS, COLL_RUNS
+        from dashboard.backend.db.indexes import _drop_obsolete_indexes
+
+        runs = _Collection(
+            [{"name": "owner_type_1_owner_id_1_run_number_1", "unique": True}]
+        )
+        counters = _Collection(
+            [{"name": "owner_type_1_owner_id_1", "unique": True}]
+        )
+        db = _DB({COLL_RUNS: runs, COLL_RUN_COUNTERS: counters})
+
+        result = _drop_obsolete_indexes(db)
+
+        self.assertEqual(result[f"{COLL_RUNS}.owner_type_1_owner_id_1_run_number_1"], 1)
+        self.assertEqual(result[f"{COLL_RUN_COUNTERS}.owner_type_1_owner_id_1"], 1)
+        self.assertEqual(runs.dropped, ["owner_type_1_owner_id_1_run_number_1"])
+        self.assertEqual(counters.dropped, ["owner_type_1_owner_id_1"])
+
 
 if __name__ == "__main__":
     unittest.main()

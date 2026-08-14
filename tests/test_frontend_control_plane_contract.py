@@ -104,6 +104,12 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             local_client.index("await this.allocateRun(", allocate),
         )
         self.assertIn("clearLocalPairingSessions();", auth)
+        self.assertIn("localStorage.getItem(LAST_ACCOUNT_KEY)", auth)
+        self.assertIn("localStorage.setItem(LAST_ACCOUNT_KEY, userId)", auth)
+        self.assertNotIn("sessionStorage.getItem(LAST_ACCOUNT_KEY)", auth)
+        self.assertIn("this._pairedOwner", local_client)
+        self.assertIn("ownerKey || this._pairedOwner", local_client)
+        self.assertNotIn("ownerKey || this.activeOwnerKey(deviceId)", local_client)
         self.assertIn("loadStructuredAssets({ silent: false })", main)
 
     def test_structured_copy_runs_on_render_and_reference_hydration_stays_local(self) -> None:
@@ -145,6 +151,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("runMatchesFlow", runs)
         self.assertIn("Reference Image Flow", runs)
         self.assertIn("isReferenceRun", runs)
+        self.assertIn("mongo_image_count", runs)
+        self.assertIn("refreshStructuredLocalOutputs({ render: false })", runs)
+        self.assertIn("ownedByCurrentUser", runs)
         self.assertNotIn("prompts ${run.prompt_count}", runs)
         self.assertIn("confirm: true", runs)
         self.assertIn("removeMissingRuns", runs)
@@ -163,7 +172,10 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             reference.index("function renderPersonas")
         ]
         self.assertIn('structuredFlowPanel").classList.toggle("hidden", reference)', set_flow)
+        self.assertIn("stopPolling()", set_flow)
         self.assertNotIn("card-files", set_flow)
+        self.assertIn("/run not found/i", reference)
+        self.assertIn('["queued", "running"].includes(generation)', reference)
         self.assertIn("studioOrgId()", reference[reference.index("async function refreshReferencePersonas"):reference.index("function startPersonaSync")])
         self.assertIn("/api/config/persona-summary?org_id=", reference)
         custom = (FRONTEND / "js" / "custom-select.js").read_text(encoding="utf-8")

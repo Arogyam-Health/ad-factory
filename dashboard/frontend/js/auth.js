@@ -9,10 +9,10 @@ const LAST_ACCOUNT_KEY = "ad_factory_last_account";
 // One device can host several Google accounts, so drop any local pairing the
 // previous account left behind before this one talks to the local agent.
 function discardOtherAccountPairings(userId) {
-  const previous = sessionStorage.getItem(LAST_ACCOUNT_KEY) || "";
+  const previous = localStorage.getItem(LAST_ACCOUNT_KEY) || "";
   if (previous && previous !== userId) clearLocalPairingSessions();
-  if (userId) sessionStorage.setItem(LAST_ACCOUNT_KEY, userId);
-  else sessionStorage.removeItem(LAST_ACCOUNT_KEY);
+  if (userId) localStorage.setItem(LAST_ACCOUNT_KEY, userId);
+  else localStorage.removeItem(LAST_ACCOUNT_KEY);
 }
 
 export function isAuthenticated() {
@@ -59,7 +59,7 @@ export async function initAuth() {
     `;
     document.getElementById("logoutBtn")?.addEventListener("click", async () => {
       clearLocalPairingSessions();
-      sessionStorage.removeItem(LAST_ACCOUNT_KEY);
+      localStorage.removeItem(LAST_ACCOUNT_KEY);
       try {
         await fetchJSON("/api/auth/logout", { method: "POST" });
       } catch {}

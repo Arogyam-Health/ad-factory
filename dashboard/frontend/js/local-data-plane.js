@@ -195,6 +195,7 @@ async function submitControlApproval(payload) {
 export class LocalDataPlaneClient {
   constructor(baseUrl = LOCAL_API_ORIGIN) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this._pairedOwner = "";
   }
 
   async discover() {
@@ -294,6 +295,7 @@ export class LocalDataPlaneClient {
       JSON.stringify(session),
     );
     storageSet(`${ACTIVE_OWNER_PREFIX}${session.device_id}`, owner);
+    this._pairedOwner = owner;
   }
 
   activeOwnerKey(deviceId) {
@@ -301,7 +303,7 @@ export class LocalDataPlaneClient {
   }
 
   session(deviceId, ownerKey = "") {
-    const owner = ownerKey || this.activeOwnerKey(deviceId);
+    const owner = ownerKey || this._pairedOwner || "";
     if (!owner) return null;
     const storageKey = `${SESSION_PREFIX}${deviceId}:${owner}`;
     const raw = storageGet(storageKey);
@@ -320,6 +322,7 @@ export class LocalDataPlaneClient {
   }
 
   clearSessions() {
+    this._pairedOwner = "";
     const prefixes = [SESSION_PREFIX, ACTIVE_OWNER_PREFIX];
     for (const store of [window.localStorage, window.sessionStorage]) {
       for (let index = store.length - 1; index >= 0; index -= 1) {
@@ -355,6 +358,7 @@ export class LocalDataPlaneClient {
       && scopes.every((scope) => current.scopes?.includes(scope))
     ) {
       storageSet(`${ACTIVE_OWNER_PREFIX}${info.device_id}`, owner);
+      this._pairedOwner = owner;
       return { info, agent, session: current };
     }
     const session = await this.pair({
@@ -367,7 +371,7 @@ export class LocalDataPlaneClient {
   }
 
   async authorizedFetch(path, options = {}, deviceId) {
-    let session = this.session(deviceId);
+    let session = this.session(deviceId, this._pairedOwner);
     if (!session?.access_token) throw new Error("Local pairing session is required");
     const send = (accessToken) => {
       const headers = new Headers(options.headers || {});

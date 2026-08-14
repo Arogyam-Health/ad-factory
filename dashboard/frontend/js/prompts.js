@@ -160,7 +160,6 @@ export function buildPromptEditor(run, container, promptsData) {
               }),
             });
             appendLog(`Queued 4:5 generation in ${engineLabel}: ${data.job_id}`);
-            import("./runs.js").then((m) => m.loadRuns());
           } catch (err) {
             appendLog(String(err));
           } finally {
@@ -188,7 +187,6 @@ export function buildPromptEditor(run, container, promptsData) {
               }),
             });
             appendLog(`Queued 9:16 generation in ${engineLabel}: ${data.job_id}`);
-            import("./runs.js").then((m) => m.loadRuns());
           } catch (err) {
             appendLog(String(err));
           } finally {

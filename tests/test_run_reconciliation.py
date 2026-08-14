@@ -240,6 +240,7 @@ class RunReconciliationTests(unittest.TestCase):
             COLL_PROMPT_DELIVERIES,
             COLL_PROMPTS,
             COLL_RENDER_COPY_JOBS,
+            COLL_RUN_COUNTERS,
             COLL_RUNS,
         )
         from dashboard.backend.routes.runs import purge_all_user_runs
@@ -255,6 +256,7 @@ class RunReconciliationTests(unittest.TestCase):
                 COLL_PROMPTS,
                 COLL_RENDER_COPY_JOBS,
                 COLL_RUNS,
+                COLL_RUN_COUNTERS,
             )
         }
         for collection in collections.values():
@@ -269,10 +271,14 @@ class RunReconciliationTests(unittest.TestCase):
         with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
             result = purge_all_user_runs(self.request(), {"confirm": "PURGE"})
 
-        for name in collections:
-            collections[name].delete_many.assert_called_once_with({"user_id": "user-1"})
+        for name, collection in collections.items():
+            if name == COLL_RUN_COUNTERS:
+                collection.delete_many.assert_called_once_with({"owner_id": "user-1"})
+            else:
+                collection.delete_many.assert_called_once_with({"user_id": "user-1"})
         self.assertEqual(result["status"], "purged")
         self.assertEqual(result["runs"], 2)
+        self.assertEqual(result["run_counters"], 2)
 
     @staticmethod
     def _delete_collections() -> tuple[MagicMock, dict[str, MagicMock]]:
@@ -283,6 +289,7 @@ class RunReconciliationTests(unittest.TestCase):
             COLL_PROMPT_DELIVERIES,
             COLL_PROMPTS,
             COLL_RENDER_COPY_JOBS,
+            COLL_RUN_COUNTERS,
             COLL_RUNS,
         )
 
@@ -297,9 +304,11 @@ class RunReconciliationTests(unittest.TestCase):
                 COLL_PROMPTS,
                 COLL_RENDER_COPY_JOBS,
                 COLL_RUNS,
+                COLL_RUN_COUNTERS,
             )
         }
         db.__getitem__.side_effect = collections.__getitem__
+        collections[COLL_RUNS].find.return_value = []
         return db, collections
 
     def test_run_without_local_device_is_hard_deleted_instead_of_409(self) -> None:

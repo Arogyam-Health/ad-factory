@@ -17,7 +17,7 @@ from dashboard.backend.db.collections import (
     COLL_RUNS,
 )
 from dashboard.backend.security.crypto import generate_token, hash_token
-from dashboard.backend.services.run_storage import reserve_run_number
+from dashboard.backend.services.run_storage import numbering_scope, reserve_run_number
 from pymongo.errors import DuplicateKeyError
 
 
@@ -464,27 +464,37 @@ def allocate_run_envelope(
     ) is None:
         raise ValueError("Authenticated user is not an active organization member")
 
-    run_number = reserve_run_number(owner_type, owner_id)
     run_id = "run_" + generate_token(16)
     now = time.time()
-    doc = {
-        "run_id": run_id,
-        "user_id": user_id,
-        "owner_type": owner_type,
-        "owner_id": owner_id,
-        "created_by_user_id": user_id,
-        "agent_id": agent_id,
-        "device_id": device_id,
-        "run_number": run_number,
-        "display_batch": f"v{run_number}",
-        "flow_type": flow_type,
-        "status": "allocated",
-        "settings": bounded_settings,
-        "created_at": now,
-        "updated_at": now,
-    }
-    validate_metadata_document("runs", doc)
-    db[COLL_RUNS].insert_one(doc)
+    doc = None
+    for _ in range(8):
+        run_number = reserve_run_number(owner_type, owner_id, flow_type)
+        candidate = {
+            "run_id": run_id,
+            "user_id": user_id,
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "created_by_user_id": user_id,
+            "agent_id": agent_id,
+            "device_id": device_id,
+            "run_number": run_number,
+            "display_batch": f"v{run_number}",
+            "flow_type": flow_type,
+            "flow_family": numbering_scope(flow_type),
+            "status": "allocated",
+            "settings": bounded_settings,
+            "created_at": now,
+            "updated_at": now,
+        }
+        validate_metadata_document("runs", candidate)
+        try:
+            db[COLL_RUNS].insert_one(candidate)
+            doc = candidate
+            break
+        except DuplicateKeyError:
+            continue
+    if doc is None:
+        raise ValueError("Could not allocate a unique run number")
     return {
         key: doc[key]
         for key in (

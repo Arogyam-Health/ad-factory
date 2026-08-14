@@ -1,7 +1,7 @@
 import { clearCache, fetchJSON, invalidateRuns } from "./api.js";
 import { state } from "./state.js";
 import { appendLog } from "./ui.js";
-import { applyLocalArtifactsToRuns, renderRunCarousel } from "./runs.js";
+import { loadRuns } from "./runs.js";
 import { showPromptFullscreen } from "./images.js";
 import { localDataPlane } from "./local-data-plane.js";
 import { checkAuth, getAuthUser } from "./auth.js";
@@ -135,21 +135,19 @@ function setWorkspaceMode(mode) {
 
 async function loadWorkspaceRuns(mode = activeMode()) {
   try {
-    const data = await fetchJSON(`/api/runs?flow=${mode}&t=${Date.now()}`);
-    state.runsData = (data.runs || []).filter((run) => mode === "reference"
-      ? ["reference", "reference_image"].includes(run.flow_type)
-      : !["reference", "reference_image"].includes(run.flow_type));
-    applyLocalArtifactsToRuns();
-    state.currentRunIndex = 0;
-    renderRunCarousel();
-    populateBatchMenu();
-    if (mode === "reference" && !activeRunId) {
-      const active = state.runsData.find((run) => ["queued", "running"].includes(run.status));
-      if (active) {
-        activeRunId = active.run_id;
-        activeReferenceJobId = active.reference_job_id || "";
-        startPolling();
+    await loadRuns();
+    if (mode !== "reference" || activeRunId) return;
+    const active = state.runsData.find((run) => {
+      if (["deleting", "purge_failed", "deleted"].includes(String(run.status || ""))) {
+        return false;
       }
+      const generation = String(run.image_generation?.status || run.status || "");
+      return ["queued", "running"].includes(generation);
+    });
+    if (active) {
+      activeRunId = active.run_id;
+      activeReferenceJobId = active.reference_job_id || "";
+      startPolling();
     }
   } catch (error) {
     appendLog(`Could not load ${mode} runs: ${String(error)}`);
@@ -189,6 +187,11 @@ function applyFlowConfigCards(mode) {
 
 function setFlow(mode) {
   const reference = mode === "reference";
+  stopPolling();
+  if (!reference) {
+    activeRunId = "";
+    activeReferenceJobId = "";
+  }
   $("structuredFlowTab").classList.toggle("active", !reference);
   $("referenceFlowTab").classList.toggle("active", reference);
   $("structuredFlowPanel").classList.toggle("hidden", reference);
@@ -762,6 +765,16 @@ async function pollStatus() {
       await loadWorkspaceRuns("reference");
     }
   } catch (error) {
+    if (/run not found/i.test(String(error?.message || error || ""))) {
+      if (pairingErrorSticky !== "run-not-found") {
+        pairingErrorSticky = "run-not-found";
+        appendLog(`Reference status error: ${String(error)}`);
+      }
+      stopPolling();
+      activeRunId = "";
+      activeReferenceJobId = "";
+      return;
+    }
     if (isUnreachableAgentError(error)) {
       const line = `Reference status error: ${String(error)}`;
       if (pairingErrorSticky !== line) {

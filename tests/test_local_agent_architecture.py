@@ -5,6 +5,8 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 class LocalAgentStorageTests(unittest.TestCase):
@@ -229,7 +231,11 @@ class RunNumberTests(unittest.TestCase):
                 self.lock = threading.Lock()
 
             def find_one_and_update(self, query, update, **kwargs):
-                key = (query["owner_type"], query["owner_id"])
+                key = (
+                    query["owner_type"],
+                    query["owner_id"],
+                    query.get("flow_family") or "structured",
+                )
                 with self.lock:
                     self.values[key] = self.values.get(key, 0) + update["$inc"]["value"]
                     return {**query, "value": self.values[key]}
@@ -252,6 +258,146 @@ class RunNumberTests(unittest.TestCase):
         self.assertEqual(sorted(numbers), list(range(1, 21)))
         self.assertEqual(reserve_run_number("org", "o1", collection=collection), 1)
         self.assertEqual(reserve_run_number("user", "u1", collection=collection), 21)
+        self.assertEqual(
+            reserve_run_number("user", "u1", flow_type="reference", collection=collection),
+            1,
+        )
+
+    def test_next_number_reuses_trailing_gap_after_deletes(self) -> None:
+        from dashboard.backend.db.collections import COLL_RUN_COUNTERS, COLL_RUNS
+        from dashboard.backend.services.run_storage import reserve_run_number
+
+        remaining = [
+            {"owner_type": "user", "owner_id": "u1", "run_number": number}
+            for number in range(1, 13)
+        ]
+        counter = {"value": 16}
+
+        class Runs:
+            def find_one(self, query, projection=None, sort=None):
+                matched = [
+                    doc
+                    for doc in remaining
+                    if doc["owner_type"] == query.get("owner_type")
+                    and doc["owner_id"] == query.get("owner_id")
+                ]
+                if sort:
+                    field, direction = sort[0]
+                    matched.sort(key=lambda doc: doc.get(field) or 0, reverse=direction < 0)
+                return matched[0] if matched else None
+
+            def find(self, query, projection=None):
+                return []
+
+        class Counters:
+            def update_one(self, query, update, upsert=False):
+                if "$set" in update and "value" in update["$set"]:
+                    counter["value"] = update["$set"]["value"]
+                return SimpleNamespace(modified_count=1)
+
+            def find_one_and_update(self, query, update, **kwargs):
+                counter["value"] = int(counter.get("value") or 0) + int(
+                    update["$inc"]["value"]
+                )
+                return {**query, "value": counter["value"]}
+
+        db = {COLL_RUNS: Runs(), COLL_RUN_COUNTERS: Counters()}
+        with patch(
+            "dashboard.backend.services.run_storage.get_sync_db", return_value=db
+        ):
+            self.assertEqual(reserve_run_number("user", "u1"), 13)
+            remaining.append(
+                {"owner_type": "user", "owner_id": "u1", "run_number": 13}
+            )
+            self.assertEqual(reserve_run_number("user", "u1"), 14)
+
+    def test_structured_and_reference_numbers_are_independent(self) -> None:
+        from dashboard.backend.db.collections import COLL_RUN_COUNTERS, COLL_RUNS
+        from dashboard.backend.services.run_storage import reserve_run_number
+
+        remaining = [
+            {
+                "owner_type": "user",
+                "owner_id": "u1",
+                "run_number": number,
+                "flow_type": "structured",
+                "flow_family": "structured",
+            }
+            for number in range(1, 19)
+        ] + [
+            {
+                "owner_type": "user",
+                "owner_id": "u1",
+                "run_number": number,
+                "flow_type": "reference",
+                "flow_family": "reference",
+            }
+            for number in (13, 14)
+        ]
+        counters: dict[str, int] = {"structured": 18, "reference": 14}
+
+        def family_of(doc: dict) -> str:
+            return str(
+                doc.get("flow_family")
+                or (
+                    "reference"
+                    if doc.get("flow_type") in {"reference", "reference_image"}
+                    else "structured"
+                )
+            )
+
+        def matches(doc: dict, query: dict) -> bool:
+            if doc.get("owner_type") != query.get("owner_type"):
+                return False
+            if doc.get("owner_id") != query.get("owner_id"):
+                return False
+            if "$or" in query:
+                return family_of(doc) == "reference"
+            if "$and" in query:
+                return family_of(doc) != "reference"
+            return family_of(doc) == (query.get("flow_family") or "structured")
+
+        class Runs:
+            def find_one(self, query, projection=None, sort=None):
+                matched = [doc for doc in remaining if matches(doc, query)]
+                if sort:
+                    field, direction = sort[0]
+                    matched.sort(key=lambda doc: doc.get(field) or 0, reverse=direction < 0)
+                return matched[0] if matched else None
+
+            def find(self, query, projection=None):
+                return [doc for doc in remaining if matches(doc, query)]
+
+        class Counters:
+            def update_one(self, query, update, upsert=False):
+                family = str(query.get("flow_family") or "structured")
+                if "$set" in update and "value" in update["$set"]:
+                    counters[family] = update["$set"]["value"]
+                return SimpleNamespace(modified_count=1)
+
+            def find_one_and_update(self, query, update, **kwargs):
+                family = str(query.get("flow_family") or "structured")
+                counters[family] = int(counters.get(family) or 0) + int(
+                    update["$inc"]["value"]
+                )
+                return {**query, "value": counters[family]}
+
+        db = {COLL_RUNS: Runs(), COLL_RUN_COUNTERS: Counters()}
+        with patch(
+            "dashboard.backend.services.run_storage.get_sync_db", return_value=db
+        ):
+            self.assertEqual(reserve_run_number("user", "u1", flow_type="reference"), 15)
+            remaining.append(
+                {
+                    "owner_type": "user",
+                    "owner_id": "u1",
+                    "run_number": 15,
+                    "flow_type": "reference",
+                    "flow_family": "reference",
+                }
+            )
+            self.assertEqual(reserve_run_number("user", "u1", flow_type="structured"), 19)
+            self.assertEqual(reserve_run_number("user", "u1", flow_type="reference"), 16)
 
 
 class ScopedPromptNameTests(unittest.TestCase):

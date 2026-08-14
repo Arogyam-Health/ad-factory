@@ -45,9 +45,17 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_RUN_ID, ASCENDING)], unique=True),
         IndexModel([(FIELD_STATUS, ASCENDING)]),
         IndexModel(
-            [("owner_type", ASCENDING), ("owner_id", ASCENDING), ("run_number", ASCENDING)],
+            [
+                ("owner_type", ASCENDING),
+                ("owner_id", ASCENDING),
+                ("flow_family", ASCENDING),
+                ("run_number", ASCENDING),
+            ],
             unique=True,
-            partialFilterExpression={"run_number": {"$exists": True}},
+            partialFilterExpression={
+                "run_number": {"$exists": True},
+                "flow_family": {"$exists": True},
+            },
         ),
     ],
     COLL_PROMPTS: [
@@ -141,7 +149,14 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0),
     ],
     COLL_RUN_COUNTERS: [
-        IndexModel([("owner_type", ASCENDING), ("owner_id", ASCENDING)], unique=True),
+        IndexModel(
+            [
+                ("owner_type", ASCENDING),
+                ("owner_id", ASCENDING),
+                ("flow_family", ASCENDING),
+            ],
+            unique=True,
+        ),
     ],
     COLL_LOCAL_CONFIG_REFERENCES: [
         IndexModel(
@@ -217,6 +232,30 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([("change_reason", ASCENDING), ("created_at", DESCENDING)]),
     ],
 }
+
+
+OBSOLETE_INDEXES: tuple[tuple[str, str], ...] = (
+    (COLL_RUNS, "owner_type_1_owner_id_1_run_number_1"),
+    (COLL_RUN_COUNTERS, "owner_type_1_owner_id_1"),
+)
+
+
+def _drop_obsolete_indexes(db) -> dict[str, int]:
+    """Remove unique indexes that would keep Structured and Reference sharing vN."""
+    results: dict[str, int] = {}
+    for coll_name, idx_name in OBSOLETE_INDEXES:
+        try:
+            existing = {idx["name"] for idx in db[coll_name].list_indexes()}
+        except OperationFailure:
+            continue
+        if idx_name not in existing:
+            continue
+        try:
+            db[coll_name].drop_index(idx_name)
+            results[f"{coll_name}.{idx_name}"] = 1
+        except OperationFailure:
+            results[f"{coll_name}.{idx_name}"] = -1
+    return results
 
 
 def _fix_indexes(db) -> dict[str, int]:
@@ -297,6 +336,7 @@ def create_indexes() -> dict[str, int]:
     results: dict[str, int] = {}
 
     # Fix stale indexes first
+    results.update(_drop_obsolete_indexes(db))
     results.update(_fix_indexes(db))
 
     for coll_name, indexes in INDEX_SPECS.items():

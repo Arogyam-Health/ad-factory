@@ -257,7 +257,10 @@ class LocalDataPlane:
         self._cors(handler)
         handler.end_headers()
         if handler.command != "HEAD":
-            handler.wfile.write(body)
+            try:
+                handler.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                return
 
     def _error(self, handler: Any, error: APIError) -> None:
         self._json(
@@ -285,7 +288,10 @@ class LocalDataPlane:
         self._cors(handler)
         handler.end_headers()
         if handler.command != "HEAD":
-            handler.wfile.write(body)
+            try:
+                handler.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                return
 
     def _body(self, handler: Any, maximum: int = 256 * 1024) -> bytes:
         try:
@@ -2012,6 +2018,8 @@ class LocalDataPlane:
         return safe
 
     def _list_outputs(self, handler: Any, owner_key: str, run_id: str) -> None:
+        if self._run(owner_key, run_id) is None:
+            raise APIError(404, "run_not_found", "Run not found")
         with self.state._connect() as conn:
             rows = conn.execute(
                 """

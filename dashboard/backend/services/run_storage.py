@@ -9,53 +9,76 @@ from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.control_plane_policy import validate_metadata_document
 from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_IMAGES
 
+REFERENCE_FLOW_TYPES = frozenset({"reference", "reference_image"})
+
+
+def numbering_scope(flow_type: str | None) -> str:
+    """Structured and Reference keep independent vN sequences."""
+    return "reference" if str(flow_type or "").strip().lower() in REFERENCE_FLOW_TYPES else "structured"
+
+
+def _flow_numbering_query(flow_type: str | None) -> dict[str, Any]:
+    family = numbering_scope(flow_type)
+    if family == "reference":
+        return {
+            "$or": [
+                {"flow_family": "reference"},
+                {"flow_type": {"$in": sorted(REFERENCE_FLOW_TYPES)}},
+            ]
+        }
+    return {
+        "$and": [
+            {"flow_family": {"$ne": "reference"}},
+            {"flow_type": {"$nin": sorted(REFERENCE_FLOW_TYPES)}},
+        ]
+    }
+
 
 def reserve_run_number(
     owner_type: str,
     owner_id: str,
+    flow_type: str = "structured",
     *,
     collection: Any | None = None,
 ) -> int:
-    """Atomically reserve the next display number within an owner scope."""
+    """Atomically reserve the next display number for one owner and flow.
+
+    Structured v18 does not consume Reference v15. Deleting trailing numbers
+    in one flow also leaves the other flow's sequence alone.
+    """
     if not owner_type or not owner_id:
         raise ValueError("owner_type and owner_id are required")
+    family = numbering_scope(flow_type)
+    scope = {
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "flow_family": family,
+    }
     if collection is None:
         from pymongo import ReturnDocument
         from dashboard.backend.db.collections import COLL_RUN_COUNTERS
 
         db = get_sync_db()
         collection = db[COLL_RUN_COUNTERS]
-        scope = {"owner_type": owner_type, "owner_id": owner_id}
-        if collection.find_one(scope, {"_id": 1}) is None:
-            latest = db[COLL_RUNS].find_one(
-                {**scope, "run_number": {"$exists": True}},
-                {"run_number": 1},
-                sort=[("run_number", -1)],
-            )
-            highest = int((latest or {}).get("run_number") or 0)
-            if owner_type == "user":
-                legacy_runs = db[COLL_RUNS].find(
-                    {"user_id": owner_id, "batch": {"$regex": r"^v\d+$"}},
-                    {"batch": 1},
-                )
-                for legacy in legacy_runs:
-                    match = re.fullmatch(r"v(\d+)", str(legacy.get("batch") or ""), flags=re.IGNORECASE)
-                    if match:
-                        highest = max(highest, int(match.group(1)))
-            collection.update_one(
-                scope,
-                {"$setOnInsert": {
+        highest = _highest_run_number(db, owner_type, owner_id, flow_type)
+        now = time.time()
+        collection.update_one(
+            scope,
+            {
+                "$set": {
                     **scope,
                     "value": highest,
-                    "created_at": time.time(),
-                }},
-                upsert=True,
-            )
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
         return_document = ReturnDocument.AFTER
     else:
         return_document = True
     doc = collection.find_one_and_update(
-        {"owner_type": owner_type, "owner_id": owner_id},
+        scope,
         {
             "$inc": {"value": 1},
             "$setOnInsert": {"created_at": time.time()},
@@ -65,6 +88,75 @@ def reserve_run_number(
         return_document=return_document,
     )
     return int(doc["value"])
+
+
+def _highest_run_number(
+    db: Any, owner_type: str, owner_id: str, flow_type: str = "structured"
+) -> int:
+    latest = db[COLL_RUNS].find_one(
+        {
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "run_number": {"$exists": True},
+            **_flow_numbering_query(flow_type),
+        },
+        {"run_number": 1},
+        sort=[("run_number", -1)],
+    )
+    highest = int((latest or {}).get("run_number") or 0)
+    if owner_type == "user" and numbering_scope(flow_type) == "structured":
+        legacy_runs = db[COLL_RUNS].find(
+            {
+                "user_id": owner_id,
+                "batch": {"$regex": r"^v\d+$"},
+                **_flow_numbering_query(flow_type),
+            },
+            {"batch": 1},
+        )
+        for legacy in legacy_runs:
+            match = re.fullmatch(
+                r"v(\d+)", str(legacy.get("batch") or ""), flags=re.IGNORECASE
+            )
+            if match:
+                highest = max(highest, int(match.group(1)))
+    return highest
+
+
+def rewind_run_counter(
+    owner_type: str,
+    owner_id: str,
+    flow_type: str = "structured",
+    *,
+    db: Any | None = None,
+) -> int:
+    """Point this flow's counter at the highest remaining run (0 if none)."""
+    if not owner_type or not owner_id:
+        return 0
+    from dashboard.backend.db.collections import COLL_RUN_COUNTERS
+
+    db = db or get_sync_db()
+    family = numbering_scope(flow_type)
+    highest = _highest_run_number(db, owner_type, owner_id, flow_type)
+    now = time.time()
+    db[COLL_RUN_COUNTERS].update_one(
+        {
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "flow_family": family,
+        },
+        {
+            "$set": {
+                "owner_type": owner_type,
+                "owner_id": owner_id,
+                "flow_family": family,
+                "value": highest,
+                "updated_at": now,
+            },
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
+    return highest
 
 
 def build_storage_batch(run_number: int, run_id: str) -> str:
@@ -77,8 +169,12 @@ def create_run(user_id: str, run_id: str, run_data: dict[str, Any]) -> dict[str,
     now = time.time()
     owner_type = str(run_data.get("owner_type") or "user")
     owner_id = str(run_data.get("owner_id") or user_id)
-    run_number = int(run_data.get("run_number") or reserve_run_number(owner_type, owner_id))
+    run_number = int(
+        run_data.get("run_number")
+        or reserve_run_number(owner_type, owner_id, str(run_data.get("flow_type") or "structured"))
+    )
     display_batch = str(run_data.get("display_batch") or f"v{run_number}")
+    flow_type = str(run_data.get("flow_type") or "structured")
     doc = {
         "user_id": user_id,
         "run_id": run_id,
@@ -87,7 +183,8 @@ def create_run(user_id: str, run_id: str, run_data: dict[str, Any]) -> dict[str,
         "run_number": run_number,
         "display_batch": display_batch,
         "status": run_data.get("status", "created"),
-        "flow_type": str(run_data.get("flow_type") or "structured"),
+        "flow_type": flow_type,
+        "flow_family": numbering_scope(flow_type),
         "agent_id": str(run_data.get("agent_id") or ""),
         "device_id": str(run_data.get("device_id") or ""),
         "local_workspace_id": str(run_data.get("local_workspace_id") or ""),
@@ -133,9 +230,20 @@ def list_runs(user_id: str, limit: int = 50, skip: int = 0) -> list[dict[str, An
 
 
 def delete_run(user_id: str, run_id: str) -> None:
-    get_sync_db()[COLL_RUNS].delete_one({"user_id": user_id, "run_id": run_id})
-    get_sync_db()[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
-    get_sync_db()[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
+    db = get_sync_db()
+    run = db[COLL_RUNS].find_one(
+        {"user_id": user_id, "run_id": run_id},
+        {"_id": 0, "owner_type": 1, "owner_id": 1, "flow_type": 1},
+    )
+    db[COLL_RUNS].delete_one({"user_id": user_id, "run_id": run_id})
+    db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
+    db[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
+    if run:
+        rewind_run_counter(
+            str(run.get("owner_type") or "user"),
+            str(run.get("owner_id") or user_id),
+            str(run.get("flow_type") or "structured"),
+        )
 
 
 def save_prompt(user_id: str, run_id: str, prompt_data: dict[str, Any]) -> dict[str, Any]:

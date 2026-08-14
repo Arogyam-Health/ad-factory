@@ -73,25 +73,35 @@ def allocate_render_copy_run(
         {"org_id": owner_id, "user_id": user_id, "status": "active"}
     ) is None:
         raise ValueError("Authenticated user is not an active organization member")
-    run_number = reserve_run_number(owner_type, owner_id)
     now = time.time()
-    doc = {
-        "run_id": "run_" + uuid.uuid4().hex,
-        "user_id": user_id,
-        "owner_type": owner_type,
-        "owner_id": owner_id,
-        "created_by_user_id": user_id,
-        "agent_id": "",
-        "device_id": "",
-        "run_number": run_number,
-        "display_batch": f"v{run_number}",
-        "flow_type": "structured",
-        "status": "allocated",
-        "created_at": now,
-        "updated_at": now,
-    }
-    validate_metadata_document("runs", doc)
-    db[COLL_RUNS].insert_one(doc)
+    doc = None
+    for _ in range(8):
+        run_number = reserve_run_number(owner_type, owner_id, "structured")
+        candidate = {
+            "run_id": "run_" + uuid.uuid4().hex,
+            "user_id": user_id,
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "created_by_user_id": user_id,
+            "agent_id": "",
+            "device_id": "",
+            "run_number": run_number,
+            "display_batch": f"v{run_number}",
+            "flow_type": "structured",
+            "flow_family": "structured",
+            "status": "allocated",
+            "created_at": now,
+            "updated_at": now,
+        }
+        validate_metadata_document("runs", candidate)
+        try:
+            db[COLL_RUNS].insert_one(candidate)
+            doc = candidate
+            break
+        except DuplicateKeyError:
+            continue
+    if doc is None:
+        raise ValueError("Could not allocate a unique run number")
     return {
         key: doc[key]
         for key in (

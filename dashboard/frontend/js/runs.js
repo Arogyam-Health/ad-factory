@@ -14,6 +14,8 @@ const runIndexEl = document.getElementById("runIndex");
 
 let batchDropdownInitialized = false;
 let runRenderVersion = 0;
+let runsLoadPromise = null;
+let runsLoadFlow = "";
 
 function currentFlowMode() {
   try {
@@ -141,20 +143,32 @@ function isReferenceRun(run) {
   return flow === "reference" || flow === "reference_image";
 }
 
-export async function renderRun(run) {
-  const div = document.createElement("div");
-  div.className = "run run-active";
+function ownedByCurrentUser(run) {
+  const userId = getAuthUser()?.user_id || "";
+  if (!userId) return false;
+  if ((run?.owner_type || "user") !== "user") return true;
+  const ownerId = String(run?.owner_id || "");
+  return !ownerId || ownerId === userId;
+}
 
-  const header = document.createElement("div");
-  header.className = "run-header";
+function runHeadingMeta(run) {
   const batch = displayBatch(run);
   const imageCount = Number(run.image_count || 0);
   const promptCount = Number(run.prompt_count || 0);
-  const meta = isReferenceRun(run)
+  return isReferenceRun(run)
     ? `batch ${batch} &middot; ${imageCount} images &middot; Reference Image Flow`
     : `batch ${batch} &middot; prompts ${promptCount} &middot; images ${imageCount}`;
-  const title = isReferenceRun(run) ? `batch ${batch}` : run.run_id;
-  header.innerHTML = `<strong title="${run.run_id || ""}">${title}</strong><span class="run-meta">${meta}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
+}
+
+export async function renderRun(run) {
+  const div = document.createElement("div");
+  div.className = "run run-active";
+  div.dataset.runId = run.run_id || "";
+
+  const header = document.createElement("div");
+  header.className = "run-header";
+  const title = isReferenceRun(run) ? `batch ${displayBatch(run)}` : run.run_id;
+  header.innerHTML = `<strong title="${run.run_id || ""}">${title}</strong><span class="run-meta">${runHeadingMeta(run)}</span><button class="ghost-btn run-delete-btn" type="button" title="Delete this entire run">Delete</button>`;
   if (run.status === "purge_failed" || run.status === "deleting") {
     const status = document.createElement("span");
     status.className = `run-status-${run.status}`;
@@ -237,6 +251,7 @@ export async function renderRun(run) {
   }
 
   const galleryContainer = document.createElement("div");
+  galleryContainer.className = "run-gallery";
   div.appendChild(galleryContainer);
 
   let galleryBuilt = false;
@@ -267,8 +282,8 @@ function updateRunNav() {
 export async function renderRunCarousel() {
   if (!runsEl) return;
   const renderVersion = ++runRenderVersion;
-  runsEl.innerHTML = "";
   if (!state.runsData.length) {
+    runsEl.innerHTML = "";
     const empty = document.createElement("div");
     empty.className = "hint empty-runs";
     empty.textContent = "No runs yet.";
@@ -278,14 +293,49 @@ export async function renderRunCarousel() {
   }
   if (state.currentRunIndex < 0) state.currentRunIndex = 0;
   if (state.currentRunIndex >= state.runsData.length) state.currentRunIndex = state.runsData.length - 1;
-  const runEl = await renderRun(state.runsData[state.currentRunIndex]);
+  const run = state.runsData[state.currentRunIndex];
+  const existing = runsEl.querySelector(".run-active");
+  if (
+    existing
+    && run?.run_id
+    && existing.dataset.runId === run.run_id
+    && !existing.querySelector(".local-skeleton")
+  ) {
+    patchVisibleRunCard(existing, run);
+    updateRunNav();
+    return;
+  }
+  runsEl.innerHTML = "";
+  const runEl = await renderRun(run);
   if (renderVersion !== runRenderVersion) return;
   runsEl.replaceChildren(runEl);
   updateRunNav();
 }
 
+function patchVisibleRunCard(div, run) {
+  const meta = div.querySelector(".run-meta");
+  if (meta) meta.innerHTML = runHeadingMeta(run);
+  const header = div.querySelector(".run-header");
+  let unavailable = div.querySelector(".run-device-unavailable");
+  if (run.device_id && run.local_device_status === "unavailable") {
+    if (!unavailable && header) {
+      unavailable = document.createElement("span");
+      unavailable.className = "run-device-unavailable";
+      unavailable.textContent = "Authoritative device unavailable";
+      header.insertBefore(unavailable, header.querySelector(".run-delete-btn"));
+    }
+  } else if (unavailable) {
+    unavailable.remove();
+  }
+  const galleryContainer = div.querySelector(".run-gallery");
+  if (!galleryContainer) return;
+  galleryContainer.replaceChildren();
+  const gallery = buildImageGallery(run, []);
+  if (gallery) galleryContainer.appendChild(gallery);
+}
+
 export function showRunsSkeletons(count = 2) {
-  if (!runsEl) return;
+  if (!runsEl || runsEl.querySelector(".run-active")) return;
   runsEl.innerHTML = "";
   const frag = document.createDocumentFragment();
   for (let i = 0; i < count; i++) frag.appendChild(skeletonRunCard());
@@ -470,21 +520,38 @@ function openBatchDropdown() {
 }
 
 export async function loadRuns() {
-  if (state.isRunsLoading) return;
+  const flow = currentFlowMode();
+  if (runsLoadPromise && runsLoadFlow === flow) return runsLoadPromise;
+  if (runsLoadPromise) {
+    await runsLoadPromise.catch(() => {});
+  }
+  runsLoadFlow = flow;
+  runsLoadPromise = loadRunsOnce(flow).finally(() => {
+    if (runsLoadFlow === flow) runsLoadPromise = null;
+  });
+  return runsLoadPromise;
+}
+
+async function loadRunsOnce(flow) {
   state.isRunsLoading = true;
+  const previousId = state.runsData[state.currentRunIndex]?.run_id;
   showRunsSkeletons();
   try {
-    const flow = currentFlowMode();
     let data = await fetchJSON(`/api/runs?flow=${encodeURIComponent(flow)}`);
     const inventory = await reconcileRunInventory(data.runs || []);
     if (inventory.pruned) {
       appendLog(`Removed ${inventory.pruned} local run${inventory.pruned === 1 ? "" : "s"} that no longer exist in the dashboard.`);
     }
-    state.runsData = (data.runs || []).map(normalizeRun).filter((run) => runMatchesFlow(run, flow));
+    state.runsData = (data.runs || [])
+      .map(normalizeRun)
+      .filter((run) => ownedByCurrentUser(run) && runMatchesFlow(run, flow));
     state.missingLocalRuns = inventory.pending || [];
     applyLocalArtifactsToRuns();
     renderMissingRunsBanner();
-    state.currentRunIndex = 0;
+    const nextIndex = previousId
+      ? state.runsData.findIndex((run) => run.run_id === previousId)
+      : 0;
+    state.currentRunIndex = nextIndex >= 0 ? nextIndex : 0;
     updatePreviousRunOptions();
 
     const batchMenu = document.getElementById("batchDropdownMenu");
@@ -549,8 +616,8 @@ export async function loadRuns() {
     }
 
     updateBatchDropdownButtonLabel();
+    await refreshStructuredLocalOutputs({ render: false });
     renderRunCarousel();
-    refreshStructuredLocalOutputs().catch(() => {});
   } finally {
     state.isRunsLoading = false;
   }
@@ -606,11 +673,13 @@ function runKey(run) {
 }
 
 function normalizeRun(run) {
+  const mongoImageCount = Number(run?.mongo_image_count || run?.image_count || 0);
   return {
     ...run,
     display_batch: displayBatch(run),
+    mongo_image_count: mongoImageCount,
     prompt_count: Number(run?.prompt_count || 0),
-    image_count: Number(run?.image_count || 0),
+    image_count: mongoImageCount,
     prompt_files: Array.isArray(run?.prompt_files) ? run.prompt_files : [],
     image_files: Array.isArray(run?.image_files) ? run.image_files : [],
     regeneration_queue_files: Array.isArray(run?.regeneration_queue_files)
@@ -727,6 +796,10 @@ export function applyLocalArtifactsToRuns() {
       run.image_generated = true;
     });
   });
+  state.runsData.forEach((run) => {
+    const localItems = Array.isArray(run.image_items) ? run.image_items : [];
+    run.image_count = Math.max(Number(run.mongo_image_count) || 0, localItems.length);
+  });
 }
 
 const promptNameCache = new Map();
@@ -759,24 +832,24 @@ function outputDisplayName(output, promptNames) {
   return stem ? `${stem}.png` : "";
 }
 
-export async function refreshStructuredLocalOutputs() {
+export async function refreshStructuredLocalOutputs({ render = true } = {}) {
   if (structuredRefreshInFlight) {
     structuredRefreshQueued = true;
     return;
   }
   structuredRefreshInFlight = true;
   try {
-    await runStructuredOutputRefresh();
+    await runStructuredOutputRefresh({ render });
     while (structuredRefreshQueued) {
       structuredRefreshQueued = false;
-      await runStructuredOutputRefresh();
+      await runStructuredOutputRefresh({ render });
     }
   } finally {
     structuredRefreshInFlight = false;
   }
 }
 
-async function runStructuredOutputRefresh() {
+async function runStructuredOutputRefresh({ render = true } = {}) {
   const user = getAuthUser();
   if (!user?.user_id) return;
   const beforeRenderSignature = localOutputRenderSignature(state.runsData);
@@ -882,7 +955,8 @@ async function runStructuredOutputRefresh() {
   applyLocalArtifactsToRuns();
   const afterRenderSignature = localOutputRenderSignature(state.runsData);
   if (
-    state.runsData.length
+    render
+    && state.runsData.length
     && beforeRenderSignature !== afterRenderSignature
   ) {
     renderRunCarousel().catch(() => {});

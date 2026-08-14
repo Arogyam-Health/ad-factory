@@ -16,8 +16,10 @@ from dashboard.backend.db.collections import (
     COLL_PROMPT_DELIVERIES,
     COLL_PROMPTS,
     COLL_RENDER_COPY_JOBS,
+    COLL_RUN_COUNTERS,
     COLL_RUNS,
 )
+from dashboard.backend.services.run_storage import rewind_run_counter
 
 router = APIRouter()
 
@@ -375,6 +377,9 @@ def reconcile_local_runs(
 def purge_run_metadata(db: Any, *, user_id: str, run_id: str) -> None:
     """Drop every metadata document Render holds for a single run."""
     scope = {"run_id": run_id, "user_id": user_id}
+    run = db[COLL_RUNS].find_one(
+        scope, {"_id": 0, "owner_type": 1, "owner_id": 1, "user_id": 1, "flow_type": 1}
+    )
     db[COLL_PROMPT_DELIVERIES].delete_many(scope)
     db[COLL_RENDER_COPY_JOBS].delete_many(scope)
     db[COLL_PROMPTS].delete_many(scope)
@@ -382,6 +387,13 @@ def purge_run_metadata(db: Any, *, user_id: str, run_id: str) -> None:
     db[COLL_AGENT_JOBS].delete_many(scope)
     db[COLL_LLM_TRACES].delete_many(scope)
     db[COLL_RUNS].delete_one(scope)
+    if run:
+        rewind_run_counter(
+            str(run.get("owner_type") or "user"),
+            str(run.get("owner_id") or user_id),
+            str(run.get("flow_type") or "structured"),
+            db=db,
+        )
 
 
 def delete_run_for_user(db: Any, *, user_id: str, run_id: str) -> dict[str, Any]:
@@ -505,6 +517,7 @@ def purge_all_user_runs(
     jobs = db[COLL_AGENT_JOBS].delete_many(scope).deleted_count
     traces = db[COLL_LLM_TRACES].delete_many(scope).deleted_count
     runs = db[COLL_RUNS].delete_many(scope).deleted_count
+    counters = db[COLL_RUN_COUNTERS].delete_many({"owner_id": user_id}).deleted_count
     return {
         "status": "purged",
         "runs": runs,
@@ -514,6 +527,7 @@ def purge_all_user_runs(
         "render_copy_jobs": copy_jobs,
         "agent_jobs": jobs,
         "llm_traces": traces,
+        "run_counters": counters,
     }
 
 
