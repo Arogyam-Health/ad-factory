@@ -601,6 +601,11 @@ textarea, input[type="text"], input[type="password"], input[type="number"], sele
   scrollbar-width: none;
 }
 
+.custom-select-menu.is-ported {
+  position: fixed;
+  z-index: 4000;
+}
+
 .custom-select-menu::-webkit-scrollbar { display: none; }
 
 .custom-select-grid {
@@ -791,7 +796,7 @@ body[data-theme="dark"] .chip.active { color: #0e1117; }
 
 .format-pattern-block {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   border-radius: var(--radius-sm);
   padding: 8px;

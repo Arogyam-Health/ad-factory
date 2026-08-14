@@ -181,7 +181,7 @@ function populateBatchMenu() {
 }
 
 function applyFlowConfigCards(mode) {
-  document.querySelectorAll("[data-flow]").forEach((el) => {
+  document.querySelectorAll(".input-prompt-card[data-flow]").forEach((el) => {
     const vis = el.dataset.flow;
     el.classList.toggle("hidden", vis !== "shared" && vis !== mode);
   });
@@ -825,7 +825,6 @@ async function startRun() {
     $("referenceCancelBtn").disabled = true;
     $("referenceProgressBar").style.width = "2%";
     $("referenceProgressText").textContent = "Preparing reference run…";
-  try {
     await ensureReferenceLocal();
     const user = getAuthUser();
     const envelope = await localDataPlane.allocateLocalRun({
@@ -1017,4 +1016,5 @@ $("refreshRuns")?.addEventListener("click", (event) => {
 window.addEventListener("focus", () => { if (activeMode() === "reference") refreshReferencePersonas(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && activeMode() === "reference") refreshReferencePersonas(); });
 
+applyFlowConfigCards(activeMode());
 checkAuth().then(() => setFlow(activeMode()));

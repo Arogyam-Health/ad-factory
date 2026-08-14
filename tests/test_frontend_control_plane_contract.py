@@ -149,6 +149,25 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("confirm: true", runs)
         self.assertIn("removeMissingRuns", runs)
         self.assertNotIn("Hidden ${inventory.hidden}", runs)
+        start_run = reference[
+            reference.index("async function startRun()") :
+            reference.index("async function cancelRun()")
+        ]
+        self.assertEqual(start_run.count("try {"), 1)
+        self.assertIn("} catch (error) {", start_run)
+        self.assertIn("} finally {", start_run)
+        self.assertIn('.input-prompt-card[data-flow]', reference)
+        self.assertNotIn('querySelectorAll("[data-flow]")', reference)
+        custom = (FRONTEND / "js" / "custom-select.js").read_text(encoding="utf-8")
+        self.assertIn("document.body.appendChild(menu)", custom)
+        styles = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+        block = styles[styles.index(".format-pattern-block"):styles.index(".format-pattern-title")]
+        self.assertIn("overflow: visible", block)
+        self.assertNotIn("overflow: hidden", block)
+        index = (FRONTEND / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="providerCredentialsForm"', index)
+        self.assertIn('id="opencodeApiKey"', index[index.index("providerCredentialsForm"):])
+        self.assertIn('id="googleApiKey"', index[index.index("providerCredentialsForm"):])
 
     def test_studio_org_and_copy_pipeline_persist_across_reload(self) -> None:
         main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")

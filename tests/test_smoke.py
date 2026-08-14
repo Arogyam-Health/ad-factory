@@ -1763,7 +1763,8 @@ def test_local_agent_responsiveness_contract() -> int:
     failed += ok(
         'data-flow="reference"' in index_html
         and 'data-config-key="reference_starting_prompt"' in index_html
-        and "applyFlowConfigCards" in reference_js,
+        and "applyFlowConfigCards" in reference_js
+        and ".input-prompt-card[data-flow]" in reference_js,
         "Studio hides cross-flow config cards",
     )
     failed += ok(

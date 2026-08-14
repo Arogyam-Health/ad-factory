@@ -222,6 +222,7 @@
             <option value="opencode">OpenCode (OpenAI-compatible)</option>
             <option value="google">Google Gemini</option>
           </select>
+          <form id="providerCredentialsForm" autocomplete="off">
           <div id="opencodeConfig">
             <label>API URL</label>
             <div class="input-save-row">
@@ -230,7 +231,7 @@
             </div>
             <label>API Key</label>
             <div class="input-save-row">
-              <input id="opencodeApiKey" type="password" placeholder="sk-..." />
+              <input id="opencodeApiKey" type="password" name="opencode-api-key" autocomplete="off" placeholder="sk-..." />
               <button id="saveOpenCodeKey" class="ghost-btn inline-save-btn" type="button">Save</button>
             </div>
             <label>Model</label>
@@ -239,7 +240,7 @@
           <div id="googleConfig" class="hidden">
             <label>Google API Key</label>
             <div class="input-save-row">
-              <input id="googleApiKey" type="password" placeholder="AIza..." />
+              <input id="googleApiKey" type="password" name="google-api-key" autocomplete="off" placeholder="AIza..." />
               <button id="saveGoogleKey" class="ghost-btn inline-save-btn" type="button">Save</button>
             </div>
             <label>Model</label>
@@ -249,6 +250,7 @@
               <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
             </select>
           </div>
+          </form>
           <div style="margin-top: 0.6rem;">
             <button id="deleteAllCredentialsBtn" class="ghost-btn danger-btn" type="button">Delete All Saved Credentials</button>
           </div>
@@ -358,7 +360,7 @@
     </nav>
   </footer>
 
-  <script type="module" src="/js/main.js?v=10"></script>
+  <script type="module" src="/js/main.js?v=11"></script>
   <script type="module">
     import { initTheme } from "/js/theme.js";
     import { checkAuth } from "/js/auth.js";
@@ -391,8 +393,8 @@
       });
     });
   </script>
-  <script type="module" src="/js/reference-flow.js"></script>
-  <script type="module" src="/js/image-comments.js"></script>
+  <script type="module" src="/js/reference-flow.js?v=11"></script>
+  <script type="module" src="/js/image-comments.js?v=11"></script>
   <script type="module">
     import { initExtensionUI } from "/js/extension.js";
     // Initialize extension status UI after DOM is ready

@@ -4,11 +4,37 @@ function optionLabel(option) {
   return option?.textContent?.trim() || option?.value || "Select";
 }
 
+function restoreMenu(root) {
+  const menu = root?._menuEl;
+  if (!menu) return;
+  menu.classList.remove("is-ported");
+  menu.style.left = "";
+  menu.style.top = "";
+  menu.style.width = "";
+  menu.style.maxWidth = "";
+  if (menu.parentElement !== root) root.appendChild(menu);
+}
+
+function portMenu(root, btn) {
+  const menu = root._menuEl;
+  if (!menu) return;
+  const rect = btn.getBoundingClientRect();
+  const width = Math.max(rect.width, 220);
+  const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+  menu.classList.add("is-ported");
+  menu.style.left = `${left}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.width = `${width}px`;
+  menu.style.maxWidth = `${Math.min(width, window.innerWidth - 16)}px`;
+  document.body.appendChild(menu);
+}
+
 function closeAllCustomSelects(except = null) {
   document.querySelectorAll(".custom-select.is-open").forEach((root) => {
     if (root === except) return;
     root.classList.remove("is-open");
-    root.querySelector(".custom-select-menu")?.classList.add("hidden");
+    root._menuEl?.classList.add("hidden");
+    restoreMenu(root);
     root.querySelector(".custom-select-btn")?.setAttribute("aria-expanded", "false");
   });
 }
@@ -18,8 +44,8 @@ function sync(selectEl) {
   if (!root) return;
   const btn = root.querySelector(".custom-select-btn");
   const label = root.querySelector(".custom-select-label");
-  const menu = root.querySelector(".custom-select-menu");
-  const grid = root.querySelector(".custom-select-grid");
+  const menu = root._menuEl;
+  const grid = menu?.querySelector(".custom-select-grid");
   if (!btn || !label || !menu || !grid) return;
 
   btn.disabled = selectEl.disabled;
@@ -75,6 +101,7 @@ export function enhanceSelect(selectEl) {
   grid.className = "custom-select-grid";
   menu.appendChild(grid);
   root.append(btn, menu);
+  root._menuEl = menu;
   selectEl.insertAdjacentElement("afterend", root);
   enhanced.set(selectEl, root);
 
@@ -86,6 +113,8 @@ export function enhanceSelect(selectEl) {
     root.classList.toggle("is-open", willOpen);
     menu.classList.toggle("hidden", !willOpen);
     btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    if (willOpen) portMenu(root, btn);
+    else restoreMenu(root);
   });
 
   selectEl.addEventListener("change", () => sync(selectEl));
@@ -106,3 +135,5 @@ document.addEventListener("click", () => closeAllCustomSelects());
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeAllCustomSelects();
 });
+window.addEventListener("resize", () => closeAllCustomSelects());
+window.addEventListener("scroll", () => closeAllCustomSelects(), true);

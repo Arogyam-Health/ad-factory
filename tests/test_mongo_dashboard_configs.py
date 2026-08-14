@@ -47,7 +47,8 @@ class MongoDashboardConfigTests(unittest.TestCase):
         )
 
         self.assertNotIn("/api/prompt-file-content", main_js)
-        self.assertIn('/js/main.js?v=10', index_html)
+        self.assertRegex(index_html, r"/js/main\.js\?v=\d+")
+        self.assertRegex(index_html, r"/js/reference-flow\.js\?v=\d+")
 
     def test_render_copy_uses_mongo_product_master_doc_without_local_fallback(self) -> None:
         main_js = (ROOT / "dashboard/frontend/js/main.js").read_text(
@@ -425,6 +426,7 @@ class MongoDashboardConfigTests(unittest.TestCase):
         self.assertIn("effectiveConfigUrl()", reference_js)
         self.assertIn("mongo && existing !== mongo", reference_js)
         self.assertIn("applyFlowConfigCards", reference_js)
+        self.assertIn('.input-prompt-card[data-flow]', reference_js)
         hydrate = reference_js[reference_js.index("async function loadReferenceWorkspace()"):]
         self.assertLess(
             hydrate.index("fetchJSON(effectiveConfigUrl())"),

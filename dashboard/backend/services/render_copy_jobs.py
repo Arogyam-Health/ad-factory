@@ -479,30 +479,31 @@ def _complete_job(job: dict[str, Any], result: dict[str, Any]) -> None:
     db[COLL_PROMPTS].delete_many(
         {"run_id": job["run_id"], "user_id": job["user_id"]}
     )
-    db[COLL_PROMPTS].insert_many(
-        [
-            {
-                "prompt_id": str(prompt["prompt_id"]),
-                "run_id": job["run_id"],
-                "user_id": job["user_id"],
-                "owner_type": job["owner_type"],
-                "owner_id": job["owner_id"],
-                "sha256": str(prompt["sha256"]),
-                "format": str(prompt["format"]),
-                "persona": str(prompt["persona_name"]),
-                "persona_number": int(prompt.get("persona_number") or 0) or None,
-                "language": str(prompt["language"]),
-                "aspect_ratio": str(prompt["aspect_ratio"]),
-                "visual_archetype": str(prompt.get("visual_archetype") or ""),
-                "background_id": str(prompt.get("background_id") or ""),
-                "background_seed": prompt.get("background_seed"),
-                "status": "awaiting_local_delivery",
-                "created_at": now,
-                "updated_at": now,
-            }
-            for prompt in result["prompts"]
-        ]
-    )
+    prompt_docs = [
+        {
+            "prompt_id": str(prompt["prompt_id"]),
+            "run_id": job["run_id"],
+            "user_id": job["user_id"],
+            "owner_type": job["owner_type"],
+            "owner_id": job["owner_id"],
+            "sha256": str(prompt["sha256"]),
+            "format": str(prompt["format"]),
+            "persona": str(prompt["persona_name"]),
+            "persona_number": int(prompt.get("persona_number") or 0) or None,
+            "language": str(prompt["language"]),
+            "aspect_ratio": str(prompt["aspect_ratio"]),
+            "visual_archetype": str(prompt.get("visual_archetype") or ""),
+            "background_id": str(prompt.get("background_id") or ""),
+            "background_seed": prompt.get("background_seed"),
+            "status": "awaiting_local_delivery",
+            "created_at": now,
+            "updated_at": now,
+        }
+        for prompt in (result.get("prompts") or [])
+    ]
+    if not prompt_docs:
+        raise RuntimeError("Copy generation produced no prompts")
+    db[COLL_PROMPTS].insert_many(prompt_docs)
     db[COLL_RUNS].update_one(
         {"run_id": job["run_id"], "user_id": job["user_id"]},
         {
@@ -920,20 +921,86 @@ def process_next_render_copy_job() -> bool:
                 last_error=combined,
             )
             return True
-    except ValueError:
+    except ValueError as exc:
         _fail_job(
             job,
             error_code="copy_configuration_invalid",
             provider=str(settings.get("provider") or ""),
             model=str(settings.get("model") or ""),
+            error_detail=str(exc),
+            last_error=str(exc),
         )
-    except Exception:
-        _fail_job(
-            job,
-            error_code="copy_generation_failed",
-            provider=str(settings.get("provider") or ""),
-            model=str(settings.get("model") or ""),
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}".strip()[:2000]
+        fallback_model = next_free_opencode_model(
+            str(settings.get("model") or "")
         )
+        if job.get("fallback_attempted") or not fallback_model:
+            _fail_job(
+                job,
+                error_code="copy_generation_failed",
+                provider=str(settings.get("provider") or ""),
+                model=str(settings.get("model") or ""),
+                error_detail=detail,
+                last_error=detail,
+            )
+            return True
+        last_error = (
+            f"Provider error: {detail}. Falling back to {fallback_model}."
+        )
+        job["last_error"] = last_error
+        job["fallback_model"] = fallback_model
+        job["fallback_attempted"] = True
+        _persist_copy_last_error(job, last_error, fallback_model)
+        fallback_config = get_materialized_provider_config(
+            str(job["user_id"]),
+            "opencode",
+        ) or (provider_config if str(settings.get("provider") or "") == "opencode" else None)
+        if fallback_config is None:
+            _fail_job(
+                job,
+                error_code="copy_generation_failed",
+                provider=str(settings.get("provider") or ""),
+                model=str(settings.get("model") or ""),
+                error_detail=f"{last_error} No OpenCode credentials for fallback.",
+                last_error=f"{last_error} No OpenCode credentials for fallback.",
+            )
+            return True
+        try:
+            return finish(invoke("opencode", fallback_model, fallback_config))
+        except ProviderCallError as fallback_exc:
+            if fallback_exc.code in _TRANSIENT_RELAY_ERRORS:
+                _defer_job_for_local_agent(job, fallback_exc.code)
+                return True
+            combined = (
+                f"{last_error} Fallback also failed: "
+                f"{fallback_exc.error_detail or fallback_exc.code}."
+            )
+            _fail_job(
+                job,
+                error_code=fallback_exc.code,
+                provider=fallback_exc.provider,
+                model=fallback_exc.model,
+                duration_ms=fallback_exc.duration_ms,
+                http_status=fallback_exc.http_status,
+                error_detail=combined,
+                last_error=combined,
+            )
+            return True
+        except Exception as fallback_exc:
+            combined = (
+                f"{last_error} Fallback also failed: "
+                f"{type(fallback_exc).__name__}: {fallback_exc}."
+            )
+            _fail_job(
+                job,
+                error_code="copy_generation_failed",
+                provider="opencode",
+                model=fallback_model,
+                error_detail=combined,
+                last_error=combined,
+            )
+            return True
     return True
 
 

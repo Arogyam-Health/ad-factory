@@ -1015,6 +1015,9 @@ async function resumeCopyPipeline() {
 // Init
 initTheme();
 enhanceAllSelects();
+document.getElementById("providerCredentialsForm")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+});
 showRunsSkeletons();
 
 import { initAgentStatus } from "./agents.js";
