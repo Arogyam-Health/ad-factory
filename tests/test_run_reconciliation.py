@@ -459,6 +459,30 @@ class RunReconciliationTests(unittest.TestCase):
         self.assertEqual(query["run_id"], "run-1")
         self.assertEqual(update["$set"]["status"], "purge_failed")
 
+    def test_list_runs_honors_flow_query(self) -> None:
+        from dashboard.backend.db.collections import COLL_RUNS
+        from dashboard.backend.routes.runs import list_runs
+
+        db = MagicMock()
+        runs = MagicMock()
+        db.__getitem__.return_value = runs
+        runs.find.return_value.sort.return_value.limit.return_value = []
+        request = SimpleNamespace(
+            state=SimpleNamespace(user={"user_id": "user-1"}),
+            query_params={"flow": "reference"},
+        )
+        with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+            list_runs(request)
+        query = runs.find.call_args.args[0]
+        self.assertEqual(query["user_id"], "user-1")
+        self.assertEqual(query["flow_type"], {"$in": ["reference", "reference_image"]})
+
+        request.query_params = {"flow": "structured"}
+        with patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+            list_runs(request)
+        query = runs.find.call_args.args[0]
+        self.assertEqual(query["flow_type"], {"$nin": ["reference", "reference_image"]})
+
 
 if __name__ == "__main__":
     unittest.main()

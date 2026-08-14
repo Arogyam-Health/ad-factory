@@ -15,6 +15,20 @@ const runIndexEl = document.getElementById("runIndex");
 let batchDropdownInitialized = false;
 let runRenderVersion = 0;
 
+function currentFlowMode() {
+  try {
+    return localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured";
+  } catch {
+    return "structured";
+  }
+}
+
+function runMatchesFlow(run, mode = currentFlowMode()) {
+  const flow = String(run?.flow_type || "");
+  const isReference = flow === "reference" || flow === "reference_image";
+  return mode === "reference" ? isReference : !isReference;
+}
+
 function parsePromptPath(path) {
   const name = path.split("/").pop() || path;
   // Canonical: <FMT>_P<NN>_<LANG>_<angle>[_A<NN>].txt  (angle required)
@@ -446,12 +460,13 @@ export async function loadRuns() {
   state.isRunsLoading = true;
   showRunsSkeletons();
   try {
-    let data = await fetchJSON("/api/runs");
+    const flow = currentFlowMode();
+    let data = await fetchJSON(`/api/runs?flow=${encodeURIComponent(flow)}`);
     const inventory = await reconcileRunInventory(data.runs || []);
     if (inventory.pruned) {
       appendLog(`Removed ${inventory.pruned} local run${inventory.pruned === 1 ? "" : "s"} that no longer exist in the dashboard.`);
     }
-    state.runsData = (data.runs || []).map(normalizeRun);
+    state.runsData = (data.runs || []).map(normalizeRun).filter((run) => runMatchesFlow(run, flow));
     state.missingLocalRuns = inventory.pending || [];
     applyLocalArtifactsToRuns();
     renderMissingRunsBanner();

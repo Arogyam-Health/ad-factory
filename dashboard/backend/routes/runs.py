@@ -108,13 +108,19 @@ def delete_prompt_metadata_record(
 @router.get("/api/runs")
 def list_runs(request: Request) -> dict[str, Any]:
     user_id = _user_id(request)
+    query: dict[str, Any] = {
+        "user_id": user_id,
+        "status": {"$nin": ["deleted"]},
+    }
+    flow = str(request.query_params.get("flow") or "").strip().lower()
+    if flow == "reference":
+        query["flow_type"] = {"$in": ["reference", "reference_image"]}
+    elif flow == "structured":
+        query["flow_type"] = {"$nin": ["reference", "reference_image"]}
     rows = list(
         get_sync_db()[COLL_RUNS]
         .find(
-            {
-                "user_id": user_id,
-                "status": {"$nin": ["deleted"]},
-            },
+            query,
             _RUN_PROJECTION,
         )
         .sort("created_at", -1)

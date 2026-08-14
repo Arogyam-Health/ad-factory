@@ -145,7 +145,8 @@ export async function loadDefaults() {
 export async function loadRuns() {
   state.isRunsLoading = true;
   try {
-    const data = await fetchJSON("/api/runs");
+    const flow = localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured";
+    const data = await fetchJSON(`/api/runs?flow=${flow}`);
     state.runsData = data.runs || [];
     state.currentRunIndex = 0;
     return state.runsData;

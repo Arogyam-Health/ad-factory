@@ -139,6 +139,8 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("references: referenceDeclarations", reference)
         self.assertIn("reconciledProductIds", reference)
         self.assertIn("await localDataPlane.listRuns(", runs)
+        self.assertIn("/api/runs?flow=${encodeURIComponent(flow)}", runs)
+        self.assertIn("runMatchesFlow", runs)
         self.assertIn('fetchJSON("/api/runs/reconcile-local"', runs)
         self.assertIn("confirm: true", runs)
         self.assertIn("removeMissingRuns", runs)
