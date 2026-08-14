@@ -164,6 +164,17 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("org_id=${encodeURIComponent(orgId)}", state_js)
         self.assertIn("adFactoryStudioOrg:${userId}", config_js)
 
+    def test_local_cas_blobs_are_cached_by_resource_version(self) -> None:
+        plane = (FRONTEND / "js" / "local-data-plane.js").read_text(encoding="utf-8")
+        self.assertIn('CAS_CACHE_NAME = "ad-factory-local-cas"', plane)
+        self.assertIn("cachedObjectUrl(", plane)
+        self.assertIn("cachedText(", plane)
+        self.assertIn("200 * 1024 * 1024", plane)
+        self.assertNotIn(
+            '/content",\n      { method: "GET", cache: "no-store" }',
+            plane,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -81,7 +81,7 @@ async function renderInputImages(images = []) {
 
     let url = "";
     try {
-      url = await localDataPlane.assetObjectUrl(item.resource_id, structuredDeviceId);
+      url = await localDataPlane.assetObjectUrl(item.resource_id, structuredDeviceId, item.version);
       inputImageObjectUrls.push(url);
     } catch {
       card.classList.add("local-content-unavailable");

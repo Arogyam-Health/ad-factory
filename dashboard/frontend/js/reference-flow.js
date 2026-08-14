@@ -367,7 +367,7 @@ async function loadReferenceLibrary() {
     });
     await Promise.all(referenceItems.map(async (item) => {
       try {
-        item.object_url = await localDataPlane.assetObjectUrl(item.resource_id, referenceDeviceId);
+        item.object_url = await localDataPlane.assetObjectUrl(item.resource_id, referenceDeviceId, item.version);
         referenceObjectUrls.push(item.object_url);
       } catch {
         item.object_url = "";
@@ -513,7 +513,7 @@ async function loadReferenceWorkspace() {
     }
     await Promise.all(productImages.map(async (item) => {
       try {
-        item.object_url = await localDataPlane.assetObjectUrl(item.resource_id, referenceDeviceId);
+        item.object_url = await localDataPlane.assetObjectUrl(item.resource_id, referenceDeviceId, item.version);
         referenceProductObjectUrls.push(item.object_url);
       } catch {
         item.object_url = "";
@@ -690,6 +690,7 @@ async function loadLiveOutputs() {
       output.object_url = await localDataPlane.outputObjectUrl(
         output.output_id,
         referenceDeviceId,
+        output.current_version,
       );
       referenceOutputObjectUrls.push(output.object_url);
     } catch {

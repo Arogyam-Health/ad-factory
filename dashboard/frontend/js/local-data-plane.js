@@ -45,6 +45,110 @@ function storageSet(key, value) {
   }
 }
 
+const CAS_CACHE_NAME = "ad-factory-local-cas";
+const CAS_CACHE_CAP_BYTES = 200 * 1024 * 1024;
+const CAS_LRU_KEY = "adFactoryCasLru";
+const liveBlobUrls = new Map();
+
+function casCacheKey(kind, id, version) {
+  return `${kind}:${id}:v${version || 0}`;
+}
+
+function readCasLru() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CAS_LRU_KEY) || "[]");
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCasLru(entries) {
+  try {
+    localStorage.setItem(CAS_LRU_KEY, JSON.stringify(entries));
+  } catch {
+    // ignore quota
+  }
+}
+
+function touchCasLru(key, bytes) {
+  const entries = readCasLru().filter((item) => item.key !== key);
+  entries.push({ key, bytes: Number(bytes) || 0, at: Date.now() });
+  writeCasLru(entries);
+}
+
+async function trimCasCache(cache) {
+  let entries = readCasLru();
+  let total = entries.reduce((sum, item) => sum + (Number(item.bytes) || 0), 0);
+  while (total > CAS_CACHE_CAP_BYTES && entries.length) {
+    const evicted = entries.shift();
+    total -= Number(evicted.bytes) || 0;
+    try {
+      await cache.delete(new Request(`https://local-cas/${evicted.key}`));
+    } catch {
+      // ignore
+    }
+  }
+  writeCasLru(entries);
+}
+
+async function cachedText(kind, id, version, loader) {
+  const key = casCacheKey(kind, id, version);
+  try {
+    const cache = await caches.open(CAS_CACHE_NAME);
+    const request = new Request(`https://local-cas/${key}`);
+    const hit = await cache.match(request);
+    if (hit) return hit.text();
+    const text = await loader();
+    await cache.put(request, new Response(text, { headers: { "Content-Type": "text/plain; charset=utf-8" } }));
+    touchCasLru(key, new Blob([text]).size);
+    await trimCasCache(cache);
+    return text;
+  } catch {
+    return loader();
+  }
+}
+
+async function fetchImmutableBlob(url, authorizedFetch, deviceId) {
+  const response = await authorizedFetch(url, { method: "GET" }, deviceId);
+  if (!response.ok) await readJson(response);
+  return response.blob();
+}
+
+async function cachedObjectUrl(kind, id, version, loader) {
+  const key = casCacheKey(kind, id, version);
+  let blob;
+  try {
+    const cache = await caches.open(CAS_CACHE_NAME);
+    const request = new Request(`https://local-cas/${key}`);
+    const hit = await cache.match(request);
+    if (hit) {
+      blob = await hit.blob();
+    } else {
+      blob = await loader();
+      await cache.put(request, new Response(blob));
+      touchCasLru(key, blob.size);
+      await trimCasCache(cache);
+    }
+  } catch {
+    blob = await loader();
+  }
+  const url = URL.createObjectURL(blob);
+  liveBlobUrls.set(url, key);
+  return url;
+}
+
+function revokeLiveBlobUrls() {
+  for (const url of liveBlobUrls.keys()) {
+    try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+  }
+  liveBlobUrls.clear();
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("pagehide", revokeLiveBlobUrls);
+}
+
 function storageRemove(key) {
   try {
     window.localStorage.removeItem(key);
@@ -433,14 +537,14 @@ export class LocalDataPlaneClient {
     ));
   }
 
-  async assetObjectUrl(resourceId, deviceId) {
-    const response = await this.authorizedFetch(
-      `/v1/assets/${encodeURIComponent(resourceId)}/content`,
-      { method: "GET", cache: "no-store" },
-      deviceId,
+  async assetObjectUrl(resourceId, deviceId, version) {
+    return cachedObjectUrl("asset", resourceId, version, () =>
+      fetchImmutableBlob(
+        `/v1/assets/${encodeURIComponent(resourceId)}/content`,
+        this.authorizedFetch.bind(this),
+        deviceId,
+      ),
     );
-    if (!response.ok) await readJson(response);
-    return URL.createObjectURL(await response.blob());
   }
 
   async putText(collection, logicalKey, content, {
@@ -545,14 +649,14 @@ export class LocalDataPlaneClient {
     ));
   }
 
-  async outputObjectUrl(outputId, deviceId) {
-    const response = await this.authorizedFetch(
-      `/v1/outputs/${encodeURIComponent(outputId)}/content`,
-      { method: "GET", cache: "no-store" },
-      deviceId,
+  async outputObjectUrl(outputId, deviceId, version) {
+    return cachedObjectUrl("output", outputId, version, () =>
+      fetchImmutableBlob(
+        `/v1/outputs/${encodeURIComponent(outputId)}/content`,
+        this.authorizedFetch.bind(this),
+        deviceId,
+      ),
     );
-    if (!response.ok) await readJson(response);
-    return URL.createObjectURL(await response.blob());
   }
 
   async listPrompts(runId, deviceId) {
@@ -564,14 +668,16 @@ export class LocalDataPlaneClient {
     return payload.items || [];
   }
 
-  async promptContent(promptId, deviceId) {
-    const response = await this.authorizedFetch(
-      `/v1/prompts/${encodeURIComponent(promptId)}/content`,
-      { method: "GET", cache: "no-store" },
-      deviceId,
-    );
-    if (!response.ok) await readJson(response);
-    return response.text();
+  async promptContent(promptId, deviceId, version) {
+    return cachedText("prompt", promptId, version, async () => {
+      const response = await this.authorizedFetch(
+        `/v1/prompts/${encodeURIComponent(promptId)}/content`,
+        { method: "GET" },
+        deviceId,
+      );
+      if (!response.ok) await readJson(response);
+      return response.text();
+    });
   }
 
   async putPrompt(promptId, runId, content, expectedVersion, deviceId) {

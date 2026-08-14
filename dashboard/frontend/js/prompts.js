@@ -19,7 +19,7 @@ async function loadLocalPrompts(run) {
   const items = await localDataPlane.listPrompts(run.run_id, run.device_id);
   return {
     prompts: await Promise.all(items.map(async (item) => {
-      const content = await localDataPlane.promptContent(item.prompt_id, run.device_id);
+      const content = await localDataPlane.promptContent(item.prompt_id, run.device_id, item.version);
       return {
         ...item,
         prompt_file: item.prompt_file || `${item.display_name || item.prompt_id}.txt`,
@@ -237,7 +237,7 @@ function buildPromptCard(prompt, run, items, promptsByPath) {
   link.onclick = async (event) => {
     event.preventDefault();
     try {
-      const content = await localDataPlane.promptContent(prompt.prompt_id, run.device_id);
+      const content = await localDataPlane.promptContent(prompt.prompt_id, run.device_id, prompt.version);
       const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
       const anchor = document.createElement("a");
       anchor.href = url;

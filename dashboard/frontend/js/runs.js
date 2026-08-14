@@ -849,6 +849,7 @@ async function runStructuredOutputRefresh() {
         const url = cached?.url || await localDataPlane.outputObjectUrl(
           output.output_id,
           run.device_id,
+          output.current_version,
         );
         const mapped = promptNames.get(output.prompt_id);
         next.push({

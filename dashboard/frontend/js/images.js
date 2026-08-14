@@ -319,7 +319,7 @@ export function buildImageGallery(run, imagesData) {
     promptFullscreenBtn.addEventListener("click", (event) => {
       event.stopPropagation();
       const localPromptOptions = imageItem.is_local && imageItem.prompt_id ? {
-        loadContent: () => localDataPlane.promptContent(imageItem.prompt_id, run.device_id),
+        loadContent: () => localDataPlane.promptContent(imageItem.prompt_id, run.device_id, imageItem.prompt_version || imageItem.version),
         onSave: async (text) => {
           const prompts = await localDataPlane.listPrompts(run.run_id, run.device_id);
           const prompt = prompts.find((item) => item.prompt_id === imageItem.prompt_id);
@@ -652,7 +652,7 @@ export function buildImageGallery(run, imagesData) {
       promptFullscreenBtn.addEventListener("click", (event) => {
         event.stopPropagation();
         const localPromptOptions = queueItem.is_local && queueItem.prompt_id ? {
-          loadContent: () => localDataPlane.promptContent(queueItem.prompt_id, run.device_id),
+          loadContent: () => localDataPlane.promptContent(queueItem.prompt_id, run.device_id, queueItem.prompt_version || queueItem.version),
           onSave: async (text) => {
             const prompts = await localDataPlane.listPrompts(run.run_id, run.device_id);
             const prompt = prompts.find((item) => item.prompt_id === queueItem.prompt_id);
