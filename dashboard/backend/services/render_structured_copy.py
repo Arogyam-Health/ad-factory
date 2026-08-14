@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 import requests
 
+from dashboard.backend.services.visual_archetypes import bundled_visual_archetypes
 from scripts import generate_ads
 
 
@@ -87,6 +88,125 @@ def _persona(number: int, source: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _hypothesis_from_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    raw = settings.get("hypothesis")
+    if not isinstance(raw, dict):
+        return {"type": "none", "variant": ""}
+    hyp_type = str(raw.get("type") or "none").strip().lower() or "none"
+    variant = str(raw.get("variant") or "").strip()
+    return {"type": hyp_type, "variant": variant}
+
+
+def _archetype_catalog(effective_config: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    templates = _json_config(effective_config.get("copy_prompt_templates"), {})
+    raw = templates.get("visual_archetypes") if isinstance(templates, dict) else None
+    if not isinstance(raw, dict) or not any(raw.get(fmt) for fmt in ("HERO", "BA", "TEST", "FEAT", "UGC")):
+        raw = bundled_visual_archetypes()
+    catalog: dict[str, list[dict[str, Any]]] = {}
+    for fmt in ("HERO", "BA", "TEST", "FEAT", "UGC"):
+        items = raw.get(fmt) if isinstance(raw, dict) else None
+        catalog[fmt] = [item for item in (items if isinstance(items, list) else []) if isinstance(item, dict)]
+    return catalog
+
+
+def _resolve_archetype(
+    fmt: str,
+    archetype_id: str,
+    catalog: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    wanted = str(archetype_id or "").strip()
+    for item in catalog.get(fmt) or []:
+        if str(item.get("id") or "").strip() == wanted:
+            return item
+    if wanted:
+        try:
+            return generate_ads.find_visual_archetype(fmt, wanted)
+        except RuntimeError:
+            pass
+    items = catalog.get(fmt) or []
+    if items:
+        return items[0]
+    return generate_ads.default_visual_archetype(fmt)
+
+
+def _reuse_keys(
+    fmt: str,
+    persona_no: int | None,
+    visual_archetype: str,
+    share_across_personas: bool,
+) -> list[str]:
+    fmt = str(fmt or "").strip().upper()
+    persona = f"P{int(persona_no):02d}" if isinstance(persona_no, int) else ""
+    arch = str(visual_archetype or "").strip()
+    if share_across_personas:
+        return [key for key in [f"{fmt}::{arch}" if arch else "", fmt] if key]
+    return [
+        key
+        for key in [
+            f"{fmt}::{persona}::{arch}" if persona and arch else "",
+            f"{fmt}::{persona}" if persona else "",
+        ]
+        if key
+    ]
+
+
+def _apply_visual_pattern_reuse(
+    plan: list[dict[str, Any]],
+    locks: dict[str, dict[str, Any]],
+    *,
+    share_across_personas: bool,
+) -> list[dict[str, Any]]:
+    if not locks:
+        return plan
+    out: list[dict[str, Any]] = []
+    for item in plan:
+        entry = dict(item)
+        fmt = str(entry.get("format") or "").strip().upper()
+        persona = entry.get("persona")
+        persona_no = (
+            int(persona["number"])
+            if isinstance(persona, dict) and isinstance(persona.get("number"), int)
+            else None
+        )
+        lock = None
+        reuse_key = ""
+        for key in _reuse_keys(fmt, persona_no, str(entry.get("visual_archetype") or ""), share_across_personas):
+            if key in locks:
+                lock = locks[key]
+                reuse_key = key
+                break
+        if not lock:
+            for key in _reuse_keys(fmt, persona_no, "", share_across_personas):
+                if key in locks:
+                    lock = locks[key]
+                    reuse_key = key
+                    break
+        if lock:
+            entry["visual_archetype"] = lock["visual_archetype"]
+            entry["visual_pattern_reused_from_run_id"] = lock.get(
+                "visual_pattern_reused_from_run_id", ""
+            )
+            entry["visual_pattern_reuse_key"] = reuse_key
+        out.append(entry)
+    return out
+
+
+def _lookup_background_lock(
+    locks: dict[str, dict[str, Any]],
+    fmt: str,
+    persona_no: int | None,
+    visual_archetype: str,
+    share_across_personas: bool,
+) -> dict[str, Any] | None:
+    for key in _reuse_keys(fmt, persona_no, visual_archetype, share_across_personas):
+        if key in locks:
+            return locks[key]
+    for key in _reuse_keys(fmt, persona_no, "", share_across_personas):
+        if key in locks:
+            return locks[key]
+    return None
+
+
 def _planned_ads(
     settings: dict[str, Any], effective_config: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -100,6 +220,10 @@ def _planned_ads(
     per_persona = per_persona if isinstance(per_persona, dict) else {}
     multiplier = max(1, min(int(settings.get("multiplier") or 1), 20))
     personas = _persona_map(effective_config)
+    archetype_map = settings.get("visual_archetypes_by_format")
+    archetype_map = archetype_map if isinstance(archetype_map, dict) else {}
+    share_background = bool(settings.get("share_background_across_personas"))
+    hypothesis = _hypothesis_from_settings(settings)
     planned: list[dict[str, Any]] = []
     for raw_number in selected:
         number = int(raw_number)
@@ -109,16 +233,34 @@ def _planned_ads(
             normalized_format = str(fmt or "").upper()
             if normalized_format not in {"HERO", "BA", "TEST", "FEAT", "UGC"}:
                 raise ValueError("Unsupported ad format")
+            forced_archetype = str(archetype_map.get(normalized_format) or "").strip()
+            background_group_key = (
+                normalized_format
+                if share_background
+                else f"{normalized_format}::P{number:02d}"
+            )
+            concept_angle = "desired_outcome"
+            if hypothesis["type"] == "concept_angle" and hypothesis["variant"]:
+                concept_angle = hypothesis["variant"]
             for creative_index in range(1, multiplier + 1):
-                planned.append(
-                    {
-                        "format": normalized_format,
-                        "creative_index": creative_index,
-                        "creative_total": multiplier,
-                        "concept_angle": "desired_outcome",
-                        "persona": _persona(number, personas.get(number, {})),
+                item = {
+                    "format": normalized_format,
+                    "creative_index": creative_index,
+                    "creative_total": multiplier,
+                    "concept_angle": concept_angle,
+                    "persona": _persona(number, personas.get(number, {})),
+                    "background_group_key": background_group_key,
+                    "share_background_across_personas": share_background,
+                }
+                if forced_archetype:
+                    item["visual_archetype"] = forced_archetype
+                if hypothesis["type"] not in {"", "none"}:
+                    item["hypothesis"] = {
+                        "type": hypothesis["type"],
+                        "variant": hypothesis["variant"],
+                        "hypothesis_id": f"{hypothesis['type']}-{hypothesis['variant']}",
                     }
-                )
+                planned.append(item)
     if not planned or len(planned) > 500:
         raise ValueError("Structured ad plan exceeds the 500-ad limit")
     return planned
@@ -343,9 +485,21 @@ def generate_structured_prompt_bundle(
     provider_name: str,
     provider_model: str,
     generate: GenerateCallable,
+    reuse_locks: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     planned = _planned_ads(settings, effective_config)
+    share_background = bool(settings.get("share_background_across_personas"))
+    reuse_locks = reuse_locks if isinstance(reuse_locks, dict) else {}
+    visual_locks = reuse_locks.get("visual") if isinstance(reuse_locks.get("visual"), dict) else {}
+    background_locks = (
+        reuse_locks.get("background") if isinstance(reuse_locks.get("background"), dict) else {}
+    )
+    planned = _apply_visual_pattern_reuse(
+        planned,
+        visual_locks,
+        share_across_personas=share_background,
+    )
     languages = _LANGUAGES.get(
         str(settings.get("language_mode") or "EN").upper(),
         ("EN",),
@@ -418,27 +572,77 @@ def generate_structured_prompt_bundle(
     templates = _json_config(
         effective_config.get("prompt_assembler_templates"), {}
     ) or None
+    catalog = _archetype_catalog(effective_config)
+    background_cache: dict[str, tuple[dict[str, Any], int]] = {}
     prompts: list[dict[str, Any]] = []
     for ad_index, ad in enumerate(copy_batch["ads"], start=1):
         fmt = str(ad["format"]).upper()
         persona = ad["persona"]
-        selected_background = _background(
-            generate_ads.pick_background_slot(
-                backgrounds,
-                fmt,
-                int(run_number) + ad_index - 1,
-            )
+        persona_no = int(persona["number"])
+        archetype_id = str(ad.get("visual_archetype") or "").strip()
+        archetype = _resolve_archetype(fmt, archetype_id, catalog)
+        archetype_id = str(archetype.get("id") or archetype_id)
+        lock = _lookup_background_lock(
+            background_locks,
+            fmt,
+            persona_no,
+            archetype_id,
+            share_background,
         )
-        background_seed = random.Random(
-            int(run_number) + ad_index * 101
-        ).randint(1, 2_147_483_647)
+        cache_key = (
+            fmt if share_background else f"{fmt}::P{persona_no:02d}"
+        )
+        selected_background: dict[str, Any]
+        background_seed: int
+        if lock:
+            slot_id = str(lock.get("background_slot") or "").strip()
+            try:
+                selected_background = _background(
+                    generate_ads.get_background_by_id(backgrounds, fmt, slot_id)
+                ) if slot_id else _background(
+                    generate_ads.pick_background_slot(
+                        backgrounds,
+                        fmt,
+                        int(run_number) + ad_index - 1,
+                    )
+                )
+            except RuntimeError:
+                selected_background = _background(
+                    generate_ads.pick_background_slot(
+                        backgrounds,
+                        fmt,
+                        int(run_number) + ad_index - 1,
+                    )
+                )
+            seed = lock.get("background_seed")
+            background_seed = (
+                int(seed)
+                if isinstance(seed, int)
+                else random.Random(int(run_number) + ad_index * 101).randint(
+                    1, 2_147_483_647
+                )
+            )
+            background_cache[cache_key] = (selected_background, background_seed)
+        elif cache_key in background_cache:
+            selected_background, background_seed = background_cache[cache_key]
+        else:
+            selected_background = _background(
+                generate_ads.pick_background_slot(
+                    backgrounds,
+                    fmt,
+                    int(run_number) + ad_index - 1,
+                )
+            )
+            background_seed = random.Random(
+                int(run_number) + ad_index * 101
+            ).randint(1, 2_147_483_647)
+            background_cache[cache_key] = (selected_background, background_seed)
         sentence = generate_ads.build_seeded_background_sentence(
             selected_background,
             background_seed,
             "4:5",
         )
         concept = generate_ads.resolve_concept_fields(ad, fmt, persona)
-        archetype = generate_ads.default_visual_archetype(fmt)
         for language in languages:
             block = generate_ads.parse_copy_block(
                 fmt,
@@ -483,10 +687,14 @@ def generate_structured_prompt_bundle(
                     "language": language,
                     "aspect_ratio": "4:5",
                     "concept_angle": concept_angle,
+                    "visual_archetype": archetype_id,
+                    "background_id": str(selected_background.get("id") or ""),
+                    "background_seed": background_seed,
                     "display_stem": display_stem,
                     "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 }
             )
+    batch_size = int(settings.get("batch_size") or 10)
     return {
         "run_id": run_id,
         "status": "completed",
@@ -500,6 +708,7 @@ def generate_structured_prompt_bundle(
         "prompt_count": len(prompts),
         "prompt_ids": [prompt["prompt_id"] for prompt in prompts],
         "repair_count": repair_count,
+        "batch_size": max(1, min(batch_size, 500)),
         "prompts": prompts,
     }
 

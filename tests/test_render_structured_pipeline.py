@@ -146,6 +146,150 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertNotIn("product_assets", calls[0]["request"])
         self.assertNotIn("image", json.dumps(calls[0]["request"]).lower())
 
+    def test_copy_settings_whitelist_accepts_studio_controls(self) -> None:
+        from dashboard.backend.services.render_copy_jobs import validate_copy_settings
+
+        settings = validate_copy_settings(
+            {
+                "selected_personas": [3],
+                "global_formats": ["HERO"],
+                "formats_by_persona": {"3": ["HERO"]},
+                "multiplier": 2,
+                "batch_size": 12,
+                "share_background_across_personas": True,
+                "reuse_backgrounds_from_run_id": "run_abc",
+                "reuse_visual_patterns_from_run_id": "run_def",
+                "hypothesis": {"type": "concept_angle", "variant": "pain_point"},
+                "visual_archetypes_by_format": {"HERO": "hero_center_stage"},
+                "language_mode": "EN",
+                "provider": "opencode",
+                "model": "opencode/big-pickle",
+                "org_id": "org_1",
+            }
+        )
+        self.assertEqual(settings["batch_size"], 12)
+        self.assertTrue(settings["share_background_across_personas"])
+        self.assertEqual(settings["reuse_backgrounds_from_run_id"], "run_abc")
+        self.assertEqual(
+            settings["hypothesis"],
+            {"type": "concept_angle", "variant": "pain_point"},
+        )
+        self.assertEqual(
+            settings["visual_archetypes_by_format"],
+            {"HERO": "hero_center_stage"},
+        )
+        with self.assertRaises(ValueError):
+            validate_copy_settings(
+                {
+                    "selected_personas": [3],
+                    "global_formats": ["HERO"],
+                    "multiplier": 1,
+                    "language_mode": "EN",
+                    "provider": "opencode",
+                    "model": "opencode/big-pickle",
+                    "unknown_field": True,
+                }
+            )
+
+    def test_planner_honors_forced_archetype_and_hypothesis_variant(self) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            _planned_ads,
+            generate_structured_prompt_bundle,
+        )
+
+        planned = _planned_ads(
+            {
+                "selected_personas": [3],
+                "global_formats": ["HERO"],
+                "multiplier": 1,
+                "hypothesis": {"type": "concept_angle", "variant": "pain_point"},
+                "visual_archetypes_by_format": {"HERO": "hero_center_stage"},
+            },
+            {
+                "persona_seeds": json.dumps(
+                    [{"persona_number": 3, "persona_name": "Stress Snacker"}]
+                )
+            },
+        )
+        self.assertEqual(planned[0]["concept_angle"], "pain_point")
+        self.assertEqual(planned[0]["visual_archetype"], "hero_center_stage")
+        self.assertEqual(planned[0]["hypothesis"]["variant"], "pain_point")
+
+        def generate(request: dict, repair: bool = False) -> dict:
+            return {
+                "ads": [
+                    {
+                        "concept_angle": "pain_point",
+                        "copy": {
+                            "EN": {
+                                "headline": "Stay consistent",
+                                "support_line": "A practical next step",
+                                "cta": "Learn more",
+                            }
+                        },
+                    }
+                ]
+            }
+
+        result = generate_structured_prompt_bundle(
+            run_id="run-forced",
+            run_number=2,
+            settings={
+                "selected_personas": [3],
+                "global_formats": ["HERO"],
+                "formats_by_persona": {},
+                "multiplier": 1,
+                "language_mode": "EN",
+                "batch_size": 8,
+                "hypothesis": {"type": "concept_angle", "variant": "pain_point"},
+                "visual_archetypes_by_format": {"HERO": "forced_center"},
+            },
+            effective_config={
+                "product_master_doc": "Verified product facts.",
+                "persona_seeds": json.dumps(
+                    [{"persona_number": 3, "persona_name": "Stress Snacker"}]
+                ),
+                "copy_prompt_templates": json.dumps(
+                    {
+                        "visual_archetypes": {
+                            "HERO": [
+                                {
+                                    "id": "forced_center",
+                                    "label": "Forced center packshot",
+                                    "layout_lines": [
+                                        "- Archetype: forced center packshot for tests."
+                                    ],
+                                    "direction_lines": [
+                                        "- Archetype direction: keep the product centered."
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                ),
+                "background_variant": json.dumps(
+                    {
+                        "variants": [
+                            {
+                                "id": "hero_server",
+                                "title": "Server background",
+                                "base": "a clean product arrangement",
+                                "formats": ["HERO"],
+                            }
+                        ]
+                    }
+                ),
+                "prompt_assembler_templates": "{}",
+            },
+            provider_name="opencode",
+            provider_model="opencode/big-pickle",
+            generate=generate,
+        )
+        self.assertEqual(result["batch_size"], 8)
+        self.assertEqual(result["prompts"][0]["visual_archetype"], "forced_center")
+        self.assertEqual(result["prompts"][0]["concept_angle"], "pain_point")
+        self.assertIn("forced center packshot", result["prompts"][0]["text"])
+
     def test_prompt_delivery_ciphertext_round_trips_and_detects_tampering(self) -> None:
         from dashboard.backend.services.prompt_delivery import (
             decrypt_prompt_bundle,
@@ -227,6 +371,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         from tests.test_agent_metadata_jobs import _DB
         from dashboard.backend.services.render_copy_jobs import (
             enqueue_render_copy_job,
+            validate_copy_settings,
         )
 
         db = _DB()
@@ -268,7 +413,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
 
         stored = db["render_copy_jobs"].docs[0]
         self.assertEqual(created["status"], "queued")
-        self.assertEqual(stored["settings"], settings)
+        self.assertEqual(stored["settings"], validate_copy_settings(settings))
         self.assertNotIn("prompt", json.dumps(stored).lower())
         self.assertNotIn("api_key", json.dumps(stored).lower())
         self.assertNotIn("product_master_doc", json.dumps(stored).lower())

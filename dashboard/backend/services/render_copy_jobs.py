@@ -117,6 +117,12 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
         "provider",
         "model",
         "org_id",
+        "batch_size",
+        "share_background_across_personas",
+        "reuse_backgrounds_from_run_id",
+        "reuse_visual_patterns_from_run_id",
+        "hypothesis",
+        "visual_archetypes_by_format",
     }
     if set(raw) - allowed:
         raise ValueError("Structured copy settings contain unsupported fields")
@@ -168,6 +174,42 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
             )
         ):
             raise ValueError("Per-persona formats are invalid")
+    batch_size = int(raw.get("batch_size") or 10)
+    if batch_size < 1 or batch_size > 500:
+        raise ValueError("Structured copy batch size is invalid")
+    share_background = raw.get("share_background_across_personas")
+    if share_background is None:
+        share_background = False
+    if not isinstance(share_background, bool):
+        raise ValueError("share_background_across_personas must be a boolean")
+    reuse_backgrounds = str(raw.get("reuse_backgrounds_from_run_id") or "").strip()
+    reuse_patterns = str(raw.get("reuse_visual_patterns_from_run_id") or "").strip()
+    if len(reuse_backgrounds) > 80 or len(reuse_patterns) > 80:
+        raise ValueError("Reuse run id is invalid")
+    hypothesis = raw.get("hypothesis")
+    if hypothesis is None:
+        hypothesis = {"type": "none", "variant": ""}
+    if not isinstance(hypothesis, dict):
+        raise ValueError("Hypothesis settings are invalid")
+    hyp_type = str(hypothesis.get("type") or "none").strip().lower()[:64]
+    hyp_variant = str(hypothesis.get("variant") or "").strip()[:64]
+    if not hyp_type:
+        hyp_type = "none"
+    archetypes = raw.get("visual_archetypes_by_format")
+    if archetypes is None:
+        archetypes = {}
+    if not isinstance(archetypes, dict) or len(archetypes) > 5:
+        raise ValueError("Visual archetypes by format are invalid")
+    visual_archetypes_by_format = {}
+    for fmt, archetype_id in archetypes.items():
+        normalized = str(fmt).upper()
+        if normalized not in {"HERO", "BA", "TEST", "FEAT", "UGC"}:
+            raise ValueError("Visual archetypes by format are invalid")
+        ident = str(archetype_id or "").strip()
+        if len(ident) > 80:
+            raise ValueError("Visual archetypes by format are invalid")
+        if ident:
+            visual_archetypes_by_format[normalized] = ident
     return {
         "selected_personas": personas,
         "global_formats": [str(value).upper() for value in formats],
@@ -180,6 +222,12 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
         "provider": provider,
         "model": model,
         "org_id": str(raw.get("org_id") or ""),
+        "batch_size": batch_size,
+        "share_background_across_personas": share_background,
+        "reuse_backgrounds_from_run_id": reuse_backgrounds,
+        "reuse_visual_patterns_from_run_id": reuse_patterns,
+        "hypothesis": {"type": hyp_type, "variant": hyp_variant},
+        "visual_archetypes_by_format": visual_archetypes_by_format,
     }
 
 
@@ -273,6 +321,90 @@ def _claim_next_job() -> dict[str, Any] | None:
     )
 
 
+def _reuse_lock_keys(
+    fmt: str,
+    persona_no: int | None,
+    visual_archetype: str,
+    share_across_personas: bool,
+) -> list[str]:
+    fmt = str(fmt or "").strip().upper()
+    persona = f"P{int(persona_no):02d}" if isinstance(persona_no, int) else ""
+    arch = str(visual_archetype or "").strip()
+    if share_across_personas:
+        return [key for key in [f"{fmt}::{arch}" if arch else "", fmt] if key]
+    return [
+        key
+        for key in [
+            f"{fmt}::{persona}::{arch}" if persona and arch else "",
+            f"{fmt}::{persona}" if persona else "",
+        ]
+        if key
+    ]
+
+
+def collect_copy_reuse_locks(user_id: str, settings: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Read previous-run prompt metadata from Mongo for background/pattern reuse."""
+    background_run = str(settings.get("reuse_backgrounds_from_run_id") or "").strip()
+    visual_run = str(settings.get("reuse_visual_patterns_from_run_id") or "").strip()
+    if not background_run and not visual_run:
+        return {"background": {}, "visual": {}}
+    db = get_sync_db()
+    background_locks: dict[str, dict[str, Any]] = {}
+    visual_locks: dict[str, dict[str, Any]] = {}
+
+    def prompts_for(run_id: str) -> list[dict[str, Any]]:
+        ident = str(run_id or "").strip()
+        if not ident:
+            return []
+        return list(
+            db[COLL_PROMPTS].find(
+                {"run_id": ident, "user_id": user_id},
+                {"_id": 0},
+            )
+        )
+
+    for prompt in prompts_for(str(settings.get("reuse_backgrounds_from_run_id") or "")):
+        fmt = str(prompt.get("format") or "").strip().upper()
+        persona_no = prompt.get("persona_number")
+        persona_no = int(persona_no) if isinstance(persona_no, int) else None
+        slot = str(prompt.get("background_id") or "").strip()
+        seed = prompt.get("background_seed")
+        if not fmt or not slot or not isinstance(seed, int):
+            continue
+        lock = {
+            "background_slot": slot,
+            "background_seed": seed,
+            "background_reused_from_run_id": str(
+                settings.get("reuse_backgrounds_from_run_id") or ""
+            ),
+        }
+        archetype = str(prompt.get("visual_archetype") or "").strip()
+        for key in _reuse_lock_keys(fmt, persona_no, archetype, False):
+            background_locks.setdefault(key, lock)
+        for key in _reuse_lock_keys(fmt, persona_no, archetype, True):
+            background_locks.setdefault(key, lock)
+
+    for prompt in prompts_for(str(settings.get("reuse_visual_patterns_from_run_id") or "")):
+        fmt = str(prompt.get("format") or "").strip().upper()
+        persona_no = prompt.get("persona_number")
+        persona_no = int(persona_no) if isinstance(persona_no, int) else None
+        archetype = str(prompt.get("visual_archetype") or "").strip()
+        if not fmt or not archetype:
+            continue
+        lock = {
+            "visual_archetype": archetype,
+            "visual_pattern_reused_from_run_id": str(
+                settings.get("reuse_visual_patterns_from_run_id") or ""
+            ),
+        }
+        for key in _reuse_lock_keys(fmt, persona_no, archetype, False):
+            visual_locks.setdefault(key, lock)
+        for key in _reuse_lock_keys(fmt, persona_no, archetype, True):
+            visual_locks.setdefault(key, lock)
+
+    return {"background": background_locks, "visual": visual_locks}
+
+
 def _complete_job(job: dict[str, Any], result: dict[str, Any]) -> None:
     db = get_sync_db()
     now = time.time()
@@ -321,10 +453,24 @@ def _complete_job(job: dict[str, Any], result: dict[str, Any]) -> None:
             "prompt_count",
             "prompt_ids",
             "repair_count",
+            "batch_size",
         )
+        if key in result
     }
     projection["delivery_id"] = delivery_id
     projection["delivery_status"] = "pending"
+    settings = job.get("settings") if isinstance(job.get("settings"), dict) else {}
+    for key in (
+        "share_background_across_personas",
+        "reuse_backgrounds_from_run_id",
+        "reuse_visual_patterns_from_run_id",
+        "hypothesis",
+        "visual_archetypes_by_format",
+    ):
+        if key in settings:
+            projection[key] = settings[key]
+    if "batch_size" not in projection and "batch_size" in settings:
+        projection["batch_size"] = settings["batch_size"]
     db[COLL_PROMPTS].delete_many(
         {"run_id": job["run_id"], "user_id": job["user_id"]}
     )
@@ -339,8 +485,12 @@ def _complete_job(job: dict[str, Any], result: dict[str, Any]) -> None:
                 "sha256": str(prompt["sha256"]),
                 "format": str(prompt["format"]),
                 "persona": str(prompt["persona_name"]),
+                "persona_number": int(prompt.get("persona_number") or 0) or None,
                 "language": str(prompt["language"]),
                 "aspect_ratio": str(prompt["aspect_ratio"]),
+                "visual_archetype": str(prompt.get("visual_archetype") or ""),
+                "background_id": str(prompt.get("background_id") or ""),
+                "background_seed": prompt.get("background_seed"),
                 "status": "awaiting_local_delivery",
                 "created_at": now,
                 "updated_at": now,
@@ -605,6 +755,7 @@ def process_next_render_copy_job() -> bool:
             ),
             provider_name=str(settings["provider"]),
             provider_model=str(settings["model"]),
+            reuse_locks=collect_copy_reuse_locks(str(job["user_id"]), settings),
             generate=provider_generate_callable(
                 str(settings["provider"]),
                 str(settings["model"]),

@@ -1721,7 +1721,10 @@ def test_local_agent_responsiveness_contract() -> int:
     failed += ok(
         'fetchJSON("/api/runs/allocate-copy"' in main_js
         and "/structured-copy" in main_js
-        and 'fetchJSON("/api/runs/execute"' not in main_js,
+        and 'fetchJSON("/api/runs/execute"' not in main_js
+        and "visual_archetypes_by_format: cfg.visual_archetypes_by_format" in main_js
+        and "hypothesis: cfg.hypothesis" in main_js
+        and "batch_size: cfg.batch_size" in main_js,
         "frontend allocates and executes structured copy on Render",
     )
     failed += ok(".card-input-prompts," in styles_css and ".card-images," in styles_css and "grid-column: span 7" in styles_css,
