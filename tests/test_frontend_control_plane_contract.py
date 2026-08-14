@@ -175,6 +175,23 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("copy_generation.last_error", jobs)
         self.assertIn("next_free_opencode_model", jobs)
 
+    def test_editable_fields_readme_covers_studio_and_config_keys(self) -> None:
+        readme = (ROOT / "DASHBOARD_EDITABLE_FIELDS.md").read_text(encoding="utf-8")
+        for needle in (
+            "visual_archetypes",
+            "headline_architectures",
+            "reference_starting_prompt",
+            "reference_product_master_doc",
+            "Copy to Org",
+            "ad-factory-agent/config/agent.json",
+            "--session-cookie",
+            "persona_seeds",
+            "copy_prompt_templates",
+            "copy_architecture",
+        ):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, readme)
+
     def test_local_cas_blobs_are_cached_by_resource_version(self) -> None:
         plane = (FRONTEND / "js" / "local-data-plane.js").read_text(encoding="utf-8")
         self.assertIn('CAS_CACHE_NAME = "ad-factory-local-cas"', plane)
