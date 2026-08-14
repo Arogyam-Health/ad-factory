@@ -17,12 +17,15 @@ function sync(selectEl) {
   const root = enhanced.get(selectEl);
   if (!root) return;
   const btn = root.querySelector(".custom-select-btn");
+  const label = root.querySelector(".custom-select-label");
   const menu = root.querySelector(".custom-select-menu");
   const grid = root.querySelector(".custom-select-grid");
-  if (!btn || !menu || !grid) return;
+  if (!btn || !label || !menu || !grid) return;
 
   btn.disabled = selectEl.disabled;
-  btn.textContent = optionLabel(selectEl.selectedOptions[0]) || "Select";
+  const selected = selectEl.selectedOptions[0];
+  label.textContent = optionLabel(selected) || "Select";
+  btn.title = selected?.title || selected?.value || label.textContent;
   grid.innerHTML = "";
 
   const num = selectEl.options.length;
@@ -37,6 +40,7 @@ function sync(selectEl) {
     item.className = "custom-select-item";
     item.dataset.value = option.value;
     item.textContent = optionLabel(option);
+    item.title = option.title || option.value || item.textContent;
     item.disabled = option.disabled;
     item.classList.toggle("is-selected", option.selected);
     item.addEventListener("click", () => {
@@ -62,6 +66,9 @@ export function enhanceSelect(selectEl) {
   btn.type = "button";
   btn.className = "ghost-btn custom-select-btn";
   btn.setAttribute("aria-expanded", "false");
+  const label = document.createElement("span");
+  label.className = "custom-select-label";
+  btn.appendChild(label);
   const menu = document.createElement("div");
   menu.className = "custom-select-menu hidden";
   const grid = document.createElement("div");

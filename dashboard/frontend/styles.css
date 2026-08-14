@@ -548,6 +548,8 @@ textarea, input[type="text"], input[type="password"], input[type="number"], sele
 
 .custom-select-btn {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   justify-content: space-between;
   text-align: left;
   display: inline-flex;
@@ -555,6 +557,15 @@ textarea, input[type="text"], input[type="password"], input[type="number"], sele
   gap: 8px;
   font-size: 13px;
   padding: 8px 10px;
+  overflow: hidden;
+}
+
+.custom-select-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .custom-select-btn::after {
@@ -779,6 +790,8 @@ body[data-theme="dark"] .chip.active { color: #0e1117; }
 }
 
 .format-pattern-block {
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   border-radius: var(--radius-sm);
   padding: 8px;

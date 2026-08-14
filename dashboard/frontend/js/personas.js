@@ -98,7 +98,8 @@ export function renderFormatPatterns() {
     options.forEach((item) => {
       const opt = document.createElement("option");
       opt.value = item.id;
-      opt.textContent = `${item.label} (${item.id})`;
+      opt.textContent = item.label || item.id;
+      opt.title = item.id ? `${item.label || item.id} (${item.id})` : (item.label || "");
       select.appendChild(opt);
     });
     select.value = state.selectedVisualArchetypesByFormat[fmt] || "";
