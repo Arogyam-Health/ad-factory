@@ -595,10 +595,15 @@ async function waitForLocalPromptDelivery(runId, displayBatch) {
 }
 
 async function waitForRenderCopy(runId, copyJobId, displayBatch) {
+  let stickyLogged = false;
   while (true) {
     const job = await fetchJSON(
       `/api/runs/${encodeURIComponent(runId)}/structured-copy/${encodeURIComponent(copyJobId)}`,
     );
+    if (job.last_error && !stickyLogged) {
+      appendLog(job.last_error);
+      stickyLogged = true;
+    }
     if (job.status === "completed") {
       setStatus(
         `Run ${displayBatch} provider response was processed and final prompts were assembled on Render. Final prompts will be delivered to the registered local agent when it is online.`,
@@ -616,6 +621,8 @@ async function waitForRenderCopy(runId, copyJobId, displayBatch) {
       const traceDetail = detail.trace_persistence_error
         ? ` [trace storage failed: ${detail.trace_persistence_error}]`
         : "";
+      const sticky = job.last_error || detail.last_error || "";
+      if (sticky && !stickyLogged) appendLog(sticky);
       clearCopyPipeline();
       throw new Error(
         `${provider}${model} failed${httpStatus}: ${detail.error_code || job.progress_code || "copy_generation_failed"}${providerDetail}${traceDetail}`,
@@ -751,6 +758,7 @@ async function runPipeline() {
     invalidateRuns();
     await loadAndRenderRuns();
   } catch (err) {
+    appendLog(String(err));
     setStatus(`Failed: ${String(err)}`);
   } finally {
     if (cancelBtn) {
@@ -992,6 +1000,7 @@ async function resumeCopyPipeline() {
     invalidateRuns();
     await loadAndRenderRuns();
   } catch (err) {
+    appendLog(String(err));
     setStatus(`Failed: ${String(err)}`);
   } finally {
     if (cancelBtn) cancelBtn.style.display = "none";

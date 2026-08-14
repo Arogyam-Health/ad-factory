@@ -11,6 +11,21 @@ DEFAULT_OPENCODE_API_URL = os.getenv(
     "OPENCODE_API_URL", "http://127.0.0.1:4090"
 )
 
+PREFERRED_FREE_OPENCODE_MODELS = (
+    "opencode/mimo-v2.5-free",
+    "opencode/north-mini-code-free",
+    "opencode/nemotron-3-ultra-free",
+    "opencode/deepseek-v4-flash-free",
+)
+
+
+def next_free_opencode_model(current: str = "") -> str:
+    current = (current or "").strip()
+    for model in PREFERRED_FREE_OPENCODE_MODELS:
+        if model != current:
+            return model
+    return PREFERRED_FREE_OPENCODE_MODELS[0] if PREFERRED_FREE_OPENCODE_MODELS else ""
+
 
 def list_opencode_models(
     api_url: str | None = None, api_key: str | None = None
@@ -53,12 +68,7 @@ def list_opencode_models(
 def choose_openai_gpt52(models: list[str]) -> str:
     if not models:
         return ""
-    preferred_free = [
-        "opencode/mimo-v2.5-free",
-        "opencode/north-mini-code-free",
-        "opencode/nemotron-3-ultra-free",
-        "opencode/deepseek-v4-flash-free",
-    ]
+    preferred_free = list(PREFERRED_FREE_OPENCODE_MODELS)
     for preferred in preferred_free:
         if preferred in models:
             return preferred

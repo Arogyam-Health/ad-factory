@@ -25,6 +25,7 @@ from dashboard.backend.services.prompt_delivery import (
     encrypt_prompt_bundle,
 )
 from dashboard.backend.services.llm_trace import record_recent_llm_trace
+from dashboard.backend.services.opencode_catalog import next_free_opencode_model
 from dashboard.backend.services.provider_config import (
     get_materialized_provider_config,
 )
@@ -471,6 +472,10 @@ def _complete_job(job: dict[str, Any], result: dict[str, Any]) -> None:
             projection[key] = settings[key]
     if "batch_size" not in projection and "batch_size" in settings:
         projection["batch_size"] = settings["batch_size"]
+    last_error = str(job.get("last_error") or "")
+    if last_error:
+        projection["last_error"] = last_error[:2000]
+        projection["fallback_model"] = str(job.get("fallback_model") or "")[:256]
     db[COLL_PROMPTS].delete_many(
         {"run_id": job["run_id"], "user_id": job["user_id"]}
     )
@@ -535,8 +540,10 @@ def _fail_job(
     http_status: int | None = None,
     error_detail: str = "",
     trace_persistence_error: str = "",
+    last_error: str = "",
 ) -> None:
     now = time.time()
+    sticky = str(last_error or error_detail or error_code)[:2000]
     safe_error = {
         "error_code": error_code,
         "provider": provider,
@@ -545,6 +552,7 @@ def _fail_job(
         "http_status": http_status,
         "error_detail": str(error_detail or "")[:2000],
         "trace_persistence_error": str(trace_persistence_error or "")[:100],
+        "last_error": sticky,
     }
     get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
         {"copy_job_id": job["copy_job_id"]},
@@ -553,6 +561,7 @@ def _fail_job(
                 "status": "failed",
                 "progress_code": error_code,
                 "error": safe_error,
+                "last_error": sticky,
                 "completed_at": now,
                 "updated_at": now,
                 "lease_expires_at": None,
@@ -567,6 +576,38 @@ def _fail_job(
             "$set": {
                 "status": "failed",
                 "copy_generation": {"status": "failed", **safe_error},
+                "updated_at": now,
+            }
+        },
+    )
+
+
+def _persist_copy_last_error(
+    job: dict[str, Any],
+    last_error: str,
+    fallback_model: str = "",
+) -> None:
+    now = time.time()
+    sticky = str(last_error or "")[:2000]
+    fallback = str(fallback_model or "")[:256]
+    get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
+        {"copy_job_id": job["copy_job_id"]},
+        {
+            "$set": {
+                "last_error": sticky,
+                "fallback_model": fallback,
+                "fallback_attempted": True,
+                "progress_code": "retrying_free_model" if fallback else "provider_error",
+                "updated_at": now,
+            }
+        },
+    )
+    get_sync_db()[COLL_RUNS].update_one(
+        {"run_id": job["run_id"], "user_id": job["user_id"]},
+        {
+            "$set": {
+                "copy_generation.last_error": sticky,
+                "copy_generation.fallback_model": fallback,
                 "updated_at": now,
             }
         },
@@ -720,40 +761,35 @@ def process_next_render_copy_job() -> bool:
     if job is None:
         return False
     settings = job["settings"]
-    try:
-        provider_config = get_materialized_provider_config(
-            str(job["user_id"]),
-            str(settings["provider"]),
+    provider_config: dict[str, str] | None = None
+
+    def relay_transport(payload: dict[str, Any]) -> dict[str, Any]:
+        get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
+            {"copy_job_id": job["copy_job_id"]},
+            {
+                "$set": {
+                    "progress_code": "calling_provider_local",
+                    "updated_at": time.time(),
+                }
+            },
         )
-        if provider_config is None:
-            raise ValueError("Provider configuration is unavailable")
-
-        def relay_transport(payload: dict[str, Any]) -> dict[str, Any]:
-            get_sync_db()[COLL_RENDER_COPY_JOBS].update_one(
-                {"copy_job_id": job["copy_job_id"]},
-                {
-                    "$set": {
-                        "progress_code": "calling_provider_local",
-                        "updated_at": time.time(),
-                    }
-                },
+        try:
+            return provider_relay.invoke(
+                user_id=str(job["user_id"]),
+                payload=payload,
+                connections=agent_connections,
             )
-            try:
-                return provider_relay.invoke(
-                    user_id=str(job["user_id"]),
-                    payload=payload,
-                    connections=agent_connections,
-                )
-            except ProviderRelayError as relay_exc:
-                raise ProviderCallError(
-                    code=relay_exc.code,
-                    provider=str(settings["provider"]),
-                    model=str(settings["model"]),
-                    duration_ms=0,
-                    error_detail=relay_exc.code,
-                ) from relay_exc
+        except ProviderRelayError as relay_exc:
+            raise ProviderCallError(
+                code=relay_exc.code,
+                provider=str(settings["provider"]),
+                model=str(settings["model"]),
+                duration_ms=0,
+                error_detail=relay_exc.code,
+            ) from relay_exc
 
-        result = generate_structured_prompt_bundle(
+    def invoke(provider_name: str, provider_model: str, config: dict[str, str]) -> dict[str, Any]:
+        return generate_structured_prompt_bundle(
             run_id=str(job["run_id"]),
             run_number=int(job["run_number"]),
             settings=settings,
@@ -761,13 +797,13 @@ def process_next_render_copy_job() -> bool:
                 str(job["user_id"]),
                 str(settings.get("org_id") or "") or None,
             ),
-            provider_name=str(settings["provider"]),
-            provider_model=str(settings["model"]),
+            provider_name=provider_name,
+            provider_model=provider_model,
             reuse_locks=collect_copy_reuse_locks(str(job["user_id"]), settings),
             generate=provider_generate_callable(
-                str(settings["provider"]),
-                str(settings["model"]),
-                provider_config,
+                provider_name,
+                provider_model,
+                config,
                 transport=relay_transport,
                 trace_callback=lambda event: record_recent_llm_trace(
                     user_id=str(job["user_id"]),
@@ -778,6 +814,8 @@ def process_next_render_copy_job() -> bool:
                 ),
             ),
         )
+
+    def finish(result: dict[str, Any]) -> bool:
         current = get_sync_db()[COLL_RENDER_COPY_JOBS].find_one(
             {"copy_job_id": job["copy_job_id"]},
             {"_id": 0, "status": 1},
@@ -785,6 +823,22 @@ def process_next_render_copy_job() -> bool:
         if current and current.get("status") == "canceled":
             return True
         _complete_job(job, result)
+        return True
+
+    try:
+        provider_config = get_materialized_provider_config(
+            str(job["user_id"]),
+            str(settings["provider"]),
+        )
+        if provider_config is None:
+            raise ValueError("Provider configuration is unavailable")
+        return finish(
+            invoke(
+                str(settings["provider"]),
+                str(settings["model"]),
+                provider_config,
+            )
+        )
     except ProviderCallError as exc:
         if exc.code in _TRANSIENT_RELAY_ERRORS:
             _defer_job_for_local_agent(job, exc.code)
@@ -794,18 +848,78 @@ def process_next_render_copy_job() -> bool:
             trace_error = _record_provider_failure_trace(
                 job,
                 exc,
-                provider_config,
+                provider_config or {},
             )
-        _fail_job(
-            job,
-            error_code=exc.code,
-            provider=exc.provider,
-            model=exc.model,
-            duration_ms=exc.duration_ms,
-            http_status=exc.http_status,
-            error_detail=exc.error_detail,
-            trace_persistence_error=trace_error,
+        fallback_model = next_free_opencode_model(
+            str(exc.model or settings.get("model") or "")
         )
+        if job.get("fallback_attempted") or not fallback_model:
+            _fail_job(
+                job,
+                error_code=exc.code,
+                provider=exc.provider,
+                model=exc.model,
+                duration_ms=exc.duration_ms,
+                http_status=exc.http_status,
+                error_detail=exc.error_detail,
+                trace_persistence_error=trace_error,
+                last_error=str(exc.error_detail or exc.code),
+            )
+            return True
+        last_error = (
+            f"Provider error: {exc.error_detail or exc.code}. "
+            f"Falling back to {fallback_model}."
+        )
+        job["last_error"] = last_error
+        job["fallback_model"] = fallback_model
+        job["fallback_attempted"] = True
+        _persist_copy_last_error(job, last_error, fallback_model)
+        fallback_config = get_materialized_provider_config(
+            str(job["user_id"]),
+            "opencode",
+        ) or (provider_config if str(settings.get("provider") or "") == "opencode" else None)
+        if fallback_config is None:
+            _fail_job(
+                job,
+                error_code=exc.code,
+                provider=exc.provider,
+                model=exc.model,
+                duration_ms=exc.duration_ms,
+                http_status=exc.http_status,
+                error_detail=f"{last_error} No OpenCode credentials for fallback.",
+                trace_persistence_error=trace_error,
+                last_error=f"{last_error} No OpenCode credentials for fallback.",
+            )
+            return True
+        try:
+            return finish(invoke("opencode", fallback_model, fallback_config))
+        except ProviderCallError as fallback_exc:
+            if fallback_exc.code in _TRANSIENT_RELAY_ERRORS:
+                _defer_job_for_local_agent(job, fallback_exc.code)
+                return True
+            fallback_trace = fallback_exc.trace_persistence_error
+            if not fallback_exc.trace_persisted:
+                fallback_trace = _record_provider_failure_trace(
+                    job,
+                    fallback_exc,
+                    fallback_config,
+                )
+            combined = (
+                f"{last_error} Fallback also failed: "
+                f"{fallback_exc.error_detail or fallback_exc.code}."
+            )
+            _fail_job(
+                job,
+                error_code=fallback_exc.code,
+                provider=fallback_exc.provider,
+                model=fallback_exc.model,
+                duration_ms=fallback_exc.duration_ms,
+                http_status=fallback_exc.http_status,
+                error_detail=combined,
+                trace_persistence_error=fallback_trace or trace_error,
+                last_error=combined,
+            )
+            return True
     except ValueError:
         _fail_job(
             job,
@@ -863,6 +977,8 @@ def copy_job_status(copy_job_id: str, user_id: str) -> dict[str, Any] | None:
             "status": 1,
             "progress_code": 1,
             "error": 1,
+            "last_error": 1,
+            "fallback_model": 1,
             "created_at": 1,
             "updated_at": 1,
             "completed_at": 1,

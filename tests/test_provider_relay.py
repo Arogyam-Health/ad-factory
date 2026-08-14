@@ -496,6 +496,144 @@ class ProviderRelayTests(unittest.TestCase):
         )
         fail.assert_not_called()
 
+    def test_provider_failure_retries_once_with_free_opencode_model(self) -> None:
+        from dashboard.backend.services import render_copy_jobs
+        from dashboard.backend.services.opencode_catalog import next_free_opencode_model
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+        )
+
+        self.assertEqual(
+            next_free_opencode_model("opencode/big-pickle"),
+            "opencode/mimo-v2.5-free",
+        )
+        self.assertEqual(
+            next_free_opencode_model("opencode/mimo-v2.5-free"),
+            "opencode/north-mini-code-free",
+        )
+
+        job = {
+            "copy_job_id": "copy-1",
+            "run_id": "run-1",
+            "run_number": 1,
+            "user_id": "user-1",
+            "settings": {
+                "provider": "opencode",
+                "model": "opencode/big-pickle",
+            },
+        }
+        first = ProviderCallError(
+            code="provider_http_error",
+            provider="opencode",
+            model="opencode/big-pickle",
+            duration_ms=11,
+            http_status=429,
+            error_detail="rate limited",
+        )
+        success = {
+            "prompts": [],
+            "prompt_count": 0,
+            "provider": "opencode",
+            "model": "opencode/mimo-v2.5-free",
+        }
+        with (
+            patch.object(render_copy_jobs, "_claim_next_job", return_value=job),
+            patch.object(
+                render_copy_jobs,
+                "get_materialized_provider_config",
+                return_value={"api_key": "secret"},
+            ),
+            patch.object(
+                render_copy_jobs,
+                "generate_structured_prompt_bundle",
+                side_effect=[first, success],
+            ) as generate,
+            patch.object(render_copy_jobs, "resolve_effective_config", return_value={}),
+            patch.object(render_copy_jobs, "collect_copy_reuse_locks", return_value={}),
+            patch.object(
+                render_copy_jobs,
+                "provider_generate_callable",
+                return_value=lambda *args, **kwargs: {},
+            ),
+            patch.object(render_copy_jobs, "_record_provider_failure_trace", return_value=""),
+            patch.object(render_copy_jobs, "_persist_copy_last_error") as persist,
+            patch.object(render_copy_jobs, "get_sync_db") as get_db,
+            patch.object(render_copy_jobs, "_complete_job") as complete,
+            patch.object(render_copy_jobs, "_fail_job") as fail,
+        ):
+            get_db.return_value.__getitem__.return_value.find_one.return_value = {
+                "status": "running"
+            }
+            self.assertTrue(render_copy_jobs.process_next_render_copy_job())
+
+        self.assertEqual(generate.call_count, 2)
+        self.assertEqual(generate.call_args.kwargs["provider_model"], "opencode/mimo-v2.5-free")
+        persist.assert_called_once()
+        self.assertIn("Falling back to opencode/mimo-v2.5-free", persist.call_args.args[1])
+        complete.assert_called_once()
+        fail.assert_not_called()
+
+    def test_fallback_failure_keeps_both_provider_errors(self) -> None:
+        from dashboard.backend.services import render_copy_jobs
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+        )
+
+        job = {
+            "copy_job_id": "copy-1",
+            "run_id": "run-1",
+            "run_number": 1,
+            "user_id": "user-1",
+            "settings": {
+                "provider": "opencode",
+                "model": "opencode/big-pickle",
+            },
+        }
+        first = ProviderCallError(
+            code="provider_http_error",
+            provider="opencode",
+            model="opencode/big-pickle",
+            duration_ms=11,
+            error_detail="rate limited",
+        )
+        second = ProviderCallError(
+            code="provider_http_error",
+            provider="opencode",
+            model="opencode/mimo-v2.5-free",
+            duration_ms=8,
+            error_detail="also down",
+        )
+        with (
+            patch.object(render_copy_jobs, "_claim_next_job", return_value=job),
+            patch.object(
+                render_copy_jobs,
+                "get_materialized_provider_config",
+                return_value={"api_key": "secret"},
+            ),
+            patch.object(
+                render_copy_jobs,
+                "generate_structured_prompt_bundle",
+                side_effect=[first, second],
+            ),
+            patch.object(render_copy_jobs, "resolve_effective_config", return_value={}),
+            patch.object(render_copy_jobs, "collect_copy_reuse_locks", return_value={}),
+            patch.object(
+                render_copy_jobs,
+                "provider_generate_callable",
+                return_value=lambda *args, **kwargs: {},
+            ),
+            patch.object(render_copy_jobs, "_record_provider_failure_trace", return_value=""),
+            patch.object(render_copy_jobs, "_persist_copy_last_error"),
+            patch.object(render_copy_jobs, "_fail_job") as fail,
+        ):
+            self.assertTrue(render_copy_jobs.process_next_render_copy_job())
+
+        fail.assert_called_once()
+        sticky = fail.call_args.kwargs["last_error"]
+        self.assertIn("Falling back to opencode/mimo-v2.5-free", sticky)
+        self.assertIn("Fallback also failed", sticky)
+        self.assertIn("also down", sticky)
+
 
 if __name__ == "__main__":
     unittest.main()

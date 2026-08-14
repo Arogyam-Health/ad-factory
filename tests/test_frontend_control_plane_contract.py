@@ -164,6 +164,17 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("org_id=${encodeURIComponent(orgId)}", state_js)
         self.assertIn("adFactoryStudioOrg:${userId}", config_js)
 
+    def test_copy_provider_errors_are_sticky_and_fallback_is_logged(self) -> None:
+        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+        jobs = (
+            ROOT / "dashboard" / "backend" / "services" / "render_copy_jobs.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("job.last_error", main)
+        self.assertIn("appendLog(job.last_error)", main)
+        self.assertIn("Falling back to", jobs)
+        self.assertIn("copy_generation.last_error", jobs)
+        self.assertIn("next_free_opencode_model", jobs)
+
     def test_local_cas_blobs_are_cached_by_resource_version(self) -> None:
         plane = (FRONTEND / "js" / "local-data-plane.js").read_text(encoding="utf-8")
         self.assertIn('CAS_CACHE_NAME = "ad-factory-local-cas"', plane)
