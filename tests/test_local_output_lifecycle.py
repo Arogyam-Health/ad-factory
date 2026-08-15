@@ -29,7 +29,11 @@ class LocalOutputLifecycleTests(unittest.TestCase):
             operation_id="create-run-11",
         )
         self.prompt = self._resource(
-            "prompt", "prompt-11", b"Original full prompt", "text/plain; charset=utf-8"
+            "prompt",
+            "prompt-11",
+            b"Original full prompt",
+            "text/plain; charset=utf-8",
+            {"display_stem": "HERO_busy_professional_EN_desired_outcome"},
         )
         self.state.add_run_entry(
             run_id="run-11",
@@ -40,8 +44,15 @@ class LocalOutputLifecycleTests(unittest.TestCase):
             prompt_id="prompt-11",
             position=1,
             operation_id="add-prompt",
+            metadata={"display_stem": "HERO_busy_professional_EN_desired_outcome"},
         )
-        image = self._resource("output_image", "output-11/v1", PNG_A, "image/png")
+        image = self._resource(
+            "output_image",
+            "output-11/v1",
+            PNG_A,
+            "image/png",
+            {"display_name": "HERO_busy_professional_EN_desired_outcome_4_5"},
+        )
         self.state.create_output(
             output_id="output-11",
             run_id="run-11",
@@ -56,7 +67,7 @@ class LocalOutputLifecycleTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def _resource(self, kind: str, key: str, body: bytes, media_type: str):
+    def _resource(self, kind: str, key: str, body: bytes, media_type: str, metadata: dict | None = None):
         path = self.paths.staging / (key.replace("/", "_") + ".tmp")
         path.write_bytes(body)
         return self.state.put_resource(
@@ -66,6 +77,7 @@ class LocalOutputLifecycleTests(unittest.TestCase):
             logical_key=key,
             operation_id="put-" + key,
             media_type=media_type,
+            metadata=metadata,
         )
 
     def test_direct_replacement_preserves_exact_source_and_result_lineage(self) -> None:
@@ -262,6 +274,8 @@ class LocalOutputLifecycleTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
             outputs = [name for name in zipped.namelist() if not name.startswith("prompts/")]
             self.assertEqual(len(outputs), 1)
+            self.assertEqual(outputs[0], "4_5/HERO_busy_professional_EN_desired_outcome_4_5.png")
+            self.assertIn("prompts/HERO_busy_professional_EN_desired_outcome.txt", zipped.namelist())
             self.assertEqual(zipped.read(outputs[0]), PNG_A)
 
     def _write(self, name: str, body: bytes) -> Path:

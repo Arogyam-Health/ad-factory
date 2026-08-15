@@ -25,8 +25,10 @@ from .lifecycle import (
     build_output_zip,
     export_prompt_xlsx,
     export_shared_config,
+    image_download_filename,
     import_prompt_xlsx,
     import_shared_config,
+    prompt_download_filename,
     restore_local_data,
 )
 
@@ -1803,7 +1805,11 @@ class LocalDataPlane:
             record = self._output_resource(session.owner_key, output_id)
             if record is None:
                 raise APIError(404, "content_not_found", "Output content not found")
-            self._send_file(handler, record)
+            self._send_file(
+                handler,
+                record,
+                attachment_name=self._output_attachment_name(output),
+            )
             return
         if action == "versions" and handler.command == "GET":
             self._json(
@@ -2017,6 +2023,39 @@ class LocalDataPlane:
         )
         return safe
 
+    def _output_attachment_name(self, output: dict[str, Any]) -> str:
+        with self.state._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT out.aspect_ratio, rv.metadata_json AS version_metadata,
+                       (
+                           SELECT re.metadata_json FROM run_entries re
+                           WHERE re.run_id = out.run_id
+                             AND re.prompt_id = out.prompt_id
+                             AND re.role = 'prompt'
+                           LIMIT 1
+                       ) AS prompt_metadata,
+                       obj.media_type
+                FROM outputs out
+                JOIN output_versions ov
+                  ON ov.output_id = out.output_id AND ov.version = out.current_version
+                JOIN resource_versions rv
+                  ON rv.resource_id = ov.resource_id AND rv.version = ov.resource_version
+                JOIN objects obj ON obj.sha256 = rv.object_sha256
+                WHERE out.output_id = ?
+                """,
+                (output["output_id"],),
+            ).fetchone()
+        if row is None:
+            return f"{output['output_id']}.png"
+        return image_download_filename(
+            output_id=str(output["output_id"]),
+            aspect_ratio=str(row["aspect_ratio"] or ""),
+            version_metadata=row["version_metadata"],
+            prompt_metadata=row["prompt_metadata"],
+            media_type=str(row["media_type"] or "image/png"),
+        )
+
     def _list_outputs(self, handler: Any, owner_key: str, run_id: str) -> None:
         if self._run(owner_key, run_id) is None:
             raise APIError(404, "run_not_found", "Run not found")
@@ -2163,7 +2202,8 @@ class LocalDataPlane:
             rows = conn.execute(
                 """
                 SELECT re.prompt_id, re.resource_id, re.resource_version, re.entry_id,
-                       r.kind, o.relative_path
+                       re.metadata_json AS entry_metadata, r.kind, o.relative_path,
+                       rv.metadata_json AS version_metadata
                 FROM run_entries re
                 JOIN resources r ON r.resource_id = re.resource_id
                 JOIN resource_versions rv
@@ -2176,7 +2216,16 @@ class LocalDataPlane:
             ).fetchall()
             output_rows = [] if prompts_only else conn.execute(
                 """
-                SELECT out.output_id, out.current_version, obj.relative_path, obj.media_type
+                SELECT out.output_id, out.current_version, out.aspect_ratio,
+                       obj.relative_path, obj.media_type,
+                       rv.metadata_json AS version_metadata,
+                       (
+                           SELECT re.metadata_json FROM run_entries re
+                           WHERE re.run_id = out.run_id
+                             AND re.prompt_id = out.prompt_id
+                             AND re.role = 'prompt'
+                           LIMIT 1
+                       ) AS prompt_metadata
                 FROM outputs out
                 JOIN output_versions ov
                   ON ov.output_id = out.output_id AND ov.version = out.current_version
@@ -2197,22 +2246,37 @@ class LocalDataPlane:
                 source = self.service.config.paths.root / row["relative_path"]
                 if source.is_file():
                     if row["kind"] == "prompt":
-                        arcname = f"prompts/{row['prompt_id']}.txt"
+                        arcname = (
+                            "prompts/"
+                            + prompt_download_filename(
+                                prompt_id=str(row["prompt_id"]),
+                                version_metadata=row.get("version_metadata"),
+                                entry_metadata=row.get("entry_metadata"),
+                            )
+                        )
                     else:
                         arcname = f"resources/{row['resource_id']}"
                     archive.write(source, arcname=arcname)
+            used_images: set[str] = set()
             for row in output_rows:
                 source = self.service.config.paths.root / row["relative_path"]
                 if source.is_file():
-                    extension = {
-                        "image/png": ".png",
-                        "image/jpeg": ".jpg",
-                        "image/webp": ".webp",
-                    }.get(row["media_type"], ".bin")
-                    archive.write(
-                        source,
-                        arcname=f"outputs/{row['output_id']}-v{row['current_version']}{extension}",
+                    filename = image_download_filename(
+                        output_id=str(row["output_id"]),
+                        aspect_ratio=str(row["aspect_ratio"] or ""),
+                        version_metadata=row["version_metadata"],
+                        prompt_metadata=row["prompt_metadata"],
+                        media_type=str(row["media_type"]),
                     )
+                    arcname = f"outputs/{filename}"
+                    while arcname in used_images:
+                        filename = (
+                            f"{Path(filename).stem}_dup{len(used_images)}"
+                            f"{Path(filename).suffix}"
+                        )
+                        arcname = f"outputs/{filename}"
+                    used_images.add(arcname)
+                    archive.write(source, arcname=arcname)
         return path
 
     def _run_download(self, handler: Any, owner_key: str, run_id: str) -> None:

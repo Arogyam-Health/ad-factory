@@ -337,6 +337,8 @@ console.log(replaceExactOnImageCopy(original, [
         self.assertIn("prompt_file: mapped?.prompt_file || \"\"", runs)
         self.assertIn("display_name: outputDisplayName(output, promptNames)", runs)
         self.assertIn("imageItem.display_name", images)
+        self.assertIn("downloadFilename(imageItem, path)", images)
+        self.assertNotIn('a.download = ""', images)
         self.assertIn("item.display_name || item.prompt_id", prompts)
         self.assertIn(
             "`/api/runs/${encodeURIComponent(run.run_id)}/prompts/${encodeURIComponent(prompt.prompt_id)}`",

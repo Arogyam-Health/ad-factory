@@ -7,6 +7,13 @@ function isReferenceRun(run) {
   return flow === "reference" || flow === "reference_image";
 }
 
+function downloadFilename(item, fallbackPath) {
+  const raw = String(item?.display_name || "").trim();
+  if (raw) return /\.[A-Za-z0-9]+$/.test(raw) ? raw : `${raw}.png`;
+  const fromPath = String(fallbackPath || "").split("/").pop() || "";
+  return fromPath || "image.png";
+}
+
 function imageUrl(item, path) {
   const directUrl = item?.url || item?.local_path || item?.file_path || path;
   if (/^(?:blob:|http:\/\/(?:127\.0\.0\.1|localhost):)/i.test(directUrl)) {
@@ -397,7 +404,7 @@ export function buildImageGallery(run, imagesData) {
       }
       const a = document.createElement("a");
       a.href = url;
-      a.download = "";
+      a.download = downloadFilename(imageItem, path);
       document.body.appendChild(a);
       a.click();
       a.remove();

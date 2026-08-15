@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -20,16 +21,78 @@ from openpyxl import Workbook, load_workbook
 from .storage import AgentPaths, AgentState
 
 
+def _decode_meta(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+    return {}
+
+
+def _safe_download_filename(value: str, fallback: str, extension: str) -> str:
+    stem = Path(str(value or "")).stem
+    clean = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or fallback
+    ext = extension if str(extension).startswith(".") else f".{extension}"
+    return f"{clean[:120]}{ext}"
+
+
+def image_download_filename(
+    *,
+    output_id: str,
+    aspect_ratio: str = "",
+    version_metadata: Any = None,
+    prompt_metadata: Any = None,
+    media_type: str = "image/png",
+) -> str:
+    extension = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+    }.get(str(media_type), ".png")
+    display = str(_decode_meta(version_metadata).get("display_name") or "")
+    if not display:
+        stem = str(_decode_meta(prompt_metadata).get("display_stem") or "")
+        if stem:
+            suffix = str(aspect_ratio or "").replace(":", "_")
+            display = f"{stem}_{suffix}" if suffix else stem
+    return _safe_download_filename(display or output_id, output_id, extension)
+
+
+def prompt_download_filename(
+    *,
+    prompt_id: str,
+    version_metadata: Any = None,
+    entry_metadata: Any = None,
+) -> str:
+    metadata = {
+        **_decode_meta(version_metadata),
+        **_decode_meta(entry_metadata),
+    }
+    return _safe_download_filename(
+        str(metadata.get("display_stem") or prompt_id),
+        prompt_id,
+        ".txt",
+    )
+
+
 def _prompt_rows(
     state: AgentState, owner_key: str, run_id: str
 ) -> list[dict[str, Any]]:
     with state._connect() as conn:
         rows = conn.execute(
             """
-            SELECT re.prompt_id, re.resource_id, re.resource_version
+            SELECT re.prompt_id, re.resource_id, re.resource_version,
+                   re.metadata_json AS entry_metadata,
+                   rv.metadata_json AS version_metadata
             FROM run_entries re
             JOIN runs run ON run.run_id = re.run_id
             JOIN resources r ON r.resource_id = re.resource_id
+            JOIN resource_versions rv
+              ON rv.resource_id = re.resource_id AND rv.version = re.resource_version
             WHERE re.run_id = ? AND run.owner_key = ? AND r.kind = 'prompt'
             ORDER BY re.position
             """,
@@ -58,9 +121,19 @@ def export_prompt_xlsx(state: AgentState, owner_key: str, run_id: str) -> bytes:
     output = io.BytesIO()
     workbook.save(output)
     with zipfile.ZipFile(output, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+        used: set[str] = set()
         for row in _prompt_rows(state, owner_key, run_id):
+            name = prompt_download_filename(
+                prompt_id=str(row["prompt_id"]),
+                version_metadata=row.get("version_metadata"),
+                entry_metadata=row.get("entry_metadata"),
+            )
+            while name in used:
+                stem = Path(name).stem
+                name = f"{stem}_dup{len(used)}{Path(name).suffix}"
+            used.add(name)
             archive.writestr(
-                f"prompts/{row['prompt_id']}.txt",
+                f"prompts/{name}",
                 state.resource_path(
                     str(row["resource_id"]), int(row["resource_version"])
                 ).read_bytes(),
@@ -128,7 +201,15 @@ def build_output_zip(state: AgentState, owner_key: str, run_id: str) -> bytes:
         rows = conn.execute(
             """
             SELECT out.output_id, out.current_version, out.aspect_ratio,
-                   obj.relative_path, obj.media_type
+                   obj.relative_path, obj.media_type,
+                   rv.metadata_json AS version_metadata,
+                   (
+                       SELECT re.metadata_json FROM run_entries re
+                       WHERE re.run_id = out.run_id
+                         AND re.prompt_id = out.prompt_id
+                         AND re.role = 'prompt'
+                       LIMIT 1
+                   ) AS prompt_metadata
             FROM outputs out
             JOIN runs run ON run.run_id = out.run_id
             JOIN output_versions ov
@@ -143,27 +224,39 @@ def build_output_zip(state: AgentState, owner_key: str, run_id: str) -> bytes:
         ).fetchall()
     result = io.BytesIO()
     with zipfile.ZipFile(result, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        used_prompts: set[str] = set()
         for row in prompt_rows:
+            name = prompt_download_filename(
+                prompt_id=str(row["prompt_id"]),
+                version_metadata=row.get("version_metadata"),
+                entry_metadata=row.get("entry_metadata"),
+            )
+            while name in used_prompts:
+                name = f"{Path(name).stem}_dup{len(used_prompts)}{Path(name).suffix}"
+            used_prompts.add(name)
             archive.writestr(
-                f"prompts/{row['prompt_id']}.txt",
+                f"prompts/{name}",
                 state.resource_path(
                     str(row["resource_id"]), int(row["resource_version"])
                 ).read_bytes(),
             )
+        used_images: set[str] = set()
         for row in rows:
             source = state.paths.root / str(row["relative_path"])
-            extension = {
-                "image/png": ".png",
-                "image/jpeg": ".jpg",
-                "image/webp": ".webp",
-            }.get(str(row["media_type"]), ".bin")
-            archive.write(
-                source,
-                arcname=(
-                    f"{str(row['aspect_ratio']).replace(':', '_')}/"
-                    f"{row['output_id']}-v{row['current_version']}{extension}"
-                ),
+            filename = image_download_filename(
+                output_id=str(row["output_id"]),
+                aspect_ratio=str(row["aspect_ratio"] or ""),
+                version_metadata=row["version_metadata"],
+                prompt_metadata=row["prompt_metadata"],
+                media_type=str(row["media_type"]),
             )
+            folder = str(row["aspect_ratio"] or "4:5").replace(":", "_")
+            arcname = f"{folder}/{filename}"
+            while arcname in used_images:
+                filename = f"{Path(filename).stem}_dup{len(used_images)}{Path(filename).suffix}"
+                arcname = f"{folder}/{filename}"
+            used_images.add(arcname)
+            archive.write(source, arcname=arcname)
     return result.getvalue()
 
 
