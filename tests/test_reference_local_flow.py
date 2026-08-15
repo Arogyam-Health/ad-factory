@@ -280,7 +280,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
             "LOCAL REFERENCE COMMENT",
             "persona-b",
             "Persona B",
-            "Create the ad in EN.",
+            "Create the ad in English.",
         ):
             self.assertIn(expected, prompt)
         self.assertEqual(
@@ -616,9 +616,9 @@ class ReferenceLocalFlowTests(unittest.TestCase):
             },
         )
         texts = [Path(call["prompt_path"]).read_text(encoding="utf-8") for call in browser.calls]
-        self.assertTrue(any("Create the ad in EN." in text for text in texts))
-        self.assertTrue(any("Create the ad in HI." in text for text in texts))
-        self.assertTrue(any("Create the ad in HINGLISH." in text for text in texts))
+        self.assertTrue(any("Create the ad in English." in text for text in texts))
+        self.assertTrue(any("Create the ad in Hindi." in text for text in texts))
+        self.assertTrue(any("Create the ad in Hinglish." in text for text in texts))
         with self.state._connect() as conn:
             names = sorted(
                 json.loads(row["metadata_json"]).get("display_name") or ""

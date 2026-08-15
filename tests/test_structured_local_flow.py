@@ -306,6 +306,7 @@ class StructuredLocalFlowTests(unittest.TestCase):
         prompt_text = Path(prompt_entry["local_path"]).read_text(encoding="utf-8")
         self.assertIn("PRODUCT LOCK BLOCK", prompt_text)
         self.assertIn("Wellness that fits your day", prompt_text)
+        self.assertIn("Create the ad in English.", prompt_text)
         with self.state._connect() as conn:
             prompt_meta = json.loads(
                 conn.execute(

@@ -40,6 +40,11 @@ OUTPUT_DIR = ROOT / "output"
 
 SUPPORTED_FORMATS = {"HERO", "BA", "TEST", "FEAT", "UGC"}
 SUPPORTED_LANGS = {"EN", "HI", "HINGLISH"}
+LANGUAGE_LABELS = {
+    "EN": "English",
+    "HI": "Hindi",
+    "HINGLISH": "Hinglish",
+}
 SUPPORTED_CONCEPT_ANGLES = {
     "pain_point",
     "desired_outcome",
@@ -556,6 +561,8 @@ def render_prompt(
             "- Concept path is strategy only; do not render these labels on-image.",
         ]
     )
+    lines.append("")
+    lines.append(f"Create the ad in {LANGUAGE_LABELS.get(lang, lang)}.")
     lines.append("")
     lines.append("EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING")
     lines.extend(copy_lines)

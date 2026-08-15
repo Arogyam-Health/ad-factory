@@ -24,6 +24,11 @@ _LANGUAGES = {
     "ALL": ("EN", "HI", "HINGLISH"),
     "BOTH": ("EN", "HI", "HINGLISH"),
 }
+_LANGUAGE_LABELS = {
+    "EN": "English",
+    "HI": "Hindi",
+    "HINGLISH": "Hinglish",
+}
 
 
 def _slug(value: str) -> str:
@@ -275,7 +280,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 "Create one exact 4:5 portrait ad using the first uploaded image as the "
                 "visual reference and only the subsequently uploaded product resources."
             ),
-            f"Create the ad in {language}.",
+            f"Create the ad in {_LANGUAGE_LABELS.get(language, language)}.",
         ]
         body = "\n\n".join(part for part in parts if part).strip() + "\n"
         temporary = self.state.paths.staging / f".reference-prompt-{uuid.uuid4().hex}.txt"
