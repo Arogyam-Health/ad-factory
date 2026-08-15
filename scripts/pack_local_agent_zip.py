@@ -57,15 +57,15 @@ Install into a local .venv (do not pip install globally, do not activate):
 
   Windows:     py -3 -m venv .venv
                .venv\\Scripts\\python.exe -m pip install -r requirements-local-agent.txt
-               .venv\\Scripts\\python.exe -m playwright install chromium
                .venv\\Scripts\\python.exe scripts\\start_local_agent.py
                or double-click start_local_agent.bat
 
   Ubuntu/Mac:  python3 -m venv .venv
                .venv/bin/python -m pip install -r requirements-local-agent.txt
-               .venv/bin/python -m playwright install chromium
                .venv/bin/python scripts/start_local_agent.py
                or ./start_local_agent.sh
+
+Do not run playwright install chromium. The agent uses installed Google Chrome.
 """
 
 START_BAT = """@echo off

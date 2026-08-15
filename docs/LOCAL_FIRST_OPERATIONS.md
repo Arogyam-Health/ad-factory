@@ -100,9 +100,10 @@ is already in the zip. Use the venv Python (no activate, no global pip):
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-local-agent.txt
-.venv/bin/python -m playwright install chromium
 .venv/bin/python scripts/start_local_agent.py
 ```
+
+Do not run `playwright install chromium`. The agent uses installed Google Chrome.
 
 That is equivalent to setting `AD_FACTORY_SESSION` and running:
 

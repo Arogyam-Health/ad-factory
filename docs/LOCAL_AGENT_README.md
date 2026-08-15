@@ -38,7 +38,9 @@ Ubuntu/Mac:  .venv/bin/python -m pip install -r requirements-local-agent.txt
              .venv/bin/python scripts/start_local_agent.py
 ```
 
-`requirements-local-agent.txt` is already in the zip root.
+`requirements-local-agent.txt` is already in the zip root. That file installs
+the Playwright Python library. Do **not** run `playwright install chromium`;
+the agent uses the machine's installed Google Chrome.
 
 Python scripts do **not** need a PowerShell execution-policy bypass. If Chrome
 is not found, see the **Chrome path** section in the OS guide.

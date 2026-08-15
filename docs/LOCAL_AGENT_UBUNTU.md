@@ -50,8 +50,11 @@ the venv Python (no `activate`, no global `pip`):
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-local-agent.txt
-.venv/bin/python -m playwright install chromium
 ```
+
+That installs the Playwright **Python library** only. Do **not** run
+`playwright install chromium`. The agent drives the Google Chrome already
+installed on this machine, through CDP on port 9222.
 
 Create the `.venv` on this Ubuntu box. Do not copy one from Windows or Mac.
 

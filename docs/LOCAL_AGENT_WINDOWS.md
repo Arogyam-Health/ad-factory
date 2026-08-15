@@ -70,8 +70,11 @@ Create a **local** `.venv` and install into it with the venv Python (no
 cd %USERPROFILE%\Downloads\ad-factory-local-agent
 py -3 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-local-agent.txt
-.venv\Scripts\python.exe -m playwright install chromium
 ```
+
+That installs the Playwright **Python library** only. Do **not** run
+`playwright install chromium`. The agent drives the Google Chrome already
+installed on this PC (`chrome.exe`), through CDP on port 9222.
 
 Create the `.venv` on this PC. Do not copy one from Ubuntu or Mac.
 

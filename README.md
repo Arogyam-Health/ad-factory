@@ -87,18 +87,13 @@ CDP (Chrome DevTools Protocol) is used via Playwright's `connect_over_cdp` and `
    `LOCALAPPDATA`, `PROGRAMFILES`, and `PROGRAMFILES(X86)` — not a hardcoded
    user folder
 
-Install Google Chrome before running browser automation. On Ubuntu see
+Install Google Chrome before running the local agent. On Ubuntu see
 [`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md). On Windows see
 [`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md). On macOS install
 Chrome from <https://google.com/chrome/>.
 
-After `pip install`, also run:
-
-```bash
-playwright install chromium
-```
-
-to fetch the Playwright-bundled Chromium build used as a fallback when no system Chrome is found.
+The local agent attaches to that installed Chrome over CDP. Do not run
+`playwright install chromium` for the local agent.
 
 ## Run
 
