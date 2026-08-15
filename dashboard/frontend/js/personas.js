@@ -116,15 +116,18 @@ export function renderFormatPatterns() {
 }
 
 export function renderLanguageModes() {
-  const languageModesEl = document.getElementById("languageModes");
-  if (!languageModesEl) return;
-  languageModesEl.innerHTML = "";
   const modes = ["ALL", "EN", "HI", "HINGLISH"];
-  modes.forEach((mode) => {
-    languageModesEl.appendChild(chip(mode, state.selectedLanguageMode === mode, () => {
-      state.selectedLanguageMode = mode;
-      renderLanguageModes();
-    }));
+  ["languageModes", "referenceLanguageModes"].forEach((id) => {
+    const languageModesEl = document.getElementById(id);
+    if (!languageModesEl) return;
+    languageModesEl.innerHTML = "";
+    modes.forEach((mode) => {
+      languageModesEl.appendChild(chip(mode, state.selectedLanguageMode === mode, () => {
+        state.selectedLanguageMode = mode;
+        renderLanguageModes();
+        document.dispatchEvent(new CustomEvent("adFactoryLanguageModeChanged"));
+      }));
+    });
   });
 }
 

@@ -5,6 +5,7 @@ import { loadRuns, refreshStructuredLocalOutputs, unwatchLocalOutputs, watchLoca
 import { showPromptFullscreen } from "./images.js";
 import { localDataPlane } from "./local-data-plane.js";
 import { checkAuth, getAuthUser } from "./auth.js";
+import { renderLanguageModes } from "./personas.js";
 
 const $ = (id) => document.getElementById(id);
 const selectedPersonas = new Set();
@@ -116,9 +117,23 @@ function activeMode() {
   return localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured";
 }
 
+function languageCopyCount() {
+  return state.selectedLanguageMode === "ALL" ? 3 : 1;
+}
+
+function languageEquationLabel() {
+  const mode = String(state.selectedLanguageMode || "EN").toUpperCase();
+  if (mode === "ALL") return "ALL (EN, HI, HINGLISH)";
+  return mode;
+}
+
 function updateJobCount() {
-  const count = selectedPersonas.size * selectedReferences.size;
+  const count = selectedPersonas.size * selectedReferences.size * languageCopyCount();
   if ($("referenceJobCount")) $("referenceJobCount").textContent = `${count} job${count === 1 ? "" : "s"}`;
+  if ($("referenceJobEquation")) {
+    $("referenceJobEquation").textContent =
+      `personas × selected references × ${languageEquationLabel()}`;
+  }
 }
 
 function setWorkspaceMode(mode) {
@@ -203,6 +218,7 @@ function setFlow(mode) {
   setWorkspaceMode(mode);
   loadWorkspaceRuns(mode);
   if (reference) {
+    renderLanguageModes();
     refreshReferencePersonas();
     loadReferenceLibrary();
     loadReferenceWorkspace();
@@ -889,6 +905,7 @@ async function startRun() {
           version: item.version,
         })),
         persona_ids: [...selectedPersonas].map(String),
+        language_mode: state.selectedLanguageMode,
         product_document: {
           resource_id: productDocument.resource_id,
           version: productDocument.version,
@@ -963,6 +980,7 @@ async function cancelRun() {
   }
 }
 
+document.addEventListener("adFactoryLanguageModeChanged", updateJobCount);
 $("structuredFlowTab")?.addEventListener("click", () => setFlow("structured"));
 $("referenceFlowTab")?.addEventListener("click", () => setFlow("reference"));
 $("referenceImageFiles")?.addEventListener("change", (event) => uploadReferences(event.target.files));

@@ -286,9 +286,9 @@
     </div>
 
     <div id="referenceFlowPanel" class="reference-flow-panel hidden">
-      <section class="card reference-hero-card"><div><p class="eyebrow">Reference-led generation</p><h2>Visual references in. Production-ready ads out.</h2><p>Each job receives the latest persona seed, one visual reference, the dedicated reference product document, only the selected product packshots, and that reference card's optional instruction.</p></div><div class="reference-flow-equation"><strong id="referenceJobCount">0 jobs</strong><span>personas × selected references</span></div></section>
+      <section class="card reference-hero-card"><div><p class="eyebrow">Reference-led generation</p><h2>Visual references in. Production-ready ads out.</h2><p>Each job receives the latest persona seed, one visual reference, the dedicated reference product document, only the selected product packshots, and that reference card's optional instruction.</p></div><div class="reference-flow-equation"><strong id="referenceJobCount">0 jobs</strong><span id="referenceJobEquation">personas × selected references × language selected</span></div></section>
       <div class="reference-bento">
-        <section class="card reference-personas-card"><div class="reference-card-heading"><span class="reference-step">01</span><div><h2>Target personas</h2><p class="hint">Synced live from <code>persona_seeds.json</code>.</p></div></div><div id="referencePersonaList" class="reference-persona-grid"></div></section>
+        <section class="card reference-personas-card"><div class="reference-card-heading"><span class="reference-step">01</span><div><h2>Target personas</h2><p class="hint">Synced live from <code>persona_seeds.json</code>.</p></div></div><label>Language</label><div id="referenceLanguageModes" class="chips"></div><p class="hint">ALL creates EN, HI, and Hinglish copies of the same ad.</p><div id="referencePersonaList" class="reference-persona-grid"></div></section>
         <section class="card reference-library-card"><div class="reference-card-heading"><span class="reference-step">02</span><div><h2>Reference library</h2><p class="hint">Manual swipe only. Per-reference comments stay on the paired local device.</p></div></div><div class="reference-upload-zone"><input id="referenceImageFiles" class="reference-folder-input" type="file" multiple webkitdirectory directory accept="image/png,image/jpeg,image/webp" /><button id="referenceChooseFiles" class="ghost-btn" type="button">Add images</button><input id="referenceIndividualFiles" class="hidden" type="file" multiple accept="image/png,image/jpeg,image/webp" /><span id="referenceImageSummary" class="hint">Loading…</span></div><div class="swiper-shell"><button id="referencePrev" class="swiper-arrow" type="button">←</button><div id="referencePreviewGrid" class="reference-swiper-track"></div><button id="referenceNext" class="swiper-arrow" type="button">→</button></div></section>
         <section class="card reference-assets-card"><div class="reference-card-heading"><span class="reference-step">03</span><div><h2>Product assets</h2><p class="hint">Persistent, separately stored, and individually selectable for each run.</p></div></div><div class="asset-upload-row"><label class="asset-upload-button">Upload product images<input id="referenceProductImages" type="file" multiple accept="image/*" /></label><label class="toggle-label"><input id="referenceClearProductImages" type="checkbox" /><span>Replace existing</span></label></div><span id="referenceProductImageSummary" class="hint">Loading product images…</span><div class="swiper-shell compact"><button id="productPrev" class="swiper-arrow" type="button">←</button><div id="referenceProductGallery" class="reference-swiper-track product-track"></div><button id="productNext" class="swiper-arrow" type="button">→</button></div><label>Product document</label><input id="referenceProductFile" type="file" accept=".txt,.md,text/plain" /><button id="viewReferenceProductDoc" class="ghost-btn" type="button">View product document</button><div id="referenceProductDocMeta" class="hint"></div></section>
         <section class="card reference-context-card"><div class="reference-card-heading"><span class="reference-step">04</span><div><h2>Reference context</h2><p class="hint">Inspect exactly what this flow uses.</p></div></div><div class="context-actions"><button id="viewReferencePersonaSeed" class="ghost-btn" type="button">View persona seed</button><button id="editReferenceStartingPrompt" class="ghost-btn" type="button">Reference starting prompt</button><button id="editReferenceConversionPrompt" class="ghost-btn" type="button">9:16 conversion prompt</button></div><p class="reference-settings-note">Reference starting prompt and product doc are saved in the selected Mongo config (same source switch as Structured). Local device still holds images and run outputs.</p></section>
@@ -359,7 +359,7 @@
     </nav>
   </footer>
 
-  <script type="module" src="/js/main.js?v=15"></script>
+  <script type="module" src="/js/main.js?v=17"></script>
   <script type="module">
     import { initTheme } from "/js/theme.js";
     import { checkAuth } from "/js/auth.js";
@@ -392,8 +392,8 @@
       });
     });
   </script>
-  <script type="module" src="/js/reference-flow.js?v=15"></script>
-  <script type="module" src="/js/image-comments.js?v=15"></script>
+  <script type="module" src="/js/reference-flow.js?v=17"></script>
+  <script type="module" src="/js/image-comments.js?v=17"></script>
   <script type="module">
     import { initExtensionUI } from "/js/extension.js";
     // Initialize extension status UI after DOM is ready

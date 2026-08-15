@@ -45,7 +45,7 @@ class StructuredLocalFlowTests(unittest.TestCase):
         )
 
     def _stage_run(
-        self, provider: str = "fake", *, include_product_asset: bool = True
+        self, provider: str = "fake", *, include_product_asset: bool = True, language_mode: str = "EN"
     ) -> None:
         document = self.paths.staging / "product.txt"
         document.write_text("A local product document with verified product facts.", encoding="utf-8")
@@ -75,7 +75,7 @@ class StructuredLocalFlowTests(unittest.TestCase):
                 "execution": {
                     "provider": provider,
                     "model": "fake-copy-v1" if provider == "fake" else "provider-model-v1",
-                    "language_mode": "EN",
+                    "language_mode": language_mode,
                     "seed": 818,
                     "max_repair_attempts": 1,
                 },
@@ -306,6 +306,21 @@ class StructuredLocalFlowTests(unittest.TestCase):
         prompt_text = Path(prompt_entry["local_path"]).read_text(encoding="utf-8")
         self.assertIn("PRODUCT LOCK BLOCK", prompt_text)
         self.assertIn("Wellness that fits your day", prompt_text)
+        with self.state._connect() as conn:
+            prompt_meta = json.loads(
+                conn.execute(
+                    """
+                    SELECT rv.metadata_json FROM run_entries re
+                    JOIN resource_versions rv
+                      ON rv.resource_id = re.resource_id
+                     AND rv.version = re.resource_version
+                    WHERE re.run_id = ? AND re.role = 'prompt'
+                    """,
+                    (self.run_id,),
+                ).fetchone()["metadata_json"]
+            )
+        self.assertEqual(prompt_meta["display_stem"], "HERO_busy_professional_EN_desired_outcome")
+        self.assertEqual(prompt_meta["language"], "EN")
 
         projection = self.state.pending_outbox()[0]["payload"]
         serialized = json.dumps(projection).lower()
@@ -456,6 +471,70 @@ class StructuredLocalFlowTests(unittest.TestCase):
             "127.0.0.1",
         ):
             self.assertNotIn(forbidden, serialized)
+
+    def test_all_language_mode_writes_named_en_hi_hinglish_prompt_files(self) -> None:
+        from local_agent_runtime.structured_copy import DeterministicFakeProvider, StructuredCopyExecutor
+
+        self._stage_run(language_mode="ALL")
+        self.state.record_job(
+            "job-copy-all-langs",
+            self.owner,
+            "pending",
+            {"run_id": self.run_id, "command": "generate_copy", "parameters": {}},
+        )
+        response = {
+            "ads": [
+                {
+                    "format": "HERO",
+                    "persona": {"number": 1, "name": "Busy Professional"},
+                    "concept_angle": "desired_outcome",
+                    "copy": {
+                        "EN": {
+                            "headline": "Wellness that fits your day",
+                            "support_line": "A clear routine built around real product facts.",
+                            "cta": "Build your routine",
+                        },
+                        "HI": {
+                            "headline": "Roz ka wellness asaan",
+                            "support_line": "Asli product facts par based routine.",
+                            "cta": "Routine banayein",
+                        },
+                        "HINGLISH": {
+                            "headline": "Daily wellness, sorted",
+                            "support_line": "Simple routine with verified product facts.",
+                            "cta": "Start now",
+                        },
+                    },
+                }
+            ]
+        }
+        result = StructuredCopyExecutor(
+            self.state, provider=DeterministicFakeProvider([response])
+        ).execute("job-copy-all-langs")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["prompt_count"], 3)
+        with self.state._connect() as conn:
+            stems = sorted(
+                json.loads(row["metadata_json"]).get("display_stem")
+                for row in conn.execute(
+                    """
+                    SELECT rv.metadata_json FROM run_entries re
+                    JOIN resource_versions rv
+                      ON rv.resource_id = re.resource_id
+                     AND rv.version = re.resource_version
+                    WHERE re.run_id = ? AND re.role = 'prompt'
+                    """,
+                    (self.run_id,),
+                )
+            )
+        self.assertEqual(
+            set(stems),
+            {
+                "HERO_busy_professional_EN_desired_outcome",
+                "HERO_busy_professional_HI_desired_outcome",
+                "HERO_busy_professional_HINGLISH_desired_outcome",
+            },
+        )
 
 
 if __name__ == "__main__":

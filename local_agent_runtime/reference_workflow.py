@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -16,6 +17,19 @@ from .structured_browser import (
 
 _ENGINES = frozenset({"chatgpt", "gemini"})
 _MODES = {"45": "45", "4:5": "45", "both": "both", "916": "916", "9:16": "916"}
+_LANGUAGES = {
+    "EN": ("EN",),
+    "HI": ("HI",),
+    "HINGLISH": ("HINGLISH",),
+    "ALL": ("EN", "HI", "HINGLISH"),
+    "BOTH": ("EN", "HI", "HINGLISH"),
+}
+
+
+def _slug(value: str) -> str:
+    cleaned = re.sub(r"[+\-]+", " ", (value or "").strip().lower())
+    cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned)
+    return re.sub(r"_+", "_", cleaned).strip("_") or "item"
 
 
 class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
@@ -154,6 +168,44 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
             or ""
         )
 
+    @staticmethod
+    def _persona_name(persona: dict[str, Any]) -> str:
+        return str(
+            persona.get("name")
+            or persona.get("persona_name")
+            or f"persona_{ReferenceWorkflowExecutor._persona_id(persona)}"
+        )
+
+    @staticmethod
+    def _languages(settings: dict[str, Any]) -> tuple[str, ...]:
+        mode = str(settings.get("language_mode") or "EN").upper()
+        return _LANGUAGES.get(mode, ("EN",))
+
+    def _reference_image_stem(self, reference: LocalResource) -> str:
+        with self.state._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT r.logical_key, rv.metadata_json
+                FROM resources r
+                JOIN resource_versions rv
+                  ON rv.resource_id = r.resource_id AND rv.version = ?
+                WHERE r.resource_id = ?
+                """,
+                (reference.version, reference.resource_id),
+            ).fetchone()
+        filename = ""
+        logical_key = ""
+        if row is not None:
+            logical_key = str(row["logical_key"] or "")
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except json.JSONDecodeError:
+                metadata = {}
+            if isinstance(metadata, dict):
+                filename = str(metadata.get("filename") or "")
+        raw = Path(filename).stem if filename else Path(logical_key).stem
+        return _slug(raw)
+
     def _personas(
         self, settings: dict[str, Any], config: LocalResource
     ) -> list[dict[str, Any]]:
@@ -191,10 +243,20 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
         starting_prompt: LocalResource,
         product_document: LocalResource,
         comment: LocalResource | None,
-    ) -> tuple[str, LocalResource]:
+        language: str,
+    ) -> tuple[str, LocalResource, str]:
         persona_id = self._persona_id(persona)
+        persona_name = self._persona_name(persona)
+        display_stem = (
+            f"{_slug(persona_name)}_{self._reference_image_stem(reference)}_{language}"
+        )
         prompt_id = self._stable_id(
-            "prm_", run_id, persona_id, reference.resource_id, str(reference.version)
+            "prm_",
+            run_id,
+            persona_id,
+            reference.resource_id,
+            str(reference.version),
+            language,
         )
         parts = [
             starting_prompt.path.read_text(encoding="utf-8").strip(),
@@ -213,6 +275,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 "Create one exact 4:5 portrait ad using the first uploaded image as the "
                 "visual reference and only the subsequently uploaded product resources."
             ),
+            f"Create the ad in {language}.",
         ]
         body = "\n\n".join(part for part in parts if part).strip() + "\n"
         temporary = self.state.paths.staging / f".reference-prompt-{uuid.uuid4().hex}.txt"
@@ -228,6 +291,9 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                     "run_id": run_id,
                     "prompt_id": prompt_id,
                     "persona": persona_id,
+                    "persona_name": persona_name,
+                    "language": language,
+                    "display_stem": display_stem,
                     "reference_resource_id": reference.resource_id,
                     "reference_resource_version": reference.version,
                     "aspect_ratio": "4:5",
@@ -250,12 +316,15 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
             resource_version=version.version,
             role="prompt",
             prompt_id=prompt_id,
-            item_id=self._stable_id("item_", persona_id, reference.resource_id),
+            item_id=self._stable_id("item_", persona_id, reference.resource_id, language),
             aspect_ratio="4:5",
             position=position,
             operation_id=f"reference-workflow:{job_id}:entry:{prompt_id}",
             metadata={
                 "persona_id": persona_id,
+                "persona_name": persona_name,
+                "language": language,
+                "display_stem": display_stem,
                 "reference_resource_id": reference.resource_id,
             },
         )
@@ -265,7 +334,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
             "prompt",
             version.path,
             version.media_type,
-        )
+        ), display_stem
 
     @staticmethod
     def _reference_projection(
@@ -279,6 +348,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
         completed_count: int,
         reference_count: int,
         persona_count: int,
+        language_count: int = 1,
         latest: dict[str, Any] | None = None,
         retry_count: int = 0,
         error_code: str = "",
@@ -293,9 +363,10 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
             "total_count": total_count,
             "completed_count": completed_count,
             "output_count": completed_count,
-            "prompt_count": reference_count * persona_count,
+            "prompt_count": reference_count * persona_count * language_count,
             "reference_count": reference_count,
             "persona_count": persona_count,
+            "language_count": language_count,
             "retry_count": retry_count,
         }
         if latest:
@@ -330,6 +401,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
         latest: dict[str, Any] | None = None
         reference_count = 0
         persona_count = 0
+        language_count = 1
         total_count = 0
         try:
             if str(context["run"].get("flow_type") or "") != "reference":
@@ -359,6 +431,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 "config_file",
             )
             personas = self._personas(settings, persona_config)
+            languages = self._languages(settings)
             conversion_prompt = (
                 self._attached_resource(
                     context,
@@ -372,28 +445,31 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
             )
             reference_count = len(references)
             persona_count = len(personas)
+            language_count = len(languages)
             phases = (
                 ("4:5", "9:16")
                 if mode == "both"
                 else (("9:16",) if mode == "916" else ("4:5",))
             )
-            total_count = reference_count * persona_count * len(phases)
-            prompts: list[tuple[str, LocalResource, LocalResource]] = []
+            total_count = reference_count * persona_count * language_count * len(phases)
+            prompts: list[tuple[str, LocalResource, LocalResource, str]] = []
             for persona in personas:
                 for reference, comment in references:
-                    prompt_id, prompt = self._put_prompt(
-                        job_id=job_id,
-                        owner_key=owner_key,
-                        run_id=run_id,
-                        persona=persona,
-                        reference=reference,
-                        starting_prompt=starting_prompt,
-                        product_document=product_document,
-                        comment=comment,
-                    )
-                    prompts.append((prompt_id, prompt, reference))
+                    for language in languages:
+                        prompt_id, prompt, display_stem = self._put_prompt(
+                            job_id=job_id,
+                            owner_key=owner_key,
+                            run_id=run_id,
+                            persona=persona,
+                            reference=reference,
+                            starting_prompt=starting_prompt,
+                            product_document=product_document,
+                            comment=comment,
+                            language=language,
+                        )
+                        prompts.append((prompt_id, prompt, reference, display_stem))
             for aspect_ratio in phases:
-                for prompt_id, prompt, reference in prompts:
+                for prompt_id, prompt, reference, display_stem in prompts:
                     existing = self._existing_output(run_id, prompt_id, aspect_ratio)
                     if existing is not None:
                         completed_count += 1
@@ -443,6 +519,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                         aspect_ratio=aspect_ratio,
                         prompt_content=effective_prompt,
                         resources=uploads,
+                        display_stem=display_stem,
                     )
                     content: bytes | None = None
                     for attempt in range(1, self.max_attempts + 1):
@@ -476,6 +553,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                         source_output_version=source_output_version,
                         source_output_id=source_output_id,
                         conversion_prompt=conversion_prompt if aspect_ratio == "9:16" else None,
+                        display_stem=display_stem,
                     )
                     completed_count += 1
                     progress = self._reference_projection(
@@ -488,6 +566,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                         completed_count=completed_count,
                         reference_count=reference_count,
                         persona_count=persona_count,
+                        language_count=language_count,
                         latest=latest,
                         retry_count=retry_count,
                     )
@@ -507,6 +586,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 completed_count=completed_count,
                 reference_count=reference_count,
                 persona_count=persona_count,
+                language_count=language_count,
                 latest=latest,
                 retry_count=retry_count,
             )
@@ -535,6 +615,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 completed_count=completed_count,
                 reference_count=reference_count,
                 persona_count=persona_count,
+                language_count=language_count,
                 latest=latest,
                 retry_count=retry_count,
                 error_code="user_canceled",
@@ -563,6 +644,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 completed_count=completed_count,
                 reference_count=reference_count,
                 persona_count=persona_count,
+                language_count=language_count,
                 latest=latest,
                 retry_count=retry_count,
                 error_code=error_code,

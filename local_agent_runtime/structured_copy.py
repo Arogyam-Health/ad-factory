@@ -610,6 +610,18 @@ class StructuredCopyExecutor:
                     prompt_id = "prm_" + hashlib.sha256(
                         f"{run_id}:{ad_index}:{language}".encode()
                     ).hexdigest()[:24]
+                    concept_angle = str(concept.get("concept_angle") or "desired_outcome")
+                    display_stem = Path(
+                        generate_ads.prompt_filename(
+                            fmt,
+                            int(persona["number"]),
+                            str(persona.get("name") or ""),
+                            language,
+                            concept_angle,
+                            int(ad.get("creative_index") or 1),
+                            int(ad.get("creative_total") or 1),
+                        )
+                    ).stem
                     sidecar = {
                         "prompt_id": prompt_id,
                         "format": fmt,
@@ -617,6 +629,8 @@ class StructuredCopyExecutor:
                         "persona_name": str(persona["name"]),
                         "language": language,
                         "aspect_ratio": "4:5",
+                        "display_stem": display_stem,
+                        "concept_angle": concept_angle,
                         "background_id": background["id"],
                         "background_seed": background_seed,
                         "copy_resource_id": copy_resource.resource_id,
@@ -633,8 +647,14 @@ class StructuredCopyExecutor:
                         operation_id=f"structured-copy:{job_id}:prompt:{prompt_count}",
                         value=prompt_text,
                         metadata={
-                            key: sidecar[key]
-                            for key in ("prompt_id", "format", "persona_number", "language", "aspect_ratio")
+                            "prompt_id": prompt_id,
+                            "format": fmt,
+                            "persona_number": int(persona["number"]),
+                            "persona_name": str(persona.get("name") or ""),
+                            "language": language,
+                            "aspect_ratio": "4:5",
+                            "display_stem": display_stem,
+                            "concept_angle": concept_angle,
                         },
                     )
                     sidecar_resource = self._put_json(
@@ -652,6 +672,14 @@ class StructuredCopyExecutor:
                         role="prompt",
                         index=prompt_count,
                         prompt_id=prompt_id,
+                        metadata={
+                            "display_stem": display_stem,
+                            "persona_name": str(persona.get("name") or ""),
+                            "persona_number": int(persona["number"]),
+                            "language": language,
+                            "format": fmt,
+                            "concept_angle": concept_angle,
+                        },
                     )
                     self._add_entry(
                         run_id=run_id,

@@ -29,7 +29,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def _put(self, logical_key: str, content: bytes, kind: str, *, owner: str | None = None):
+    def _put(self, logical_key: str, content: bytes, kind: str, *, owner: str | None = None, filename: str | None = None):
         source = self.paths.staging / f"{logical_key}.bin"
         source.write_bytes(content)
         return self.state.put_resource(
@@ -39,6 +39,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
             logical_key=logical_key,
             operation_id=f"put:{owner or self.owner}:{logical_key}",
             media_type="image/png" if kind.endswith("_image") else "text/plain; charset=utf-8",
+            metadata={"filename": filename} if filename else None,
         )
 
     def _add_entry(self, role: str, resource, position: int) -> None:
@@ -60,6 +61,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
         mode: str = "45",
         reference_count: int = 1,
         reference_owner: str | None = None,
+        language_mode: str = "EN",
     ) -> dict:
         references = [
             self._put(
@@ -122,6 +124,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
                         for product in products
                     ],
                     "persona_ids": ["persona-b"],
+                    "language_mode": language_mode,
                     "product_document": {
                         "resource_id": product_doc.resource_id,
                         "version": product_doc.version,
@@ -277,6 +280,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
             "LOCAL REFERENCE COMMENT",
             "persona-b",
             "Persona B",
+            "Create the ad in EN.",
         ):
             self.assertIn(expected, prompt)
         self.assertEqual(
@@ -523,6 +527,121 @@ class ReferenceLocalFlowTests(unittest.TestCase):
             "127.0.0.1",
         ):
             self.assertNotIn(forbidden, serialized)
+
+    def test_all_language_mode_names_prompts_after_persona_and_reference(self) -> None:
+        from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
+        from local_agent_runtime.structured_browser import DeterministicFakeBrowser
+
+        reference = self._put(
+            "reference-one",
+            b"\x89PNG\r\n\x1a\nstress",
+            "reference_image",
+            filename="stress_snacker.png",
+        )
+        selected_product = self._put(
+            "product-selected", b"\x89PNG\r\n\x1a\nselected", "product_image"
+        )
+        product_doc = self._put("product-document", b"LOCAL PRODUCT DOCUMENT", "product_document")
+        starting_prompt = self._put("starting-prompt", b"LOCAL STARTING PROMPT", "config_file")
+        persona_config = self._put(
+            "personas",
+            json.dumps(
+                [{"persona_id": "persona-12", "number": 12, "name": "Stuck Scale Dieter"}]
+            ).encode(),
+            "config_file",
+        )
+        settings = self._put(
+            "reference-settings",
+            json.dumps(
+                {
+                    "references": [
+                        {"resource_id": reference.resource_id, "version": reference.version}
+                    ],
+                    "products": [
+                        {
+                            "resource_id": selected_product.resource_id,
+                            "version": selected_product.version,
+                        }
+                    ],
+                    "persona_ids": ["persona-12"],
+                    "language_mode": "ALL",
+                    "product_document": {
+                        "resource_id": product_doc.resource_id,
+                        "version": product_doc.version,
+                    },
+                    "starting_prompt": {
+                        "resource_id": starting_prompt.resource_id,
+                        "version": starting_prompt.version,
+                    },
+                    "persona_config": {
+                        "resource_id": persona_config.resource_id,
+                        "version": persona_config.version,
+                    },
+                }
+            ).encode(),
+            "config_file",
+        )
+        for position, (role, resource) in enumerate(
+            (
+                ("reference_settings", settings),
+                ("reference_product_document", product_doc),
+                ("reference_starting_prompt", starting_prompt),
+                ("reference_persona_config", persona_config),
+            ),
+            start=1,
+        ):
+            self._add_entry(role, resource, position)
+        self.state.record_job(
+            "job-named-langs",
+            self.owner,
+            "pending",
+            {
+                "run_id": self.run_id,
+                "command": "generate_reference",
+                "parameters": {"engine": "chatgpt", "mode": "45"},
+            },
+        )
+        browser = DeterministicFakeBrowser()
+        result = ReferenceWorkflowExecutor(self.state, browser=browser).execute("job-named-langs")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["prompt_count"], 3)
+        self.assertEqual(result["output_count"], 3)
+        stems = sorted(Path(call["prompt_path"]).stem for call in browser.calls)
+        self.assertEqual(
+            set(stems),
+            {
+                "stuck_scale_dieter_stress_snacker_EN",
+                "stuck_scale_dieter_stress_snacker_HI",
+                "stuck_scale_dieter_stress_snacker_HINGLISH",
+            },
+        )
+        texts = [Path(call["prompt_path"]).read_text(encoding="utf-8") for call in browser.calls]
+        self.assertTrue(any("Create the ad in EN." in text for text in texts))
+        self.assertTrue(any("Create the ad in HI." in text for text in texts))
+        self.assertTrue(any("Create the ad in HINGLISH." in text for text in texts))
+        with self.state._connect() as conn:
+            names = sorted(
+                json.loads(row["metadata_json"]).get("display_name") or ""
+                for row in conn.execute(
+                    """
+                    SELECT rv.metadata_json FROM outputs out
+                    JOIN output_versions ov
+                      ON ov.output_id = out.output_id AND ov.version = out.current_version
+                    JOIN resource_versions rv
+                      ON rv.resource_id = ov.resource_id AND rv.version = ov.resource_version
+                    WHERE out.run_id = ?
+                    """,
+                    (self.run_id,),
+                )
+            )
+        self.assertEqual(
+            set(names),
+            {
+                "stuck_scale_dieter_stress_snacker_EN_4_5",
+                "stuck_scale_dieter_stress_snacker_HI_4_5",
+                "stuck_scale_dieter_stress_snacker_HINGLISH_4_5",
+            },
+        )
 
 
 if __name__ == "__main__":

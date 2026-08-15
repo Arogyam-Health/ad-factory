@@ -291,7 +291,7 @@ export function buildImageGallery(run, imagesData) {
       const version = imageItem.resource_version || imageItem.version || "";
       meta.textContent = version ? `${arLabel} · output v${version}` : arLabel;
       card.appendChild(meta);
-    } else {
+    }
     const promptBox = document.createElement("details");
     promptBox.className = "image-prompt-box";
     const promptSummary = document.createElement("summary");
@@ -345,7 +345,6 @@ export function buildImageGallery(run, imagesData) {
     promptPre.textContent = imageItem.prompt_excerpt || "No prompt text available for this image.";
     promptBox.appendChild(promptPre);
     card.appendChild(promptBox);
-    }
 
     selectCheckbox.addEventListener("change", () => {
       if (selectCheckbox.checked) {
@@ -637,7 +636,7 @@ export function buildImageGallery(run, imagesData) {
         const version = queueItem.resource_version || queueItem.version || "";
         meta.textContent = version ? `${arLabel} · output v${version}` : arLabel;
         card.appendChild(meta);
-      } else {
+      }
       const promptBox = document.createElement("details");
       promptBox.className = "image-prompt-box";
       const promptSummary = document.createElement("summary");
@@ -681,7 +680,6 @@ export function buildImageGallery(run, imagesData) {
       promptPre.textContent = queueItem.prompt_excerpt || "No prompt text available.";
       promptBox.appendChild(promptPre);
       card.appendChild(promptBox);
-      }
 
       selectCheckbox.addEventListener("change", () => {
         if (selectCheckbox.checked) {

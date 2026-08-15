@@ -245,10 +245,8 @@ export async function renderRun(run) {
 
   const promptActions = document.createElement("div");
   promptActions.className = "prompt-actions";
-  if (!isReferenceRun(run)) {
-    buildPromptEditor(run, promptActions, promptsData);
-    div.appendChild(promptActions);
-  }
+  buildPromptEditor(run, promptActions, promptsData);
+  div.appendChild(promptActions);
 
   const galleryContainer = document.createElement("div");
   galleryContainer.className = "run-gallery";
