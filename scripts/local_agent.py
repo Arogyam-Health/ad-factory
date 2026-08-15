@@ -32,6 +32,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from local_agent_runtime.browser import resolve_browser_executable
+from local_agent_runtime.structured_browser import image_upload_suffix
 from local_agent_runtime.artifact_server import run_artifact_server
 from local_agent_runtime.data_plane import (
     load_or_create_device_id,
@@ -1049,19 +1050,12 @@ def _browser_automation_cmd(
     )
 
 
-_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
-
-
 def _write_revision_upload_manifest(
     work_root: Path, *, revision_id: str, image_path: Path, media_type: str
 ) -> Path:
     uploads = work_root / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
-    suffix = mimetypes.guess_extension(media_type.split(";", 1)[0]) or image_path.suffix
-    if suffix == ".jpe":
-        suffix = ".jpg"
-    if suffix not in _IMAGE_SUFFIXES:
-        suffix = ".png"
+    suffix = image_upload_suffix(media_type, image_path)
     target = uploads / f"0001{suffix}"
     target.write_bytes(image_path.read_bytes())
     manifest_path = work_root / "uploads.manifest.json"
@@ -1314,7 +1308,10 @@ def _save_agent_token(
         json.dumps(stored, indent=2) + "\n",
         encoding="utf-8",
     )
-    os.chmod(temporary, 0o600)
+    try:
+        os.chmod(temporary, 0o600)
+    except OSError:
+        pass
     os.replace(temporary, path)
 
 

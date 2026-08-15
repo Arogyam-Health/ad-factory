@@ -88,20 +88,34 @@ class APIError(RuntimeError):
         self.message = message
 
 
+def _chmod_private(path: Path) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        # Windows often ignores POSIX modes; the file still has to exist.
+        pass
+
+
 def _load_or_create_local_secret(path: Path, prefix: str, byte_count: int) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         temporary.write_text(prefix + secrets.token_hex(byte_count) + "\n", encoding="ascii")
-        os.chmod(temporary, 0o600)
+        _chmod_private(temporary)
+        replaced = False
         try:
             try:
                 os.link(temporary, path)
             except FileExistsError:
                 pass
+            except OSError:
+                # Native Windows cannot hard-link in many setups. Replace is enough.
+                os.replace(temporary, path)
+                replaced = True
         finally:
-            temporary.unlink(missing_ok=True)
-    os.chmod(path, 0o600)
+            if not replaced:
+                temporary.unlink(missing_ok=True)
+    _chmod_private(path)
     value = path.read_text(encoding="ascii").strip()
     if not value.startswith(prefix) or len(value) > 256:
         raise RuntimeError(f"Invalid local identity file: {path.name}")

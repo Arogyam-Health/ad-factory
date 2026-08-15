@@ -897,13 +897,13 @@ async function runStructuredOutputRefresh({ render = true } = {}) {
   });
   const next = [];
   for (const run of state.runsData) {
-    if (!run?.run_id || !run?.device_id || !run?.agent_id) continue;
+    if (!run?.run_id || !run?.device_id) continue;
     try {
       await localDataPlane.ensurePaired({
         ownerType: run.owner_type || "user",
         ownerId: run.owner_id || user.user_id,
         deviceId: run.device_id,
-        agentId: run.agent_id,
+        agentId: run.agent_id || "",
       });
       if (outputWatchReasons.size && !localDataEventStreams.has(run.device_id)) {
         const controller = new AbortController();
@@ -960,8 +960,9 @@ async function runStructuredOutputRefresh({ render = true } = {}) {
           url,
         });
       }
-    } catch {
+    } catch (error) {
       run.local_device_status = "unavailable";
+      appendLog(`Local images for ${run.run_id || "run"}: ${String(error)}`);
       next.push(...(previousByRun.get(run.run_id) || []));
     }
   }
@@ -1192,7 +1193,7 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
         ownerType: run.owner_type || "user",
         ownerId: run.owner_id || user.user_id,
         deviceId: run.device_id,
-        agentId: run.agent_id,
+        agentId: run.agent_id || "",
       });
       const blob = await localDataPlane.downloadRun(run.run_id, run.device_id);
       const objectUrl = URL.createObjectURL(blob);
@@ -1219,7 +1220,7 @@ async function purgeRunsLocally(runs) {
         ownerType: run.owner_type || "user",
         ownerId: run.owner_id || user?.user_id,
         deviceId: run.device_id,
-        agentId: run.agent_id,
+        agentId: run.agent_id || "",
       });
       await localDataPlane.deleteRun(run.run_id, paired.info.device_id);
       purged += 1;

@@ -234,6 +234,8 @@ console.log(JSON.stringify(simplified));
         )
         self.assertIn("registeredAgent(deviceId, preferredAgentId", client)
         self.assertIn("item.agent_id === preferredAgentId", client)
+        self.assertIn("_isOnlineAgent", client)
+        self.assertNotIn("The selected run belongs to a different local agent", client)
         self.assertIn("await localDataPlane.ensurePaired({", prompts)
         self.assertIn("agentId: run.agent_id", prompts)
         self.assertLess(

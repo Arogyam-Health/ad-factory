@@ -20,7 +20,37 @@ from .storage import AgentState
 
 _ENGINES = frozenset({"chatgpt", "gemini"})
 _MODES = {"45": "45", "4:5": "45", "both": "both", "916": "916", "9:16": "916"}
-_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"})
+_MEDIA_TYPE_SUFFIX = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+}
+
+
+def image_upload_suffix(media_type: str, path: Path | None = None) -> str:
+    """Pick an upload filename suffix without relying on Windows mimetypes.
+
+    Windows often cannot map image/webp, which previously staged files as .bin
+    and ChatGPT then refused to upload them.
+    """
+    mime = str(media_type or "").split(";", 1)[0].strip().lower()
+    if mime in _MEDIA_TYPE_SUFFIX:
+        return _MEDIA_TYPE_SUFFIX[mime]
+    suffix = str(path.suffix.lower() if path is not None else "")
+    if suffix == ".jpeg":
+        suffix = ".jpg"
+    if suffix in _IMAGE_SUFFIXES:
+        return suffix
+    guessed = mimetypes.guess_extension(mime) or ""
+    if guessed == ".jpe":
+        guessed = ".jpg"
+    if guessed in _IMAGE_SUFFIXES:
+        return guessed
+    return ".png"
 
 
 class JobCanceled(RuntimeError):
@@ -421,10 +451,8 @@ class StructuredBrowserExecutor:
         manifest_entries = []
         state_entries = []
         for position, resource in enumerate(resources, start=1):
-            suffix = mimetypes.guess_extension(resource.media_type.split(";", 1)[0]) or resource.path.suffix
-            if suffix == ".jpe":
-                suffix = ".jpg"
-            target = uploads / f"{position:04d}{suffix if suffix in _IMAGE_SUFFIXES else '.bin'}"
+            suffix = image_upload_suffix(resource.media_type, resource.path)
+            target = uploads / f"{position:04d}{suffix}"
             target.write_bytes(resource.path.read_bytes())
             manifest_entries.append(
                 {

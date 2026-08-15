@@ -14,7 +14,7 @@ async function loadLocalPrompts(run) {
     ownerType: run.owner_type || "user",
     ownerId: run.owner_id || getAuthUser()?.user_id,
     deviceId: run.device_id,
-    agentId: run.agent_id,
+    agentId: run.agent_id || "",
   });
   const items = await localDataPlane.listPrompts(run.run_id, run.device_id);
   return {

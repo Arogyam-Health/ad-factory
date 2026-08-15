@@ -133,8 +133,17 @@ def _detect_windows_user() -> str:
 
 
 def copy_to_windows_temp(image_paths: list[Path]) -> list[str]:
-    """Copy images from WSL filesystem to Windows-accessible temp dir."""
+    """Make image paths Chrome can upload.
+
+    Native Windows and native Linux already have paths Chrome can read.
+    Only WSL needs a copy onto a /mnt/c drive letter.
+    """
     import shutil
+
+    resolved = [Path(p).resolve() for p in image_paths]
+    if sys.platform == "win32" or os.name == "nt" or not Path("/mnt/c").exists():
+        return [str(p) for p in resolved]
+
     win_user = _detect_windows_user()
     if win_user:
         win_temp = Path(f"/mnt/c/Users/{win_user}/.ad-factory-upload-temp")
@@ -1902,7 +1911,7 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
             raise ValueError(f"Upload path is not a supported image: {p}")
 
     file_paths = copy_to_windows_temp(image_paths)
-    print(f"  [upload] Copied to Windows temp: {file_paths}")
+    print(f"  [upload] Chrome upload paths: {file_paths}")
     before_srcs = get_all_image_srcs(page)
     print(f"  [upload] Uploading {len(file_paths)} image(s). Existing page images={len(before_srcs)}")
 

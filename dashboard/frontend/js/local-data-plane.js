@@ -205,6 +205,11 @@ export class LocalDataPlaneClient {
     }));
   }
 
+  _isOnlineAgent(agent) {
+    const heartbeatAge = Date.now() / 1000 - Number(agent.last_heartbeat_at || 0);
+    return Boolean(agent.is_active) && heartbeatAge <= 180;
+  }
+
   async registeredAgent(deviceId, preferredAgentId = "") {
     const response = await fetch("/api/agents", {
       method: "GET",
@@ -215,18 +220,17 @@ export class LocalDataPlaneClient {
     const candidates = Array.isArray(agents)
       ? agents.filter((item) => item.device_id === deviceId && item.supports_pairing)
       : [];
+    const online = candidates.filter((item) => this._isOnlineAgent(item));
     const agent = (
       (preferredAgentId
-        ? candidates.find((item) => item.agent_id === preferredAgentId)
+        ? online.find((item) => item.agent_id === preferredAgentId)
         : null)
-      || candidates.sort(
+      || online.sort(
         (a, b) => Number(b.last_heartbeat_at || 0) - Number(a.last_heartbeat_at || 0),
       )[0]
       || null
     );
-    if (!agent) throw new Error("This local device is not registered to your account");
-    const heartbeatAge = Date.now() / 1000 - Number(agent.last_heartbeat_at || 0);
-    if (!agent.is_active || heartbeatAge > 180) {
+    if (!agent) {
       throw new Error("Your paired local device is offline. Start the local agent and try again.");
     }
     return agent;
@@ -346,9 +350,6 @@ export class LocalDataPlaneClient {
       throw new Error("The selected run belongs to a different local device");
     }
     const agent = await this.registeredAgent(info.device_id, agentId);
-    if (agentId && agent.agent_id !== agentId) {
-      throw new Error("The selected run belongs to a different local agent");
-    }
     const owner = ownerKeyOf(ownerType, ownerId);
     const current = this.session(info.device_id, owner);
     if (
