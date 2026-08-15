@@ -15,8 +15,10 @@ The full system map and pipeline live in [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 | Platform | Guide |
 | --- | --- |
-| **Ubuntu local agent** (website on Render) | [`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md) |
-| **Windows local agent** (website on Render) | [`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md) |
+| **Download zip (Windows / Ubuntu / macOS)** | [`docs/LOCAL_AGENT_README.md`](docs/LOCAL_AGENT_README.md) |
+| **Ubuntu local agent** | [`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md) |
+| **Windows local agent** | [`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md) |
+| **macOS local agent** | [`docs/LOCAL_AGENT_MAC.md`](docs/LOCAL_AGENT_MAC.md) |
 | **Windows + WSL2** full dashboard stack | [`docs/WSL_SETUP.md`](docs/WSL_SETUP.md) |
 | **macOS** full dashboard stack | [`docs/MAC_SETUP.md`](docs/MAC_SETUP.md) |
 
@@ -165,9 +167,9 @@ replication, outage recovery, and security procedures, follow
 1. **MongoDB Atlas** — Create a free cluster at https://mongodb.com, get your connection string
 2. **Google OAuth** — Create credentials at https://console.cloud.google.com/apis/credentials, configure redirect URI
 3. **Render** — Deploy from GitHub and set the authentication/control-plane env vars (see `.env.example`). Do not configure content storage.
-4. **Local agent** — Run on the same machine as the dashboard browser. On a new
-   Ubuntu or Windows PC follow [`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md)
-   or [`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md), then:
+4. **Local agent** — On another machine download
+   [`ad-factory-local-agent.zip`](ad-factory-local-agent.zip) and follow
+   [`docs/LOCAL_AGENT_README.md`](docs/LOCAL_AGENT_README.md), then:
    ```bash
    python scripts/start_local_agent.py
    ```
@@ -186,9 +188,9 @@ Render does **not** launch Chrome. The local agent:
 
 ### Local agent setup
 
-On a new Ubuntu or Windows machine, follow
-[`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md) or
-[`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md). Short version:
+Download [`ad-factory-local-agent.zip`](ad-factory-local-agent.zip) and follow
+[`docs/LOCAL_AGENT_README.md`](docs/LOCAL_AGENT_README.md)
+(Windows, Ubuntu, or macOS). Short version after unzip and `pip install`:
 
 ```bash
 python scripts/start_local_agent.py

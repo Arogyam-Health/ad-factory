@@ -1,29 +1,28 @@
-# Local agent on Ubuntu
+# Local agent on macOS
 
-The website stays on Render. This Ubuntu machine only runs the **local agent**,
-**Chrome**, and stores ads under `~/ad-factory-agent`.
+The website stays on Render. This Mac only runs the **local agent**, **Chrome**,
+and stores ads under `~/ad-factory-agent`.
 
 Pairing uses `127.0.0.1`, so open the dashboard in a browser **on this same
-machine**.
+Mac**.
 
 Default production URL: `https://ad-factory-3rn5.onrender.com`
 
 ## 1. Install Python and Chrome
 
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip unzip
-```
-
-Install Google Chrome:
+Install Python 3.10+ from https://www.python.org/downloads/macos/ or Homebrew:
 
 ```bash
-wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-sudo apt install -y ./google-chrome-stable_current_amd64.deb
+brew install python
 ```
 
-Chromium (`sudo apt install -y chromium-browser`) also works if Chrome is not
-available.
+Confirm:
+
+```bash
+python3 --version
+```
+
+Install Google Chrome from https://www.google.com/chrome/.
 
 ## 2. Download the local-agent zip
 
@@ -53,38 +52,39 @@ python3 -m venv .venv
 .venv/bin/python -m playwright install chromium
 ```
 
-Create the `.venv` on this Ubuntu box. Do not copy one from Windows or Mac.
+Create the `.venv` on this Mac. Do not copy one from Windows or Ubuntu.
+
+If macOS blocks `python3` or Chrome the first time, System Settings → Privacy &
+Security → Open Anyway.
 
 ## 3. Chrome path (only if auto-detect fails)
 
 The agent looks for Chrome automatically (`CHROME_PATH`, then `PATH`, then
-`/usr/bin/google-chrome`). To force a binary:
+`/Applications/Google Chrome.app/...`). To force a binary:
 
 ```bash
-export CHROME_PATH=/usr/bin/google-chrome
+export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
 
 Or pass it when starting:
 
 ```bash
-.venv/bin/python scripts/start_local_agent.py --chrome-path /usr/bin/google-chrome
+.venv/bin/python scripts/start_local_agent.py --chrome-path "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
 
-Typical Ubuntu paths:
+Typical Mac paths:
 
 ```text
-/usr/bin/google-chrome
-/usr/bin/google-chrome-stable
-/usr/bin/chromium-browser
-/usr/bin/chromium
-/snap/bin/chromium
+/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+/Applications/Chromium.app/Contents/MacOS/Chromium
 ```
 
 ## 4. Copy the dashboard session cookie
 
-1. On this Ubuntu machine, open Chrome and sign in to
+1. On this Mac, open Chrome and sign in to
    `https://ad-factory-3rn5.onrender.com`.
-2. Press `F12` → **Application** → **Cookies** → the site.
+2. Press `Cmd+Option+I` → **Application** → **Cookies** → the site.
 3. Copy the `session` cookie value.
 
 ## 5. Start the local agent
@@ -94,12 +94,13 @@ cd ~/ad-factory/ad-factory-local-agent
 .venv/bin/python scripts/start_local_agent.py
 ```
 
-Or: `./start_local_agent.sh` (uses `.venv/bin/python` when it exists).
+Or: `chmod +x start_local_agent.sh && ./start_local_agent.sh` (uses
+`.venv/bin/python` when it exists).
 
 Paste the cookie at `Session cookie:` (hidden). Later starts can press Enter
 with a blank cookie if `~/ad-factory-agent/config/agent.json` already exists.
 
 Sign in to ChatGPT and/or Gemini in the Chrome window the agent opens. Keep it
-open. Pair the Render dashboard in a normal tab on this same machine.
+open. Pair the Render dashboard in a normal tab on this same Mac.
 
 Stop with `Ctrl+C`.

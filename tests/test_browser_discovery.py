@@ -102,9 +102,44 @@ class BrowserDiscoveryTests(unittest.TestCase):
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AGENT_API_BASE", None)
+            os.environ.pop("CHROME_PATH", None)
             args = parse_args([])
         self.assertEqual(args.api_base, "https://ad-factory-3rn5.onrender.com")
         self.assertEqual(args.browser, "chrome")
+        args = parse_args(["--chrome-path", "/opt/custom/chrome"])
+        self.assertEqual(args.chrome_path, "/opt/custom/chrome")
+
+    def test_local_agent_zip_keeps_repo_relative_paths(self) -> None:
+        import zipfile
+
+        from scripts.pack_local_agent_zip import ZIP_PREFIX, included_files, write_zip
+
+        required = {
+            "scripts/local_agent.py",
+            "scripts/start_local_agent.py",
+            "scripts/generate_ads.py",
+            "scripts/prompt_assembler_templates.json",
+            "local_agent_runtime/storage.py",
+            "local_agent_runtime/browser.py",
+            "background_variant.json",
+            "dashboard/backend/copy_prompt_templates.json",
+            "requirements-local-agent.txt",
+            "docs/LOCAL_AGENT_WINDOWS.md",
+            "docs/LOCAL_AGENT_MAC.md",
+        }
+        self.assertTrue(required.issubset(set(included_files())))
+
+        with TemporaryDirectory() as tmp:
+            zip_path = write_zip(Path(tmp) / "ad-factory-local-agent.zip")
+            with zipfile.ZipFile(zip_path) as archive:
+                names = set(archive.namelist())
+            self.assertIn(f"{ZIP_PREFIX}/scripts/local_agent.py", names)
+            self.assertIn(f"{ZIP_PREFIX}/local_agent_runtime/browser.py", names)
+            self.assertIn(f"{ZIP_PREFIX}/start_local_agent.bat", names)
+            self.assertIn(f"{ZIP_PREFIX}/start_local_agent.sh", names)
+            joined = "\n".join(names)
+            self.assertNotIn("/home/mylappy", joined)
+            self.assertNotIn("myspace/info", joined)
 
 
 if __name__ == "__main__":

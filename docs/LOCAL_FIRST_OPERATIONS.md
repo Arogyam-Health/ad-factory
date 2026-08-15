@@ -86,25 +86,22 @@ indexes, device availability, resource references, and absent content storage.
 
 ## Start a local device
 
-Ubuntu and Windows walkthroughs:
+Download [`ad-factory-local-agent.zip`](../ad-factory-local-agent.zip) instead of
+cloning the whole repo. Guides:
 
-- [`docs/LOCAL_AGENT_UBUNTU.md`](LOCAL_AGENT_UBUNTU.md)
+- [`docs/LOCAL_AGENT_README.md`](LOCAL_AGENT_README.md)
 - [`docs/LOCAL_AGENT_WINDOWS.md`](LOCAL_AGENT_WINDOWS.md)
+- [`docs/LOCAL_AGENT_UBUNTU.md`](LOCAL_AGENT_UBUNTU.md)
+- [`docs/LOCAL_AGENT_MAC.md`](LOCAL_AGENT_MAC.md)
 
-Install dependencies and the Playwright browser:
+Install dependencies from the unzipped folder. `requirements-local-agent.txt`
+is already in the zip. Use the venv Python (no activate, no global pip):
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dashboard.txt
-playwright install chromium
-```
-
-Start the agent. The launcher asks for the dashboard session cookie (hidden)
-and launches Chrome:
-
-```bash
-python scripts/start_local_agent.py
+.venv/bin/python -m pip install -r requirements-local-agent.txt
+.venv/bin/python -m playwright install chromium
+.venv/bin/python scripts/start_local_agent.py
 ```
 
 That is equivalent to setting `AD_FACTORY_SESSION` and running:

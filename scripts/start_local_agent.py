@@ -84,6 +84,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Local agent data root. Default: ~/ad-factory-agent on this machine",
     )
     parser.add_argument("--browser", choices=["chrome", "brave"], default="chrome")
+    parser.add_argument(
+        "--chrome-path",
+        default=os.getenv("CHROME_PATH", ""),
+        help="Full path to Chrome or Brave if auto-detect fails. Sets CHROME_PATH for this run.",
+    )
     return parser.parse_args(argv)
 
 
@@ -99,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
     data_dir = str(resolve_data_root(args.data_dir or None))
     cookie = prompt_session_cookie()
     env = os.environ.copy()
+    chrome_path = str(args.chrome_path or "").strip()
+    if chrome_path:
+        env["CHROME_PATH"] = chrome_path
     if cookie:
         env["AD_FACTORY_SESSION"] = cookie
     else:
@@ -117,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  API:     {api_base}")
     print(f"  Data:    {data_dir}")
     print(f"  Browser: {args.browser}")
+    print(f"  Chrome:  {chrome_path or 'auto-detect (set --chrome-path or CHROME_PATH to override)'}")
     return subprocess.call(command, env=env)
 
 
