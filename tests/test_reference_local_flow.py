@@ -393,6 +393,41 @@ class ReferenceLocalFlowTests(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
         self.assertLess(len(serialized), 8192)
 
+    def test_cancel_check_stops_reference_before_browser_work(self) -> None:
+        from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
+        from local_agent_runtime.structured_browser import DeterministicFakeBrowser
+
+        self._configured_job(job_id="job-cancel-early")
+        browser = DeterministicFakeBrowser()
+        result = ReferenceWorkflowExecutor(
+            self.state,
+            browser=browser,
+            cancel_check=lambda: True,
+        ).execute("job-cancel-early")
+        self.assertEqual(result["status"], "canceled")
+        self.assertEqual(result["error_code"], "user_canceled")
+        self.assertEqual(browser.calls, [])
+
+    def test_cancel_during_generate_is_not_retried(self) -> None:
+        from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
+        from local_agent_runtime.structured_browser import JobCanceled
+
+        self._configured_job(job_id="job-cancel-generate")
+        calls = {"n": 0}
+
+        class CancelingBrowser:
+            def generate(self, **kwargs):
+                calls["n"] += 1
+                raise JobCanceled("Canceled by user")
+
+        result = ReferenceWorkflowExecutor(
+            self.state,
+            browser=CancelingBrowser(),
+            max_attempts=2,
+        ).execute("job-cancel-generate")
+        self.assertEqual(result["status"], "canceled")
+        self.assertEqual(calls["n"], 1)
+
     def test_mongo_metadata_reference_run_is_visible_in_normal_listing_shape(self) -> None:
         from dashboard.backend.app import _mongo_run_to_manifest
 

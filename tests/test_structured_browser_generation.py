@@ -457,6 +457,24 @@ class StructuredBrowserGenerationTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertFalse((self.paths.staging / "structured-browser" / job_id).exists())
 
+    def test_cancel_check_stops_structured_before_browser_work(self) -> None:
+        from local_agent_runtime.structured_browser import (
+            DeterministicFakeBrowser,
+            StructuredBrowserExecutor,
+        )
+
+        job_id = "job-cancel-early"
+        self._record_job(job_id, engine="chatgpt", mode="45", prompt_id=self.prompt_ids[0])
+        browser = DeterministicFakeBrowser()
+        result = StructuredBrowserExecutor(
+            self.state,
+            browser=browser,
+            cancel_check=lambda: True,
+        ).execute(job_id)
+        self.assertEqual(result["status"], "canceled")
+        self.assertEqual(result["error_code"], "user_canceled")
+        self.assertEqual(browser.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

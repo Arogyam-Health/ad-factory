@@ -24,7 +24,9 @@ class LocalAgentTransportTests(unittest.TestCase):
         self.assertTrue(signal.wait(0))
         signal.handle({"type": "job_canceled", "job_id": "job-1"})
         self.assertTrue(signal.cancel_requested("job-1"))
-        self.assertFalse(signal.cancel_requested("job-1"))
+        self.assertTrue(signal.cancel_requested("job-1"))
+        signal.request_cancel("job-2")
+        self.assertTrue(signal.cancel_requested("job-2"))
 
     def test_job_signal_queues_bounded_pairing_approvals(self) -> None:
         from local_agent_runtime.transport import JobSignal

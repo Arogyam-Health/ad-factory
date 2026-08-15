@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .storage import AgentState
 from .structured_browser import (
     BrowserAutomation,
+    JobCanceled,
     LocalResource,
     StructuredBrowserExecutor,
 )
@@ -26,12 +27,14 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
         *,
         browser: BrowserAutomation | None = None,
         max_attempts: int = 2,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(
             state,
             browser=browser,
             max_attempts=max_attempts,
             workflow_prefix="reference-workflow",
+            cancel_check=cancel_check,
         )
 
     def _completed_result(self, job_id: str) -> dict[str, Any] | None:
@@ -400,6 +403,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                             "sha256": existing["object_sha256"],
                         }
                         continue
+                    self._raise_if_canceled()
                     source_output_id = None
                     source_output_version = None
                     effective_prompt = prompt.path.read_bytes()
@@ -442,6 +446,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                     )
                     content: bytes | None = None
                     for attempt in range(1, self.max_attempts + 1):
+                        self._raise_if_canceled()
                         try:
                             content = self.browser.generate(
                                 engine=engine,
@@ -452,6 +457,8 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                                 output_dir=output_dir,
                             )
                             break
+                        except JobCanceled:
+                            raise
                         except Exception:
                             if attempt >= self.max_attempts:
                                 raise
@@ -517,6 +524,29 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                     (run_id,),
                 )
             return final
+        except JobCanceled:
+            canceled = self._reference_projection(
+                job_id=job_id,
+                run_id=run_id,
+                status="canceled",
+                engine=engine,
+                mode=mode,
+                total_count=total_count,
+                completed_count=completed_count,
+                reference_count=reference_count,
+                persona_count=persona_count,
+                latest=latest,
+                retry_count=retry_count,
+                error_code="user_canceled",
+            )
+            self.state.queue_projection(
+                owner_key=owner_key,
+                operation_id=f"reference-workflow:{job_id}:canceled:{completed_count}",
+                event_type="reference_generation_failed",
+                payload=canceled,
+            )
+            self.state.update_job_status(job_id, "canceled")
+            return canceled
         except Exception as exc:
             error_code = (
                 "local_resource_missing"

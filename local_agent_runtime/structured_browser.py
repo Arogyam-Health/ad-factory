@@ -6,12 +6,14 @@ import mimetypes
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from .storage import AgentState
 
@@ -19,6 +21,37 @@ from .storage import AgentState
 _ENGINES = frozenset({"chatgpt", "gemini"})
 _MODES = {"45": "45", "4:5": "45", "both": "both", "916": "916", "9:16": "916"}
 _IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+
+
+class JobCanceled(RuntimeError):
+    """Operator canceled the local browser job."""
+
+
+def _terminate_process_tree(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        if os.name != "nt":
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name != "nt":
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+    except ProcessLookupError:
+        pass
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 
 class BrowserAutomation(Protocol):
@@ -76,8 +109,13 @@ class DeterministicFakeBrowser:
 class LocalScriptBrowser:
     """Run one local prompt through the selected local browser automation script."""
 
-    def __init__(self, project_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        project_root: Path | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> None:
         self.project_root = project_root or Path(__file__).resolve().parents[1]
+        self.cancel_check = cancel_check or (lambda: False)
 
     def generate(
         self,
@@ -115,12 +153,25 @@ class LocalScriptBrowser:
         ]
         if engine == "chatgpt":
             command.extend(["--cdp-url", os.getenv("AGENT_CDP_URL", "http://127.0.0.1:9222")])
-        completed = subprocess.run(
-            command,
-            cwd=self.project_root,
-            timeout=900,
-        )
-        if completed.returncode:
+        proc = subprocess.Popen(command, cwd=self.project_root, start_new_session=True)
+        deadline = time.time() + 900
+        try:
+            while True:
+                if self.cancel_check():
+                    _terminate_process_tree(proc)
+                    raise JobCanceled("Canceled by user")
+                if time.time() >= deadline:
+                    _terminate_process_tree(proc)
+                    raise RuntimeError("Local browser automation timed out")
+                try:
+                    proc.wait(timeout=0.5)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            if proc.poll() is None:
+                _terminate_process_tree(proc)
+        if proc.returncode:
             raise RuntimeError("Local browser automation failed")
         result = json.loads(result_manifest.read_text(encoding="utf-8"))
         output_path = Path(str(result.get("output_path") or "")).resolve()
@@ -149,13 +200,19 @@ class StructuredBrowserExecutor:
         workflow_prefix: str = "structured-browser",
         product_assets: list[dict[str, Any]] | None = None,
         conversion_prompt_text: str = "",
+        cancel_check: Callable[[], bool] | None = None,
     ) -> None:
         self.state = state
-        self.browser = browser or LocalScriptBrowser()
+        self.cancel_check = cancel_check or (lambda: False)
+        self.browser = browser or LocalScriptBrowser(cancel_check=self.cancel_check)
         self.max_attempts = max(1, min(int(max_attempts), 3))
         self.workflow_prefix = self._identifier(workflow_prefix)
         self.product_assets = product_assets
         self.conversion_prompt_text = conversion_prompt_text
+
+    def _raise_if_canceled(self) -> None:
+        if self.cancel_check():
+            raise JobCanceled("Canceled by user")
 
     def _completed_result(self, job_id: str) -> dict[str, Any] | None:
         with self.state._connect() as conn:
@@ -564,6 +621,7 @@ class StructuredBrowserExecutor:
                     if existing is not None:
                         completed_count += 1
                         continue
+                    self._raise_if_canceled()
                     source_output_version = None
                     source_output_id = None
                     uploads = product_uploads
@@ -622,6 +680,7 @@ class StructuredBrowserExecutor:
                     )
                     content: bytes | None = None
                     for attempt in range(1, self.max_attempts + 1):
+                        self._raise_if_canceled()
                         try:
                             content = self.browser.generate(
                                 engine=engine,
@@ -632,6 +691,8 @@ class StructuredBrowserExecutor:
                                 output_dir=output_dir,
                             )
                             break
+                        except JobCanceled:
+                            raise
                         except Exception:
                             if attempt >= self.max_attempts:
                                 raise
@@ -690,6 +751,27 @@ class StructuredBrowserExecutor:
             )
             self.state.update_job_status(job_id, "completed")
             return final
+        except JobCanceled:
+            canceled = self._projection(
+                job_id=job_id,
+                run_id=run_id,
+                status="canceled",
+                engine=engine,
+                mode=mode,
+                total_count=total_count,
+                completed_count=completed_count,
+                retry_count=retry_count,
+                latest=latest,
+                error_code="user_canceled",
+            )
+            self.state.queue_projection(
+                owner_key=owner_key,
+                operation_id=f"structured-browser:{job_id}:canceled:{completed_count}",
+                event_type="structured_images_failed",
+                payload=canceled,
+            )
+            self.state.update_job_status(job_id, "canceled")
+            return canceled
         except Exception as exc:
             error_code = (
                 "local_resource_missing" if isinstance(exc, ValueError) else "browser_automation_failed"

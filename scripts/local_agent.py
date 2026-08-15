@@ -384,6 +384,26 @@ def report_job_terminal(
     return False
 
 
+def _report_local_generation(job_id: str, projection: dict[str, Any], fallback_error: str) -> None:
+    status = str(projection.get("status") or "")
+    if status == "completed":
+        report_job_terminal(job_id, "complete")
+        return
+    if status == "canceled" or str(projection.get("error_code") or "") == "user_canceled":
+        report_job_terminal(
+            job_id,
+            "fail",
+            error_code="user_canceled",
+            error_message="Canceled by user",
+        )
+        return
+    report_job_terminal(
+        job_id,
+        "fail",
+        error_code=str(projection.get("error_code") or fallback_error),
+    )
+
+
 def flush_terminal_outbox() -> None:
     if AGENT_STATE is None:
         return
@@ -756,38 +776,24 @@ def execute_job(job: dict[str, Any]) -> None:
                     AGENT_STATE,
                     product_assets=_local_product_asset_references(owner_key),
                     conversion_prompt_text=conversion_path.read_text(encoding="utf-8"),
+                    cancel_check=lambda: _agent_job_cancel_requested(job_id),
                 ).execute(job_id)
             finally:
                 shutil.rmtree(job_tmp, ignore_errors=True)
             flush_terminal_outbox()
-            if projection.get("status") == "completed":
-                report_job_terminal(job_id, "complete")
-            else:
-                report_job_terminal(
-                    job_id,
-                    "fail",
-                    error_code=str(
-                        projection.get("error_code") or "local_browser_generation_failed"
-                    ),
-                )
+            _report_local_generation(job_id, projection, "local_browser_generation_failed")
 
         elif job_type == "execute_run" and str(job.get("command") or "") == "generate_reference":
             if AGENT_STATE is None:
                 raise RuntimeError("Local agent state is unavailable")
             from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
 
-            projection = ReferenceWorkflowExecutor(AGENT_STATE).execute(job_id)
+            projection = ReferenceWorkflowExecutor(
+                AGENT_STATE,
+                cancel_check=lambda: _agent_job_cancel_requested(job_id),
+            ).execute(job_id)
             flush_terminal_outbox()
-            if projection.get("status") == "completed":
-                report_job_terminal(job_id, "complete")
-            else:
-                report_job_terminal(
-                    job_id,
-                    "fail",
-                    error_code=str(
-                        projection.get("error_code") or "local_reference_generation_failed"
-                    ),
-                )
+            _report_local_generation(job_id, projection, "local_reference_generation_failed")
 
         elif job_type == "purge_run" and str(job.get("command") or "") == "purge_run":
             if AGENT_STATE is None:
@@ -987,7 +993,10 @@ def _agent_job_cancel_requested(job_id: str) -> bool:
     if JOB_SIGNAL.cancel_requested(job_id):
         return True
     status = api_request("GET", f"/api/agents/jobs/{job_id}/status", token=AGENT_TOKEN, timeout=1, quiet=True)
-    return bool(status and status.get("cancel_requested"))
+    if status and status.get("cancel_requested"):
+        JOB_SIGNAL.request_cancel(job_id)
+        return True
+    return False
 
 
 def _chatgpt_cmd(

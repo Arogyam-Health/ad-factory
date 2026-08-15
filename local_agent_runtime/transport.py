@@ -27,10 +27,7 @@ class JobSignal:
         if message_type == "job_available":
             self._available.set()
         elif message_type == "job_canceled":
-            job_id = str(message.get("job_id") or "")
-            if job_id:
-                with self._lock:
-                    self._canceled.add(job_id)
+            self.request_cancel(str(message.get("job_id") or ""))
         elif message_type == "pairing_approval":
             required = (
                 "challenge_id",
@@ -57,12 +54,16 @@ class JobSignal:
             self._available.clear()
         return ready
 
+    def request_cancel(self, job_id: str) -> None:
+        job_id = str(job_id or "")
+        if not job_id:
+            return
+        with self._lock:
+            self._canceled.add(job_id)
+
     def cancel_requested(self, job_id: str) -> bool:
         with self._lock:
-            if job_id not in self._canceled:
-                return False
-            self._canceled.remove(job_id)
-            return True
+            return job_id in self._canceled
 
     def drain_pairing_approvals(self) -> list[dict[str, Any]]:
         with self._lock:
