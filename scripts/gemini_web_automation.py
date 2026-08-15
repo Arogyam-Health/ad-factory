@@ -23,6 +23,7 @@ import json
 import mimetypes
 import os
 import re
+import sys
 import textwrap
 import shutil
 import subprocess
@@ -34,16 +35,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from local_agent_runtime.browser import resolve_browser_executable
 from playwright.sync_api import sync_playwright, Page, Locator, TimeoutError as PWTimeoutError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-import tempfile
-import time
-import urllib.parse
-import urllib.request
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Iterable
 
 
 GEMINI_URL = "https://gemini.google.com/app"
@@ -109,8 +108,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional local JSON file receiving the exact generated output path.",
     )
-    parser.add_argument("--upload-dir", default=str(Path.home() / "myspace/info/input/images"),
-                        help="Directory containing reference images to upload")
+    parser.add_argument(
+        "--upload-dir",
+        default="",
+        help="Optional directory of reference images to upload. If empty, no directory upload is used.",
+    )
     parser.add_argument("--logo-key", default="LIGHT_LOGO_URL")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--aspect-ratio", default="4:5", choices=["4:5", "9:16"],
@@ -571,18 +573,7 @@ def collect_upload_images_from_dir(upload_dir: Path) -> list[Path]:
 
 
 def resolve_browser_binary(args: argparse.Namespace) -> str:
-    for candidate in [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/snap/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    ]:
-        if Path(candidate).exists():
-            return candidate
-    return ""
+    return resolve_browser_executable("chrome")
 
 
 def grant_gemini_permissions(context) -> None:

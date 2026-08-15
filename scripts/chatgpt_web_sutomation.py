@@ -32,12 +32,19 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from local_agent_runtime.browser import resolve_browser_executable
 from typing import Any, Callable, Iterable
 
 from PIL import Image as PILImage
@@ -680,18 +687,7 @@ def collect_upload_images(upload_dir_value: str, image_source_file_value: str, t
 
 
 def resolve_browser_binary() -> str:
-    for candidate in [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/snap/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    ]:
-        if Path(candidate).exists():
-            return candidate
-    return ""
+    return resolve_browser_executable("chrome")
 
 
 def _debug_port_available(cdp_url: str = "") -> tuple[bool, str]:

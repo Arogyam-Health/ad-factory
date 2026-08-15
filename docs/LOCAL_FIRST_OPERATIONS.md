@@ -86,6 +86,11 @@ indexes, device availability, resource references, and absent content storage.
 
 ## Start a local device
 
+Ubuntu and Windows walkthroughs:
+
+- [`docs/LOCAL_AGENT_UBUNTU.md`](LOCAL_AGENT_UBUNTU.md)
+- [`docs/LOCAL_AGENT_WINDOWS.md`](LOCAL_AGENT_WINDOWS.md)
+
 Install dependencies and the Playwright browser:
 
 ```bash
@@ -95,7 +100,14 @@ pip install -r requirements-dashboard.txt
 playwright install chromium
 ```
 
-Start the agent and optionally let it launch a local browser:
+Start the agent. The launcher asks for the dashboard session cookie (hidden)
+and launches Chrome:
+
+```bash
+python scripts/start_local_agent.py
+```
+
+That is equivalent to setting `AD_FACTORY_SESSION` and running:
 
 ```bash
 python scripts/local_agent.py \
@@ -104,6 +116,9 @@ python scripts/local_agent.py \
   --launch-browser \
   --browser chrome
 ```
+
+`--data-dir` defaults to `~/ad-factory-agent` on the current user account. Do
+not hardcode another machine's home path.
 
 Alternatively, start Chrome yourself with remote debugging on loopback:
 

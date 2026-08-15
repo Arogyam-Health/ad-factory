@@ -15,8 +15,10 @@ The full system map and pipeline live in [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 | Platform | Guide |
 | --- | --- |
-| **Windows + WSL2** (Intel/AMD or Snapdragon) | [`docs/WSL_SETUP.md`](docs/WSL_SETUP.md) |
-| **macOS** (Apple Silicon or Intel) | [`docs/MAC_SETUP.md`](docs/MAC_SETUP.md) |
+| **Ubuntu local agent** (website on Render) | [`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md) |
+| **Windows local agent** (website on Render) | [`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md) |
+| **Windows + WSL2** full dashboard stack | [`docs/WSL_SETUP.md`](docs/WSL_SETUP.md) |
+| **macOS** full dashboard stack | [`docs/MAC_SETUP.md`](docs/MAC_SETUP.md) |
 
 For a quick start on any Linux machine (or inside WSL/WSL2):
 
@@ -75,18 +77,18 @@ CDP (Chrome DevTools Protocol) is used via Playwright's `connect_over_cdp` and `
 
 ### Browser binary (Playwright + Chrome)
 
-`scripts/gemini_web_automation.py:505` and `scripts/chatgpt_web_sutomation.py:521` look for Chrome/Chromium in this order:
+`local_agent_runtime/browser.py` finds Chrome/Brave on the current machine:
 
-1. `--chrome-path` CLI arg, if passed
-2. `/usr/bin/google-chrome`
-3. `/usr/bin/google-chrome-stable`
-4. `/snap/bin/chromium`
-5. `/usr/bin/chromium-browser`
-6. `/usr/bin/chromium`
-7. `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
-8. `/Applications/Chromium.app/Contents/MacOS/Chromium`
+1. `CHROME_PATH`, `BROWSER_PATH`, or `AD_FACTORY_CHROME` if set
+2. Names on `PATH` (`google-chrome`, `chrome`, `chrome.exe`, `chromium`, …)
+3. Common Linux, macOS, and Windows install locations, using `Path.home()`,
+   `LOCALAPPDATA`, `PROGRAMFILES`, and `PROGRAMFILES(X86)` — not a hardcoded
+   user folder
 
-Install one of these before running browser automation. On Debian/Ubuntu: `sudo apt install google-chrome-stable` (or `chromium-browser`). On macOS: install Chrome from <https://google.com/chrome/> (the path #7 above will be found automatically).
+Install Google Chrome before running browser automation. On Ubuntu see
+[`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md). On Windows see
+[`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md). On macOS install
+Chrome from <https://google.com/chrome/>.
 
 After `pip install`, also run:
 
@@ -163,11 +165,11 @@ replication, outage recovery, and security procedures, follow
 1. **MongoDB Atlas** — Create a free cluster at https://mongodb.com, get your connection string
 2. **Google OAuth** — Create credentials at https://console.cloud.google.com/apis/credentials, configure redirect URI
 3. **Render** — Deploy from GitHub and set the authentication/control-plane env vars (see `.env.example`). Do not configure content storage.
-4. **Local agent** — Run on the same machine as the dashboard browser:
+4. **Local agent** — Run on the same machine as the dashboard browser. On a new
+   Ubuntu or Windows PC follow [`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md)
+   or [`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md), then:
    ```bash
-   python scripts/local_agent.py \
-     --api-base https://your-app.onrender.com \
-     --data-dir "$HOME/ad-factory-agent"
+   python scripts/start_local_agent.py
    ```
 
 ### Environment variables
@@ -184,19 +186,19 @@ Render does **not** launch Chrome. The local agent:
 
 ### Local agent setup
 
+On a new Ubuntu or Windows machine, follow
+[`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md) or
+[`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md). Short version:
+
 ```bash
-# 1. Start Chrome with remote debugging
-google-chrome --remote-debugging-port=9222
-
-# 2. Login to ChatGPT/Gemini in that Chrome window
-
-# 3. Run the local agent
-python scripts/local_agent.py --api-base https://your-app.onrender.com --name my-laptop
-
-# 4. The agent registers with Render and waits for jobs
+python scripts/start_local_agent.py
 ```
 
-Keep `~/ad-factory-agent/config/agent.json`. Restarting the agent reuses that token. Pass a fresh `--session-cookie` only when you intend to rebind this Google account; the control plane reuses one active agent per user+device instead of inserting duplicates.
+The launcher asks for the dashboard `session` cookie (hidden input), then starts
+Chrome with CDP and registers with Render. Log in to ChatGPT/Gemini in the
+Chrome window it opens.
+
+Keep `~/ad-factory-agent/config/agent.json`. Restarting the agent reuses that token. Pass a fresh session cookie only when you intend to rebind this Google account; the control plane reuses one active agent per user+device instead of inserting duplicates.
 
 ### Production mode
 

@@ -31,6 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from local_agent_runtime.browser import resolve_browser_executable
 from local_agent_runtime.artifact_server import run_artifact_server
 from local_agent_runtime.data_plane import (
     load_or_create_device_id,
@@ -521,57 +522,6 @@ def _local_product_asset_references(owner_key: str) -> list[dict[str, Any]]:
     ]
 
 
-def _browser_candidates(browser: str) -> list[str]:
-    browser = browser.lower().strip()
-    home = Path.home()
-    if browser == "chrome":
-        return [
-            # Linux
-            "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
-            "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
-            "/usr/bin/chromium", "/usr/bin/chromium-browser",
-            "/snap/bin/chromium",
-            # macOS
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            str(home / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-            # Windows
-            str(home / "AppData/Local/Google/Chrome/Application/chrome.exe"),
-            str(home / "AppData/Local/Google/Chrome SxS/Application/chrome.exe"),
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        ]
-    return [
-        # Linux
-        "brave-browser", "brave", "brave-browser-stable",
-        "/usr/bin/brave-browser", "/usr/bin/brave",
-        "/snap/bin/brave",
-        # macOS
-        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-        str(home / "Applications/Brave Browser.app/Contents/MacOS/Brave Browser"),
-        # Windows
-        str(home / "AppData/Local/BraveSoftware/Brave-Browser/Application/brave.exe"),
-        r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
-        r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
-    ]
-
-
-def _resolve_browser_exe(candidates: list[str]) -> str | None:
-    for c in candidates:
-        try:
-            if os.name != "nt":
-                resolved = shutil.which(c)
-                if resolved:
-                    return resolved
-                if Path(c).exists():
-                    return c
-            else:
-                if Path(c).exists():
-                    return c
-        except Exception:
-            continue
-    return None
-
-
 def _prompt_browser_path(browser: str) -> str | None:
     print(f"[agent] Could not find {browser} automatically. Looking in common locations.")
     try:
@@ -686,10 +636,7 @@ def launch_browser_cdp(browser: str, port: int = 9222, profile_dir: Path | None 
         "--no-default-browser-check",
         "https://chatgpt.com/",
     ]
-    candidates = _browser_candidates(browser)
-    exe = _resolve_browser_exe(candidates)
-    if not exe:
-        exe = _prompt_browser_path(browser)
+    exe = resolve_browser_executable(browser) or _prompt_browser_path(browser)
     if exe:
         try:
             subprocess.Popen([exe, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
