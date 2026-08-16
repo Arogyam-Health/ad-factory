@@ -10,6 +10,7 @@ from dashboard.backend.db.collections import COLL_LLM_TRACES, COLL_USERS
 
 MAX_RECENT_TRACES_PER_USER = 5
 MAX_RECENT_TRACES_PER_ORG = 10
+MAX_TRACE_TEXT = 200_000
 
 _TRACE_PROJECTION = {
     "_id": 0,
@@ -128,13 +129,15 @@ def record_recent_llm_trace(
             "request_sha256": str(
                 request.get("request_sha256") or ""
             )[:64],
+            "prompt": str(request.get("prompt") or "")[:MAX_TRACE_TEXT],
         },
         "response": {
             "usage": {
                 str(key)[:80]: value
                 for key, value in usage.items()
                 if isinstance(value, (int, float))
-            }
+            },
+            "content": str(response.get("content") or "")[:MAX_TRACE_TEXT],
         },
         "created_at": now,
     }

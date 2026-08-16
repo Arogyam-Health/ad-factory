@@ -643,8 +643,51 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(traces[0]["http_status"], 401)
         self.assertIn("Invalid key [REDACTED]", traces[0]["error_detail"])
         self.assertNotIn("sk-private-secret", json.dumps(traces))
-        self.assertNotIn("product_document", json.dumps(traces))
+        self.assertIn("must not be traced", traces[0]["request"]["prompt"])
         self.assertEqual(traces[0]["request"]["planned_ad_count"], 1)
+
+    def test_completed_provider_trace_includes_full_prompt_and_response(self) -> None:
+        from dashboard.backend.services.render_structured_copy import (
+            provider_generate_callable,
+        )
+
+        response = Mock()
+        response.status_code = 200
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"ads":[{"headline":"Keep going"}]}'}}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20},
+        }
+        response.headers = {"content-type": "application/json"}
+        traces: list[dict] = []
+        with patch(
+            "dashboard.backend.services.render_structured_copy.requests.post",
+            return_value=response,
+        ):
+            generate = provider_generate_callable(
+                "opencode",
+                "opencode/deepseek-v4-flash-free",
+                {
+                    "api_url": "https://opencode.ai/zen/v1",
+                    "api_key": "sk-private-secret",
+                },
+                trace_callback=traces.append,
+            )
+            generate(
+                {
+                    "task": "Generate structured advertising copy as JSON",
+                    "product_document": "Verified product facts.",
+                    "planned_ads": [{"format": "TEST"}],
+                    "languages": ["EN"],
+                }
+            )
+
+        self.assertEqual(len(traces), 1)
+        self.assertEqual(traces[0]["status"], "completed")
+        self.assertIn("Verified product facts.", traces[0]["request"]["prompt"])
+        self.assertIn("Keep going", traces[0]["response"]["content"])
+        self.assertEqual(traces[0]["response"]["usage"]["prompt_tokens"], 12)
+        self.assertNotIn("sk-private-secret", json.dumps(traces))
 
     def test_provider_trace_storage_failure_is_not_silently_discarded(
         self,
@@ -838,6 +881,9 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertIn("Image and reference runs do not write traces", source)
         self.assertIn("actor_email", source)
         self.assertIn("display_name", source)
+        self.assertIn("click to expand full prompt", source)
+        self.assertIn("click to expand full response", source)
+        self.assertIn("formatTraceBody", source)
 
     def test_mongo_trace_history_keeps_only_five_sanitized_records(self) -> None:
         from dashboard.backend.services.llm_trace import (
@@ -951,6 +997,91 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(len(traces), 5)
         self.assertEqual(traces[0]["run_id"], "run-6")
         self.assertNotIn("api_key", json.dumps(traces).lower())
+
+    def test_mongo_trace_persists_full_prompt_and_response(self) -> None:
+        from dashboard.backend.services.llm_trace import (
+            list_recent_llm_traces,
+            record_recent_llm_trace,
+        )
+
+        class Cursor(list):
+            def sort(self, key, direction):
+                return Cursor(
+                    sorted(
+                        self,
+                        key=lambda item: item.get(key, 0),
+                        reverse=direction < 0,
+                    )
+                )
+
+            def skip(self, count):
+                return Cursor(self[count:])
+
+            def limit(self, count):
+                return Cursor(self[:count])
+
+        class Collection:
+            def __init__(self):
+                self.docs = []
+
+            def insert_one(self, doc):
+                self.docs.append(copy.deepcopy(doc))
+
+            def find(self, query, projection):
+                rows = [
+                    copy.deepcopy(doc)
+                    for doc in self.docs
+                    if all(doc.get(key) == value for key, value in query.items())
+                ]
+                if projection:
+                    rows = [
+                        {
+                            key: value
+                            for key, value in row.items()
+                            if projection.get(key) == 1
+                        }
+                        for row in rows
+                    ]
+                return Cursor(rows)
+
+            def delete_many(self, query):
+                return SimpleNamespace(deleted_count=0)
+
+        collection = Collection()
+        db = {"llm_traces": collection, "users": {"find_one": lambda *args, **kwargs: {}}}
+        with patch(
+            "dashboard.backend.services.llm_trace.get_sync_db",
+            return_value=db,
+        ):
+            record_recent_llm_trace(
+                user_id="user-1",
+                run_id="run-full",
+                batch="v1",
+                event={
+                    "provider": "opencode",
+                    "model": "opencode/big-pickle",
+                    "label": "copy",
+                    "status": "completed",
+                    "http_status": 200,
+                    "request": {
+                        "task": "Generate structured advertising copy as JSON",
+                        "planned_ad_count": 3,
+                        "languages": ["EN"],
+                        "request_sha256": "b" * 64,
+                        "prompt": '{"task":"Generate structured advertising copy as JSON","product_document":"facts"}',
+                    },
+                    "response": {
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 4},
+                        "content": '{"ads":[{"headline":"Full response"}]}',
+                    },
+                },
+            )
+            traces = list_recent_llm_traces("user-1")
+
+        self.assertEqual(len(traces), 1)
+        self.assertIn("product_document", traces[0]["request"]["prompt"])
+        self.assertIn("Full response", traces[0]["response"]["content"])
+        self.assertEqual(traces[0]["response"]["usage"]["prompt_tokens"], 10)
 
     def test_org_trace_history_keeps_last_ten_with_actor(self) -> None:
         from dashboard.backend.services.llm_trace import (

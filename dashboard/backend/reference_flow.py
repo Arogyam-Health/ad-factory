@@ -765,21 +765,54 @@ def api_image_revision_status(run_id: str, revision_id: str) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {"status": "unknown"}
 
 
-def _revision_prompt(comment: str, original_prompt: str, aspect_ratio: str) -> str:
-    safe_zone = (
-        "Keep all critical elements inside an 8% safe margin from every edge."
-        if aspect_ratio == "4:5"
-        else "Keep all critical elements inside a crop-safe central zone for a 9:16 mobile placement."
-    )
-    return (
-        "Edit the uploaded current ad image. Apply the user's requested changes accurately. Preserve the product "
-        "identity, pack appearance, claims compliance, and every part the user did not ask to change. Generate the "
-        f"updated image in {aspect_ratio}. {safe_zone}\n\n"
-        "USER REVISION COMMENT:\n"
-        f"{comment.strip()}\n\n"
-        "ORIGINAL GENERATION INSTRUCTIONS:\n"
-        f"{original_prompt.strip()}\n\n"
-        "Return only the revised image. Do not explain the changes.\n"
+def _revision_rule_sources(manifest: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    from local_agent_runtime.revision_prompt import parse_assembler_templates
+
+    templates: dict[str, Any] = {}
+    conversion = ""
+    user_id = str(manifest.get("user_id") or "")
+    org_id = str(manifest.get("org_id") or "") or None
+    if user_id:
+        try:
+            from dashboard.backend.services.user_config import resolve_effective_config
+
+            config = resolve_effective_config(user_id, org_id)
+            templates = parse_assembler_templates(
+                config.get("prompt_assembler_templates")
+            )
+            conversion = str(config.get("conversion_916_prompt") or "")
+        except Exception:
+            templates = {}
+            conversion = ""
+    if not templates:
+        assembler_path = ROOT / "scripts" / "prompt_assembler_templates.json"
+        if assembler_path.exists():
+            templates = parse_assembler_templates(
+                assembler_path.read_text(encoding="utf-8")
+            )
+    if not conversion:
+        conversion_path = ROOT / "input" / "prompt_916_from_45.txt"
+        if conversion_path.exists():
+            conversion = conversion_path.read_text(encoding="utf-8")
+    return templates, conversion
+
+
+def _revision_prompt(
+    comment: str,
+    original_prompt: str,
+    aspect_ratio: str,
+    *,
+    assembler_templates: dict[str, Any] | None = None,
+    conversion_916_prompt: str = "",
+) -> str:
+    from local_agent_runtime.revision_prompt import build_output_revision_prompt
+
+    return build_output_revision_prompt(
+        comment=comment,
+        aspect_ratio=aspect_ratio,
+        original_prompt=original_prompt,
+        assembler_templates=assembler_templates,
+        conversion_916_prompt=conversion_916_prompt,
     )
 
 
@@ -831,6 +864,7 @@ def _run_revision(
             raise RuntimeError("Image path is invalid or missing")
         aspect_ratio = "9:16" if "/9_16/" in image_file.replace("\\", "/") else "4:5"
         aspect_dir = "9_16" if aspect_ratio == "9:16" else "4_5"
+        assembler_templates, conversion_916_prompt = _revision_rule_sources(manifest)
 
         backup_image = backup_dir / original_path.name
         shutil.copy2(original_path, backup_image)
@@ -840,7 +874,16 @@ def _run_revision(
             shutil.copy2(metadata_source, backup_meta)
 
         revision_prompt_path = backup_dir / prompt_path.name
-        revision_prompt_path.write_text(_revision_prompt(comment, original_prompt, aspect_ratio), encoding="utf-8")
+        revision_prompt_path.write_text(
+            _revision_prompt(
+                comment,
+                original_prompt,
+                aspect_ratio,
+                assembler_templates=assembler_templates,
+                conversion_916_prompt=conversion_916_prompt,
+            ),
+            encoding="utf-8",
+        )
         source_file = backup_dir / "current_image.images.txt"
         source_file.write_text(str(backup_image.resolve()) + "\n", encoding="utf-8")
 

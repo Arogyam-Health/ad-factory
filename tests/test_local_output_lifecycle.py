@@ -119,6 +119,97 @@ class LocalOutputLifecycleTests(unittest.TestCase):
         self.assertIn("Original full prompt", full_prompt)
         self.assertIn("Increase contrast", full_prompt)
 
+    def test_45_revision_appends_editable_safezone_rules(self) -> None:
+        templates = {
+            "safezone_45": "SAFE-ZONE ENFORCEMENT (NON-NEGOTIABLE)\n- Frame: 1080 x 1350",
+            "safezone_916": "SAFE-ZONE 9:16 SHOULD NOT APPEAR",
+        }
+        self._resource(
+            "config_file",
+            "prompt_assembler_templates",
+            json.dumps(templates).encode("utf-8"),
+            "application/json",
+        )
+        queued = self.state.queue_output_revision(
+            output_id="output-11",
+            source_output_version=1,
+            comment="Brighten the background",
+            engine="chatgpt",
+            operation_id="revise-45-safezone",
+        )
+        prompt = self.state.resource_path(
+            *self._revision_prompt_ids(queued["revision_id"])
+        ).read_text(encoding="utf-8")
+        self.assertIn("Brighten the background", prompt)
+        self.assertIn("Original full prompt", prompt)
+        self.assertIn("Frame: 1080 x 1350", prompt)
+        self.assertNotIn("SAFE-ZONE 9:16 SHOULD NOT APPEAR", prompt)
+
+    def _revision_prompt_ids(self, revision_id: str) -> tuple[str, int]:
+        row = self.state._connect().execute(
+            """
+            SELECT prompt_resource_id, prompt_resource_version
+            FROM revisions WHERE revision_id = ?
+            """,
+            (revision_id,),
+        ).fetchone()
+        return str(row["prompt_resource_id"]), int(row["prompt_resource_version"])
+
+    def test_916_revision_does_not_reuse_the_45_generation_prompt(self) -> None:
+        templates = {
+            "safezone_45": "4:5 SAFEZONE MUST NOT APPEAR",
+            "safezone_916": "SAFE-ZONE ENFORCEMENT 9:16\n- Keep content in the 14%-65% band.",
+        }
+        self._resource(
+            "config_file",
+            "prompt_assembler_templates",
+            json.dumps(templates).encode("utf-8"),
+            "application/json",
+        )
+        conversion = (
+            "Convert to 9:16.\n"
+            "Canvas is 1080(length) x 1920(height) (9:16 aspect ratio).\n"
+            "STRICT META/REELS SAFE FIELD: x=86 to x=994."
+        )
+        self._resource(
+            "config_file",
+            "conversion_916_prompt",
+            conversion.encode("utf-8"),
+            "text/plain; charset=utf-8",
+        )
+        image = self._resource(
+            "output_image",
+            "output-916/v1",
+            PNG_B,
+            "image/png",
+            {"display_name": "HERO_busy_professional_EN_desired_outcome_9_16"},
+        )
+        self.state.create_output(
+            output_id="output-916",
+            run_id="run-11",
+            prompt_id="prompt-11",
+            item_id="item-11",
+            aspect_ratio="9:16",
+            resource_id=image.resource_id,
+            resource_version=1,
+            operation_id="create-output-916",
+        )
+        queued = self.state.queue_output_revision(
+            output_id="output-916",
+            source_output_version=1,
+            comment="Lift the headline",
+            engine="gemini",
+            operation_id="revise-916",
+        )
+        prompt = self.state.resource_path(
+            *self._revision_prompt_ids(queued["revision_id"])
+        ).read_text(encoding="utf-8")
+        self.assertIn("Lift the headline", prompt)
+        self.assertIn("1080(length) x 1920(height)", prompt)
+        self.assertIn("Keep content in the 14%-65% band.", prompt)
+        self.assertNotIn("Original full prompt", prompt)
+        self.assertNotIn("4:5 SAFEZONE MUST NOT APPEAR", prompt)
+
     def test_revision_uploads_a_real_image_file_not_the_raw_cas_blob(self) -> None:
         import importlib
 

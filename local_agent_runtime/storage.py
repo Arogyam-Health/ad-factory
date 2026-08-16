@@ -1123,6 +1123,66 @@ class AgentState:
             conn.commit()
         return result
 
+    def _resource_text(self, resource_id: str, version: int) -> str:
+        path = self.resource_path(resource_id, version)
+        if not path.is_file():
+            return ""
+        return path.read_text(encoding="utf-8")
+
+    def _latest_config_text(self, owner_key: str, logical_key: str) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT resource_id, current_version FROM resources
+                WHERE owner_key = ? AND kind = 'config_file'
+                  AND logical_key = ? AND deleted_at IS NULL
+                  AND status != 'deleted'
+                """,
+                (owner_key, logical_key),
+            ).fetchone()
+        if row is None:
+            return ""
+        return self._resource_text(str(row["resource_id"]), int(row["current_version"]))
+
+    def _run_role_text(self, run_id: str, role: str) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT resource_id, resource_version
+                FROM run_entries
+                WHERE run_id = ? AND role = ?
+                ORDER BY position LIMIT 1
+                """,
+                (run_id, role),
+            ).fetchone()
+        if row is None:
+            return ""
+        return self._resource_text(str(row["resource_id"]), int(row["resource_version"]))
+
+    def _revision_rule_sources(
+        self, owner_key: str, run_id: str
+    ) -> tuple[dict[str, Any], str]:
+        from local_agent_runtime.revision_prompt import parse_assembler_templates
+
+        templates = parse_assembler_templates(
+            self._latest_config_text(owner_key, "prompt_assembler_templates")
+        )
+        if not templates:
+            settings_text = self._run_role_text(run_id, "structured_settings")
+            if settings_text:
+                try:
+                    settings = json.loads(settings_text)
+                except json.JSONDecodeError:
+                    settings = {}
+                if isinstance(settings, dict):
+                    templates = parse_assembler_templates(
+                        settings.get("prompt_assembler_templates")
+                    )
+        conversion = self._latest_config_text(owner_key, "conversion_916_prompt")
+        if not conversion:
+            conversion = self._run_role_text(run_id, "conversion_prompt")
+        return templates, conversion
+
     def queue_output_revision(
         self,
         *,
@@ -1140,7 +1200,7 @@ class AgentState:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT o.current_version, o.prompt_id, r.owner_key, o.run_id
+                SELECT o.current_version, o.prompt_id, o.aspect_ratio, r.owner_key, o.run_id
                 FROM outputs o JOIN runs r ON r.run_id = o.run_id
                 WHERE o.output_id = ?
                 """,
@@ -1168,13 +1228,17 @@ class AgentState:
             original = self.resource_path(
                 str(prompt["resource_id"]), int(prompt["resource_version"])
             ).read_text(encoding="utf-8")
-        full_prompt = (
-            "Edit the current ad image. Apply the requested revision exactly while preserving "
-            "everything not requested.\n\nREVISION REQUEST:\n"
-            + comment
-            + "\n\nORIGINAL GENERATION INSTRUCTIONS:\n"
-            + original
-            + "\n\nReturn only the revised image.\n"
+        templates, conversion_prompt = self._revision_rule_sources(
+            owner_key, str(row["run_id"])
+        )
+        from local_agent_runtime.revision_prompt import build_output_revision_prompt
+
+        full_prompt = build_output_revision_prompt(
+            comment=comment,
+            aspect_ratio=str(row["aspect_ratio"] or "4:5"),
+            original_prompt=original,
+            assembler_templates=templates,
+            conversion_916_prompt=conversion_prompt,
         )
         temporary = self.paths.staging / f".revision-prompt-{uuid.uuid4().hex}.tmp"
         temporary.write_text(full_prompt, encoding="utf-8")

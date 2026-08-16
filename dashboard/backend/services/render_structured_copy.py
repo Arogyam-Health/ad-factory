@@ -429,6 +429,9 @@ def _background(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+MAX_TRACE_TEXT = 200_000
+
+
 def _sha256_json(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -506,6 +509,28 @@ def _trace_request_metadata(request: dict[str, Any]) -> dict[str, Any]:
         ][:10],
         "request_sha256": _sha256_json(request),
     }
+
+
+def _trace_text(value: Any, api_key: str = "") -> str:
+    text = str(value or "")
+    if api_key:
+        text = text.replace(api_key, "[REDACTED]")
+    text = re.sub(
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [REDACTED]",
+        text,
+    )
+    text = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]", text)
+    return text[:MAX_TRACE_TEXT]
+
+
+def _trace_request_payload(request: dict[str, Any], api_key: str = "") -> dict[str, Any]:
+    payload = _trace_request_metadata(request)
+    payload["prompt"] = _trace_text(
+        json.dumps(request, ensure_ascii=False),
+        api_key,
+    )
+    return payload
 
 
 def generate_structured_prompt_bundle(
@@ -776,6 +801,7 @@ def provider_generate_callable(
             code: str = "",
             error_detail: str = "",
             usage: dict[str, Any] | None = None,
+            response_content: str = "",
         ) -> tuple[bool, str]:
             if trace_callback is None:
                 return False, "not_configured"
@@ -794,8 +820,11 @@ def provider_generate_callable(
                         ),
                         "error_code": code,
                         "error_detail": error_detail,
-                        "request": _trace_request_metadata(request),
-                        "response": {"usage": usage or {}},
+                        "request": _trace_request_payload(request, api_key),
+                        "response": {
+                            "usage": usage or {},
+                            "content": _trace_text(response_content, api_key),
+                        },
                     }
                 )
                 return True, ""
@@ -886,6 +915,7 @@ def provider_generate_callable(
                         status="failed",
                         code="provider_http_error",
                         error_detail=detail,
+                        response_content=response_text,
                     )
                     raise ProviderCallError(
                         code="provider_http_error",
@@ -929,7 +959,7 @@ def provider_generate_callable(
             parsed = json.loads(clean)
             if not isinstance(parsed, dict):
                 raise ValueError("Provider response is not a JSON object")
-            emit(status="completed", usage=usage)
+            emit(status="completed", usage=usage, response_content=clean)
             return parsed
         except requests.Timeout as exc:
             trace_persisted, trace_error = emit(
@@ -950,6 +980,7 @@ def provider_generate_callable(
                 status="failed",
                 code="provider_http_error",
                 error_detail=detail,
+                response_content=response_text,
             )
             raise ProviderCallError(
                 code="provider_http_error",
@@ -967,6 +998,7 @@ def provider_generate_callable(
                 status="failed",
                 code="provider_invalid_response",
                 error_detail=detail,
+                response_content=response_text,
             )
             raise ProviderCallError(
                 code="provider_invalid_response",
