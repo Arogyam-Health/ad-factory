@@ -45,3 +45,7 @@ scripts/__pycache__/*
 
 # Local tool cache
 .commandcode
+
+# React dashboard
+node_modules/
+dashboard/web/dist/
