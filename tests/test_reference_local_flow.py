@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -642,6 +644,30 @@ class ReferenceLocalFlowTests(unittest.TestCase):
                 "stuck_scale_dieter_stress_snacker_HINGLISH_4_5",
             },
         )
+
+    def test_reference_stores_raw_output_when_browser_returns_tuple(self) -> None:
+        from local_agent_runtime.lifecycle import build_output_zip
+        from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
+        from local_agent_runtime.structured_browser import DeterministicFakeBrowser
+
+        cropped = b"\x89PNG\r\n\x1a\n" + b"CROPPED"
+        raw = b"\x89PNG\r\n\x1a\n" + b"RAWGPT"
+        self._configured_job(job_id="job-raw-tuple", mode="45")
+        result = ReferenceWorkflowExecutor(
+            self.state,
+            browser=DeterministicFakeBrowser(outcomes=[(cropped, raw)]),
+        ).execute("job-raw-tuple")
+        self.assertEqual(result["status"], "completed")
+        with self.state._connect() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) AS n FROM resources WHERE kind = 'output_raw'"
+            ).fetchone()["n"]
+        self.assertEqual(int(count), 1)
+        archive = build_output_zip(self.state, self.owner, self.run_id, include_raw=True)
+        with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+            raw_names = [name for name in zipped.namelist() if name.startswith("raw/")]
+            self.assertTrue(raw_names)
+            self.assertEqual(zipped.read(raw_names[0]), raw)
 
 
 if __name__ == "__main__":

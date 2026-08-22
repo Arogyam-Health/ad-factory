@@ -89,7 +89,11 @@ def _require_org_owner(user_id: str, org_id: str) -> dict[str, Any]:
 
 
 def _can_invite_in_phase2(role: str) -> bool:
-    return role == "owner"
+    return role in ("owner", "config_admin")
+
+
+def _require_org_inviter(user_id: str, org_id: str) -> dict[str, Any]:
+    return require_org_role(user_id, org_id, ("owner", "config_admin"))
 
 
 # ─── Invite endpoints ──────────────────────────────────────────────────────
@@ -101,13 +105,13 @@ def create_org_invite(
     payload: dict[str, Any],
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    """Create an invite for a new member (owner only)."""
+    """Create an invite for a new member (owner or config admin)."""
     user_id = user["user_id"]
     email = user.get("email", "")
     display_name = user.get("display_name", "") or user.get("name", "") or email
 
     org = _get_active_org(org_id)
-    _require_org_owner(user_id, org_id)
+    _require_org_inviter(user_id, org_id)
 
     target_email = payload.get("email", "").strip().lower()
     if not target_email:
@@ -219,10 +223,10 @@ def list_org_invites(
     org_id: str,
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    """List invites for an org (owner only)."""
+    """List invites for an org (owner or config admin)."""
     user_id = user["user_id"]
     _get_active_org(org_id)
-    _require_org_owner(user_id, org_id)
+    _require_org_inviter(user_id, org_id)
 
     invites = list(
         get_sync_db()[COLL_ORG_INVITES]
@@ -254,11 +258,11 @@ def revoke_org_invite(
     invite_id: str,
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    """Revoke a pending invite (owner only)."""
+    """Revoke a pending invite (owner or config admin)."""
     user_id = user["user_id"]
     email = user.get("email", "")
     _get_active_org(org_id)
-    _require_org_owner(user_id, org_id)
+    _require_org_inviter(user_id, org_id)
 
     invite = get_sync_db()[COLL_ORG_INVITES].find_one({
         "invite_id": invite_id,

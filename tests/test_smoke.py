@@ -889,6 +889,11 @@ def test_org_system() -> int:
     failed += ok("config_admin" in ALLOWED_INVITE_ROLES, "ALLOWED_INVITE_ROLES includes config_admin")
     failed += ok("owner" not in ALLOWED_INVITE_ROLES, "ALLOWED_INVITE_ROLES does not include owner")
 
+    from dashboard.backend.services.invite_routes import _can_invite_in_phase2
+    failed += ok(_can_invite_in_phase2("owner"), "Owner can invite")
+    failed += ok(_can_invite_in_phase2("config_admin"), "Config admin can invite")
+    failed += ok(not _can_invite_in_phase2("creator"), "Creator cannot invite")
+
     # ── Invite route tests (auth required) ──────────────────────────────
 
     # 18. POST /api/orgs/{id}/invites without session returns 401

@@ -497,15 +497,26 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                             raise ValueError("Versioned local 9:16 conversion prompt is unavailable")
                         source_output_id = str(source["output_id"])
                         source_output_version = int(source["current_version"])
-                        uploads = [
-                            self._resource(
-                                owner_key,
-                                str(source["resource_id"]),
-                                int(source["resource_version"]),
-                                "source_creative",
-                                required_kind="output_image",
-                            )
-                        ]
+                        if source.get("raw_resource_id") and source.get("raw_resource_version"):
+                            uploads = [
+                                self._resource(
+                                    owner_key,
+                                    str(source["raw_resource_id"]),
+                                    int(source["raw_resource_version"]),
+                                    "source_creative",
+                                    required_kind="output_raw",
+                                )
+                            ]
+                        else:
+                            uploads = [
+                                self._resource(
+                                    owner_key,
+                                    str(source["resource_id"]),
+                                    int(source["resource_version"]),
+                                    "source_creative",
+                                    required_kind="output_image",
+                                )
+                            ]
                         effective_prompt = (
                             conversion_prompt.path.read_text(encoding="utf-8").strip()
                             + "\n\n[LOCAL BOUNDED CONVERSION CONTEXT]\n"
@@ -527,10 +538,11 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                         display_stem=display_stem,
                     )
                     content: bytes | None = None
+                    raw_content: bytes | None = None
                     for attempt in range(1, self.max_attempts + 1):
                         self._raise_if_canceled()
                         try:
-                            content = self.browser.generate(
+                            generated = self.browser.generate(
                                 engine=engine,
                                 prompt_id=prompt_id,
                                 aspect_ratio=aspect_ratio,
@@ -538,6 +550,12 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                                 upload_manifest_path=manifest_path,
                                 output_dir=output_dir,
                             )
+                            if isinstance(generated, tuple):
+                                content = generated[0]
+                                raw_content = generated[1] if len(generated) > 1 else None
+                            else:
+                                content = generated
+                                raw_content = None
                             break
                         except JobCanceled:
                             raise
@@ -555,6 +573,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                         item_id=self._stable_id("item_", prompt_id),
                         aspect_ratio=aspect_ratio,
                         content=content,
+                        raw_content=raw_content,
                         source_output_version=source_output_version,
                         source_output_id=source_output_id,
                         conversion_prompt=conversion_prompt if aspect_ratio == "9:16" else None,

@@ -132,6 +132,8 @@ class DeterministicFakeBrowser:
             outcome = self.outcomes[min(index, len(self.outcomes) - 1)]
             if isinstance(outcome, Exception):
                 raise outcome
+            if isinstance(outcome, tuple):
+                return outcome
             return bytes(outcome)
         return f"fake:{engine}:{prompt_id}:{aspect_ratio}".encode()
 
