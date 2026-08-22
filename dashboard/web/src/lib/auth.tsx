@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchJSON } from "@/lib/api";
+import { clearLocalPairingSessions } from "@/lib/local-data-plane.js";
 
 export type AuthUser = {
   authenticated: boolean;
@@ -29,14 +30,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function discardOtherAccountPairings(userId: string) {
   const previous = localStorage.getItem(LAST_ACCOUNT_KEY) || "";
-  if (previous && previous !== userId) {
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      if (key.startsWith("ad_factory_local_session:") || key.startsWith("ad_factory_local_owner:")) {
-        localStorage.removeItem(key);
-      }
-    }
-  }
+      if (previous && previous !== userId) clearLocalPairingSessions();
   if (userId) localStorage.setItem(LAST_ACCOUNT_KEY, userId);
   else localStorage.removeItem(LAST_ACCOUNT_KEY);
 }
@@ -76,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       ready,
       logout: async () => {
+        clearLocalPairingSessions();
         localStorage.removeItem(LAST_ACCOUNT_KEY);
         try {
           await fetchJSON("/api/auth/logout", { method: "POST" });

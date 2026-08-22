@@ -9076,4 +9076,17 @@ def serve_invite_page(token: str) -> FR:
     raise HTTPException(status_code=404, detail="Not found")
 
 
+REACT_DIST = ROOT / "dashboard" / "web" / "dist"
+
+
+@app.get("/next/invite/{token:path}")
+def serve_react_invite_page(token: str) -> FR:
+    react_index = REACT_DIST / "index.html"
+    if react_index.is_file():
+        return FR(react_index)
+    raise HTTPException(status_code=404, detail="Not found")
+
+
+if REACT_DIST.is_dir():
+    app.mount("/next", StaticFiles(directory=str(REACT_DIST), html=True), name="react")
 app.mount("/", StaticFiles(directory=str(ROOT / "dashboard" / "frontend"), html=True), name="frontend")

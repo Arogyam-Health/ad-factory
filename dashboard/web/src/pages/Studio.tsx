@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { localDataPlane } from "@/lib/local-data-plane.js";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
 import { Skeleton, SkeletonLines } from "@/components/Skeleton";
@@ -35,6 +36,7 @@ export function StudioPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [status, setStatus] = useState("Plate is idle.");
   const [busy, setBusy] = useState(false);
+  const [deviceId, setDeviceId] = useState("");
 
   useEffect(() => {
     localStorage.setItem("adFactoryFlowMode", flow);
@@ -47,6 +49,21 @@ export function StudioPage() {
     const personaUrl = orgId && orgId !== "personal"
       ? `/api/config/persona-summary?org_id=${encodeURIComponent(orgId)}`
       : "/api/config/persona-summary";
+
+    if (user.authenticated && user.user_id) {
+      const orgId = user.user_id ? localStorage.getItem(studioOrgKey(user.user_id)) || "" : "";
+      localDataPlane
+        .ensurePaired({
+          ownerType: orgId && orgId !== "personal" ? "org" : "user",
+          ownerId: orgId && orgId !== "personal" ? orgId : user.user_id,
+        })
+        .then((paired) => {
+          if (!cancelled) setDeviceId(paired.info.device_id || "");
+        })
+        .catch((err) => {
+          if (!cancelled) setStatus(String(err));
+        });
+    }
 
     Promise.allSettled([
       fetchJSON<{ personas?: Persona[] }>(personaUrl, { cache: "no-store" }),
@@ -189,7 +206,9 @@ export function StudioPage() {
             <p className="hint">
               {selectedCount} persona{selectedCount === 1 ? "" : "s"} · {formatList.join(" / ") || "no formats"} · {language}
             </p>
-            <p className="hint" style={{ margin: "14px 0 18px" }}>{status}</p>
+            <p className="hint" style={{ margin: "14px 0 18px" }}>
+              {deviceId ? `Paired ${deviceId.slice(0, 8)} · ` : ""}{status}
+            </p>
             <Button variant="primary" disabled={busy} onClick={() => void startStructured()}>
               {busy ? "On press…" : flow === "structured" ? "Run structured plate" : "Reference flow stays on this plate"}
             </Button>

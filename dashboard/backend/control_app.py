@@ -24,6 +24,7 @@ from dashboard.backend.db.settings import (
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_ROOT = ROOT / "dashboard" / "frontend"
+REACT_DIST = ROOT / "dashboard" / "web" / "dist"
 PUBLIC_API_PREFIXES = ("/api/auth/", "/api/invites/")
 
 app = FastAPI(title="Ad Factory Control Plane", version="2.0.0")
@@ -68,7 +69,7 @@ async def control_plane_boundary(request: Request, call_next) -> Response:
     response = await call_next(request)
     if path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
-    elif path == "/" or path.endswith(".html") or path.startswith("/js/"):
+    elif path == "/" or path.endswith(".html") or path.startswith("/js/") or path.startswith("/next"):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
@@ -202,4 +203,14 @@ def serve_invite_page(token: str) -> FileResponse:
     return FileResponse(invite_html, media_type="text/html")
 
 
+@app.get("/next/invite/{token:path}")
+def serve_react_invite_page(token: str) -> FileResponse:
+    react_index = REACT_DIST / "index.html"
+    if react_index.is_file():
+        return FileResponse(react_index, media_type="text/html")
+    raise HTTPException(status_code=404, detail="Not found")
+
+
+if REACT_DIST.is_dir():
+    app.mount("/next", StaticFiles(directory=str(REACT_DIST), html=True), name="react")
 app.mount("/", StaticFiles(directory=str(FRONTEND_ROOT), html=True), name="frontend")
