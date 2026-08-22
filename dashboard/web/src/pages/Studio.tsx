@@ -37,6 +37,8 @@ export function StudioPage() {
   const [status, setStatus] = useState("Plate is idle.");
   const [busy, setBusy] = useState(false);
   const [deviceId, setDeviceId] = useState("");
+  const [assets, setAssets] = useState<{ resource_id: string; url?: string; filename?: string }[]>([]);
+  const [assetBusy, setAssetBusy] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("adFactoryFlowMode", flow);
@@ -57,8 +59,18 @@ export function StudioPage() {
           ownerType: orgId && orgId !== "personal" ? "org" : "user",
           ownerId: orgId && orgId !== "personal" ? orgId : user.user_id,
         })
-        .then((paired) => {
-          if (!cancelled) setDeviceId(paired.info.device_id || "");
+        .then(async (paired) => {
+          if (cancelled) return;
+          const id = paired.info.device_id || "";
+          setDeviceId(id);
+          const items = await localDataPlane.listAssets({ kind: "product_image", deviceId: id });
+          const withUrls = await Promise.all(
+            items.slice(0, 12).map(async (item) => ({
+              ...item,
+              url: await localDataPlane.assetObjectUrl(item.resource_id, id, item.version),
+            })),
+          );
+          if (!cancelled) setAssets(withUrls);
         })
         .catch((err) => {
           if (!cancelled) setStatus(String(err));
@@ -209,6 +221,53 @@ export function StudioPage() {
             <p className="hint" style={{ margin: "14px 0 18px" }}>
               {deviceId ? `Paired ${deviceId.slice(0, 8)} · ` : ""}{status}
             </p>
+            <label className="hint" style={{ display: "block", marginBottom: 12 }}>
+              Input images
+              <input
+                id="inputImageFiles"
+                type="file"
+                multiple
+                accept="image/*"
+                disabled={!deviceId || assetBusy}
+                style={{ display: "block", marginTop: 8 }}
+                onChange={async (event) => {
+                  const files = event.target.files;
+                  if (!files?.length || !deviceId) return;
+                  setAssetBusy(true);
+                  try {
+                    await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
+                    const items = await localDataPlane.listAssets({ kind: "product_image", deviceId });
+                    const withUrls = await Promise.all(
+                      items.slice(0, 12).map(async (item) => ({
+                        ...item,
+                        url: await localDataPlane.assetObjectUrl(item.resource_id, deviceId, item.version),
+                      })),
+                    );
+                    setAssets(withUrls);
+                    setStatus(`Stored ${files.length} image${files.length === 1 ? "" : "s"} on this device.`);
+                  } catch (err) {
+                    setStatus(String(err));
+                  } finally {
+                    setAssetBusy(false);
+                    event.target.value = "";
+                  }
+                }}
+              />
+            </label>
+            {assets.length ? (
+              <div className="persona-grid" style={{ marginBottom: 16 }}>
+                {assets.map((item) => (
+                  <img
+                    key={item.resource_id}
+                    src={item.url}
+                    alt={item.filename || "Input image"}
+                    style={{ width: "100%", height: 88, objectFit: "cover", border: "1px solid var(--rule)" }}
+                  />
+                ))}
+              </div>
+            ) : assetBusy ? (
+              <Skeleton className="skel-block" />
+            ) : null}
             <Button variant="primary" disabled={busy} onClick={() => void startStructured()}>
               {busy ? "On press…" : flow === "structured" ? "Run structured plate" : "Reference flow stays on this plate"}
             </Button>
