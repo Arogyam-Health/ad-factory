@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchJSON } from "@/lib/api";
+import { warmupCache } from "@/lib/prefetch";
 import { clearLocalPairingSessions } from "@/lib/local-data-plane.js";
 
 export type AuthUser = {
@@ -41,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    warmupCache(emptyUser);
     fetchJSON<Partial<AuthUser>>("/api/auth/status")
       .then((data) => {
         if (cancelled) return;
@@ -53,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         discardOtherAccountPairings(next.user_id);
         setUser(next);
+        warmupCache(next);
       })
       .catch(() => {
         if (!cancelled) setUser(emptyUser);
