@@ -61,6 +61,7 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
         for route in ("/generated_images", "/output", "/storage", "/input"):
             self.assertNotIn(f'app.mount("{route}"', source)
         self.assertIn('app.mount("/", StaticFiles(', source)
+        self.assertIn('"/api/public/"', source)
 
     def test_startup_does_not_create_or_scan_runtime_content(self) -> None:
         source = (ROOT / "dashboard/backend/control_app.py").read_text(
@@ -94,6 +95,7 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             )
         )
         self.assertFalse(policy.is_render_content_route("GET", "/api/defaults"))
+        self.assertFalse(policy.is_render_content_route("GET", "/api/public/studio"))
         self.assertFalse(
             policy.is_render_content_route("GET", "/api/config/persona-summary")
         )

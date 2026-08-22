@@ -59,6 +59,7 @@ _FORBIDDEN_VALUE_MARKERS = (
 _CONTROL_PLANE_ROUTES = frozenset(
     {
         "/api/defaults",
+        "/api/public/studio",
         "/api/config/persona-summary",
         "/api/config/effective",
         "/api/config/sources",
@@ -68,6 +69,7 @@ _CONTROL_PLANE_ROUTES = frozenset(
     }
 )
 _CONTROL_PLANE_PREFIXES = (
+    "/api/public/",
     "/api/config/",
     "/api/user/config",
     "/api/llm-traces",

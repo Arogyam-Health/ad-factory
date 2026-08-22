@@ -4755,7 +4755,7 @@ from dashboard.backend.auth.service import get_current_user_from_cookie
 from dashboard.backend.agent.auth import is_agent_runtime_path
 from starlette.concurrency import run_in_threadpool
 
-PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config", "/api/invites/")
+PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config", "/api/invites/", "/api/public/")
 
 
 @app.middleware("http")

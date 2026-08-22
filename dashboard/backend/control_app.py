@@ -25,7 +25,7 @@ from dashboard.backend.db.settings import (
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_ROOT = ROOT / "dashboard" / "frontend"
 REACT_DIST = ROOT / "dashboard" / "web" / "dist"
-PUBLIC_API_PREFIXES = ("/api/auth/", "/api/invites/")
+PUBLIC_API_PREFIXES = ("/api/auth/", "/api/invites/", "/api/public/")
 
 app = FastAPI(title="Ad Factory Control Plane", version="2.0.0")
 app.add_middleware(
@@ -67,7 +67,7 @@ async def control_plane_boundary(request: Request, call_next) -> Response:
             headers={"Cache-Control": "no-store"},
         )
     response = await call_next(request)
-    if path.startswith("/api/"):
+    if path.startswith("/api/") and not path.startswith("/api/public/"):
         response.headers["Cache-Control"] = "no-store"
     elif path == "/" or path.endswith(".html") or path.startswith("/js/") or path.startswith("/next"):
         response.headers["Cache-Control"] = "no-cache"

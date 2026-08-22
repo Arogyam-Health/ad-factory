@@ -1,10 +1,15 @@
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from dashboard.backend.auth.service import require_user_dependency
-from dashboard.backend.services.user_config import resolve_effective_config_for_user
+from dashboard.backend.services.user_config import (
+    get_generic_config,
+    resolve_effective_config_for_user,
+)
 from dashboard.backend.services.visual_archetypes import (
     FORMATS,
     format_visual_archetypes,
@@ -76,6 +81,45 @@ def _hypothesis_variables(config: dict[str, Any]) -> dict[str, Any]:
             ] if isinstance(choices, dict) else [],
         }
     return variables
+
+
+_PUBLIC_STUDIO_TTL = 20.0
+_public_studio_cache: dict[str, Any] = {"ts": 0.0, "data": None}
+
+
+def _studio_payload(config: dict[str, Any], *, source: str) -> dict[str, Any]:
+    return {
+        "source": source,
+        "config": config,
+        "personas": _persona_summaries(config),
+        "formats": list(FORMATS),
+        "format_patterns": format_visual_archetypes(
+            _parse_json(config.get("copy_prompt_templates"), {})
+        ),
+        "hypothesis": {
+            "variables": _hypothesis_variables(config),
+            "default": {"type": "none", "variant": ""},
+        },
+        "default_files": {
+            "product_info": "generic: product_master_doc",
+            "playbook": "generic dashboard config",
+        },
+        "can_run": False,
+    }
+
+
+@router.get("/api/public/studio")
+def public_studio() -> JSONResponse:
+    """Unauthenticated generic plate: personas, files, and rules for visitors."""
+    now = time.time()
+    cached = _public_studio_cache["data"]
+    if cached is not None and now - float(_public_studio_cache["ts"] or 0) < _PUBLIC_STUDIO_TTL:
+        payload = cached
+    else:
+        payload = _studio_payload(get_generic_config(), source="generic")
+        _public_studio_cache["ts"] = now
+        _public_studio_cache["data"] = payload
+    return JSONResponse(payload, headers={"Cache-Control": "public, max-age=20"})
 
 
 @router.get("/api/defaults")
