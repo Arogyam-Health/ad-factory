@@ -12,6 +12,7 @@ function restoreMenu(root) {
   menu.style.top = "";
   menu.style.width = "";
   menu.style.maxWidth = "";
+  menu.style.maxHeight = "";
   if (menu.parentElement !== root) root.appendChild(menu);
 }
 
@@ -21,11 +22,17 @@ function portMenu(root, btn) {
   const rect = btn.getBoundingClientRect();
   const width = Math.max(rect.width, 220);
   const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+  const spaceBelow = window.innerHeight - rect.bottom - 12;
+  const spaceAbove = rect.top - 12;
+  const maxHeight = Math.max(160, spaceBelow >= 180 ? spaceBelow : Math.max(spaceAbove, spaceBelow));
   menu.classList.add("is-ported");
   menu.style.left = `${left}px`;
-  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.top = spaceBelow >= 180 || spaceBelow >= spaceAbove
+    ? `${rect.bottom + 4}px`
+    : `${Math.max(8, rect.top - Math.min(maxHeight, 420) - 4)}px`;
   menu.style.width = `${width}px`;
   menu.style.maxWidth = `${Math.min(width, window.innerWidth - 16)}px`;
+  menu.style.maxHeight = `${Math.min(maxHeight, 420)}px`;
   document.body.appendChild(menu);
 }
 
@@ -136,4 +143,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeAllCustomSelects();
 });
 window.addEventListener("resize", () => closeAllCustomSelects());
-window.addEventListener("scroll", () => closeAllCustomSelects(), true);
+window.addEventListener("scroll", (event) => {
+  if (event.target?.closest?.(".custom-select-menu")) return;
+  closeAllCustomSelects();
+}, true);

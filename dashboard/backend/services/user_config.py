@@ -370,6 +370,10 @@ def create_or_update_config(
             "version": 1,
             "files": files_obj,
         }
+        if owner_type != "user":
+            # A leftover unique user_id index treats missing user_id as null and
+            # rejects a second org/system config. Stamp a unique synthetic id.
+            new_doc["user_id"] = f"{owner_type}:{owner_id}"
         try:
             coll.insert_one(new_doc)
         except DuplicateKeyError:

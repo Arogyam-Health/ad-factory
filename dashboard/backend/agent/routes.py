@@ -745,6 +745,7 @@ def record_local_generation_projection(
         "flow_type",
         "reference_count",
         "persona_count",
+        "language_count",
     }
     if not isinstance(projection, dict) or set(projection) - allowed:
         raise HTTPException(status_code=400, detail="Projection contains unsupported fields")

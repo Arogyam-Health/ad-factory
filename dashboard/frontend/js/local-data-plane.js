@@ -346,10 +346,11 @@ export class LocalDataPlaneClient {
     scopes = DEFAULT_SCOPES,
   }) {
     const info = await this.discover();
-    if (deviceId && info.device_id !== deviceId) {
-      throw new Error("The selected run belongs to a different local device");
-    }
-    const agent = await this.registeredAgent(info.device_id, agentId);
+    this._liveDeviceId = info.device_id || "";
+    // This localhost can only serve its own device. After agent re-registration
+    // Mongo may still hold a stale run.device_id; rematch to the live device.
+    const preferredAgentId = !deviceId || deviceId === info.device_id ? agentId : "";
+    const agent = await this.registeredAgent(info.device_id, preferredAgentId);
     const owner = ownerKeyOf(ownerType, ownerId);
     const current = this.session(info.device_id, owner);
     if (
@@ -372,7 +373,9 @@ export class LocalDataPlaneClient {
   }
 
   async authorizedFetch(path, options = {}, deviceId) {
-    let session = this.session(deviceId, this._pairedOwner);
+    const liveDeviceId = this._liveDeviceId || deviceId;
+    let session = this.session(liveDeviceId, this._pairedOwner)
+      || this.session(deviceId, this._pairedOwner);
     if (!session?.access_token) throw new Error("Local pairing session is required");
     const send = (accessToken) => {
       const headers = new Headers(options.headers || {});

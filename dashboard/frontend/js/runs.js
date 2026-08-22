@@ -16,6 +16,7 @@ let batchDropdownInitialized = false;
 let runRenderVersion = 0;
 let runsLoadPromise = null;
 let runsLoadFlow = "";
+const localImageErrorByRun = new Map();
 
 function currentFlowMode() {
   try {
@@ -899,12 +900,15 @@ async function runStructuredOutputRefresh({ render = true } = {}) {
   for (const run of state.runsData) {
     if (!run?.run_id || !run?.device_id) continue;
     try {
-      await localDataPlane.ensurePaired({
+      const paired = await localDataPlane.ensurePaired({
         ownerType: run.owner_type || "user",
         ownerId: run.owner_id || user.user_id,
         deviceId: run.device_id,
         agentId: run.agent_id || "",
       });
+      if (paired?.info?.device_id) {
+        run.device_id = paired.info.device_id;
+      }
       if (outputWatchReasons.size && !localDataEventStreams.has(run.device_id)) {
         const controller = new AbortController();
         const stream = { controller, cursor: 0 };
@@ -933,6 +937,7 @@ async function runStructuredOutputRefresh({ render = true } = {}) {
       // Only a completed listing may replace this run's content; a partial or failed
       // one must leave the previous object URLs attached to their live DOM nodes.
       run.local_device_status = "online";
+      localImageErrorByRun.delete(run.run_id);
       run.image_files = [];
       run.image_items = [];
       run.regeneration_queue_files = [];
@@ -962,7 +967,11 @@ async function runStructuredOutputRefresh({ render = true } = {}) {
       }
     } catch (error) {
       run.local_device_status = "unavailable";
-      appendLog(`Local images for ${run.run_id || "run"}: ${String(error)}`);
+      const message = String(error);
+      if (localImageErrorByRun.get(run.run_id) !== message) {
+        localImageErrorByRun.set(run.run_id, message);
+        appendLog(`Local images for ${run.run_id || "run"}: ${message}`);
+      }
       next.push(...(previousByRun.get(run.run_id) || []));
     }
   }

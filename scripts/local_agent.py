@@ -69,6 +69,54 @@ WS_CLIENT: AgentWebSocketClient | None = None
 LAST_API_ERROR = ""
 _API_SESSIONS = threading.local()
 ACTIVE_JOB_FENCES: dict[str, int] = {}
+_CONTROL_PLANE_PROJECTION_FIELDS = {
+    "job_id",
+    "run_id",
+    "status",
+    "provider",
+    "model",
+    "duration_ms",
+    "input_tokens",
+    "output_tokens",
+    "request_sha256",
+    "response_sha256",
+    "copy_sha256",
+    "copy_count",
+    "prompt_count",
+    "prompt_ids",
+    "prompt_resource_ids",
+    "asset_count",
+    "repair_count",
+    "copy_resource_id",
+    "copy_resource_version",
+    "trace_resource_id",
+    "trace_resource_version",
+    "settings_resource_id",
+    "settings_resource_version",
+    "product_document_resource_id",
+    "product_document_version",
+    "engine",
+    "mode",
+    "total_count",
+    "completed_count",
+    "output_count",
+    "retry_count",
+    "latest_output_id",
+    "latest_output_version",
+    "latest_output_sha256",
+    "error_code",
+    "flow_type",
+    "reference_count",
+    "persona_count",
+}
+
+
+def _control_plane_projection(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in (payload or {}).items()
+        if key in _CONTROL_PLANE_PROJECTION_FIELDS
+    }
 
 
 def _api_session() -> requests.Session:
@@ -459,13 +507,18 @@ def flush_terminal_outbox() -> None:
                 {
                     "event_id": str(event["event_id"]),
                     "fence": ACTIVE_JOB_FENCES.get(job_id, 0),
-                    "projection": payload,
+                    "projection": _control_plane_projection(payload),
                 },
                 token=AGENT_TOKEN,
                 timeout=20,
                 quiet=True,
             )
             if acknowledged is None:
+                if str(LAST_API_ERROR).startswith("HTTP 400"):
+                    AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
+                    continue
+                if str(LAST_API_ERROR).startswith("HTTP 409"):
+                    continue
                 return
             AGENT_STATE.mark_outbox_delivered(str(event["event_id"]))
             continue

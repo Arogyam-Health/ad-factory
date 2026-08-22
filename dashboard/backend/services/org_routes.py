@@ -156,7 +156,7 @@ def create_org(
             reason="create_org",
             org_id=org_id,
         )
-    except ValueError:
+    except Exception:
         pass
 
     write_audit_event(
