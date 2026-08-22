@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile, Request, Response
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile, Request, Response, WebSocket
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -62,6 +62,11 @@ from dashboard.backend.pipeline.paths import (
     STARTING_PROMPT_PATH,
     STORAGE_ROOT,
 )
+from dashboard.backend.pipeline.user_overrides import (
+    clear_user_config_overrides as _clear_user_config_overrides,
+    resolve_user_config as _resolve_user_config,
+    set_user_config_overrides as _set_user_config_overrides,
+)
 
 
 def _resolve_starting_prompt_path() -> Path:
@@ -72,27 +77,6 @@ def _resolve_starting_prompt_path() -> Path:
         tmp.write_text(user_prompt, encoding="utf-8")
         return tmp
     return STARTING_PROMPT_PATH
-
-# Per-request user config overrides (thread-local)
-_current_user_config: dict[str, Any] = {}
-_user_config_lock = threading.Lock()
-
-
-def _set_user_config_overrides(config: dict[str, Any]) -> None:
-    global _current_user_config
-    _current_user_config = config or {}
-
-
-def _clear_user_config_overrides() -> None:
-    global _current_user_config
-    _current_user_config = {}
-
-
-def _resolve_user_config(key: str, default: Any = None) -> Any:
-    if _current_user_config and key in _current_user_config:
-        return _current_user_config[key]
-    return default
-
 
 FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
 DEFAULT_GOOGLE_API_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -2015,21 +1999,13 @@ def extension_browser_required_for_chatgpt(visible: bool) -> bool:
 
 
 def start_extension_cdp_proxy_for_user(user_id: str, *, visible: bool) -> str:
-    from dashboard.backend.services.extension_bridge import extension_bridge
-
-    conn = extension_bridge.get_connection(user_id)
-    if not conn:
-        mode = "Visible mode" if visible else "This deployment"
-        raise HTTPException(
-            status_code=400,
-            detail=f"{mode} uses your connected browser via the Chrome Extension. "
-                   "Click the extension icon and connect first.",
-        )
-    from dashboard.backend.services.cdp_proxy import init_proxy
-
-    cdp_proxy_url = init_proxy(user_id)
-    print(f"[PIPELINE] CDP proxy started at {cdp_proxy_url}", file=sys.stderr)
-    return cdp_proxy_url
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "The Chrome extension CDP bridge is retired. "
+            "Pair the local agent and use a local browser profile."
+        ),
+    )
 
 
 def render_chatgpt_uses_local_agent() -> bool:
@@ -8758,7 +8734,7 @@ def delete_llm_traces_batch(request: Request, trace_ids: list[str] = []) -> dict
 
 
 # ── Modular routes ───────────────────────────────────────────────────────────
-from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, chrome, extension
+from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, chrome
 
 app.include_router(defaults.router)
 app.include_router(progress.router)
@@ -8768,7 +8744,21 @@ app.include_router(batch.router)
 app.include_router(export_import.router)
 app.include_router(execute.router)
 app.include_router(chrome.router)
-app.include_router(extension.router)
+
+
+@app.get("/api/extension/status")
+def retired_extension_status() -> dict[str, Any]:
+    return {
+        "connected": False,
+        "active_connections": 0,
+        "disabled": True,
+        "reason": "local_agent_required",
+    }
+
+
+@app.websocket("/api/extension/ws")
+async def retired_extension_websocket(websocket: WebSocket) -> None:
+    await websocket.close(code=1008, reason="Use the paired local agent")
 
 # ── Cloud/multi-user routes ─────────────────────────────────────────────────
 from dashboard.backend.auth.routes import router as auth_router
