@@ -657,6 +657,16 @@ export class LocalDataPlaneClient {
     ));
   }
 
+  async outputRawBlob(outputId, deviceId) {
+    const response = await this.authorizedFetch(
+      `/v1/outputs/${encodeURIComponent(outputId)}/raw`,
+      { method: "GET" },
+      deviceId,
+    );
+    if (!response.ok) await readJson(response);
+    return response.blob();
+  }
+
   async outputObjectUrl(outputId, deviceId, version) {
     return cachedObjectUrl("output", outputId, version, () =>
       fetchImmutableBlob(
@@ -831,9 +841,10 @@ export class LocalDataPlaneClient {
     ));
   }
 
-  async downloadRun(runId, deviceId) {
+  async downloadRun(runId, deviceId, { includeRaw = false } = {}) {
+    const query = includeRaw ? "?include_raw=1" : "";
     const response = await this.authorizedFetch(
-      `/v1/runs/${encodeURIComponent(runId)}/download`,
+      `/v1/runs/${encodeURIComponent(runId)}/download${query}`,
       { method: "GET" },
       deviceId,
     );

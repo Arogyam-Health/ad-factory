@@ -1345,6 +1345,7 @@ class AgentState:
         *,
         result_source: Path,
         media_type: str,
+        raw_source: Path | None = None,
     ) -> dict[str, Any]:
         with self._connect() as conn:
             revision = conn.execute(
@@ -1424,6 +1425,20 @@ class AgentState:
                 operation="completed",
             )
             conn.commit()
+        if raw_source is not None and Path(raw_source).is_file():
+            self.put_resource(
+                source=raw_source,
+                owner_key=str(revision["owner_key"]),
+                kind="output_raw",
+                logical_key=f"{revision['output_id']}:raw:v{result_version}",
+                operation_id=f"{revision_id}:raw",
+                metadata={
+                    "output_id": revision["output_id"],
+                    "output_version": result_version,
+                    "revision_id": revision_id,
+                },
+                media_type=media_type,
+            )
         return {
             "revision_id": revision_id,
             "output_id": revision["output_id"],
@@ -1526,6 +1541,20 @@ class AgentState:
                 "UPDATE outputs SET status = 'deleted', updated_at = ? WHERE output_id = ?",
                 (time.time(), output_id),
             )
+            raw_ids = [
+                str(item["resource_id"])
+                for item in conn.execute(
+                    """
+                    SELECT resource_id FROM resources
+                    WHERE owner_key = ? AND kind = 'output_raw'
+                      AND logical_key LIKE ? AND deleted_at IS NULL
+                    """,
+                    (owner_key, f"{output_id}:raw:%"),
+                ).fetchall()
+            ]
+            for resource_id in raw_ids:
+                conn.execute("DELETE FROM resource_versions WHERE resource_id = ?", (resource_id,))
+                conn.execute("DELETE FROM resources WHERE resource_id = ?", (resource_id,))
             event_id = "evt_" + hashlib.sha256(
                 f"{owner_key}\0{operation_id}\0output.deleted".encode("utf-8")
             ).hexdigest()[:32]
@@ -1744,8 +1773,16 @@ class AgentState:
                     SELECT ov.resource_id
                     FROM output_versions ov JOIN outputs o ON o.output_id = ov.output_id
                     WHERE o.run_id = ?
+                    UNION
+                    SELECT resource_id FROM resources
+                    WHERE kind = 'output_raw' AND deleted_at IS NULL
+                      AND EXISTS (
+                          SELECT 1 FROM outputs o
+                          WHERE o.run_id = ?
+                            AND resources.logical_key LIKE o.output_id || ':raw:%'
+                      )
                     """,
-                    (run_id, run_id),
+                    (run_id, run_id, run_id),
                 ).fetchall()
             ]
             conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))

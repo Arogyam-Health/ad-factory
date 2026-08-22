@@ -605,6 +605,7 @@
                     <select class="mem-role-sel" data-org="${esc(orgId)}" data-uid="${esc(m.user_id)}" data-cur="${esc(m.role)}">
                       <option value="creator" ${m.role === "creator" ? "selected" : ""}>Creator</option>
                       <option value="config_admin" ${m.role === "config_admin" ? "selected" : ""}>Config Admin</option>
+                      <option value="owner">Owner</option>
                     </select>
                     <button class="ghost-btn mem-remove" data-org="${esc(orgId)}" data-uid="${esc(m.user_id)}" data-email="${esc(m.email)}"
                       style="color:var(--accent-coral);font-size:0.75rem;padding:3px 8px">Remove</button>
@@ -620,6 +621,10 @@
           const uid = sel.dataset.uid;
           const oid = sel.dataset.org;
           const newRole = sel.value;
+          if (newRole === "owner" && !confirm("Make this member the owner? You will become Config Admin.")) {
+            sel.value = sel.dataset.cur;
+            return;
+          }
           sel.disabled = true;
           try {
             await fetchJSON(`/api/orgs/${oid}/members/${uid}/role`, {

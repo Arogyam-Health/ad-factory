@@ -1193,6 +1193,9 @@ document.getElementById("batchGen916")?.addEventListener("click", async () => {
 document.getElementById("batchDownload")?.addEventListener("click", async () => {
   const selectedBatches = getSelectedBatchValues();
   if (!selectedBatches.length) { appendLog("Select at least one batch from the dropdown."); return; }
+  const includeRaw = confirm(
+    "Also include the original GPT files (raw) in a second folder?\n\nOK = cropped + raw\nCancel = cropped only",
+  );
   appendLog(`Preparing download for ${selectedBatches.length} batch(es)...`);
   try {
     const selectedRuns = state.runsData.filter((run) => selectedBatches.includes(runKey(run)));
@@ -1204,7 +1207,7 @@ document.getElementById("batchDownload")?.addEventListener("click", async () => 
         deviceId: run.device_id,
         agentId: run.agent_id || "",
       });
-      const blob = await localDataPlane.downloadRun(run.run_id, run.device_id);
+      const blob = await localDataPlane.downloadRun(run.run_id, run.device_id, { includeRaw });
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;

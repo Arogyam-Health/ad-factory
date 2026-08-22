@@ -36,6 +36,52 @@ ORG_MODES = ("shared_org_config", "individual_member_config")
 
 ORG_ROLES = ("owner", "config_admin", "creator")
 
+# Unique placeholder so Gmail/personal orgs never share Mongo's null domain key.
+PERSONAL_DOMAIN_PREFIX = "personal:"
+
+
+def personal_org_domain(org_id: str) -> str:
+    return f"{PERSONAL_DOMAIN_PREFIX}{org_id}"
+
+
+def is_personal_org_domain(domain: str | None) -> bool:
+    return bool(domain) and str(domain).startswith(PERSONAL_DOMAIN_PREFIX)
+
+
+def public_org_domain(domain: str | None) -> str | None:
+    if not domain or is_personal_org_domain(domain):
+        return None
+    return str(domain)
+
+
+def public_org_dict(org: dict | None) -> dict | None:
+    """Strip Mongo _id and hide personal-org domain placeholders."""
+    if org is None:
+        return None
+    out = {k: v for k, v in org.items() if k != "_id"}
+    visible = public_org_domain(out.get("domain"))
+    if visible:
+        out["domain"] = visible
+    else:
+        out.pop("domain", None)
+    return out
+
+
+def assign_personal_org_domains(db) -> int:
+    """Replace null/missing org domains with unique personal:{org_id} values."""
+    updated = 0
+    query = {"$or": [{"domain": None}, {"domain": {"$exists": False}}]}
+    for org in db[COLL_ORGS].find(query, {"org_id": 1}):
+        org_id = org.get("org_id")
+        if not org_id:
+            continue
+        db[COLL_ORGS].update_one(
+            {"_id": org["_id"]},
+            {"$set": {"domain": personal_org_domain(org_id)}},
+        )
+        updated += 1
+    return updated
+
 # ───────────────────────────────────────────────────────────────────────────────────────────────
 # CORE ORG FUNCTIONS - Basic Phase 1 implementation
 # ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -77,7 +123,7 @@ def get_org_by_id(org_id: str) -> Optional[dict[str, Any]]:
 
 def get_org_by_domain(domain: str) -> Optional[dict[str, Any]]:
     """Retrieve organization by domain (lowercase)."""
-    if not domain:
+    if not domain or is_personal_org_domain(domain):
         return None
     try:
         return get_sync_db()[COLL_ORGS].find_one({"domain": domain.lower(), "is_active": True})
@@ -276,6 +322,11 @@ __all__ = [
     "generate_membership_id",
     "extract_domain_from_email",
     "is_public_email_domain",
+    "personal_org_domain",
+    "is_personal_org_domain",
+    "public_org_domain",
+    "public_org_dict",
+    "assign_personal_org_domains",
     "get_org_by_id",
     "get_org_by_domain",
     "get_user_org_membership",

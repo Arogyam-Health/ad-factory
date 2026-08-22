@@ -402,12 +402,33 @@ export function buildImageGallery(run, imagesData) {
         appendLog("Legacy image download is unavailable; reconnect its authoritative local device.");
         return;
       }
+      const includeRaw = confirm(
+        "Also download the original GPT file (raw)?\n\nOK = cropped + raw\nCancel = cropped only",
+      );
       const a = document.createElement("a");
       a.href = url;
       a.download = downloadFilename(imageItem, path);
       document.body.appendChild(a);
       a.click();
       a.remove();
+      if (includeRaw && imageItem.output_id) {
+        try {
+          const rawBlob = await localDataPlane.outputRawBlob(imageItem.output_id, run.device_id);
+          const rawUrl = URL.createObjectURL(rawBlob);
+          const rawName = downloadFilename(imageItem, path);
+          const stem = rawName.replace(/\.[^.]+$/, "");
+          const ext = rawName.includes(".") ? rawName.slice(rawName.lastIndexOf(".")) : ".png";
+          const rawLink = document.createElement("a");
+          rawLink.href = rawUrl;
+          rawLink.download = `${stem}.raw${ext}`;
+          document.body.appendChild(rawLink);
+          rawLink.click();
+          rawLink.remove();
+          URL.revokeObjectURL(rawUrl);
+        } catch (error) {
+          appendLog(`Raw download unavailable: ${String(error)}`);
+        }
+      }
     });
 
     imgReplaceBtn.addEventListener("pointerdown", (event) => {

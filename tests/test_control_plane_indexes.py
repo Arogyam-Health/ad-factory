@@ -122,6 +122,28 @@ class ControlPlaneIndexTests(unittest.TestCase):
         self.assertEqual(runs.dropped, ["owner_type_1_owner_id_1_run_number_1"])
         self.assertEqual(counters.dropped, ["owner_type_1_owner_id_1"])
 
+    def test_org_domain_index_becomes_unique_and_sparse(self) -> None:
+        from dashboard.backend.db.collections import COLL_ORGS
+        from dashboard.backend.db.indexes import _fix_indexes
+
+        collection = _Collection(
+            [
+                {
+                    "name": "domain_1",
+                    "key": {"domain": 1},
+                    "unique": True,
+                }
+            ]
+        )
+        db = _DB({COLL_ORGS: collection})
+
+        result = _fix_indexes(db)
+
+        self.assertEqual(result[f"{COLL_ORGS}.domain_1"], 1)
+        self.assertEqual(collection.dropped, ["domain_1"])
+        self.assertTrue(collection.created[0]["unique"])
+        self.assertTrue(collection.created[0]["sparse"])
+
 
 if __name__ == "__main__":
     unittest.main()

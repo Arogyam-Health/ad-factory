@@ -3317,7 +3317,10 @@ def run() -> None:
                         # ------------------------------------------------------------------
                         # Step: Ensure exact target dimensions via PIL crop
                         # ------------------------------------------------------------------
+                        raw_path = saved_path.with_name(f"{saved_path.stem}.raw{saved_path.suffix}")
                         try:
+                            if not raw_path.exists():
+                                shutil.copy2(saved_path, raw_path)
                             target = (1080, 1350) if args.aspect_ratio == "4:5" else (1080, 1920)
                             resize_to_ratio(saved_path, saved_path, target)
                         except Exception as exc:
@@ -3325,8 +3328,11 @@ def run() -> None:
                         if args.result_manifest:
                             result_path = Path(args.result_manifest).expanduser().resolve()
                             result_path.parent.mkdir(parents=True, exist_ok=True)
+                            payload = {"output_path": str(saved_path.resolve())}
+                            if raw_path.is_file():
+                                payload["raw_output_path"] = str(raw_path.resolve())
                             result_path.write_text(
-                                json.dumps({"output_path": str(saved_path.resolve())}) + "\n",
+                                json.dumps(payload) + "\n",
                                 encoding="utf-8",
                             )
 

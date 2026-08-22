@@ -29,6 +29,7 @@ from dashboard.backend.services.org_helper import (
     require_org_member,
     require_org_role,
     extract_domain_from_email,
+    public_org_domain,
 )
 from dashboard.backend.services.user_config import (
     create_or_update_config,
@@ -330,7 +331,7 @@ def get_invite_details(token: str) -> dict[str, Any]:
             "role": invite.get("role", ""),
             "org_id": invite.get("org_id", ""),
             "org_name": org.get("name", "Organization") if org else "Organization",
-            "org_domain": org.get("domain", "") if org else "",
+            "org_domain": public_org_domain(org.get("domain") if org else None) or "",
             "expires_at": invite.get("expires_at", 0),
         },
     }
@@ -500,13 +501,14 @@ def change_member_role(
     _require_org_owner(user_id, org_id)
 
     new_role = payload.get("role", "").strip()
-    if new_role not in ("creator", "config_admin"):
+    if new_role not in ("creator", "config_admin", "owner"):
         raise HTTPException(
             status_code=400,
-            detail="Role must be 'creator' or 'config_admin'.",
+            detail="Role must be 'owner', 'config_admin', or 'creator'.",
         )
 
-    target_member = get_sync_db()[COLL_ORG_MEMBERS].find_one({
+    db = get_sync_db()
+    target_member = db[COLL_ORG_MEMBERS].find_one({
         "org_id": org_id,
         "user_id": target_user_id,
         "status": "active",
@@ -514,12 +516,29 @@ def change_member_role(
     if not target_member:
         raise HTTPException(status_code=404, detail="Member not found in this organization.")
 
-    if target_member.get("role") == "owner":
-        raise HTTPException(status_code=400, detail="Cannot change owner role through this endpoint.")
+    if target_member.get("role") == "owner" and new_role != "owner":
+        raise HTTPException(
+            status_code=400,
+            detail="Transfer ownership to another member before changing the current owner.",
+        )
+    if target_user_id == user_id and new_role != "owner":
+        raise HTTPException(
+            status_code=400,
+            detail="Transfer ownership to another member before changing your own role.",
+        )
 
     old_role = target_member.get("role", "")
     now = time.time()
-    get_sync_db()[COLL_ORG_MEMBERS].update_one(
+    if new_role == "owner":
+        db[COLL_ORG_MEMBERS].update_many(
+            {"org_id": org_id, "status": "active", "role": "owner"},
+            {"$set": {"role": "config_admin", "updated_at": now}},
+        )
+        db[COLL_ORGS].update_one(
+            {"org_id": org_id},
+            {"$set": {"owner_user_id": target_user_id, "updated_at": now}},
+        )
+    db[COLL_ORG_MEMBERS].update_one(
         {"_id": target_member["_id"]},
         {"$set": {"role": new_role, "updated_at": now}},
     )

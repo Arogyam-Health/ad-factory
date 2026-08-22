@@ -195,13 +195,16 @@ def import_prompt_xlsx(
     return {"run_id": run_id, "updated": updated}
 
 
-def build_output_zip(state: AgentState, owner_key: str, run_id: str) -> bytes:
+def build_output_zip(
+    state: AgentState, owner_key: str, run_id: str, *, include_raw: bool = False
+) -> bytes:
     prompt_rows = _prompt_rows(state, owner_key, run_id)
     with state._connect() as conn:
         rows = conn.execute(
             """
             SELECT out.output_id, out.current_version, out.aspect_ratio,
                    obj.relative_path, obj.media_type,
+                   raw_obj.relative_path AS raw_relative_path,
                    rv.metadata_json AS version_metadata,
                    (
                        SELECT re.metadata_json FROM run_entries re
@@ -217,6 +220,15 @@ def build_output_zip(state: AgentState, owner_key: str, run_id: str) -> bytes:
             JOIN resource_versions rv
               ON rv.resource_id = ov.resource_id AND rv.version = ov.resource_version
             JOIN objects obj ON obj.sha256 = rv.object_sha256
+            LEFT JOIN resources raw
+              ON raw.owner_key = run.owner_key
+             AND raw.kind = 'output_raw'
+             AND raw.logical_key = out.output_id || ':raw:v' || out.current_version
+             AND raw.deleted_at IS NULL
+            LEFT JOIN resource_versions raw_rv
+              ON raw_rv.resource_id = raw.resource_id
+             AND raw_rv.version = raw.current_version
+            LEFT JOIN objects raw_obj ON raw_obj.sha256 = raw_rv.object_sha256
             WHERE out.run_id = ? AND run.owner_key = ? AND out.status = 'available'
             ORDER BY out.output_id
             """,
@@ -241,6 +253,7 @@ def build_output_zip(state: AgentState, owner_key: str, run_id: str) -> bytes:
                 ).read_bytes(),
             )
         used_images: set[str] = set()
+        raw_added = False
         for row in rows:
             source = state.paths.root / str(row["relative_path"])
             filename = image_download_filename(
@@ -251,12 +264,25 @@ def build_output_zip(state: AgentState, owner_key: str, run_id: str) -> bytes:
                 media_type=str(row["media_type"]),
             )
             folder = str(row["aspect_ratio"] or "4:5").replace(":", "_")
-            arcname = f"{folder}/{filename}"
+            root = "cropped/" if include_raw else ""
+            arcname = f"{root}{folder}/{filename}"
             while arcname in used_images:
                 filename = f"{Path(filename).stem}_dup{len(used_images)}{Path(filename).suffix}"
-                arcname = f"{folder}/{filename}"
+                arcname = f"{root}{folder}/{filename}"
             used_images.add(arcname)
             archive.write(source, arcname=arcname)
+            raw_rel = str(row["raw_relative_path"] or "") if include_raw else ""
+            if raw_rel:
+                raw_source = state.paths.root / raw_rel
+                if raw_source.is_file():
+                    archive.write(raw_source, arcname=f"raw/{folder}/{filename}")
+                    raw_added = True
+        if include_raw and not raw_added:
+            archive.writestr(
+                "raw/README.txt",
+                "Raw GPT files were not stored for this run. Generate new images "
+                "after updating the local agent to keep both the original and cropped files.\n",
+            )
     return result.getvalue()
 
 

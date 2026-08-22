@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.db.client import get_sync_db
@@ -16,6 +17,9 @@ from dashboard.backend.services.org_helper import (
     generate_membership_id,
     extract_domain_from_email,
     is_public_email_domain,
+    personal_org_domain,
+    public_org_dict,
+    assign_personal_org_domains,
     get_org_by_id,
     get_org_by_domain,
     get_org_memberships,
@@ -51,6 +55,26 @@ def _json_safe_list(items: list[dict]) -> list[dict]:
     return [_json_safe(d) for d in items]
 
 
+def _repair_org_domain_index(db) -> None:
+    """Allow many orgs without a company domain.
+
+    A leftover unique `domain_1` index treats missing domain as null, so the
+    second personal org fails with E11000 { domain: null }.
+    """
+    try:
+        assign_personal_org_domains(db)
+    except Exception:
+        pass
+    try:
+        db[COLL_ORGS].drop_index("domain_1")
+    except Exception:
+        pass
+    try:
+        db[COLL_ORGS].create_index("domain", unique=True, sparse=True)
+    except Exception:
+        pass
+
+
 def _get_active_user_org(org_id: str, user_id: str) -> dict[str, Any]:
     """Get org and verify user is active member."""
     org = get_org_by_id(org_id)
@@ -77,13 +101,14 @@ def get_my_orgs(
         if not org:
             continue
         permissions = get_role_permissions(membership.get("role", "creator"))
-        orgs.append({**_json_safe(org), "permissions": permissions})
+        public = public_org_dict(org) or {}
+        orgs.append({**public, "permissions": permissions})
         if default_org is None:
-            default_org = {**_json_safe(org), "permissions": permissions}
+            default_org = {**public, "permissions": permissions}
 
     return {
         "orgs": orgs,
-        "default_org": _json_safe(default_org),
+        "default_org": default_org,
         "memberships": _json_safe_list(memberships),
     }
 
@@ -124,10 +149,19 @@ def create_org(
         "is_active": True,
         "created_at": now,
         "updated_at": now,
+        "domain": domain or personal_org_domain(org_id),
     }
-    if domain:
-        org["domain"] = domain
-    db[COLL_ORGS].insert_one(org)
+    try:
+        db[COLL_ORGS].insert_one(org)
+    except DuplicateKeyError:
+        _repair_org_domain_index(db)
+        try:
+            db[COLL_ORGS].insert_one(org)
+        except DuplicateKeyError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Could not create this organization because of a conflicting record.",
+            ) from exc
 
     membership = {
         "membership_id": membership_id,
@@ -172,7 +206,7 @@ def create_org(
     updated_org = get_sync_db()[COLL_ORGS].find_one({"org_id": org_id})
 
     return {
-        "org": _json_safe(updated_org or org),
+        "org": public_org_dict(updated_org or org),
         "membership": _json_safe(membership),
     }
 
@@ -191,7 +225,7 @@ def get_org(
     permissions = get_role_permissions(membership.get("role", "creator"))
 
     return {
-        "org": _json_safe(org),
+        "org": public_org_dict(org),
         "membership": _json_safe(membership),
         "permissions": permissions,
     }
@@ -385,7 +419,7 @@ def get_org_config(
 
     return {
         "config": config,
-        "org": _json_safe(org),
+        "org": public_org_dict(org),
         "mode": org["config_mode"],
         "can_edit": can_edit,
         "source": source,
@@ -464,7 +498,7 @@ def update_org_config(
 
     return {
         "config": merged,
-        "org": _json_safe(org),
+        "org": public_org_dict(org),
         "source": "org_config_update",
         "config_id": config_id,
         "can_edit": can_edit,

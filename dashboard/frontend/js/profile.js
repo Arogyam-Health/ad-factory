@@ -274,6 +274,7 @@ function createMembersSection(orgId, members, currentRole) {
                 <select class="member-role-select" data-org-id="${orgId}" data-user-id="${m.user_id}" data-current-role="${m.role}">
                   <option value="creator" ${m.role === "creator" ? "selected" : ""}>Creator</option>
                   <option value="config_admin" ${m.role === "config_admin" ? "selected" : ""}>Config Admin</option>
+                  <option value="owner">Owner</option>
                 </select>
                 <button class="ghost-btn remove-member-btn" data-org-id="${orgId}" data-user-id="${m.user_id}" data-email="${escapeHtml(m.email)}" type="button" style="color:var(--accent-coral)">Remove</button>
               </td>
@@ -354,6 +355,10 @@ function attachMemberHandlers(orgId, currentRole) {
     sel.addEventListener("change", async () => {
       const userId = sel.dataset.userId;
       const newRole = sel.value;
+      if (newRole === "owner" && !confirm("Make this member the owner? You will become Config Admin.")) {
+        sel.value = sel.dataset.currentRole;
+        return;
+      }
       sel.disabled = true;
       try {
         await fetchJSON(`/api/orgs/${orgId}/members/${userId}/role`, {

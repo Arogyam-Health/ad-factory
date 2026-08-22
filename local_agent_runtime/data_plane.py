@@ -1518,7 +1518,13 @@ class LocalDataPlane:
             self._prompt_export(handler, session.owner_key, run_id)
             return
         if action == "download" and handler.command == "GET":
-            self._run_download(handler, session.owner_key, run_id)
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(handler.path).query)
+            include_raw = str((query.get("include_raw") or ["0"])[0]).lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            self._run_download(handler, session.owner_key, run_id, include_raw=include_raw)
             return
         raise APIError(404, "not_found", "Endpoint not found")
 
@@ -1797,7 +1803,7 @@ class LocalDataPlane:
             required_scope = (
                 "revisions:write" if action == "revisions" else "outputs:write"
             )
-        elif action == "content":
+        elif action in {"content", "raw"}:
             required_scope = "content:read"
         else:
             required_scope = "manifest:read"
@@ -1823,6 +1829,17 @@ class LocalDataPlane:
                 handler,
                 record,
                 attachment_name=self._output_attachment_name(output),
+            )
+            return
+        if action == "raw" and handler.command in {"GET", "HEAD"}:
+            record = self._output_raw_resource(session.owner_key, output_id)
+            if record is None:
+                raise APIError(404, "raw_not_found", "Raw output is not available")
+            name = Path(self._output_attachment_name(output))
+            self._send_file(
+                handler,
+                record,
+                attachment_name=f"{name.stem}.raw{name.suffix or '.png'}",
             )
             return
         if action == "versions" and handler.command == "GET":
@@ -2123,6 +2140,19 @@ class LocalDataPlane:
             else None
         )
 
+    def _output_raw_resource(
+        self, owner_key: str, output_id: str, version: int | None = None
+    ) -> dict[str, Any] | None:
+        output = self._output(owner_key, output_id)
+        if output is None:
+            return None
+        selected = int(version or output["current_version"])
+        return self._resource_record(
+            owner_key,
+            kind="output_raw",
+            logical_key=f"{output_id}:raw:v{selected}",
+        )
+
     def _set_output_status(
         self, owner_key: str, output_id: str, status: str, operation_id: str
     ) -> None:
@@ -2293,12 +2323,14 @@ class LocalDataPlane:
                     archive.write(source, arcname=arcname)
         return path
 
-    def _run_download(self, handler: Any, owner_key: str, run_id: str) -> None:
+    def _run_download(
+        self, handler: Any, owner_key: str, run_id: str, *, include_raw: bool = False
+    ) -> None:
         self._session(handler, "content:read")
         self._bytes(
             handler,
             200,
-            build_output_zip(self.state, owner_key, run_id),
+            build_output_zip(self.state, owner_key, run_id, include_raw=include_raw),
             "application/zip",
             filename=f"{run_id}.zip",
         )

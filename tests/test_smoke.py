@@ -788,6 +788,23 @@ def test_org_system() -> int:
     failed += ok(extract_domain_from_email("no-at-sign") == "", "Returns empty for invalid email")
     failed += ok(extract_domain_from_email("") == "", "Returns empty for empty email")
 
+    from dashboard.backend.services.org_helper import (
+        personal_org_domain,
+        public_org_domain,
+        public_org_dict,
+    )
+    oid = generate_org_id()
+    failed += ok(
+        personal_org_domain(oid) == f"personal:{oid}",
+        "Personal org domain is unique per org",
+    )
+    failed += ok(public_org_domain(personal_org_domain(oid)) is None, "Hides personal domain")
+    failed += ok(public_org_domain("acme.com") == "acme.com", "Keeps company domain")
+    failed += ok(
+        "domain" not in (public_org_dict({"org_id": oid, "domain": personal_org_domain(oid)}) or {}),
+        "public_org_dict strips personal domain",
+    )
+
     # 7. org_id and membership_id generation
     oid = generate_org_id()
     failed += ok(oid.startswith("org_"), "org_id starts with org_")

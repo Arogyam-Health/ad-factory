@@ -369,6 +369,25 @@ class LocalOutputLifecycleTests(unittest.TestCase):
             self.assertIn("prompts/HERO_busy_professional_EN_desired_outcome.txt", zipped.namelist())
             self.assertEqual(zipped.read(outputs[0]), PNG_A)
 
+    def test_batch_zip_include_raw_uses_cropped_and_raw_folders(self) -> None:
+        from local_agent_runtime.lifecycle import build_output_zip
+
+        self._resource(
+            "output_raw",
+            "output-11:raw:v1",
+            PNG_B,
+            "image/png",
+            {"output_id": "output-11", "output_version": 1},
+        )
+        archive = build_output_zip(self.state, "org:shared", "run-11", include_raw=True)
+        with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+            cropped = "cropped/4_5/HERO_busy_professional_EN_desired_outcome_4_5.png"
+            raw = "raw/4_5/HERO_busy_professional_EN_desired_outcome_4_5.png"
+            self.assertIn(cropped, zipped.namelist())
+            self.assertIn(raw, zipped.namelist())
+            self.assertEqual(zipped.read(cropped), PNG_A)
+            self.assertEqual(zipped.read(raw), PNG_B)
+
     def _write(self, name: str, body: bytes) -> Path:
         path = self.paths.staging / name
         path.write_bytes(body)

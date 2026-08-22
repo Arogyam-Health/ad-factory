@@ -208,7 +208,19 @@ class LocalScriptBrowser:
         output_path.relative_to(output_dir.resolve())
         if not output_path.is_file() or output_path.suffix.lower() not in _IMAGE_SUFFIXES:
             raise RuntimeError("Local browser automation produced no output")
-        return output_path.read_bytes()
+        raw_bytes = None
+        raw_path = Path(str(result.get("raw_output_path") or "")).resolve()
+        try:
+            if raw_path.is_file():
+                raw_path.relative_to(output_dir.resolve())
+                raw_bytes = raw_path.read_bytes()
+        except Exception:
+            raw_bytes = None
+        if raw_bytes is None:
+            sibling = output_path.with_name(f"{output_path.stem}.raw{output_path.suffix}")
+            if sibling.is_file():
+                raw_bytes = sibling.read_bytes()
+        return output_path.read_bytes(), raw_bytes
 
 
 @dataclass(frozen=True)
@@ -406,13 +418,22 @@ class StructuredBrowserExecutor:
         with self.state._connect() as conn:
             row = conn.execute(
                 """
-                SELECT out.*, ov.resource_id, ov.resource_version, rv.object_sha256
+                SELECT out.*, ov.resource_id, ov.resource_version, rv.object_sha256,
+                       raw.resource_id AS raw_resource_id,
+                       raw.current_version AS raw_resource_version
                 FROM outputs out
                 JOIN output_versions ov
                   ON ov.output_id = out.output_id AND ov.version = out.current_version
                 JOIN resource_versions rv
                   ON rv.resource_id = ov.resource_id
                  AND rv.version = ov.resource_version
+                LEFT JOIN resources raw
+                  ON raw.owner_key = (
+                      SELECT owner_key FROM runs WHERE run_id = out.run_id
+                  )
+                 AND raw.kind = 'output_raw'
+                 AND raw.logical_key = out.output_id || ':raw:v' || out.current_version
+                 AND raw.deleted_at IS NULL
                 WHERE out.run_id = ? AND out.prompt_id = ? AND out.aspect_ratio = ?
                   AND out.status = 'available'
                 """,
@@ -498,7 +519,8 @@ class StructuredBrowserExecutor:
         item_id: str,
         aspect_ratio: str,
         content: bytes,
-        source_output_version: int | None,
+        raw_content: bytes | None = None,
+        source_output_version: int | None = None,
         source_output_id: str | None = None,
         conversion_prompt: LocalResource | None = None,
         display_stem: str = "",
@@ -556,6 +578,21 @@ class StructuredBrowserExecutor:
             source_output_version=source_output_version,
             operation_id=f"{self.workflow_prefix}:{job_id}:output:{prompt_id}:{phase}",
         )
+        if raw_content:
+            raw_temporary = self.state.paths.staging / f".browser-raw-{uuid.uuid4().hex}.png"
+            raw_temporary.write_bytes(raw_content)
+            try:
+                self.state.put_resource(
+                    source=raw_temporary,
+                    owner_key=owner_key,
+                    kind="output_raw",
+                    logical_key=f"{output_id}:raw:v{int(output.get('version') or 1)}",
+                    operation_id=f"{self.workflow_prefix}:{job_id}:raw:{prompt_id}:{phase}",
+                    metadata={"output_id": output_id, "output_version": int(output.get("version") or 1)},
+                    media_type="image/png",
+                )
+            finally:
+                raw_temporary.unlink(missing_ok=True)
         return {
             **output,
             "resource_id": resource.resource_id,
@@ -660,15 +697,26 @@ class StructuredBrowserExecutor:
                             raise ValueError("Matching local 4:5 output version is unavailable")
                         source_output_version = int(source["current_version"])
                         source_output_id = str(source["output_id"])
-                        uploads = [
-                            self._resource(
-                                owner_key,
-                                str(source["resource_id"]),
-                                int(source["resource_version"]),
-                                "source_creative",
-                                required_kind="output_image",
-                            )
-                        ]
+                        if source.get("raw_resource_id") and source.get("raw_resource_version"):
+                            uploads = [
+                                self._resource(
+                                    owner_key,
+                                    str(source["raw_resource_id"]),
+                                    int(source["raw_resource_version"]),
+                                    "source_creative",
+                                    required_kind="output_raw",
+                                )
+                            ]
+                        else:
+                            uploads = [
+                                self._resource(
+                                    owner_key,
+                                    str(source["resource_id"]),
+                                    int(source["resource_version"]),
+                                    "source_creative",
+                                    required_kind="output_image",
+                                )
+                            ]
                         conversion_body = self.conversion_prompt_text.strip()
                         if not conversion_body and conversion_prompt is not None:
                             conversion_body = conversion_prompt.path.read_text(
@@ -707,10 +755,11 @@ class StructuredBrowserExecutor:
                         display_stem=self._display_stem(prompt),
                     )
                     content: bytes | None = None
+                    raw_content: bytes | None = None
                     for attempt in range(1, self.max_attempts + 1):
                         self._raise_if_canceled()
                         try:
-                            content = self.browser.generate(
+                            generated = self.browser.generate(
                                 engine=engine,
                                 prompt_id=prompt_id,
                                 aspect_ratio=aspect_ratio,
@@ -718,6 +767,12 @@ class StructuredBrowserExecutor:
                                 upload_manifest_path=manifest_path,
                                 output_dir=output_dir,
                             )
+                            if isinstance(generated, tuple):
+                                content = generated[0]
+                                raw_content = generated[1] if len(generated) > 1 else None
+                            else:
+                                content = generated
+                                raw_content = None
                             break
                         except JobCanceled:
                             raise
@@ -735,6 +790,7 @@ class StructuredBrowserExecutor:
                         item_id=item_id,
                         aspect_ratio=aspect_ratio,
                         content=content,
+                        raw_content=raw_content,
                         source_output_version=source_output_version,
                         source_output_id=source_output_id,
                         conversion_prompt=(

@@ -301,6 +301,13 @@ def _fix_indexes(db) -> dict[str, int]:
                 partialFilterExpression=JOB_OPERATION_PARTIAL_FILTER,
             ),
         ),
+        # Production created a non-sparse unique domain index. Missing domain
+        # is stored/indexed as null, so a second Gmail org cannot be created.
+        (
+            COLL_ORGS,
+            "domain_1",
+            IndexModel([("domain", ASCENDING)], unique=True, sparse=True),
+        ),
     ]
 
     results: dict[str, int] = {}
@@ -337,6 +344,12 @@ def create_indexes() -> dict[str, int]:
 
     # Fix stale indexes first
     results.update(_drop_obsolete_indexes(db))
+    try:
+        from dashboard.backend.services.org_helper import assign_personal_org_domains
+
+        assign_personal_org_domains(db)
+    except Exception:
+        pass
     results.update(_fix_indexes(db))
 
     for coll_name, indexes in INDEX_SPECS.items():

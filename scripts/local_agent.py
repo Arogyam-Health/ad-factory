@@ -1234,11 +1234,14 @@ def _execute_next_output_revision() -> bool:
             for path in output_dir.rglob("*")
             if path.is_file()
             and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+            and ".raw" not in path.suffixes
+            and not path.name.endswith(f".raw{path.suffix}")
             and not any(part in {"debug", ".browser_downloads"} for part in path.parts)
         ]
         if not candidates:
             raise RuntimeError("Revision completed without producing an image")
         generated = max(candidates, key=lambda path: path.stat().st_mtime_ns)
+        raw_candidate = generated.with_name(f"{generated.stem}.raw{generated.suffix}")
         media_type = {
             ".png": "image/png",
             ".jpg": "image/jpeg",
@@ -1246,7 +1249,10 @@ def _execute_next_output_revision() -> bool:
             ".webp": "image/webp",
         }[generated.suffix.lower()]
         AGENT_STATE.complete_output_revision(
-            revision_id, result_source=generated, media_type=media_type
+            revision_id,
+            result_source=generated,
+            media_type=media_type,
+            raw_source=raw_candidate if raw_candidate.is_file() else None,
         )
         shutil.rmtree(work_root, ignore_errors=True)
     except Exception as exc:
