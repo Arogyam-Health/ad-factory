@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/Button";
 import { AgentStatus } from "@/components/AgentStatus";
+import { GuestBanner } from "@/components/GuestBanner";
 
 const LINKS = [
   { to: "/", label: "Studio", index: "01" },
@@ -83,7 +84,10 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="stage">{children}</main>
+      <main className="stage">
+        <GuestBanner />
+        {children}
+      </main>
     </div>
   );
 }
