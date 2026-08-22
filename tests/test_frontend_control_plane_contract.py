@@ -8,12 +8,15 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "dashboard" / "frontend"
+REACT_SRC = ROOT / "dashboard" / "web" / "src"
 
 SHIPPED_SOURCES = tuple(
     sorted(
         [
             *FRONTEND.glob("*.html"),
             *(FRONTEND / "js").glob("*.js"),
+            *REACT_SRC.rglob("*.ts"),
+            *REACT_SRC.rglob("*.tsx"),
         ]
     )
 )
