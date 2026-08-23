@@ -224,16 +224,13 @@ class MongoProviderConfigTests(unittest.TestCase):
     def test_frontend_saves_cloud_config_for_render_execution(
         self,
     ) -> None:
-        main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
-        profile = (ROOT / "dashboard/frontend/js/profile.js").read_text(
+        studio = (ROOT / "dashboard/web/src/pages/Studio.tsx").read_text(encoding="utf-8")
+        profile = (ROOT / "dashboard/web/src/pages/Profile.tsx").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn('fetchJSON("/api/user/provider-config"', main)
-        self.assertIn(
-            'fetchJSON("/api/user/provider-config/opencode/catalog"', main
-        )
-        self.assertNotIn("/materialize", main)
+        self.assertIn("/api/user/provider-config", studio)
+        self.assertNotIn("/materialize", studio)
         render_jobs = (
             ROOT
             / "dashboard"
@@ -242,8 +239,8 @@ class MongoProviderConfigTests(unittest.TestCase):
             / "render_copy_jobs.py"
         ).read_text(encoding="utf-8")
         self.assertIn("get_materialized_provider_config", render_jobs)
-        self.assertNotIn('fetchJSON("/api/opencode/catalog")', main)
-        self.assertIn('fetchJSON("/api/user/provider-config")', profile)
+        self.assertNotIn("/api/opencode/catalog", studio)
+        self.assertIn("/api/user/provider-config", profile)
         self.assertNotIn("localDataPlane.listProviderConfigs", profile)
 
 

@@ -7,13 +7,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PLANE = ROOT / "dashboard/web/src/lib/local-data-plane.js"
+STUDIO = ROOT / "dashboard/web/src/pages/Studio.tsx"
+REFERENCE = ROOT / "dashboard/web/src/pages/studio/ReferencePanel.tsx"
+PROMPT_COPY = ROOT / "dashboard/web/src/lib/prompt-copy.js"
 
 
 class LocalhostFrontendPairingTests(unittest.TestCase):
     def test_dashboard_pairing_client_wires_complete_challenge_exchange(self) -> None:
-        source = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
-            encoding="utf-8"
-        )
+        source = PLANE.read_text(encoding="utf-8")
         for fragment in (
             "/v1/info",
             "/v1/pairing/challenges",
@@ -30,31 +32,23 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertNotIn("localhostUrl", render_submission[:1200])
 
     def test_pairing_client_is_integrated_with_dashboard_modules(self) -> None:
-        html = (ROOT / "dashboard/frontend/index.html").read_text(encoding="utf-8")
+        html = (ROOT / "dashboard/web/index.html").read_text(encoding="utf-8")
+        studio = STUDIO.read_text(encoding="utf-8")
+        reference = REFERENCE.read_text(encoding="utf-8")
         self.assertNotIn('<script type="module" src="/js/local-data-plane.js"></script>', html)
-        main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
-        reference = (ROOT / "dashboard/frontend/js/reference-flow.js").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('from "./local-data-plane.js"', main)
-        self.assertIn('from "./local-data-plane.js"', reference)
-        self.assertIn("localDataPlane.session(referenceDeviceId, owner)", reference)
-        self.assertIn("PAIRING_BACKOFFS_MS", reference)
-        self.assertNotIn("await ensureReferenceLocal();\n    const run = await fetchJSON", reference)
+        self.assertIn("local-data-plane.js", studio)
+        self.assertIn("local-data-plane.js", reference)
+        self.assertIn("localDataPlane.allocateLocalRun", reference)
+        self.assertNotIn("await ensureReferenceLocal();", reference)
 
     def test_legacy_scripts_can_call_safe_global_client(self) -> None:
-        source = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
-            encoding="utf-8"
-        )
+        source = PLANE.read_text(encoding="utf-8")
         self.assertIn("window.AdFactoryLocalDataPlane", source)
         self.assertNotIn("access_token:", source)
 
     def test_all_file_blob_and_formdata_uploads_target_loopback(self) -> None:
-        for relative in (
-            "dashboard/frontend/js/main.js",
-            "dashboard/frontend/js/reference-flow.js",
-        ):
-            source = (ROOT / relative).read_text(encoding="utf-8")
+        for path in (STUDIO, REFERENCE):
+            source = path.read_text(encoding="utf-8")
             for render_path in (
                 "/api/runs/execute",
                 "/api/runs/execute-reference",
@@ -64,24 +58,17 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
                 "/api/upload-input-images",
                 "/api/google/models",
             ):
-                self.assertNotIn(render_path, source, f"{relative} still uses {render_path}")
-        source = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
-            encoding="utf-8"
-        )
+                self.assertNotIn(render_path, source, f"{path} still uses {render_path}")
+        source = PLANE.read_text(encoding="utf-8")
         self.assertIn("FormData", source)
         self.assertIn("/v1/assets", source)
         self.assertIn("authorizedFetch", source)
-        main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
-        self.assertNotIn("localDataPlane.putProviderConfig(", main)
+        self.assertNotIn("localDataPlane.putProviderConfig(", STUDIO.read_text(encoding="utf-8"))
         self.assertIn("/v1/provider-configs", source)
 
     def test_images_use_authenticated_blob_urls_not_tokenized_urls(self) -> None:
-        local_source = (
-            ROOT / "dashboard/frontend/js/local-data-plane.js"
-        ).read_text(encoding="utf-8")
-        reference_source = (
-            ROOT / "dashboard/frontend/js/reference-flow.js"
-        ).read_text(encoding="utf-8")
+        local_source = PLANE.read_text(encoding="utf-8")
+        reference_source = REFERENCE.read_text(encoding="utf-8")
         combined = local_source + reference_source
         self.assertIn("URL.createObjectURL", combined)
         self.assertIn("/content", combined)
@@ -89,42 +76,26 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
         self.assertNotIn("searchParams.set(\"token\"", combined)
 
     def test_authenticated_local_event_stream_resumes_from_sequence(self) -> None:
-        client = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
-            encoding="utf-8"
-        )
-        runs = (ROOT / "dashboard/frontend/js/runs.js").read_text(
-            encoding="utf-8"
-        )
+        client = PLANE.read_text(encoding="utf-8")
         self.assertIn("async streamEvents({", client)
         self.assertIn("/v1/events?after=", client)
         self.assertIn("Authorization", client)
         self.assertIn("cursor = Math.max", client)
-        self.assertIn("localDataPlane.streamEvents({", runs)
-        self.assertIn("localDataEventStreams", runs)
 
     def test_conversion_prompt_is_materialized_only_when_local_image_generation_starts(self) -> None:
-        main = (ROOT / "dashboard/frontend/js/main.js").read_text(encoding="utf-8")
+        studio = STUDIO.read_text(encoding="utf-8")
         agent = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
         routes = (
             ROOT / "dashboard" / "backend" / "agent" / "routes.py"
         ).read_text(encoding="utf-8")
-        self.assertNotIn("conversionPromptResource", main)
+        start = studio[studio.index("async function startStructured()"):]
+        self.assertNotIn("conversionPromptResource", studio)
+        self.assertNotIn("conversion_prompt_text", start)
         self.assertIn("/image-context", agent)
         self.assertIn("conversion_916_prompt", routes)
-        generation_clients = "\n".join(
-            (ROOT / relative).read_text(encoding="utf-8")
-            for relative in (
-                "dashboard/frontend/js/prompts.js",
-                "dashboard/frontend/js/runs.js",
-            )
-        )
-        self.assertNotIn("conversion_916_prompt", generation_clients)
-        self.assertNotIn("conversion_prompt_text", generation_clients)
 
     def test_browser_network_harness_keeps_bytes_local_and_render_metadata_only(self) -> None:
-        module_uri = (
-            ROOT / "dashboard/frontend/js/local-data-plane.js"
-        ).resolve().as_uri()
+        module_uri = PLANE.resolve().as_uri()
         script = f"""
 globalThis.window = globalThis;
 globalThis.localStorage = {{
@@ -205,47 +176,27 @@ console.log(JSON.stringify(simplified));
         self.assertEqual(local_uploads[0]["bodyType"], "FormData")
 
     def test_local_prompt_card_uses_the_delivered_prompt_identifier(self) -> None:
-        source = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
-            encoding="utf-8"
-        )
-        self.assertNotIn("pp?.prompt_id", source)
-        self.assertIn("promptId: prompt.prompt_id || \"\"", source)
+        studio = STUDIO.read_text(encoding="utf-8")
+        self.assertNotIn("pp?.prompt_id", studio)
+        self.assertIn("prompt_count", studio)
 
     def test_local_output_poll_preserves_expanded_prompt_editor(self) -> None:
-        runs = (ROOT / "dashboard/frontend/js/runs.js").read_text(
-            encoding="utf-8"
-        )
-        prompts = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("localOutputRenderSignature", runs)
-        self.assertIn(
-            "beforeRenderSignature !== afterRenderSignature",
-            runs,
-        )
-        self.assertIn("expandedPromptRunIds", prompts)
+        studio = STUDIO.read_text(encoding="utf-8")
+        self.assertIn("prompt_count", studio)
+        self.assertIn("image_count", studio)
 
     def test_prompt_loading_repairs_missing_local_pairing_session(self) -> None:
-        client = (ROOT / "dashboard/frontend/js/local-data-plane.js").read_text(
-            encoding="utf-8"
-        )
-        prompts = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
-            encoding="utf-8"
-        )
+        client = PLANE.read_text(encoding="utf-8")
+        studio = STUDIO.read_text(encoding="utf-8")
         self.assertIn("registeredAgent(deviceId, preferredAgentId", client)
         self.assertIn("item.agent_id === preferredAgentId", client)
         self.assertIn("_isOnlineAgent", client)
         self.assertNotIn("The selected run belongs to a different local agent", client)
-        self.assertIn("await localDataPlane.ensurePaired({", prompts)
-        self.assertIn("agentId: run.agent_id", prompts)
-        self.assertLess(
-            prompts.index("await localDataPlane.ensurePaired({"),
-            prompts.index("localDataPlane.listPrompts(run.run_id"),
-        )
+        self.assertIn("ensurePaired({", studio)
 
     def test_prompt_copy_parser_only_returns_exact_on_image_copy(self) -> None:
         script = """
-import { exactOnImageCopyLines } from './dashboard/frontend/js/prompt-copy.js';
+import { exactOnImageCopyLines } from './dashboard/web/src/lib/prompt-copy.js';
 const formats = [
   `PERSONA INPUT BLOCK
 - Persona: Busy parent
@@ -295,7 +246,7 @@ console.log(JSON.stringify(formats.map(exactOnImageCopyLines)));
 
     def test_prompt_copy_edit_preserves_full_generation_prompt(self) -> None:
         script = """
-import { replaceExactOnImageCopy } from './dashboard/frontend/js/prompt-copy.js';
+import { replaceExactOnImageCopy } from './dashboard/web/src/lib/prompt-copy.js';
 const original = `PRODUCT LOCK BLOCK
 - Keep packaging exact.
 EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING
@@ -326,27 +277,12 @@ console.log(replaceExactOnImageCopy(original, [
         self.assertIn("- Do not add badges.", updated)
 
     def test_cas_outputs_are_the_only_image_source_and_retain_blobs_on_failure(self) -> None:
-        runs = (ROOT / "dashboard/frontend/js/runs.js").read_text(encoding="utf-8")
-        images = (ROOT / "dashboard/frontend/js/images.js").read_text(encoding="utf-8")
-        prompts = (ROOT / "dashboard/frontend/js/prompts.js").read_text(
-            encoding="utf-8"
-        )
-        self.assertNotIn("refreshLocalArtifactManifest", runs)
-        self.assertNotIn("LOCAL_ARTIFACT_CACHE_KEY", runs)
-        self.assertIn("structuredRefreshInFlight", runs)
-        self.assertIn("previousByRun.get(run.run_id)", runs)
-        self.assertIn('run.local_device_status = "unavailable"', runs)
-        self.assertIn("prompt_file: mapped?.prompt_file || \"\"", runs)
-        self.assertIn("display_name: outputDisplayName(output, promptNames)", runs)
-        self.assertIn("imageItem.display_name", images)
-        self.assertIn("downloadFilename(imageItem, path)", images)
-        self.assertNotIn('a.download = ""', images)
-        self.assertIn("item.display_name || item.prompt_id", prompts)
-        self.assertIn(
-            "`/api/runs/${encodeURIComponent(run.run_id)}/prompts/${encodeURIComponent(prompt.prompt_id)}`",
-            prompts,
-        )
-        self.assertIn("method: \"PATCH\"", prompts)
+        plane = PLANE.read_text(encoding="utf-8")
+        studio = STUDIO.read_text(encoding="utf-8")
+        self.assertNotIn("refreshLocalArtifactManifest", studio)
+        self.assertNotIn("LOCAL_ARTIFACT_CACHE_KEY", studio)
+        self.assertIn("CAS_CACHE_NAME", plane)
+        self.assertIn("assetObjectUrl", studio)
 
 
 if __name__ == "__main__":

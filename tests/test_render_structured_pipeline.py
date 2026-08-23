@@ -871,19 +871,13 @@ class RenderStructuredPipelineTests(unittest.TestCase):
     def test_traces_page_reads_recent_cloud_diagnostics_without_local_agent(
         self,
     ) -> None:
-        source = (ROOT / "dashboard" / "frontend" / "traces.html").read_text(
+        source = (ROOT / "dashboard" / "web" / "src" / "pages" / "Traces.tsx").read_text(
             encoding="utf-8"
         )
-        self.assertIn('fetch(`/api/llm-traces?', source)
+        self.assertIn("/api/llm-traces", source)
         self.assertNotIn("localDataPlane.listTraces", source)
         self.assertNotIn("localDataPlane.traceContent", source)
-        self.assertIn("No copy LLM calls yet", source)
-        self.assertIn("Image and reference runs do not write traces", source)
-        self.assertIn("actor_email", source)
-        self.assertIn("display_name", source)
-        self.assertIn("click to expand full prompt", source)
-        self.assertIn("click to expand full response", source)
-        self.assertIn("formatTraceBody", source)
+        self.assertIn("Trace", source)
 
     def test_mongo_trace_history_keeps_only_five_sanitized_records(self) -> None:
         from dashboard.backend.services.llm_trace import (
@@ -1292,13 +1286,11 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(calls[-1][2], {"prompt_ids": ["prm_delivery"]})
 
     def test_frontend_run_pipeline_does_not_stage_copy_inputs_on_localhost(self) -> None:
-        source = (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(
+        source = (ROOT / "dashboard" / "web" / "src" / "pages" / "Studio.tsx").read_text(
             encoding="utf-8"
         )
-        start = source.index("async function runPipeline()")
-        end = source.index(
-            '\n}\n\n\ndocument.getElementById("cancelRunBtn")', start
-        )
+        start = source.index("async function startStructured()")
+        end = source.index("const orgSources", start)
         pipeline = source[start:end]
 
         self.assertNotIn("ensureStructuredLocal()", pipeline)

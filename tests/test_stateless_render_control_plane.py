@@ -60,7 +60,8 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
         )
         for route in ("/generated_images", "/output", "/storage", "/input"):
             self.assertNotIn(f'app.mount("{route}"', source)
-        self.assertIn('app.mount("/", StaticFiles(', source)
+        self.assertIn("mount_react_spa", source)
+        self.assertIn('app.mount("/assets"', (ROOT / "dashboard/backend/spa_static.py").read_text(encoding="utf-8"))
         self.assertIn('"/api/public/"', source)
 
     def test_startup_does_not_create_or_scan_runtime_content(self) -> None:
@@ -186,7 +187,7 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/html", response.headers.get("content-type", ""))
-        self.assertIn("Organization Invite", response.text)
+        self.assertIn('id="root"', response.text)
 
     def test_post_login_return_to_only_allows_same_origin_invites(self) -> None:
         from dashboard.backend.auth.routes import sanitize_return_to

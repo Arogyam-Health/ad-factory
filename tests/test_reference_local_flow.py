@@ -460,7 +460,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
     def test_dashboard_reference_execution_has_no_reachable_render_content_worker(self) -> None:
         root = Path(__file__).resolve().parents[1]
         execute = (root / "dashboard/backend/routes/execute.py").read_text(encoding="utf-8")
-        frontend = (root / "dashboard/frontend/js/reference-flow.js").read_text(
+        frontend = (root / "dashboard/web/src/pages/studio/ReferencePanel.tsx").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("api_run_execute_reference_workspace_v2", execute)

@@ -28,7 +28,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/js/local-data-plane.js":
             body = (
-                ROOT / "dashboard/frontend/js/local-data-plane.js"
+                ROOT / "dashboard/web/src/lib/local-data-plane.js"
             ).read_bytes()
             self._send(200, body, "text/javascript")
             return

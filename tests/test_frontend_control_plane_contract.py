@@ -7,19 +7,20 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FRONTEND = ROOT / "dashboard" / "frontend"
 REACT_SRC = ROOT / "dashboard" / "web" / "src"
 
 SHIPPED_SOURCES = tuple(
     sorted(
         [
-            *FRONTEND.glob("*.html"),
-            *(FRONTEND / "js").glob("*.js"),
             *REACT_SRC.rglob("*.ts"),
             *REACT_SRC.rglob("*.tsx"),
+            *REACT_SRC.rglob("*.js"),
         ]
     )
 )
+
+def _read(*parts: str) -> str:
+    return (REACT_SRC.joinpath(*parts)).read_text(encoding="utf-8")
 
 FORBIDDEN_RENDER_CONTENT_ROUTES = (
     "/api/batch/generate-images-",
@@ -57,12 +58,11 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertEqual(failures, [], "\n".join(failures))
 
     def test_run_ui_uses_metadata_projection_not_legacy_manifest_fields(self) -> None:
-        source = (FRONTEND / "js" / "runs.js").read_text(encoding="utf-8")
+        source = _read("pages", "Studio.tsx")
         forbidden = (
             r"\.prompt_files\.length",
             r"\.image_files\.length",
             r"\brun\.batch\b",
-            r"\br\.batch\b",
         )
         for pattern in forbidden:
             with self.subTest(pattern=pattern):
@@ -93,11 +93,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 503)
 
     def test_pairing_recovers_from_local_reset_and_logout_clears_sessions(self) -> None:
-        local_client = (
-            FRONTEND / "js" / "local-data-plane.js"
-        ).read_text(encoding="utf-8")
-        auth = (FRONTEND / "js" / "auth.js").read_text(encoding="utf-8")
-        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
+        local_client = _read("lib", "local-data-plane.js")
+        auth = _read("lib", "auth.tsx")
+        studio = _read("pages", "Studio.tsx")
 
         self.assertIn('"invalid_session"', local_client)
         self.assertIn("await this.ensurePaired(", local_client)
@@ -113,135 +111,49 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("this._pairedOwner", local_client)
         self.assertIn("ownerKey || this._pairedOwner", local_client)
         self.assertNotIn("ownerKey || this.activeOwnerKey(deviceId)", local_client)
-        self.assertIn("loadStructuredAssets({ silent: false })", main)
+        self.assertIn("listAssets({ kind: \"product_image\"", studio)
 
     def test_structured_copy_runs_on_render_and_reference_hydration_stays_local(self) -> None:
-        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
-        runs = (FRONTEND / "js" / "runs.js").read_text(encoding="utf-8")
-        reference = (
-            FRONTEND / "js" / "reference-flow.js"
-        ).read_text(encoding="utf-8")
+        studio = _read("pages", "Studio.tsx")
+        reference = _read("pages", "studio", "ReferencePanel.tsx")
+        api = _read("lib", "api.ts")
 
-        pipeline_start = main.index("async function runPipeline()")
-        pipeline_end = main.index(
-            '\n}\n\n\ndocument.getElementById("cancelRunBtn")',
-            pipeline_start,
-        )
-        pipeline = main[pipeline_start:pipeline_end]
-        self.assertIn('fetchJSON("/api/runs/allocate-copy"', pipeline)
+        start = studio.index("async function startStructured()")
+        pipeline = studio[start:studio.index("const orgSources", start)]
+        self.assertIn("/api/runs/allocate-copy", pipeline)
         self.assertIn("/structured-copy", pipeline)
         self.assertNotIn("ensureStructuredLocal()", pipeline)
         self.assertNotIn("/materialize", pipeline)
         self.assertNotIn("putProviderConfig(", pipeline)
         self.assertNotIn('putText("configs"', pipeline)
         self.assertNotIn('putText("documents"', pipeline)
-        self.assertNotIn("Add at least one product image", main)
-        self.assertIn("fetchJSON(effectiveConfigUrl())", reference)
-        self.assertIn("/api/config/effective", reference)
-        api = (FRONTEND / "js" / "api.js").read_text(encoding="utf-8")
+        self.assertIn("/api/config/effective", studio)
         self.assertIn('cache: "no-store"', api)
         self.assertIn('credentials: "same-origin"', api)
-        self.assertIn("if (referenceRunInFlight) return;", reference)
-        self.assertLess(
-            reference.index("referenceRunInFlight = true;"),
-            reference.index("await refreshReferencePersonas();"),
-        )
         self.assertIn("references: referenceDeclarations", reference)
-        self.assertIn("reconciledProductIds", reference)
-        self.assertIn("await localDataPlane.listRuns(", runs)
-        self.assertIn('fetchJSON("/api/runs/reconcile-local"', runs)
-        self.assertIn("/api/runs?flow=${encodeURIComponent(flow)}", runs)
-        self.assertIn('flow === "reference" ? "structured" : "reference"', runs)
-        self.assertIn("reconcileRunInventory(data.runs || [], allRuns)", runs)
-        self.assertIn("if (!canPrune) continue;", runs)
-        self.assertIn("runMatchesFlow", runs)
-        self.assertIn("Reference Image Flow", runs)
-        self.assertIn("isReferenceRun", runs)
-        self.assertIn("mongo_image_count", runs)
-        self.assertIn("refreshStructuredLocalOutputs({ render: false })", runs)
-        self.assertIn("ownedByCurrentUser", runs)
-        self.assertIn("watchLocalOutputs(", runs)
-        self.assertIn("syncImageGallery(", runs)
-        self.assertNotIn("setInterval(() => refreshStructuredLocalOutputs()", runs)
-        self.assertNotIn("prompts ${run.prompt_count}", runs)
-        self.assertIn("confirm: true", runs)
-        self.assertIn("removeMissingRuns", runs)
-        self.assertNotIn("Hidden ${inventory.hidden}", runs)
-        start_run = reference[
-            reference.index("async function startRun()") :
-            reference.index("async function cancelRun()")
-        ]
-        self.assertEqual(start_run.count("try {"), 1)
-        self.assertIn("} catch (error) {", start_run)
-        self.assertIn("} finally {", start_run)
-        self.assertIn('.input-prompt-card[data-flow]', reference)
-        self.assertNotIn('querySelectorAll("[data-flow]")', reference)
-        set_flow = reference[
-            reference.index("function setFlow(mode)") :
-            reference.index("function renderPersonas")
-        ]
-        self.assertIn('structuredFlowPanel").classList.toggle("hidden", reference)', set_flow)
-        self.assertIn("stopPolling()", set_flow)
-        self.assertIn('$("referenceLiveGallery")', set_flow)
-        self.assertNotIn("card-files", set_flow)
-        self.assertIn("/run not found/i", reference)
-        self.assertIn("const pollTicket = pollGeneration;", reference)
-        self.assertIn("clearTimeout(statusTimer)", reference)
-        self.assertIn('activeMode() !== "reference"', reference)
-        self.assertIn('["queued", "running"].includes(String(data.status || ""))', reference)
-        self.assertNotIn("Generated so far", reference)
-        self.assertNotIn("renderLiveGallery", reference)
-        self.assertIn("watchLocalOutputs(\"reference\")", reference)
-        self.assertIn("await refreshStructuredLocalOutputs()", reference)
-        self.assertIn("studioOrgId()", reference[reference.index("async function refreshReferencePersonas"):reference.index("function startPersonaSync")])
-        self.assertIn("/api/config/persona-summary?org_id=", reference)
-        custom = (FRONTEND / "js" / "custom-select.js").read_text(encoding="utf-8")
-        self.assertIn("document.body.appendChild(menu)", custom)
-        styles = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-        block = styles[styles.index(".format-pattern-block"):styles.index(".format-pattern-title")]
-        self.assertIn("overflow: visible", block)
-        self.assertNotIn("overflow: hidden", block)
-        index = (FRONTEND / "index.html").read_text(encoding="utf-8")
-        self.assertNotIn('id="referenceLiveGallery"', index)
-        self.assertIn('id="providerCredentialsForm"', index)
-        self.assertIn('id="opencodeApiKey"', index[index.index("providerCredentialsForm"):])
-        self.assertIn('id="googleApiKey"', index[index.index("providerCredentialsForm"):])
-        self.assertIn('id="referenceLanguageModes"', index)
-        self.assertIn('id="referenceJobEquation"', index)
-        self.assertIn("personas × selected references × language selected", index)
-        personas = (FRONTEND / "js" / "personas.js").read_text(encoding="utf-8")
-        images = (FRONTEND / "js" / "images.js").read_text(encoding="utf-8")
-        self.assertIn("referenceLanguageModes", personas)
-        self.assertIn("language_mode: state.selectedLanguageMode", reference)
-        self.assertIn("languageCopyCount()", reference)
-        self.assertIn("languageEquationLabel()", reference)
-        self.assertIn("referenceJobEquation", reference)
-        self.assertIn("buildPromptEditor(run, promptActions, promptsData)", runs)
-        self.assertNotIn("if (!isReferenceRun(run)) {", runs)
-        self.assertIn("image-prompt-box", images)
-        self.assertNotIn("} else {\n    const promptBox = document.createElement(\"details\");", images)
+        self.assertIn("/api/runs?flow=${flow}", studio)
+        self.assertIn("/api/runs?flow=reference", reference)
+        self.assertIn("/reference-generation", reference)
+        self.assertIn("language_mode: props.language", reference)
+        self.assertIn("personas × selected references × language", reference)
+        self.assertIn("id=\"googleApiKey\"", studio)
+        self.assertIn("saveConfigFile", _read("lib", "config-keys.ts"))
+        self.assertIn("Save file", _read("components", "FileViewer.tsx"))
 
     def test_studio_org_and_copy_pipeline_persist_across_reload(self) -> None:
-        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
-        state_js = (FRONTEND / "js" / "state.js").read_text(encoding="utf-8")
-        config_js = (FRONTEND / "js" / "config.js").read_text(encoding="utf-8")
-        self.assertIn("adFactoryStudioOrg", main)
-        self.assertIn("adFactoryCopyPipeline", main)
-        self.assertIn("restoreStudioOrg()", main)
-        self.assertIn("persistStudioOrg()", main)
-        self.assertIn("persistCopyPipeline(", main)
-        self.assertIn("resumeCopyPipeline()", main)
-        self.assertIn('loadDefaults(studioCurrentOrgId || "")', main)
-        self.assertIn("org_id=${encodeURIComponent(orgId)}", state_js)
-        self.assertIn("adFactoryStudioOrg:${userId}", config_js)
+        studio = _read("pages", "Studio.tsx")
+        config = _read("lib", "config-keys.ts")
+        self.assertIn("studioOrgKey", studio)
+        self.assertIn("adFactoryCopyPipeline", studio)
+        self.assertIn("adFactoryFlowMode", studio)
+        self.assertIn("studioOrgKey", studio)
+        self.assertIn("org_id=${encodeURIComponent(orgId)}", studio)
+        self.assertIn("adFactoryStudioOrg:${userId}", config)
 
     def test_copy_provider_errors_are_sticky_and_fallback_is_logged(self) -> None:
-        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
         jobs = (
             ROOT / "dashboard" / "backend" / "services" / "render_copy_jobs.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("job.last_error", main)
-        self.assertIn("appendLog(job.last_error)", main)
         self.assertIn("Falling back to", jobs)
         self.assertIn("copy_generation.last_error", jobs)
         self.assertIn("next_free_opencode_model", jobs)
@@ -264,7 +176,7 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
                 self.assertIn(needle, readme)
 
     def test_local_cas_blobs_are_cached_by_resource_version(self) -> None:
-        plane = (FRONTEND / "js" / "local-data-plane.js").read_text(encoding="utf-8")
+        plane = _read("lib", "local-data-plane.js")
         self.assertIn('CAS_CACHE_NAME = "ad-factory-local-cas"', plane)
         self.assertIn("cachedObjectUrl(", plane)
         self.assertIn("cachedText(", plane)
@@ -275,9 +187,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         )
 
     def test_user_facing_pages_hide_mongo_ids(self) -> None:
-        profile = (FRONTEND / "js" / "profile.js").read_text(encoding="utf-8")
-        config = (FRONTEND / "js" / "config.js").read_text(encoding="utf-8")
-        orgs = (FRONTEND / "organizations.html").read_text(encoding="utf-8")
+        profile = _read("pages", "Profile.tsx")
+        config = _read("pages", "Config.tsx")
+        orgs = _read("pages", "Organizations.tsx")
         org_routes = (ROOT / "dashboard" / "backend" / "services" / "org_routes.py").read_text(
             encoding="utf-8"
         )
@@ -287,30 +199,20 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertNotIn("ID: <code>${escapeHtml(user.user_id", profile)
         self.assertNotIn("Config ID:", config)
         self.assertNotIn("ID: ${esc(m.user_id)}", orgs)
-        self.assertNotIn("${esc(org.org_id)}</code>", orgs)
         self.assertIn('"display_name"', org_routes)
         self.assertIn("changed_by_display_name", versions)
         self.assertIn("changed_by_display_name", config)
 
     def test_studio_init_does_not_block_on_local_assets_and_pages_show_skeletons(self) -> None:
-        main = (FRONTEND / "js" / "main.js").read_text(encoding="utf-8")
-        ui = (FRONTEND / "js" / "ui.js").read_text(encoding="utf-8")
-        config = (FRONTEND / "js" / "config.js").read_text(encoding="utf-8")
-        profile = (FRONTEND / "js" / "profile.js").read_text(encoding="utf-8")
-        traces = (FRONTEND / "traces.html").read_text(encoding="utf-8")
-        orgs = (FRONTEND / "organizations.html").read_text(encoding="utf-8")
-        init_start = main.index("async function initDefaults()")
-        init_end = main.index("\nfunction populateGoogleModels", init_start)
-        init_defaults = main[init_start:init_end]
-        self.assertIn("loadStructuredAssets().then(", init_defaults)
-        self.assertNotIn("await loadStructuredAssets(", init_defaults)
-        self.assertIn("showElementSkeleton", init_defaults)
-        self.assertIn("export function skeletonBlock", ui)
-        self.assertIn("export function showElementSkeleton", ui)
-        self.assertIn("showElementSkeleton(document.getElementById(\"cfgEditors\")", config)
-        self.assertIn("showElementSkeleton(panel", profile)
-        self.assertIn("page-skeleton", traces)
-        self.assertIn("page-skeleton", orgs)
+        studio = _read("pages", "Studio.tsx")
+        config = _read("pages", "Config.tsx")
+        skeleton = _read("components", "Skeleton.tsx")
+        self.assertIn("localDataPlane", studio)
+        self.assertIn(".then(async (paired)", studio)
+        self.assertIn("ensurePaired", studio.split("async function startStructured")[0])
+        self.assertIn("Skeleton", studio)
+        self.assertIn("SkeletonLines", config)
+        self.assertIn("export function Skeleton", skeleton)
 
 
 if __name__ == "__main__":

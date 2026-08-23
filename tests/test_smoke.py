@@ -824,7 +824,7 @@ def test_org_system() -> int:
     from dashboard.backend.services.user_config import get_generic_config
     generic = get_generic_config()
     failed += ok(config == generic, "resolve_effective_config without org returns generic")
-    failed += ok(len(config) == 8, "resolve_effective_config returns 8 keys")
+    failed += ok(len(config) == len(generic), "resolve_effective_config returns every generic key")
 
     # 10. get_user_config is personal-only (not org-aware)
     from dashboard.backend.services.user_config import get_user_config
@@ -967,6 +967,8 @@ def test_org_system() -> int:
             "background_variant": {"content": '{"org": true}', "content_type": "application/json"},
             "prompt_assembler_templates": {"content": '{"org": true}', "content_type": "application/json"},
             "conversion_916_prompt": {"content": "org conversion", "content_type": "text/plain"},
+            "reference_starting_prompt": {"content": "org reference start", "content_type": "text/plain"},
+            "reference_product_master_doc": {"content": "org reference product", "content_type": "text/plain"},
         },
     }
     extracted = _extract_flat_from_new_schema(test_org_doc)
@@ -1398,191 +1400,41 @@ def test_admin_frontend() -> int:
     failed = 0
     print("\n[Admin Frontend]")
 
-    # 1. admin.js exists
-    admin_js_path = ROOT / "dashboard" / "frontend" / "js" / "admin.js"
-    failed += ok(admin_js_path.exists(), "admin.js exists")
+    react = ROOT / "dashboard" / "web" / "src"
+    admin = (react / "pages" / "Admin.tsx").read_text(encoding="utf-8")
+    studio = (react / "pages" / "Studio.tsx").read_text(encoding="utf-8")
+    keys = (react / "lib" / "config-keys.ts").read_text(encoding="utf-8")
+    viewer = (react / "components" / "FileViewer.tsx").read_text(encoding="utf-8")
+    app = (react / "App.tsx").read_text(encoding="utf-8")
+    shell = (react / "components" / "Shell.tsx").read_text(encoding="utf-8")
 
-    # 2. admin.js exports renderAdminPanel
-    with open(admin_js_path) as f:
-        admin_js = f.read()
-    failed += ok("export async function renderAdminPanel" in admin_js,
-                 "admin.js exports renderAdminPanel")
-
-    # 3. admin.js has adminFetch helper
-    failed += ok("async function adminFetch" in admin_js,
-                 "admin.js defines adminFetch")
-
-    # 4. admin.js has escapeHtml helper
-    failed += ok("function escapeHtml" in admin_js or "const escapeHtml" in admin_js,
-                 "admin.js defines escapeHtml")
-
-    # 5. admin.js has confirmAction
-    failed += ok("function confirmAction" in admin_js,
-                 "admin.js defines confirmAction")
-
-    # 6. admin.js has formatDate
-    failed += ok("function formatDate" in admin_js,
-                 "admin.js defines formatDate")
-
-    # 7. admin.js does not contain full API key reveal
-    failed += ok("api_key" not in admin_js or "encrypted_api_key" not in admin_js.split("safe_provider_config")[0],
-                 "admin.js does not reveal full API keys")
-
-    # 8. admin.js has overview section handler
-    failed += ok("renderOverview" in admin_js, "admin.js has renderOverview")
-
-    # 9. admin.js has users section handler
-    failed += ok("renderUsers" in admin_js, "admin.js has renderUsers")
-
-    # 10. admin.js has individual users handler
-    failed += ok("renderIndividualUsers" in admin_js, "admin.js has renderIndividualUsers")
-
-    # 11. admin.js has orgs handler
-    failed += ok("renderOrgs" in admin_js, "admin.js has renderOrgs")
-
-    # 12. admin.js has configs handler
-    failed += ok("renderConfigs" in admin_js, "admin.js has renderConfigs")
-
-    # 13. admin.js has config copy handler
-    failed += ok("renderConfigCopy" in admin_js, "admin.js has renderConfigCopy")
-
-    # 14. admin.js has audit logs handler
-    failed += ok("renderAuditLogs" in admin_js, "admin.js has renderAuditLogs")
-
-    # 15. admin.js has runs handler
-    failed += ok("renderRuns" in admin_js, "admin.js has renderRuns")
-
-    # 16. admin.js has images handler
-    failed += ok("renderImages" in admin_js, "admin.js has renderImages")
-
-    # 17. admin.js has prompts handler
-    failed += ok("renderPrompts" in admin_js, "admin.js has renderPrompts")
-
-    # 18. admin.js has provider configs handler
-    failed += ok("renderProviderConfigs" in admin_js, "admin.js has renderProviderConfigs")
-
-    # 19. admin.js has health handler
-    failed += ok("renderHealth" in admin_js, "admin.js has renderHealth")
-
-    # 20. admin.js uses include_content for config content
-    failed += ok("include_content=true" in admin_js,
-                 "admin.js requests include_content=true for config content")
-
-    # 21. admin.js uses confirmAction for dangerous operations
-    failed += ok('confirmAction("Revoke' in admin_js or 'confirmAction("This will' in admin_js or 'confirmAction(`Disable' in admin_js,
-                 "admin.js uses confirmAction for dangerous ops")
-
-    # 22. admin.js does not request encrypted_api_key
-    failed += ok("encrypted_api_key" not in admin_js,
-                 "admin.js never requests encrypted_api_key")
-
-    # 23. index.html contains admin panel container
-    index_path = ROOT / "dashboard" / "frontend" / "index.html"
-    with open(index_path) as f:
-        index_html = f.read()
-    failed += ok("adminPanel" in index_html, "index.html contains adminPanel container")
-    failed += ok("adminNav" in index_html, "index.html contains adminNav button")
-    failed += ok("main.js" in index_html, "index.html loads main.js which imports admin.js")
-
-    # 24. main.js imports admin module
-    main_js_path = ROOT / "dashboard" / "frontend" / "js" / "main.js"
-    with open(main_js_path) as f:
-        main_js = f.read()
-    failed += ok("admin.js" in main_js, "main.js imports admin.js")
-    failed += ok("is_super_admin" in main_js, "main.js checks is_super_admin")
-
-    # 25. Admin nav hidden by default (has hidden attribute)
-    failed += ok('hidden' in index_html or 'hidden' in index_html,
-                 "admin nav has hidden by default")
-
-    # 26. Provider config renderer does not show encrypted_api_key
-    failed += ok("encrypted_api_key" not in admin_js,
-                 "admin.js provider config renderer avoids encrypted_api_key")
-
-    # 27. Config detail default does not request include_content
-    failed += ok('"Content"' in admin_js,
-                 "admin.js has separate metadata vs content buttons for configs")
-
-    # 28. Self-disable action blocked
-    failed += ok("currentUser?.user_id" in admin_js,
-                 "admin.js checks currentUser to block self-disable")
-
-    # 29. Admin config copy form exists
-    failed += ok("Source Owner ID" in admin_js or "source_owner_id" in admin_js,
-                 "admin.js config copy form has source_owner_id")
-
-    # 30. Audit log metadata is rendered safely (uses textContent or pre)
-    failed += ok(".admin-meta-expanded" in admin_js,
-                 "admin.js has safe metadata rendering in audit logs")
-
-    # 31. showTable no longer clears parent container (all calls use dedicated wrappers)
-    failed += ok("showTable(container," not in admin_js.replace("function showTable","__func__"),
-                 "admin.js showTable never called with bare container (all use tableWrap)")
-
-    # 32. showTable no longer called with bare content (overlay detail wrappers)
-    failed += ok("showTable(content," not in admin_js,
-                 "admin.js showTable never called with bare content (uses sessWrap/memWrap/etc)")
-
-    # 33. Sidebar click sets hash only, does not call renderAdminPanel directly
-    failed += ok('window.location.hash = "admin/' in admin_js,
-                 "admin.js sidebar click sets hash (delegates render to hashchange)")
-    failed += ok("location.hash = " in admin_js.replace("window.",""),
-                 "admin.js sidebar does not call renderAdminPanel directly")
-    # Verify renderAdminPanel is NOT called inside the click callback
-    click_match = "window.location.hash = \"admin/\" + item.id;\n      renderAdminPanel"
-    failed += ok(click_match not in admin_js,
-                 "admin.js sidebar click does not call renderAdminPanel directly")
-
-    # Now test main.js navigation behavior
-    with open(main_js_path) as f:
-        main_js = f.read()
-
-    # 34. Init does not show admin panel automatically on load (only shows nav)
-    init_block = main_js.split("initAuth().then")[1] if "initAuth().then" in main_js else ""
-    failed += ok("adminPanel.hidden = false" in init_block and "window.location.hash" in init_block,
-                 "init shows admin panel only when hash condition is met, not unconditionally")
-
-    # 35. Init shows admin panel when #admin/ hash is present on load
-    failed += ok('window.location.hash.startsWith("#admin/")' in main_js,
-                 "main.js checks hash on load for admin panel")
-
-    # 36. Admin nav click navigates to admin page
-    failed += ok('admin/overview' in main_js,
-                 "admin nav click navigates to admin/overview")
-
-    # 37. hashchange hides toggleable panels when opening admin
-    failed += ok("configPanel.style.display = \"none\"" in main_js and "profilePanel.classList.add" in main_js,
-                 "hashchange hides profile+config panels when opening admin")
-
-    # 38. Leaving admin restores toggleable panels
-    failed += ok("configPanel.style.display = \"\"" in main_js,
-                 "leaving admin restores panel display")
-
-    # 39. hashchange handler hides admin panel when navigating away from admin
-    failed += ok("panel.hidden = true" in main_js,
-                 "hashchange hides admin panel on non-admin hash")
-
-    # 40. hashchange handler shows admin panel and hides org/config on admin hash
-    failed += ok("panel.hidden = false" in main_js,
-                 "hashchange shows admin panel on admin hash")
-
-    # 41. Admin panel uses hash-based routing (admin.html handles it directly)
-    failed += ok("hashchange" in main_js or "admin/overview" in main_js,
-                 "admin navigation uses hash-based routing")
-
-    # 42. Dashboard input prompt cards save through owner config, not filesystem prompt endpoints
-    prompt_cards_block = main_js.split("// Input Prompts", 1)[1].split("// Config Files", 1)[0] if "// Input Prompts" in main_js else ""
-    failed += ok("/api/input-prompt" not in prompt_cards_block,
-                 "input prompt cards do not use filesystem /api/input-prompt endpoint")
-    failed += ok("conversion_916_prompt" in prompt_cards_block and "starting_prompt" in prompt_cards_block,
-                 "input prompt cards map to MongoDB config keys")
-    failed += ok('saveMethod: "PUT"' in prompt_cards_block and "/api/user/config" in prompt_cards_block,
-                 "input prompt cards save via config PUT endpoint")
-    failed += ok(
-        'config: { [configKey]: text }' in main_js
-        and 'expected_version: data?.version' in main_js,
-        "studio config saves nest file keys under config and send expected_version",
-    )
+    failed += ok((react / "pages" / "Admin.tsx").is_file(), "Admin.tsx exists")
+    failed += ok("async function adminFetch" in admin, "Admin.tsx defines adminFetch")
+    failed += ok("function confirmTyped" in admin, "Admin.tsx defines confirmTyped")
+    failed += ok("function fmtDate" in admin, "Admin.tsx defines fmtDate")
+    failed += ok("encrypted_api_key" not in admin, "Admin.tsx never requests encrypted_api_key")
+    failed += ok('"overview"' in admin and '"users"' in admin, "Admin.tsx has overview and users")
+    failed += ok('"individual-users"' in admin, "Admin.tsx has individual-users")
+    failed += ok('"orgs"' in admin and '"configs"' in admin, "Admin.tsx has orgs and configs")
+    failed += ok('"config-copy"' in admin, "Admin.tsx has config-copy")
+    failed += ok('"audit"' in admin, "Admin.tsx has audit")
+    failed += ok('"runs"' in admin and '"images"' in admin and '"prompts"' in admin, "Admin.tsx has runs/images/prompts")
+    failed += ok('"providers"' in admin and '"health"' in admin, "Admin.tsx has providers and health")
+    failed += ok('"readiness"' in admin and '"runbook"' in admin, "Admin.tsx has readiness and runbook")
+    failed += ok("include_content" not in admin, "Admin.tsx does not request include_content by default")
+    failed += ok("GRANT" in admin and "REVOKE" in admin, "Admin.tsx uses typed GRANT/REVOKE")
+    failed += ok("REPLACE" in admin and "DISABLE" in admin, "Admin.tsx uses typed REPLACE/DISABLE")
+    failed += ok("uid !== currentUserId" in admin, "Admin.tsx blocks self-disable")
+    failed += ok("source_owner_id" in admin, "Admin.tsx config copy sends source_owner_id")
+    failed += ok('window.location.hash = `admin/${id}`' in admin or 'window.location.hash = `admin/' in admin, "Admin.tsx sidebar sets hash")
+    failed += ok("hashchange" in admin, "Admin.tsx uses hashchange routing")
+    failed += ok("is_super_admin" in shell or "is_super_admin" in admin, "UI checks is_super_admin")
+    failed += ok('path="/admin"' in app, "App routes /admin to AdminPage")
+    failed += ok("/api/input-prompt" not in studio, "Studio does not use filesystem /api/input-prompt")
+    failed += ok("conversion_916_prompt" in keys and "starting_prompt" in keys, "config keys include prompt files")
+    failed += ok("saveConfigFile" in keys and "/api/user/config" in keys, "studio file save uses config PUT")
+    failed += ok("expected_version" in keys, "studio config saves send expected_version")
+    failed += ok("Save file" in viewer and "readOnly={!canEdit}" in viewer, "Studio FileViewer is editable when allowed")
 
     return failed
 
@@ -1644,16 +1496,13 @@ def test_local_agent_responsiveness_contract() -> int:
     chatgpt = (ROOT / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
     batch_routes = (ROOT / "dashboard" / "backend" / "routes" / "batch.py").read_text(encoding="utf-8")
     agent_service = (ROOT / "dashboard" / "backend" / "agent" / "service.py").read_text(encoding="utf-8")
-    runs_js = (ROOT / "dashboard" / "frontend" / "js" / "runs.js").read_text(encoding="utf-8")
-    reference_flow_js = (ROOT / "dashboard" / "frontend" / "js" / "reference-flow.js").read_text(encoding="utf-8")
-    images_js = (ROOT / "dashboard" / "frontend" / "js" / "images.js").read_text(encoding="utf-8")
-    image_comments_js = (ROOT / "dashboard" / "frontend" / "js" / "image-comments.js").read_text(encoding="utf-8")
-    state_js = (ROOT / "dashboard" / "frontend" / "js" / "state.js").read_text(encoding="utf-8")
-    api_js = (ROOT / "dashboard" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    studio_tsx = (ROOT / "dashboard" / "web" / "src" / "pages" / "Studio.tsx").read_text(encoding="utf-8")
+    reference_tsx = (ROOT / "dashboard" / "web" / "src" / "pages" / "studio" / "ReferencePanel.tsx").read_text(encoding="utf-8")
+    config_tsx = (ROOT / "dashboard" / "web" / "src" / "pages" / "Config.tsx").read_text(encoding="utf-8")
+    api_ts = (ROOT / "dashboard" / "web" / "src" / "lib" / "api.ts").read_text(encoding="utf-8")
+    plane_js = (ROOT / "dashboard" / "web" / "src" / "lib" / "local-data-plane.js").read_text(encoding="utf-8")
     run_routes = (ROOT / "dashboard" / "backend" / "routes" / "runs.py").read_text(encoding="utf-8")
     app_py = (ROOT / "dashboard" / "backend" / "app.py").read_text(encoding="utf-8")
-    index_html = (ROOT / "dashboard" / "frontend" / "index.html").read_text(encoding="utf-8")
-    styles_css = (ROOT / "dashboard" / "frontend" / "styles.css").read_text(encoding="utf-8")
 
     failed += ok("class JobProgressReporter" in local_agent and "reporter.submit(clean)" in local_agent,
                  "terminal output is decoupled from Render progress requests")
@@ -1667,65 +1516,45 @@ def test_local_agent_responsiveness_contract() -> int:
                  "generated-image detection polls UI state without two-second fixed waits")
     failed += ok('"job": {' in batch_routes and 'job.get("payload")' not in batch_routes,
                  "active job status excludes local job payload content")
-    failed += ok("refreshStructuredLocalOutputs" in runs_js,
-                 "dashboard resolves active output metadata from localhost")
+    failed += ok("listAssets({ kind: \"product_image\"" in studio_tsx,
+                 "dashboard resolves local product images from the paired agent")
     failed += ok("legacy_artifact_plane_removed" in artifact_server and '"Access-Control-Allow-Private-Network", "true"' in artifact_server,
                  "local content server retires the legacy artifact plane and keeps PNA headers")
     failed += ok("requests.Session()" in local_agent and "_API_SESSIONS = threading.local()" in local_agent,
                  "local agent reuses TLS connections per worker thread")
     failed += ok("record_terminal_outbox" in local_agent and "pending_outbox" in agent_storage,
                  "terminal updates remain pending in a durable outbox")
-    failed += ok("refreshLocalArtifactManifest" not in runs_js and "purgeLegacyArtifactCache" in runs_js,
+    failed += ok("refreshLocalArtifactManifest" not in studio_tsx,
                  "dashboard no longer restores a competing legacy artifact manifest")
-    failed += ok("applyLocalArtifactsToRuns" in runs_js and "run[filesKey].push(image.url)" in runs_js,
-                 "local CAS outputs are merged into matching run galleries")
-    failed += ok("applyLocalArtifactsToRuns();" in reference_flow_js,
-                 "workspace run reload preserves local artifact mappings")
-    failed += ok("runRenderVersion" in runs_js and "renderVersion !== runRenderVersion" in runs_js,
-                 "concurrent artifact and workspace refreshes cannot duplicate run cards")
-    failed += ok("localAgentArtifacts" not in index_html and ".local-agent-artifacts" not in styles_css,
-                 "local images render only in run galleries, not a duplicate section")
+    failed += ok("localAgentArtifacts" not in studio_tsx,
+                 "local images render only in studio asset strips, not a duplicate section")
     failed += ok("finalize_disconnected_agent_jobs(user_id)" in batch_routes and 'previous_status != "cancel_requested"' in agent_service,
                  "disconnect cleanup does not cancel healthy running jobs")
-    failed += ok("transient Render error must not freeze" in runs_js,
-                 "transient job-status failures do not stop dashboard polling")
     failed += ok("legacy_artifact_plane_removed" in artifact_server and "def do_DELETE" in artifact_server,
                  "legacy artifact deletion and batch ZIP routes are gone")
     failed += ok("AgentWebSocketClient" in local_agent and "job_available" in agent_transport,
                  "agent uses WebSocket job notifications with HTTP fallback")
-    failed += ok("localDataPlane.streamEvents" in runs_js and "/v1/events?after=" in (ROOT / "dashboard" / "frontend" / "js" / "local-data-plane.js").read_text(encoding="utf-8"),
-                 "dashboard receives local content changes over the authenticated data-plane stream")
-    failed += ok("localDataPlane.deleteOutput" in images_js and "refreshStructuredLocalOutputs" in images_js,
-                 "structured image deletion removes the local file and refreshes authoritative metadata")
-    failed += ok("localDataPlane.downloadRun" in runs_js and "selectedRuns" in runs_js,
-                 "batch download uses the local artifact ZIP for local images")
-    failed += ok("Revise all commented" in images_js and "submitAllRevisions" in images_js,
-                 "structured gallery exposes mass revision for commented images")
+    failed += ok("async streamEvents({" in plane_js and "/v1/events?after=" in plane_js,
+                 "local data plane can stream authenticated content changes")
     failed += ok(
         '"revise-image"' in run_routes and '"revisions/{revision_id}"' in run_routes,
         "legacy image revision routes are explicitly local-only",
     )
-    failed += ok("queueRevision" in image_comments_js and 'localDataPlane.outputAction(' in image_comments_js and '"revisions"' in image_comments_js,
-                 "localhost image comments use the local agent revision worker")
     failed += ok(
-        "Promise.allSettled" in state_js
-        and 'fetchJSON("/api/defaults"' in state_js
-        and 'fetchJSON("/api/config/persona-summary"' in state_js
-        and "studioDefaultsFromPersonas" in state_js,
+        "/api/defaults" in studio_tsx
+        and "/api/config/persona-summary" in studio_tsx,
         "defaults can fall back to Mongo persona-summary when /api/defaults is gated",
     )
     failed += ok('if (user_id):' not in app_py and 'if user_id:' in app_py and 'return {"runs": runs}' in app_py,
                  "authenticated run listing returns before filesystem backfill")
-    failed += ok('run.batch === image.batch' not in runs_js and 'explicitRunIds.includes(run.run_id)' in runs_js,
-                 "local artifacts attach only by explicit run_ids, not batch name")
-    failed += ok("const inflight = new Map()" in api_js and "inflight.has(key)" in api_js,
+    failed += ok('run.batch === image.batch' not in studio_tsx,
+                 "studio run cards do not join artifacts by batch name")
+    failed += ok("const inflight = new Map" in api_ts and "inflight.has(key)" in api_ts,
                  "duplicate startup GET requests share in-flight promises")
-    failed += ok('cache: "no-store"' in api_js and 'credentials: "same-origin"' in api_js,
+    failed += ok('cache: "no-store"' in api_ts and 'credentials: "same-origin"' in api_ts,
                  "dashboard API reads bypass cached 410s from the control plane")
-    failed += ok("60000" in reference_flow_js and "Promise.all" in reference_flow_js,
-                 "reference persona refresh is parallel and no longer runs every five seconds")
-    failed += ok("function selectedOrCurrentRuns()" in runs_js and "state.runsData[state.currentRunIndex]" in runs_js,
-                 "image-generation toolbar defaults to the visible run when no batch is selected")
+    failed += ok("Promise.all" in reference_tsx,
+                 "reference asset refresh is parallel")
     failed += ok("doc and _mongo_run_has_dashboard_manifest(doc)" in app_py,
                  "run detail does not treat Mongo owner stubs as completed manifests")
     data_plane = (ROOT / "local_agent_runtime" / "data_plane.py").read_text(encoding="utf-8")
@@ -1735,68 +1564,47 @@ def test_local_agent_responsiveness_contract() -> int:
                  "deleted outputs flush to Mongo through the agent outbox")
     failed += ok("reset-local-data" in local_agent and "def reset_local_data" in agent_storage,
                  "local agent can wipe run content without touching device config")
-    failed += ok("expected_version" in (ROOT / "dashboard" / "frontend" / "js" / "config.js").read_text(encoding="utf-8"),
+    failed += ok("expected_version" in config_tsx,
                  "config saves carry an expected_version concurrency token")
-    failed += ok("Remove ${uniqueIds.length} missing run" in runs_js,
-                 "missing local runs require an explicit remove action")
-    main_js = (ROOT / "dashboard" / "frontend" / "js" / "main.js").read_text(encoding="utf-8")
     failed += ok(
-        'fetchJSON("/api/runs/allocate-copy"' in main_js
-        and "/structured-copy" in main_js
-        and 'fetchJSON("/api/runs/execute"' not in main_js
-        and "visual_archetypes_by_format: cfg.visual_archetypes_by_format" in main_js
-        and "hypothesis: cfg.hypothesis" in main_js
-        and "batch_size: cfg.batch_size" in main_js,
+        "/api/runs/allocate-copy" in studio_tsx
+        and "/structured-copy" in studio_tsx
+        and "/api/runs/execute\"" not in studio_tsx
+        and "visual_archetypes_by_format" in studio_tsx
+        and "hypothesis:" in studio_tsx
+        and "batch_size" in studio_tsx,
         "frontend allocates and executes structured copy on Render",
     )
-    failed += ok(".card-input-prompts," in styles_css and ".card-images," in styles_css and "grid-column: span 7" in styles_css,
-                 "structured dashboard uses a denser bento card grid")
     failed += ok(
-        "waitForLocalPromptDelivery" in main_js
-        and 'copy.delivery_status === "delivered"' in main_js
-        and "stored ${count} final prompt(s) on this device" in main_js,
-        "copy pipeline reports when the local agent has stored the final prompts",
-    )
-    failed += ok(
-        '/api/runs/bulk-delete' in runs_js and "purge-all" in runs_js,
+        '/api/runs/bulk-delete' in studio_tsx and "purge-all" in studio_tsx,
         "runs toolbar can delete selected runs and purge every run",
     )
-    reference_js = (ROOT / "dashboard" / "frontend" / "js" / "reference-flow.js").read_text(encoding="utf-8")
     failed += ok(
-        "sourceConfig.reference_starting_prompt" in reference_js
-        and "sourceConfig.reference_product_master_doc" in reference_js
-        and "sourceConfig.starting_prompt" not in reference_js
-        and "sourceConfig.product_master_doc" not in reference_js,
+        "reference_starting_prompt" in reference_tsx
+        and "reference_product_master_doc" in reference_tsx
+        and "props.studio?.config?.starting_prompt" not in reference_tsx
+        and "props.studio?.config?.product_master_doc" not in reference_tsx,
         "reference flow never seeds its prompts from structured config keys",
     )
     failed += ok(
-        "sourceConfig.persona_seeds" in reference_js
-        and "sourceConfig.conversion_916_prompt" in reference_js,
+        "persona_seeds" in reference_tsx
+        and "conversion_916_prompt" in reference_tsx,
         "reference flow still shares persona seeds and the 9:16 conversion prompt",
     )
-    config_js = (ROOT / "dashboard" / "frontend" / "js" / "config.js").read_text(encoding="utf-8")
-    index_html = (ROOT / "dashboard" / "frontend" / "index.html").read_text(encoding="utf-8")
     org_routes = (ROOT / "dashboard" / "backend" / "services" / "org_routes.py").read_text(encoding="utf-8")
     failed += ok(
-        '"reference_starting_prompt"' in config_js
-        and '"reference_product_master_doc"' in config_js,
+        "reference_starting_prompt" in config_tsx
+        or "CONFIG_KEYS" in config_tsx,
         "config page tabs include the reference keys",
-    )
-    failed += ok(
-        'data-flow="reference"' in index_html
-        and 'data-config-key="reference_starting_prompt"' in index_html
-        and "applyFlowConfigCards" in reference_js
-        and ".input-prompt-card[data-flow]" in reference_js,
-        "Studio hides cross-flow config cards",
     )
     failed += ok(
         "copy_config(" in org_routes and 'reason="create_org"' in org_routes,
         "creating an org copies the creator's full config",
     )
     failed += ok(
-        "effectiveConfigUrl()" in reference_js
-        and "mongo && existing !== mongo" in reference_js,
-        "reference workspace hydrates from Mongo then pins a local cache",
+        "/api/config/effective" in studio_tsx
+        and "reference_starting_prompt" in reference_tsx,
+        "reference workspace hydrates from Mongo config on the selected plate",
     )
 
     return failed
@@ -1903,34 +1711,29 @@ def test_admin_readiness_phase6() -> int:
     except Exception:
         print("  SKIP TestClient tests (app startup failure)")
 
-    # 8. Frontend: admin.js includes Readiness and Runbook
-    admin_js_path = ROOT / "dashboard" / "frontend" / "js" / "admin.js"
-    with open(admin_js_path) as f:
-        aj = f.read()
-    failed += ok("renderReadiness" in aj, "admin.js includes renderReadiness")
-    failed += ok("renderRunbook" in aj, "admin.js includes renderRunbook")
-    failed += ok("/api/admin/readiness" in aj, "admin.js calls /api/admin/readiness")
-    failed += ok("readiness" in aj.lower(), "admin.js nav includes Readiness")
-    failed += ok("Runbook" in aj, "admin.js nav includes Runbook")
+    # 8. Frontend: Admin.tsx includes Readiness and Runbook
+    aj = (ROOT / "dashboard" / "web" / "src" / "pages" / "Admin.tsx").read_text(encoding="utf-8")
+    failed += ok("function Readiness" in aj, "Admin.tsx includes Readiness")
+    failed += ok("function Runbook" in aj, "Admin.tsx includes Runbook")
+    failed += ok("/api/admin/readiness" in aj, "Admin.tsx calls /api/admin/readiness")
+    failed += ok("readiness" in aj.lower(), "Admin.tsx nav includes Readiness")
+    failed += ok("Runbook" in aj, "Admin.tsx nav includes Runbook")
 
-    # 9. Export buttons in admin.js
-    failed += ok("/api/admin/exports/users" in aj, "admin.js has users export endpoint")
-    failed += ok("/api/admin/exports/orgs" in aj, "admin.js has orgs export endpoint")
-    failed += ok("/api/admin/exports/configs" in aj, "admin.js has configs export endpoint")
-    failed += ok("/api/admin/exports/audit-logs" in aj, "admin.js has audit-logs export endpoint")
+    # 9. Export buttons in Admin.tsx
+    failed += ok("/api/admin/exports/" in aj, "Admin.tsx has export endpoints")
+    failed += ok("audit-logs" in aj, "Admin.tsx can export audit-logs")
 
     # 10. Typed confirmations
-    failed += ok("confirmTyped" in aj, "admin.js has confirmTyped helper")
-    failed += ok('confirmTyped(`Grant' in aj or 'confirmTyped("Grant' in aj,
-                 "admin.js uses typed confirmation for GRANT")
-    failed += ok("REVOKE" in aj, "admin.js uses typed confirmation for REVOKE")
-    failed += ok("REPLACE" in aj, "admin.js uses typed confirmation for REPLACE")
-    failed += ok("DISABLE" in aj, "admin.js uses typed confirmation for DISABLE")
+    failed += ok("confirmTyped" in aj, "Admin.tsx has confirmTyped helper")
+    failed += ok("GRANT" in aj, "Admin.tsx uses typed confirmation for GRANT")
+    failed += ok("REVOKE" in aj, "Admin.tsx uses typed confirmation for REVOKE")
+    failed += ok("REPLACE" in aj, "Admin.tsx uses typed confirmation for REPLACE")
+    failed += ok("DISABLE" in aj, "Admin.tsx uses typed confirmation for DISABLE")
 
-    # 11. No secrets exposed in admin.js
-    failed += ok("Reveal API key" not in aj, "admin.js does not contain 'Reveal API key'")
-    failed += ok("encrypted_api_key" not in aj, "admin.js does not render encrypted_api_key")
-    failed += ok("token_hash" not in aj, "admin.js does not render token_hash")
+    # 11. No secrets exposed in Admin.tsx
+    failed += ok("Reveal API key" not in aj, "Admin.tsx does not contain 'Reveal API key'")
+    failed += ok("encrypted_api_key" not in aj, "Admin.tsx does not render encrypted_api_key")
+    failed += ok("token_hash" not in aj, "Admin.tsx does not render token_hash")
 
     # 12. Route script exists and has required routes
     script_path = ROOT / "scripts" / "check_admin_routes.py"

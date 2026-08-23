@@ -39,21 +39,17 @@ class _DB:
 
 class MongoDashboardConfigTests(unittest.TestCase):
     def test_studio_config_cards_have_no_legacy_content_route(self) -> None:
-        main_js = (ROOT / "dashboard/frontend/js/main.js").read_text(
-            encoding="utf-8"
-        )
-        index_html = (ROOT / "dashboard/frontend/index.html").read_text(
-            encoding="utf-8"
-        )
+        studio = (ROOT / "dashboard/web/src/pages/Studio.tsx").read_text(encoding="utf-8")
+        keys = (ROOT / "dashboard/web/src/lib/config-keys.ts").read_text(encoding="utf-8")
+        viewer = (ROOT / "dashboard/web/src/components/FileViewer.tsx").read_text(encoding="utf-8")
 
-        self.assertNotIn("/api/prompt-file-content", main_js)
-        self.assertRegex(index_html, r"/js/main\.js\?v=\d+")
-        self.assertRegex(index_html, r"/js/reference-flow\.js\?v=\d+")
+        self.assertNotIn("/api/prompt-file-content", studio)
+        self.assertIn("saveConfigFile", keys)
+        self.assertIn("Save file", viewer)
 
     def test_render_copy_uses_mongo_product_master_doc_without_local_fallback(self) -> None:
-        main_js = (ROOT / "dashboard/frontend/js/main.js").read_text(
-            encoding="utf-8"
-        )
+        studio = (ROOT / "dashboard/web/src/pages/Studio.tsx").read_text(encoding="utf-8")
+        keys = (ROOT / "dashboard/web/src/lib/config-keys.ts").read_text(encoding="utf-8")
         render_copy = (
             ROOT
             / "dashboard"
@@ -62,8 +58,10 @@ class MongoDashboardConfigTests(unittest.TestCase):
             / "render_structured_copy.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("saveProductMasterDoc", main_js)
-        self.assertNotIn("resolveProductDocumentText", main_js)
+        self.assertIn("CONFIG_KEYS", studio)
+        self.assertIn("product_master_doc", (ROOT / "dashboard/web/src/lib/config-keys.ts").read_text(encoding="utf-8"))
+        self.assertIn("saveConfigFile", (ROOT / "dashboard/web/src/lib/config-keys.ts").read_text(encoding="utf-8"))
+        self.assertNotIn("resolveProductDocumentText", studio)
         self.assertIn('effective_config.get("product_master_doc")', render_copy)
         self.assertIn("Product Master Doc is empty", render_copy)
 
@@ -71,9 +69,10 @@ class MongoDashboardConfigTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         from dashboard.backend.control_app import app
 
-        response = TestClient(app).get("/js/main.js")
+        response = TestClient(app).get("/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("cache-control"), "no-cache")
+        self.assertIn("text/html", response.headers.get("content-type", ""))
 
     def test_dashboard_config_routes_remain_on_control_plane(self) -> None:
         from dashboard.backend.control_plane_policy import is_render_content_route
@@ -404,34 +403,26 @@ class MongoDashboardConfigTests(unittest.TestCase):
         )
 
     def test_config_page_and_org_create_include_reference_keys(self) -> None:
-        config_js = (ROOT / "dashboard/frontend/js/config.js").read_text(encoding="utf-8")
-        index_html = (ROOT / "dashboard/frontend/index.html").read_text(encoding="utf-8")
+        config = (ROOT / "dashboard/web/src/pages/Config.tsx").read_text(encoding="utf-8")
+        keys = (ROOT / "dashboard/web/src/lib/config-keys.ts").read_text(encoding="utf-8")
+        studio = (ROOT / "dashboard/web/src/pages/Studio.tsx").read_text(encoding="utf-8")
+        reference = (ROOT / "dashboard/web/src/pages/studio/ReferencePanel.tsx").read_text(
+            encoding="utf-8"
+        )
         org_routes = (ROOT / "dashboard/backend/services/org_routes.py").read_text(
             encoding="utf-8"
         )
-        reference_js = (ROOT / "dashboard/frontend/js/reference-flow.js").read_text(
-            encoding="utf-8"
-        )
 
-        self.assertIn('"reference_starting_prompt"', config_js)
-        self.assertIn('"reference_product_master_doc"', config_js)
-        self.assertIn("Reference Starting Prompt", config_js)
-        self.assertIn('data-config-key="reference_starting_prompt"', index_html)
-        self.assertIn('data-config-key="reference_product_master_doc"', index_html)
-        self.assertIn('data-flow="reference"', index_html)
-        self.assertIn('data-flow="structured"', index_html)
-        self.assertIn('data-flow="shared"', index_html)
+        self.assertIn("reference_starting_prompt", keys)
+        self.assertIn("reference_product_master_doc", keys)
+        self.assertIn("Reference Starting Prompt", keys)
+        self.assertIn("setFlow(\"reference\")", studio)
+        self.assertIn("setFlow(\"structured\")", studio)
         self.assertIn("copy_config(", org_routes)
         self.assertIn('reason="create_org"', org_routes)
-        self.assertIn("effectiveConfigUrl()", reference_js)
-        self.assertIn("mongo && existing !== mongo", reference_js)
-        self.assertIn("applyFlowConfigCards", reference_js)
-        self.assertIn('.input-prompt-card[data-flow]', reference_js)
-        hydrate = reference_js[reference_js.index("async function loadReferenceWorkspace()"):]
-        self.assertLess(
-            hydrate.index("fetchJSON(effectiveConfigUrl())"),
-            hydrate.index("readLocalText("),
-        )
+        self.assertIn("reference_starting_prompt", reference)
+        self.assertIn("reference_product_master_doc", reference)
+        self.assertIn("/api/config/effective", config)
 
     def test_empty_json_placeholders_do_not_override_generic_catalogs(self) -> None:
         from dashboard.backend.services.user_config import _has_config_override
