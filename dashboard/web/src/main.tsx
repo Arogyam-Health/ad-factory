@@ -8,7 +8,7 @@ import "@/styles/global.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter basename="/next">
+    <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
           <App />

@@ -107,7 +107,7 @@ function dashboardApiProxy(): Plugin {
 }
 
 export default defineConfig({
-  base: "/next/",
+  base: "/",
   plugins: [react(), dashboardApiProxy()],
   resolve: {
     alias: {

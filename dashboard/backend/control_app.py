@@ -7,10 +7,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import FastAPI, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from dashboard.backend.agent.auth import is_agent_runtime_path
@@ -23,8 +22,6 @@ from dashboard.backend.db.settings import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_ROOT = ROOT / "dashboard" / "frontend"
-REACT_DIST = ROOT / "dashboard" / "web" / "dist"
 PUBLIC_API_PREFIXES = ("/api/auth/", "/api/invites/", "/api/public/")
 
 app = FastAPI(title="Ad Factory Control Plane", version="2.0.0")
@@ -69,7 +66,13 @@ async def control_plane_boundary(request: Request, call_next) -> Response:
     response = await call_next(request)
     if path.startswith("/api/") and not path.startswith("/api/public/"):
         response.headers["Cache-Control"] = "no-store"
-    elif path == "/" or path.endswith(".html") or path.startswith("/js/") or path.startswith("/next"):
+    elif (
+        path == "/"
+        or path.endswith(".html")
+        or path.startswith("/next")
+        or path.startswith("/invite")
+        or path in {"/config", "/organizations", "/traces", "/profile", "/admin"}
+    ):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
@@ -193,24 +196,6 @@ app.include_router(invite_router)
 app.include_router(config_router)
 app.include_router(admin_router)
 
+from dashboard.backend.spa_static import mount_react_spa
 
-@app.get("/invite/{token:path}")
-def serve_invite_page(token: str) -> FileResponse:
-    """Client-side routed invite page; the static mount cannot resolve tokens."""
-    invite_html = FRONTEND_ROOT / "invite.html"
-    if not invite_html.is_file():
-        raise HTTPException(status_code=404, detail="Not found")
-    return FileResponse(invite_html, media_type="text/html")
-
-
-@app.get("/next/invite/{token:path}")
-def serve_react_invite_page(token: str) -> FileResponse:
-    react_index = REACT_DIST / "index.html"
-    if react_index.is_file():
-        return FileResponse(react_index, media_type="text/html")
-    raise HTTPException(status_code=404, detail="Not found")
-
-
-if REACT_DIST.is_dir():
-    app.mount("/next", StaticFiles(directory=str(REACT_DIST), html=True), name="react")
-app.mount("/", StaticFiles(directory=str(FRONTEND_ROOT), html=True), name="frontend")
+mount_react_spa(app, ROOT)

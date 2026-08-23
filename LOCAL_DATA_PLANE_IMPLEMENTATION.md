@@ -23,7 +23,7 @@ This is a large refactor. Implement it completely, in phases, with focused tests
 
 ## Repository Context
 
-- Stack: FastAPI, MongoDB, vanilla JavaScript, local Playwright/browser automation.
+- Stack: FastAPI, MongoDB, React press-room UI (`dashboard/web`), local Playwright/browser automation.
 - Render URL: `https://ad-factory-3rn5.onrender.com/`.
 - Current local-agent root: `~/ad-factory-agent`.
 - Current local artifact server: `http://127.0.0.1:8765`.
@@ -847,12 +847,8 @@ python -m unittest discover -s tests -p 'test_*.py'
 
 python tests/test_smoke.py
 
-node --check dashboard/frontend/js/local-data-plane.js
-node --check dashboard/frontend/js/main.js
-node --check dashboard/frontend/js/reference-flow.js
-node --check dashboard/frontend/js/runs.js
-node --check dashboard/frontend/js/images.js
-node --check dashboard/frontend/js/prompts.js
+node --check dashboard/web/src/lib/local-data-plane.js
+npx --prefix dashboard/web tsc --noEmit
 
 git diff --check
 
@@ -1009,24 +1005,16 @@ render.yaml
 Add a focused client module:
 
 ```text
-dashboard/frontend/js/local-data-plane.js
+dashboard/web/src/lib/local-data-plane.js
 ```
 
 Integrate it with:
 
 ```text
-dashboard/frontend/js/api.js
-dashboard/frontend/js/agents.js
-dashboard/frontend/js/main.js
-dashboard/frontend/js/state.js
-dashboard/frontend/js/runs.js
-dashboard/frontend/js/prompts.js
-dashboard/frontend/js/images.js
-dashboard/frontend/js/image-comments.js
-dashboard/frontend/js/reference-flow.js
-dashboard/frontend/js/reference-product-selection.js
-dashboard/frontend/index.html
-dashboard/frontend/styles.css
+dashboard/web/src/lib/api.ts
+dashboard/web/src/pages/Studio.tsx
+dashboard/web/src/pages/studio/ReferencePanel.tsx
+dashboard/web/src/components/AgentStatus.tsx
 ```
 
 ### Tests

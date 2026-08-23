@@ -1,6 +1,6 @@
 ## project
 
-Ad Factory — AI ad creative generation platform. Stack: FastAPI + MongoDB + local agent. React press-room UI at `/next` (vanilla dashboard still on `/`). Owner-based configs, orgs with shared/individual configs, super admin dashboard. Phase 6 complete.
+Ad Factory — AI ad creative generation platform. Stack: FastAPI + MongoDB + local agent. React press-room UI at `/` (Vite app in `dashboard/web`). Owner-based configs, orgs with shared/individual configs, super admin dashboard. Phase 6 complete.
 
 ## graphify
 

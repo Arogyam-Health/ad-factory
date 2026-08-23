@@ -1,3 +1,10 @@
+FROM node:22-slim AS web
+WORKDIR /web
+COPY dashboard/web/package.json dashboard/web/package-lock.json ./
+RUN npm ci
+COPY dashboard/web ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -15,6 +22,7 @@ COPY requirements-dashboard.txt .
 RUN pip install --no-cache-dir -r requirements-dashboard.txt
 
 COPY . .
+COPY --from=web /web/dist /app/dashboard/web/dist
 RUN mkdir -p dashboard_storage runtime output generated_images input/images
 
 EXPOSE 4090

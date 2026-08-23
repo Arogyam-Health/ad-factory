@@ -48,4 +48,5 @@ scripts/__pycache__/*
 
 # React dashboard
 node_modules/
-dashboard/web/dist/
+# Built SPA is tracked so Render's Python-only build can serve `/`.
+# Docker and `npm run build` refresh it.
