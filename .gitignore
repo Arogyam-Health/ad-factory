@@ -45,3 +45,8 @@ scripts/__pycache__/*
 
 # Local tool cache
 .commandcode
+
+# React dashboard
+node_modules/
+# Built SPA is tracked so Render's Python-only build can serve `/`.
+# Docker and `npm run build` refresh it.

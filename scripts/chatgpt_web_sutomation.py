@@ -32,13 +32,20 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from local_agent_runtime.browser import resolve_browser_executable
+from typing import Any, Callable, Iterable
 
 from PIL import Image as PILImage
 
@@ -54,13 +61,15 @@ CHATGPT_URL = "https://chatgpt.com/"
 FORMAT_ORDER = ["BA", "FEAT", "HERO", "TEST", "UGC"]
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 DOWNLOAD_TEMP_EXTS = {".crdownload", ".tmp", ".part"}
+EXTENSION_CDP_MODE = False
 
 
 def wsl_to_windows_path(path: str) -> str:
     """Convert WSL path to Windows path for CDP-connected Chrome."""
     if path.startswith("/mnt/c/") or path.startswith("/mnt/C/"):
         rest = path[7:]
-        return f"C:\\{rest.replace('/', '\\')}"
+        win_backslash = "\\"
+        return "C:\\" + rest.replace("/", win_backslash)
     return path
 
 
@@ -124,8 +133,17 @@ def _detect_windows_user() -> str:
 
 
 def copy_to_windows_temp(image_paths: list[Path]) -> list[str]:
-    """Copy images from WSL filesystem to Windows-accessible temp dir."""
+    """Make image paths Chrome can upload.
+
+    Native Windows and native Linux already have paths Chrome can read.
+    Only WSL needs a copy onto a /mnt/c drive letter.
+    """
     import shutil
+
+    resolved = [Path(p).resolve() for p in image_paths]
+    if sys.platform == "win32" or os.name == "nt" or not Path("/mnt/c").exists():
+        return [str(p) for p in resolved]
+
     win_user = _detect_windows_user()
     if win_user:
         win_temp = Path(f"/mnt/c/Users/{win_user}/.ad-factory-upload-temp")
@@ -199,14 +217,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--image-source-file", default="", help="Optional text file of image paths/URLs to upload")
     parser.add_argument(
+        "--upload-manifest",
+        default="",
+        help="Explicit ordered local JSON upload manifest. Takes precedence over legacy image sources.",
+    )
+    parser.add_argument(
+        "--result-manifest",
+        default="",
+        help="Optional local JSON file receiving the exact generated output path.",
+    )
+    parser.add_argument(
         "--upload-dir",
         default="",
         help="Optional directory of reference images to upload. If empty, no directory upload is used.",
     )
     parser.add_argument("--out-dir", required=True)
-    parser.add_argument("--timeout", type=int, default=420, help="Generation timeout per prompt")
+    parser.add_argument("--timeout", type=int, default=1800, help="Generation timeout per prompt")
     parser.add_argument("--download-timeout", type=int, default=90)
-    parser.add_argument("--sleep-after-download", type=float, default=3.0)
+    parser.add_argument("--sleep-after-download", type=float, default=0.0)
     parser.add_argument("--min-image-bytes", type=int, default=20_000)
     parser.add_argument("--max-attempts", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
@@ -257,7 +285,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--prompt-paste-timeout", type=int, default=35)
     parser.add_argument("--prompt-integrity-ratio", type=float, default=0.98)
-    parser.add_argument("--prompt-settle-wait", type=float, default=4.0)
+    parser.add_argument(
+        "--prompt-settle-wait",
+        type=float,
+        default=4.0,
+        help="Maximum time to verify composer stability; returns early as soon as two UI reads match.",
+    )
     parser.add_argument(
         "--send-submit-method",
         choices=["enter", "click", "auto"],
@@ -266,6 +299,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--send-confirm-timeout", type=float, default=35.0)
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--cdp-url", default="", help="CDP URL for connecting to existing Chrome (e.g. http://172.18.160.1:9222)")
+    parser.add_argument("--extension-cdp", action="store_true", help="Use the Ad Factory extension CDP proxy; reuses extension tabs instead of Playwright-created pages")
     parser.add_argument(
         "--aspect-ratio",
         choices=["4:5", "9:16"],
@@ -295,7 +329,7 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
          ``HERO_stress_snacker_HI_desired_outcome_A01.txt``
     The persona slug is looked up in persona_seeds.json to recover the persona number.
     """
-    stem = path.stem
+    stem = re.sub(r"^run_[a-f0-9]{12}__", "", path.stem, flags=re.IGNORECASE)
     patterns = [
         r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
         r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)(?:_(?P<variant>[AV]\d+))?(?:_(?P<angle2>[a-z_]+))?$",
@@ -336,8 +370,10 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool,
     raw_jobs: list[PromptJob] = []
     for path in raw_paths:
         fmt, persona, lang, variant, concept_angle = _parse_prompt_name(path)
+        scope_match = re.match(r"^(run_[a-f0-9]{12}__)", path.stem, flags=re.IGNORECASE)
+        scope_prefix = scope_match.group(1) if scope_match else ""
         variant_suffix = f"_{variant}" if variant else ""
-        key = f"{fmt}_{persona}_{lang}{variant_suffix}"
+        key = f"{scope_prefix}{fmt}_{persona}_{lang}{variant_suffix}"
         if concept_angle and concept_angle not in key:
             key += f"_{concept_angle}"
 
@@ -346,9 +382,9 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool,
         # Append the aspect ratio folder name so 4:5 and 9:16 images have distinct
         # filenames (e.g. ..._pain_point_4_5.png vs ..._pain_point_9_16.png).
         if concept_angle:
-            safe_stem = f"{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
+            safe_stem = f"{scope_prefix}{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
         else:
-            safe_stem = f"chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}_{aspect_folder}"
+            safe_stem = f"{scope_prefix}chatgpt-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-'+variant.lower()) if variant else ''}_{aspect_folder}"
 
         # If the angle wasn't in the filename, fall back to reading it from
         # the prompt body (legacy behavior, kept for safety).
@@ -585,6 +621,26 @@ def parse_image_source_file(path: Path) -> list[str]:
     return sources
 
 
+def parse_upload_manifest(path: Path) -> list[Path]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("Upload manifest requires ordered entries")
+    resolved: list[Path] = []
+    for expected_position, entry in enumerate(entries, start=1):
+        if (
+            not isinstance(entry, dict)
+            or int(entry.get("position") or 0) != expected_position
+            or entry.get("role") not in {"product", "logo", "reference", "source_creative", "replacement"}
+        ):
+            raise ValueError("Upload manifest entries are invalid or unordered")
+        image = Path(str(entry.get("path") or "")).expanduser()
+        if not image.is_absolute() or not image.is_file() or image.suffix.lower() not in IMAGE_EXTS:
+            raise ValueError("Upload manifest contains an invalid local image")
+        resolved.append(image.resolve())
+    return resolved
+
+
 def build_local_image_paths(sources: list[str], temp_dir: Path) -> list[Path]:
     paths: list[Path] = []
     for src in sources:
@@ -640,16 +696,7 @@ def collect_upload_images(upload_dir_value: str, image_source_file_value: str, t
 
 
 def resolve_browser_binary() -> str:
-    for candidate in [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/snap/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-    ]:
-        if Path(candidate).exists():
-            return candidate
-    return ""
+    return resolve_browser_executable("chrome")
 
 
 def _debug_port_available(cdp_url: str = "") -> tuple[bool, str]:
@@ -684,6 +731,8 @@ def grant_chatgpt_permissions(context: BrowserContext) -> None:
 
 
 def build_browser_context(args: argparse.Namespace, download_dir: Path):
+    global EXTENSION_CDP_MODE
+    EXTENSION_CDP_MODE = bool(getattr(args, "extension_cdp", False))
     p = sync_playwright().start()
     download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -694,7 +743,11 @@ def build_browser_context(args: argparse.Namespace, download_dir: Path):
         context = browser.contexts[0] if browser.contexts else browser.new_context(accept_downloads=True)
         context.set_default_timeout(30000)
         grant_chatgpt_permissions(context)
-        if not context.pages:
+        if EXTENSION_CDP_MODE:
+            deadline = time.time() + 5
+            while not context.pages and time.time() < deadline:
+                time.sleep(0.25)
+        elif not context.pages:
             context.new_page().goto("about:blank")
         return p, context
 
@@ -919,6 +972,14 @@ def click_new_chat_safely(page: Page) -> bool:
 
 
 def open_prompt_tab(context: BrowserContext, page: Page, job_index: int, first_tab_mode: str) -> Page:
+    if EXTENSION_CDP_MODE:
+        print("  [tab] Reusing extension-controlled browser tab.")
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        return page
+
     use_current = False
     if job_index == 1 and first_tab_mode == "reuse-blank":
         try:
@@ -1386,6 +1447,15 @@ def instant_model_selected(page: Page) -> bool:
         return False
 
 
+def wait_for_ui_state(check: Callable[[], bool], timeout: float = 2.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if check():
+            return True
+        time.sleep(0.2)
+    return check()
+
+
 def select_instant_model(page: Page) -> bool:
     if instant_model_selected(page):
         return True
@@ -1394,13 +1464,12 @@ def select_instant_model(page: Page) -> bool:
     opened = safe_click_labels(page, ["model", "auto", "thinking", "instant", "gpt", "chatgpt"], timeout=5)
     if not opened:
         return instant_model_selected(page)
-    time.sleep(0.8)
 
     # Prefer the exact "Instant" option; allow versioned names such as "GPT-5.5 Instant".
     clicked = safe_click_labels(page, ["gpt-5.5 instant", "instant"], timeout=6)
-    time.sleep(1.0)
+    confirmed = wait_for_ui_state(lambda: instant_model_selected(page)) if clicked else False
     dismiss_open_overlays(page)
-    return clicked or instant_model_selected(page)
+    return confirmed or instant_model_selected(page)
 
 
 def create_image_tool_selected(page: Page) -> bool:
@@ -1493,11 +1562,10 @@ def select_create_image_tool(page: Page) -> bool:
     if not opened:
         return create_image_tool_selected(page)
 
-    time.sleep(0.8)
     clicked = safe_click_labels(page, ["create image", "image generation", "images", "generate image"], timeout=6)
-    time.sleep(0.8)
+    confirmed = wait_for_ui_state(lambda: create_image_tool_selected(page)) if clicked else False
     dismiss_open_overlays(page)
-    return clicked or create_image_tool_selected(page)
+    return confirmed or create_image_tool_selected(page)
 
 
 def select_model_and_tool_if_requested(page: Page, args: argparse.Namespace) -> None:
@@ -1773,35 +1841,64 @@ def _composer_attachment_count(page: Page) -> int:
         return 0
 
 
+def _composer_attachment_ready_count(page: Page) -> int:
+    script = """
+    () => {
+        const composer = document.querySelector('form') || document.querySelector('[contenteditable="true"]')?.closest('div') || document.body;
+        function visible(el) {
+            const r = el.getBoundingClientRect();
+            const s = getComputedStyle(el);
+            return r.width >= 24 && r.height >= 24 && s.display !== 'none' && s.visibility !== 'hidden';
+        }
+        const seen = new Set();
+        let count = 0;
+        for (const img of composer.querySelectorAll('img')) {
+            if (!visible(img) || !img.complete || (img.naturalWidth || 0) <= 0 || (img.naturalHeight || 0) <= 0) continue;
+            const src = img.currentSrc || img.src || '';
+            if (!src || seen.has(src)) continue;
+            const low = src.toLowerCase();
+            if (low.includes('avatar') || low.includes('profile') || low.includes('openai') || low.includes('logo')) continue;
+            seen.add(src);
+            count++;
+        }
+        return count;
+    }
+    """.strip()
+    try:
+        return int(page.evaluate(script) or 0)
+    except Exception:
+        return 0
+
+
 def wait_for_uploads_to_settle(page: Page, before_srcs: set[str], expected_count: int, timeout: int = 180) -> None:
     if expected_count <= 0:
         return
     deadline = time.time() + timeout
     stable_since: float | None = None
-    last_state: tuple[int, bool] | None = None
+    last_state: tuple[int, bool, int] | None = None
     last_log = 0.0
     while time.time() < deadline:
         count = _visible_uploaded_image_count(page, before_srcs)
         attachment_count = _composer_attachment_count(page)
+        ready_attachment_count = _composer_attachment_ready_count(page)
         if duplicate_upload_modal_present(page):
             dismiss_duplicate_upload_modal(page)
-            if attachment_count >= expected_count:
-                print(f"  [upload] Duplicate upload modal dismissed; existing attachments={attachment_count}, expected={expected_count}")
-                return
         active = upload_activity_present(page)
-        state = (count, active)
+        spinners = _attachment_spinner_count(page)
+        state = (ready_attachment_count, active, spinners)
         if state != last_state:
             stable_since = time.time()
             last_state = state
-        if (count >= expected_count or attachment_count >= expected_count) and not active and stable_since is not None and time.time() - stable_since >= 4.0:
-            print(f"  [upload] Upload settled. visible_uploaded_images={count}, attachments={attachment_count}, expected={expected_count}")
+        if ready_attachment_count >= expected_count and not active and spinners == 0 and stable_since is not None and time.time() - stable_since >= 4.0:
+            print(f"  [upload] Upload settled. visible_uploaded_images={count}, attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_count}")
             return
         if time.time() - last_log > 6:
-            print(f"  [upload] Waiting for upload settle... visible_uploaded_images={count}, expected={expected_count}, active={active}")
+            print(f"  [upload] Waiting for upload settle... visible_uploaded_images={count}, attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_count}, active={active}, spinners={spinners}")
             last_log = time.time()
         time.sleep(1.0)
     count = _visible_uploaded_image_count(page, before_srcs)
-    raise PWTimeoutError(f"Upload did not settle before timeout: visible_uploaded_images={count}, expected={expected_count}")
+    ready_attachment_count = _composer_attachment_ready_count(page)
+    raise PWTimeoutError(f"Upload did not settle before timeout: visible_uploaded_images={count}, ready_attachments={ready_attachment_count}, expected={expected_count}")
 
 
 def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> None:
@@ -1814,7 +1911,7 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
             raise ValueError(f"Upload path is not a supported image: {p}")
 
     file_paths = copy_to_windows_temp(image_paths)
-    print(f"  [upload] Copied to Windows temp: {file_paths}")
+    print(f"  [upload] Chrome upload paths: {file_paths}")
     before_srcs = get_all_image_srcs(page)
     print(f"  [upload] Uploading {len(file_paths)} image(s). Existing page images={len(before_srcs)}")
 
@@ -1825,7 +1922,7 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
     time.sleep(0.2)
 
     for idx, file_path in enumerate(file_paths, start=1):
-        if _composer_attachment_count(page) >= idx:
+        if _composer_attachment_ready_count(page) >= idx:
             print(f"  [upload] File {idx}/{len(file_paths)} already attached; skipping duplicate upload.")
             continue
         print(f"  [upload] Uploading file {idx}/{len(file_paths)}: {Path(file_path).name}")
@@ -1835,6 +1932,7 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
 
         if uploaded:
             _wait_for_uploaded_count_at_least(page, before_srcs, target_count=idx, timeout=120)
+            time.sleep(3.0)
             continue
 
         print("  [upload] No hidden input available; using upload menu for this file.")
@@ -1842,6 +1940,8 @@ def upload_images(page: Page, image_paths: list[Path], timeout: int = 180) -> No
             _upload_one_file_via_menu(page, file_path, before_srcs, target_count=idx)
         except Exception as exc:
             raise PWTimeoutError(str(exc))
+        if idx < len(file_paths):
+            time.sleep(3.0)
 
     wait_for_uploads_to_settle(page, before_srcs, expected_count=len(file_paths), timeout=timeout)
     dismiss_open_overlays(page)
@@ -1884,23 +1984,22 @@ def _wait_for_uploaded_count_at_least(
     while time.time() < deadline:
         images_added, active, spinners = _upload_counts(page, before_srcs)
         attachment_count = _composer_attachment_count(page)
+        ready_attachment_count = _composer_attachment_ready_count(page)
         if duplicate_upload_modal_present(page):
             dismiss_duplicate_upload_modal(page)
-            if attachment_count >= target_count:
-                print(f"  [upload] Duplicate upload modal dismissed; existing attachments={attachment_count}, target={target_count}")
-                return
-        state = (images_added, active, spinners)
+        state = (ready_attachment_count, active, spinners)
         if state != last_state:
             stable_since = time.time()
             last_state = state
-        if (images_added >= target_count or attachment_count >= target_count) and not active and spinners == 0 and stable_since is not None and time.time() - stable_since >= stable_seconds:
+        if ready_attachment_count >= target_count and not active and spinners == 0 and stable_since is not None and time.time() - stable_since >= stable_seconds:
             return
         if time.time() - last_log > 5:
-            print(f"  [upload] Waiting for uploaded images... visible={images_added}, target={target_count}, active={active}, spinners={spinners}")
+            print(f"  [upload] Waiting for uploaded images... visible={images_added}, attachments={attachment_count}, ready_attachments={ready_attachment_count}, target={target_count}, active={active}, spinners={spinners}")
             last_log = time.time()
         time.sleep(0.6)
     images_added, active, spinners = _upload_counts(page, before_srcs)
-    raise PWTimeoutError(f"Timed out waiting for uploaded image count {target_count}; visible={images_added}, active={active}, spinners={spinners}")
+    ready_attachment_count = _composer_attachment_ready_count(page)
+    raise PWTimeoutError(f"Timed out waiting for uploaded image count {target_count}; visible={images_added}, ready_attachments={ready_attachment_count}, active={active}, spinners={spinners}")
 
 
 def _upload_counts(page: Page, before_srcs: set[str]) -> tuple[int, bool, int]:
@@ -2041,34 +2140,36 @@ def wait_until_ready_to_send(
     last_log = 0.0
     while time.time() < deadline:
         attachment_count = _composer_attachment_count(page)
+        ready_attachment_count = _composer_attachment_ready_count(page)
         active = upload_activity_present(page)
         spinners = _attachment_spinner_count(page)
         send_enabled = _send_button_action(page, composer=composer, loose=True, click=False)
-        state = (attachment_count, active, spinners, send_enabled)
+        state = (ready_attachment_count, active, spinners, send_enabled)
         if state != last_state:
             stable_since = time.time()
             last_state = state
 
-        attachments_ready = expected_attachment_count <= 0 or attachment_count >= expected_attachment_count
+        attachments_ready = expected_attachment_count <= 0 or ready_attachment_count >= expected_attachment_count
         if attachments_ready and not active and spinners == 0 and send_enabled and stable_since is not None and time.time() - stable_since >= 2.0:
-            print(f"  [send] Ready: attachments={attachment_count}, expected={expected_attachment_count}, send_enabled={send_enabled}")
+            print(f"  [send] Ready: attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_attachment_count}, send_enabled={send_enabled}")
             return
 
         if time.time() - last_log > 6:
             print(
                 "  [send] Waiting until uploads finish and Send is enabled... "
-                f"attachments={attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
+                f"attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
             )
             last_log = time.time()
         time.sleep(0.75)
 
     attachment_count = _composer_attachment_count(page)
+    ready_attachment_count = _composer_attachment_ready_count(page)
     active = upload_activity_present(page)
     spinners = _attachment_spinner_count(page)
     send_enabled = _send_button_action(page, composer=composer, loose=True, click=False)
     raise PWTimeoutError(
         "ChatGPT was not ready to send after waiting for uploads/button readiness. "
-        f"attachments={attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
+        f"attachments={attachment_count}, ready_attachments={ready_attachment_count}, expected={expected_attachment_count}, active={active}, spinners={spinners}, send_enabled={send_enabled}"
     )
 
 
@@ -2203,6 +2304,33 @@ def press_enter_to_send(page: Page, composer: Locator) -> None:
     page.keyboard.press("Enter")
 
 
+def wait_for_composer_stability(
+    page: Page,
+    expected_prompt: str,
+    min_integrity_ratio: float,
+    max_wait: float,
+) -> tuple[Locator, str, dict[str, Any]]:
+    deadline = time.time() + max(0.5, max_wait)
+    previous_text: str | None = None
+    stable_reads = 0
+    composer = find_composer(page, timeout=5)
+    actual = get_composer_text(page, composer).strip()
+    report = prompt_integrity_report(expected_prompt, actual, min_integrity_ratio)
+    while time.time() < deadline:
+        composer = find_composer(page, timeout=2)
+        actual = get_composer_text(page, composer).strip()
+        report = prompt_integrity_report(expected_prompt, actual, min_integrity_ratio)
+        if report["ok"] and actual == previous_text:
+            stable_reads += 1
+            if stable_reads >= 2:
+                return composer, actual, report
+        else:
+            stable_reads = 0
+        previous_text = actual
+        time.sleep(0.2)
+    return composer, actual, report
+
+
 def click_send_and_confirm(
     page: Page,
     composer: Locator,
@@ -2215,23 +2343,25 @@ def click_send_and_confirm(
     expected_attachment_count: int = 0,
     ready_timeout: float = 180.0,
 ) -> None:
-    if settle_wait > 0:
-        print(f"  [send] Waiting {settle_wait:g}s for ChatGPT composer to settle before final prompt check...")
-        time.sleep(settle_wait)
-
-    composer = find_composer(page, timeout=5)
-    before_text = get_composer_text(page, composer).strip()
     if expected_prompt is not None:
-        report = prompt_integrity_report(expected_prompt, before_text, min_integrity_ratio)
-        print(f"  [send] Final prompt check after settle wait: {format_prompt_integrity(report)}")
+        composer, before_text, report = wait_for_composer_stability(
+            page,
+            expected_prompt,
+            min_integrity_ratio,
+            max_wait=settle_wait,
+        )
+        print(f"  [send] Stable composer check: {format_prompt_integrity(report)}")
         if not report["ok"]:
-            write_prompt_debug_file(debug_path, expected_prompt, before_text, report, "before-send-after-settle")
+            write_prompt_debug_file(debug_path, expected_prompt, before_text, report, "before-send-stability")
             raise PWTimeoutError(
-                "Refusing to send because ChatGPT composer does not contain the complete prompt after settle wait. "
+                "Refusing to send because ChatGPT composer does not contain the complete prompt after stability checks. "
                 + format_prompt_integrity(report)
             )
-    elif not before_text:
-        raise PWTimeoutError("Cannot send because ChatGPT composer is empty")
+    else:
+        composer = find_composer(page, timeout=5)
+        before_text = get_composer_text(page, composer).strip()
+        if not before_text:
+            raise PWTimeoutError("Cannot send because ChatGPT composer is empty")
 
     before_marker_count = prompt_visible_outside_composer_count(page, expected_prompt)
     before_url = page.url or ""
@@ -2339,6 +2469,7 @@ def _image_candidates(page: Page, baseline_srcs: set[str]) -> list[dict[str, Any
                 height: r.height,
                 naturalWidth: nw,
                 naturalHeight: nh,
+                complete: !!img.complete,
                 alt,
                 assistantArea: inAssistant,
                 domIndex: idx,
@@ -2402,42 +2533,136 @@ def mark_largest_generated_image(page: Page, src: str | None = None) -> str:
         return ""
 
 
-def wait_for_generated_image(page: Page, baseline_srcs: set[str], timeout: int) -> str:
-    print("  [wait-img] Waiting for a new generated image in the assistant response...")
-    deadline = time.time() + timeout
-    next_log = time.time() + 10
+def wait_for_generated_image_stability(
+    page: Page,
+    baseline_srcs: set[str],
+    chosen: dict[str, Any],
+    max_wait: float = 4.0,
+) -> dict[str, Any]:
+    deadline = time.time() + max_wait
+    previous_key: tuple[str, int, int] | None = None
+    stable_reads = 0
+    current = chosen
     while time.time() < deadline:
         candidates = _image_candidates(page, baseline_srcs)
         if candidates:
-            assistant_candidates = [c for c in candidates if c.get("assistantArea")]
-            chosen = assistant_candidates[0] if assistant_candidates else candidates[0]
-            if generation_in_progress(page):
-                time.sleep(4.0)
-                refreshed = _image_candidates(page, baseline_srcs)
-                if refreshed:
-                    assistant_refreshed = [c for c in refreshed if c.get("assistantArea")]
-                    chosen = assistant_refreshed[0] if assistant_refreshed else refreshed[0]
-            print(
-                "  [wait-img] Found generated image: "
-                f"{int(chosen.get('width', 0))}x{int(chosen.get('height', 0))}, "
-                f"assistantArea={chosen.get('assistantArea')}."
+            assistant = [candidate for candidate in candidates if candidate.get("assistantArea")]
+            current = assistant[0] if assistant else candidates[0]
+        key = (
+            str(current.get("src") or ""),
+            int(current.get("width") or 0),
+            int(current.get("height") or 0),
+        )
+        if key == previous_key:
+            stable_reads += 1
+        else:
+            stable_reads = 0
+        if not generation_in_progress(page) or stable_reads >= 2:
+            return current
+        previous_key = key
+        time.sleep(0.25)
+    return current
+
+
+def _generated_image_resource_ready(
+    page: Page,
+    src: str,
+    min_bytes: int = 20_000,
+) -> bool:
+    try:
+        result = page.evaluate(
+            """async ({src, minBytes}) => {
+                const image = Array.from(document.querySelectorAll(
+                    '[data-message-author-role="assistant"] img, article img, [data-testid*="conversation-turn"] img'
+                )).find((item) => (item.currentSrc || item.src || '') === src);
+                if (!image || !image.complete || (image.naturalWidth || 0) < 256 || (image.naturalHeight || 0) < 256) {
+                    return false;
+                }
+                try {
+                    const response = await fetch(src, {credentials: 'include', cache: 'no-store'});
+                    const blob = await response.blob();
+                    return response.ok && blob.type.startsWith('image/') && blob.size >= minBytes;
+                } catch (_) {
+                    return false;
+                }
+            }""",
+            {"src": src, "minBytes": int(min_bytes)},
+        )
+        return bool(result)
+    except Exception:
+        return False
+
+
+def wait_for_generated_image(
+    page: Page,
+    baseline_srcs: set[str],
+    timeout: int,
+    *,
+    quiet_seconds: float = 5.0,
+    min_bytes: int = 20_000,
+) -> str:
+    print("  [wait-img] Waiting for a new generated image in the assistant response...")
+    deadline = time.time() + timeout
+    next_log = time.time() + 3
+    ready_since: float | None = None
+    ready_key: tuple[str, int, int] | None = None
+    while time.time() < deadline:
+        candidates = _image_candidates(page, baseline_srcs)
+        assistant_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.get("assistantArea")
+            and candidate.get("complete")
+            and int(candidate.get("naturalWidth") or 0) >= 256
+            and int(candidate.get("naturalHeight") or 0) >= 256
+        ]
+        chosen = assistant_candidates[0] if assistant_candidates else None
+        if chosen:
+            src = str(chosen.get("src") or "")
+            busy = generation_in_progress(page)
+            key = (
+                src,
+                int(chosen.get("naturalWidth") or 0),
+                int(chosen.get("naturalHeight") or 0),
             )
-            return str(chosen.get("src") or "")
+            if not busy:
+                if key != ready_key:
+                    ready_key = key
+                    ready_since = time.time()
+                elif ready_since is not None and time.time() - ready_since >= quiet_seconds:
+                    downloadable = (
+                        _generated_image_resource_ready(
+                            page,
+                            src,
+                            min_bytes=min_bytes,
+                        )
+                        or _download_control_available(page)
+                    )
+                    if downloadable:
+                        print(
+                            "  [wait-img] Generated image is complete, stable, and downloadable: "
+                            f"{key[1]}x{key[2]}."
+                        )
+                        return src
+                    ready_since = time.time()
+            else:
+                ready_key = None
+                ready_since = None
+        else:
+            ready_key = None
+            ready_since = None
 
         if time.time() >= next_log:
-            marked_src = mark_largest_generated_image(page)
-            if marked_src and not generation_in_progress(page):
-                print("  [wait-img] Found generated image using relaxed visible-image detection.")
-                return marked_src
-            print("  [wait-img] Still waiting for generated image...")
-            next_log = time.time() + 10
-        time.sleep(2.0)
+            print(
+                "  [wait-img] Still waiting for a complete, stable, downloadable "
+                "assistant image..."
+            )
+            next_log = time.time() + 3
+        time.sleep(0.5)
 
-    marked_src = mark_largest_generated_image(page)
-    if marked_src:
-        print("  [wait-img] Timeout reached, but visible image found; proceeding to save it.")
-        return marked_src
-    raise PWTimeoutError(f"No generated image appeared within {timeout}s")
+    raise PWTimeoutError(
+        f"No complete, stable, downloadable generated image appeared within {timeout}s"
+    )
 
 
 def infer_ext_from_src(src: str, content_type: str = "") -> str:
@@ -2983,7 +3208,11 @@ def run() -> None:
 
     with tempfile.TemporaryDirectory(prefix="chatgpt-auto-refs-") as tmp:
         temp_dir = Path(tmp)
-        upload_images_for_all_jobs = collect_upload_images(args.upload_dir, args.image_source_file, temp_dir)
+        upload_images_for_all_jobs = (
+            parse_upload_manifest(Path(args.upload_manifest).expanduser().resolve())
+            if args.upload_manifest
+            else collect_upload_images(args.upload_dir, args.image_source_file, temp_dir)
+        )
         if upload_images_for_all_jobs:
             print("\nReference images to upload for every prompt:")
             for pth in upload_images_for_all_jobs:
@@ -2995,6 +3224,8 @@ def run() -> None:
             p, context = build_browser_context(args, download_dir)
             _configure_download_dir(context, download_dir)
 
+            if not context.pages and args.extension_cdp:
+                raise RuntimeError("Extension CDP proxy connected, but Playwright did not receive any page targets from the extension")
             page = context.pages[0] if context.pages else context.new_page()
             page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
 
@@ -3053,7 +3284,12 @@ def run() -> None:
                             ready_timeout=max(180.0, float(args.timeout)),
                         )
 
-                        src = wait_for_generated_image(page_for_job, baseline_srcs, timeout=args.timeout)
+                        src = wait_for_generated_image(
+                            page_for_job,
+                            baseline_srcs,
+                            timeout=args.timeout,
+                            min_bytes=args.min_image_bytes,
+                        )
                         saved_path = download_generated_image(
                             page_for_job,
                             context,
@@ -3081,11 +3317,24 @@ def run() -> None:
                         # ------------------------------------------------------------------
                         # Step: Ensure exact target dimensions via PIL crop
                         # ------------------------------------------------------------------
+                        raw_path = saved_path.with_name(f"{saved_path.stem}.raw{saved_path.suffix}")
                         try:
+                            if not raw_path.exists():
+                                shutil.copy2(saved_path, raw_path)
                             target = (1080, 1350) if args.aspect_ratio == "4:5" else (1080, 1920)
                             resize_to_ratio(saved_path, saved_path, target)
                         except Exception as exc:
                             print(f"  [crop] Failed (keeping original): {exc}")
+                        if args.result_manifest:
+                            result_path = Path(args.result_manifest).expanduser().resolve()
+                            result_path.parent.mkdir(parents=True, exist_ok=True)
+                            payload = {"output_path": str(saved_path.resolve())}
+                            if raw_path.is_file():
+                                payload["raw_output_path"] = str(raw_path.resolve())
+                            result_path.write_text(
+                                json.dumps(payload) + "\n",
+                                encoding="utf-8",
+                            )
 
                         time.sleep(args.sleep_after_download)
                         break

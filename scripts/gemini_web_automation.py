@@ -23,6 +23,7 @@ import json
 import mimetypes
 import os
 import re
+import sys
 import textwrap
 import shutil
 import subprocess
@@ -34,16 +35,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from local_agent_runtime.browser import resolve_browser_executable
 from playwright.sync_api import sync_playwright, Page, Locator, TimeoutError as PWTimeoutError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-import tempfile
-import time
-import urllib.parse
-import urllib.request
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Iterable
 
 
 GEMINI_URL = "https://gemini.google.com/app"
@@ -99,13 +98,26 @@ def parse_args() -> argparse.Namespace:
         help="Starter prompt prepended to each prompt before sending. Use an empty value to disable.",
     )
     parser.add_argument("--image-source-file", default="")
-    parser.add_argument("--upload-dir", default=str(Path.home() / "myspace/info/input/images"),
-                        help="Directory containing reference images to upload")
+    parser.add_argument(
+        "--upload-manifest",
+        default="",
+        help="Explicit ordered local JSON upload manifest. Takes precedence over legacy image sources.",
+    )
+    parser.add_argument(
+        "--result-manifest",
+        default="",
+        help="Optional local JSON file receiving the exact generated output path.",
+    )
+    parser.add_argument(
+        "--upload-dir",
+        default="",
+        help="Optional directory of reference images to upload. If empty, no directory upload is used.",
+    )
     parser.add_argument("--logo-key", default="LIGHT_LOGO_URL")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--aspect-ratio", default="4:5", choices=["4:5", "9:16"],
                         help="Aspect ratio for output images; 4:5 (default) or 9:16")
-    parser.add_argument("--timeout", type=int, default=420, help="Generation timeout per prompt")
+    parser.add_argument("--timeout", type=int, default=1800, help="Generation timeout per prompt")
     parser.add_argument("--download-timeout", type=int, default=180)
     parser.add_argument("--sleep-after-download", type=float, default=3.0)
     parser.add_argument("--min-image-bytes", type=int, default=20_000)
@@ -221,7 +233,7 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
     Legacy forms also accepted (with ``OUTPUT_``/``FINAL_`` prefix and/or missing
     angle component) for backward compatibility with older files.
     """
-    stem = path.stem
+    stem = re.sub(r"^run_[a-f0-9]{12}__", "", path.stem, flags=re.IGNORECASE)
     patterns = [
         # canonical (new slug): <FMT>_<slug>_<LANG>_<angle>[_A<NN>]
         r"^(?:OUTPUT_|FINAL_)?(?P<fmt>[A-Za-z0-9]+)_(?P<slug>[a-z0-9][a-z0-9]*(?:_[a-z0-9]+)*)_(?P<lang>EN|HI|HINGLISH)_(?P<angle>[a-z][a-z_]*?)(?:_(?P<variant>[AV]\d+))?$",
@@ -272,8 +284,10 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool,
     raw_jobs: list[PromptJob] = []
     for path in raw_paths:
         fmt, persona, lang, variant, concept_angle = _parse_prompt_name(path)
+        scope_match = re.match(r"^(run_[a-f0-9]{12}__)", path.stem, flags=re.IGNORECASE)
+        scope_prefix = scope_match.group(1) if scope_match else ""
         variant_suffix = f"_{variant}" if variant else ""
-        key = f"{fmt}_{persona}_{lang}{variant_suffix}"
+        key = f"{scope_prefix}{fmt}_{persona}_{lang}{variant_suffix}"
         if concept_angle and concept_angle not in key:
             key += f"_{concept_angle}"
         # Reuse the prompt's stem verbatim so the generated image matches the
@@ -282,9 +296,9 @@ def discover_prompt_jobs(prompt_dir: Path, pattern: str, allow_duplicates: bool,
         # Append the aspect ratio folder name so 4:5 and 9:16 images have distinct
         # filenames (e.g. ..._pain_point_4_5.png vs ..._pain_point_9_16.png).
         if concept_angle:
-            safe_stem = f"{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
+            safe_stem = f"{scope_prefix}{fmt}_{persona}_{lang}_{concept_angle}{variant_suffix}_{aspect_folder}"
         else:
-            safe_stem = f"gemini-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}_{aspect_folder}"
+            safe_stem = f"{scope_prefix}gemini-{fmt.lower()}-{persona.lower()}-{lang.lower()}{('-' + variant.lower()) if variant else ''}_{aspect_folder}"
         raw_jobs.append(
             PromptJob(
                 prompt_path=path.resolve(),
@@ -490,6 +504,26 @@ def parse_image_source_file(path: Path, logo_key: str) -> list[str]:
     return ([selected_logo] + regular_sources) if selected_logo else regular_sources
 
 
+def parse_upload_manifest(path: Path) -> list[Path]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("Upload manifest requires ordered entries")
+    resolved: list[Path] = []
+    for expected_position, entry in enumerate(entries, start=1):
+        if (
+            not isinstance(entry, dict)
+            or int(entry.get("position") or 0) != expected_position
+            or entry.get("role") not in {"product", "logo", "reference", "source_creative", "replacement"}
+        ):
+            raise ValueError("Upload manifest entries are invalid or unordered")
+        image = Path(str(entry.get("path") or "")).expanduser()
+        if not image.is_absolute() or not image.is_file() or image.suffix.lower() not in IMAGE_EXTS:
+            raise ValueError("Upload manifest contains an invalid local image")
+        resolved.append(image.resolve())
+    return resolved
+
+
 def is_url(value: str) -> bool:
     return value.startswith("http://") or value.startswith("https://")
 
@@ -539,16 +573,7 @@ def collect_upload_images_from_dir(upload_dir: Path) -> list[Path]:
 
 
 def resolve_browser_binary(args: argparse.Namespace) -> str:
-    for candidate in [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/snap/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-    ]:
-        if Path(candidate).exists():
-            return candidate
-    return ""
+    return resolve_browser_executable("chrome")
 
 
 def grant_gemini_permissions(context) -> None:
@@ -2196,64 +2221,56 @@ def _upload_with_playwright_input(page: Page, file_paths: list[str]) -> bool:
     return False
 
 
-def _active_window_title() -> str:
-    if not shutil.which("xdotool"):
-        return ""
+def _find_file_input_anywhere(page: Page) -> Locator | None:
+    """Find a visible or hidden file input element anywhere in the page."""
     try:
-        result = subprocess.run(
-            ["xdotool", "getactivewindow", "getwindowname"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        return (result.stdout or "").strip()
+        loc = page.locator("input[type='file']").first
+        if loc and loc.count() > 0:
+            return loc
     except Exception:
-        return ""
+        pass
+    return None
 
 
-def _native_file_dialog_active() -> bool:
-    title = _active_window_title().lower()
-    if not title:
-        return False
-    return ("open" in title and "file" in title) or "select file" in title or "choose file" in title
-
-
-def _native_dialog_choose_file(file_path: str, timeout: int = 20) -> bool:
-    """Drive the Linux Open Files dialog with xdotool when Playwright misses it.
-
-    This is a last-resort path for CDP-connected Chrome. It uploads one file at
-    a time to avoid ambiguous multi-select behavior in GTK/KDE file choosers.
-    """
-    if not shutil.which("xdotool"):
-        print("  [upload] Native dialog fallback needs xdotool, but xdotool is not installed.")
-        return False
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if _native_file_dialog_active():
-            break
-        time.sleep(0.25)
-    else:
-        print("  [upload] Native file dialog was not the active window; not typing into the desktop.")
-        return False
-
+def _upload_with_playwright_input(page: Page, file_path: str) -> bool:
+    """Upload a file via Playwright's set_input_files on the hidden file input.
+    Works on all platforms — no xdotool needed."""
     try:
-        print(f"  [upload] Native dialog fallback selecting: {file_path}")
-        subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+l"], check=False, timeout=3)
-        time.sleep(0.25)
-        subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "0", file_path], check=False, timeout=10)
-        time.sleep(0.25)
-        subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], check=False, timeout=3)
-        time.sleep(1.0)
-        # Some file choosers focus the file after the first Return and need a second Return/Open.
-        if _native_file_dialog_active():
-            subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], check=False, timeout=3)
-            time.sleep(0.8)
-        return not _native_file_dialog_active()
+        loc = _find_file_input_anywhere(page)
+        if loc is None:
+            print("  [upload] No file input found for playwright input upload")
+            return False
+        loc.set_input_files(file_path, timeout=0)
+        print("  [upload] set_input_files accepted the file.")
+        return True
     except Exception as exc:
-        print(f"  [upload] Native dialog fallback failed: {exc}")
+        print(f"  [upload] set_input_files failed: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
         return False
+
+
+def _upload_with_cdp_dom(page: Page, file_path: str) -> bool:
+    """Upload a file via CDP DOM.setFileInputFiles. Works on all platforms."""
+    try:
+        session = page.context.new_cdp_session(page)
+        doc = session.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        root_id = doc["root"]["nodeId"]
+        node_ids = session.send("DOM.querySelectorAll", {"nodeId": root_id, "selector": "input[type='file']"}).get("nodeIds", [])
+        if not node_ids:
+            print("  [upload] No file input nodes found via CDP")
+            return False
+        for node_id in reversed(node_ids):
+            try:
+                session.send("DOM.setFileInputFiles", {"nodeId": int(node_id), "files": [file_path]})
+                print("  [upload] CDP setFileInputFiles accepted the file.")
+                return True
+            except Exception:
+                continue
+    except Exception as exc:
+        print(f"  [upload] CDP direct upload failed: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
+    return False
+
+
+
 
 
 def _open_upload_file_chooser(page: Page, timeout_ms: int = 7000):
@@ -2282,13 +2299,11 @@ def _open_upload_file_chooser(page: Page, timeout_ms: int = 7000):
                 page.get_by_text("Upload files", exact=True).click(timeout=2500)
         return chooser_info.value
     except PWTimeoutError:
-        # In CDP-attached Chrome on Linux, the native dialog can open while
-        # Playwright misses the filechooser event. Do not retry blindly here;
-        # the caller can use the native-dialog fallback once.
-        if _native_file_dialog_active():
-            print("  [upload] Native file dialog opened, but Playwright did not catch the filechooser event.")
-            return None
-        raise
+        # In CDP-attached Chrome, the native OS dialog can open while
+        # Playwright misses the filechooser event. Return None so the caller
+        # can fall back to set_input_files / CDP DOM file input.
+        print("  [upload] Playwright did not catch the filechooser event; trying fallback upload.")
+        return None
 
 
 def _wait_for_uploaded_count_at_least(
@@ -2324,28 +2339,31 @@ def _upload_one_file_via_menu(page: Page, file_path: str, before_srcs: set[str],
     try:
         chooser = _open_upload_file_chooser(page, timeout_ms=7000)
     except Exception as exc:
-        # If the native dialog is active after this failure, xdotool can still rescue it.
-        if not _native_file_dialog_active():
-            raise PWTimeoutError(f"Could not open Upload files chooser for {file_path}: {exc}")
+        print(f"  [upload] Could not open Upload files chooser: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
 
     if chooser is not None:
         try:
             chooser.set_files(file_path, timeout=0)
             print("  [upload] Playwright filechooser accepted file.")
+            _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+            return
         except Exception as exc:
-            # Do not retry immediately. On CDP Chrome the file can still be
-            # handed to Gemini even when FileChooser.set_files reports a timeout.
             print(f"  [upload] FileChooser.set_files reported: {str(exc).splitlines()[0] if str(exc) else type(exc).__name__}")
-            if _native_file_dialog_active():
-                if not _native_dialog_choose_file(file_path):
-                    raise PWTimeoutError("FileChooser.set_files failed and native dialog fallback could not select the file")
-    else:
-        if not _native_dialog_choose_file(file_path):
-            raise PWTimeoutError(
-                "Native file chooser opened and Playwright missed it. Install xdotool or run in a Playwright-launched Chrome profile."
-            )
 
-    _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+    # Cross-platform fallbacks: try set_input_files then CDP DOM
+    print("  [upload] Trying cross-platform upload fallbacks...")
+    if _upload_with_playwright_input(page, file_path):
+        _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+        return
+    if _upload_with_cdp_dom(page, file_path):
+        _wait_for_uploaded_count_at_least(page, before_srcs, target_count=target_count, timeout=120)
+        return
+    raise PWTimeoutError(
+        "Could not upload file. Playwright missed the native dialog and "
+        "fallback upload via set_input_files / CDP DOM also failed. "
+        "On Linux, try: sudo apt install xdotool. On macOS, ensure "
+        "Chrome has Accessibility permissions in System Settings."
+    )
 
 
 def _upload_one_by_one_via_menu(page: Page, file_paths: list[str], before_srcs: set[str]) -> bool:
@@ -2357,6 +2375,8 @@ def _upload_one_by_one_via_menu(page: Page, file_paths: list[str], before_srcs: 
     """
     for idx, file_path in enumerate(file_paths, start=1):
         _upload_one_file_via_menu(page, file_path, before_srcs, target_count=idx)
+        if idx < len(file_paths):
+            time.sleep(3.0)
     return True
 
 
@@ -2733,7 +2753,7 @@ def wait_for_generated_image(page: Page, baseline_srcs: set[str], timeout: int) 
                 return marked_src
             print(f"  [wait-img] Still waiting... candidate count={last_seen_count}")
             next_log = time.time() + 10
-        time.sleep(2.0)
+        time.sleep(0.5)
     marked_src = mark_largest_generated_image(page)
     if marked_src:
         print("  [wait-img] Timeout reached, but visible image found; proceeding to download it.")
@@ -2902,7 +2922,6 @@ def _default_chrome_download_dirs(primary: Path) -> list[Path]:
         primary,
         Path.home() / "Downloads",
         Path.home() / "downloads",
-        Path("/home/mylappy/Downloads"),
     ]:
         try:
             d = d.expanduser().resolve()
@@ -3540,7 +3559,11 @@ def run() -> None:
 
     with tempfile.TemporaryDirectory(prefix="gemini_uploads_") as tmp:
         temp_dir = Path(tmp)
-        if args.image_source_file:
+        if args.upload_manifest:
+            upload_paths = parse_upload_manifest(
+                Path(args.upload_manifest).expanduser().resolve()
+            )
+        elif args.image_source_file:
             source_file = Path(args.image_source_file).expanduser().resolve()
             image_sources = parse_image_source_file(source_file, args.logo_key)
             upload_paths = build_local_image_paths(image_sources, temp_dir)
@@ -3668,6 +3691,13 @@ def run() -> None:
                         log_progress("done", f"Job {idx} SUCCESS: {saved_path} ({saved_path.stat().st_size} bytes)")
                         print(f"  SUCCESS: saved {saved_path} ({saved_path.stat().st_size} bytes)")
                         results.append({"job": job.job_key, "status": "success", "file": str(saved_path)})
+                        if args.result_manifest:
+                            result_path = Path(args.result_manifest).expanduser().resolve()
+                            result_path.parent.mkdir(parents=True, exist_ok=True)
+                            result_path.write_text(
+                                json.dumps({"output_path": str(saved_path.resolve())}) + "\n",
+                                encoding="utf-8",
+                            )
                         if args.sleep_after_download > 0:
                             print(f"  Waiting {args.sleep_after_download:g}s before next prompt tab...")
                             time.sleep(args.sleep_after_download)

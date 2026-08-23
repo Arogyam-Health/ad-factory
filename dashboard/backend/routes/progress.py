@@ -1,7 +1,7 @@
 from typing import Any
 from fastapi import APIRouter
 
-from dashboard.backend.app import api_progress
+from dashboard.backend.pipeline.files import api_progress
 
 router = APIRouter()
 

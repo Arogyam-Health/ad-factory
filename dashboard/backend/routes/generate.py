@@ -1,27 +1,25 @@
-from typing import Any
-from fastapi import APIRouter, Body
-
-from dashboard.backend.app import (
-    api_run_generate_916,
-    api_run_generate_916_selected,
-    api_run_generate_images_45,
-    api_run_generate_images_916_from_45,
-)
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
-@router.post("/api/runs/{run_id}/generate-916")
-def _generate_916(run_id: str) -> dict[str, Any]:
-    return api_run_generate_916(run_id)
 
-@router.post("/api/runs/{run_id}/generate-916-selected")
-def _generate_916_selected(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_run_generate_916_selected(run_id, payload)
+def _local_only(run_id: str) -> None:
+    del run_id
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Image generation, including selected prompts, is available only "
+            "through the paired localhost data plane"
+        ),
+    )
 
-@router.post("/api/runs/{run_id}/generate-images-45")
-def _generate_images_45(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_run_generate_images_45(run_id, payload)
 
-@router.post("/api/runs/{run_id}/generate-images-916-from-45")
-def _generate_images_916_from_45(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return api_run_generate_images_916_from_45(run_id, payload)
+for _suffix in (
+    "generate-916",
+    "generate-916-selected",
+    "generate-images-45",
+    "generate-images-916-from-45",
+):
+    router.add_api_route(
+        f"/api/runs/{{run_id}}/{_suffix}", _local_only, methods=["POST"]
+    )

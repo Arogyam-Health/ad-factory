@@ -1,0 +1,1034 @@
+# Local Data Plane Refactor Implementation Guide
+
+## Purpose
+
+This document is the authoritative implementation handoff for converting Ad Factory into a local-first generation system. Render has no runtime content disk; MongoDB stores control metadata plus the eight bounded dashboard configuration files. Render plans and validates Structured copy, while the local agent performs the provider HTTPS call and returns a bounded response through an in-memory relay. Durable uploaded, generated, and execution content stays on the user's local agent machine.
+
+This is a large refactor. Implement it completely, in phases, with focused tests and multiple commits. Do not stop after adding only upload endpoints or only moving image generation. Every content-bearing workflow listed here must be migrated.
+
+## Non-Negotiable Requirements
+
+1. User file uploads must go directly from the dashboard browser to the local agent on `127.0.0.1`.
+2. Image, uploaded file, generated prompt, import, export, and generated-output bytes must never be persisted on Render. The eight named dashboard configuration text/JSON files are the explicit MongoDB exception. Structured provider request and response bodies may cross Render only through the bounded in-memory relay and must never be written to MongoDB or Render disk.
+3. Render must never proxy user file bytes to the local agent.
+4. Render runtime disk must not be used for durable or workflow-critical user content.
+5. MongoDB must contain ownership/control metadata, the eight bounded dashboard configuration files, and owner-scoped provider settings.
+6. MongoDB must not contain base64 files, plaintext generated prompts, uploaded document bodies outside the eight bounded dashboard configs, plaintext provider secrets, LLM request/response bodies, local paths, local capability tokens, or localhost URLs except an explicitly configured provider API URL. Final prompts may exist only as encrypted, TTL-bound delivery ciphertext until a local agent acknowledges them.
+7. Structured copy planning, response validation/repair, and prompt assembly execute on Render; outbound provider HTTPS calls execute through the authenticated local agent. Only final prompt bodies are delivered to local storage. Structured browser automation remains local.
+8. Structured and Reference browser automation must resolve prompts and exact ordered upload sets from local storage.
+9. Generated 4:5 and 9:16 images, revisions, replacements, and history must remain local.
+10. Existing functionality must continue to work after migration.
+11. Render and MongoDB are on free plans. Do not introduce Redis, GridFS, Cloudinary, paid Render disks, or another cloud object store.
+12. The local agent sends Structured provider requests directly to allowlisted external providers. Render may receive the bounded response transiently for validation and assembly, but must not persist request or response bodies.
+
+## Repository Context
+
+- Stack: FastAPI, MongoDB, React press-room UI (`dashboard/web`), local Playwright/browser automation.
+- Render URL: `https://ad-factory-3rn5.onrender.com/`.
+- Current local-agent root: `~/ad-factory-agent`.
+- Current local artifact server: `http://127.0.0.1:8765`.
+- Current browser CDP port: `127.0.0.1:9222`.
+- Current branch at plan creation: `render-setup`.
+- Current local-agent foundation commit: `26bcc99 Build durable local agent runtime`.
+
+Before changing architecture, read:
+
+```text
+AGENTS.md
+graphify-out/GRAPH_REPORT.md
+LOCAL_DATA_PLANE_IMPLEMENTATION.md
+```
+
+Use `graphify query`, `graphify path`, or `graphify explain` for cross-module questions.
+
+## Security Actions Required First
+
+A MongoDB credential is hardcoded in these scripts:
+
+```text
+scripts/migrate_user_configs_owner_schema.py
+scripts/push_all_configs_to_vinay.py
+scripts/seed_vinay_config.py
+```
+
+Replace hardcoded connection strings with environment-based settings immediately. The external MongoDB password must be rotated by the owner. Removing it from the current files does not invalidate it or remove it from Git history.
+
+A dashboard session token was also previously exposed in chat. It must be revoked externally.
+
+Never place either secret in this document, tests, commands, commits, logs, or migration output.
+
+## Authority Boundary
+
+### Local Agent Is Authoritative For
+
+| Resource | Local responsibility |
+|---|---|
+| Uploaded product images | Full immutable bytes and versions |
+| Uploaded reference images | Full immutable bytes and versions |
+| Product documents | Full content and versions |
+| LLM requests and responses | Local trace objects only |
+| Generated copy | Full local JSON/text |
+| Assembled prompts | Full text, metadata and versions |
+| Browser upload sets | Ordered resource-version mappings |
+| Generated images | Full bytes and immutable versions |
+| Revisions/replacements | Full history and active-version pointer |
+| Logs/debug data | Local files/resources only |
+| Imports/exports | Local resources and streamed local downloads |
+| Run manifest | Full authoritative local manifest |
+
+### Render and MongoDB Are Authoritative For
+
+| Resource | Control-plane responsibility |
+|---|---|
+| Users and sessions | Authentication metadata |
+| Eight dashboard config files | Bounded text/JSON bodies, owner scope and version history |
+| Provider settings | User-scoped API URL/model and API key encrypted with `ENCRYPTION_KEY` |
+| Organizations | Membership, role and ownership metadata |
+| Agents/devices | Registration, online state and protocol support |
+| Runs | Owner, run number, status, counts and local references |
+| Jobs | Metadata-only command state, leases and bounded progress |
+| Resource projections | IDs, hashes, versions, type, size and availability |
+| Audits | Bounded metadata events with no content bodies |
+| Deletions | Tombstones and local acknowledgement state |
+
+### Render Runtime Disk May Contain
+
+Only immutable deployed application files and ordinary framework/process temporary data that is not used as workflow state. No request handler or background worker may rely on a user-content path surviving another request or process restart.
+
+## Existing Problems That Must Be Removed
+
+### Structured Flow
+
+- Browser uploads currently go to `POST /api/runs/execute` and Render filesystem paths.
+- Product images currently share global `input/images` storage.
+- Generated copy is written under Render run directories.
+- Assembled prompts are written under `output/`.
+- Full prompt content is stored in MongoDB `prompts.content`.
+- Agent jobs contain full prompts and base64 images.
+- LLM traces contain request and response bodies.
+- Selected-prompt generation can bypass the local agent.
+- Prompt import, edit, replacement, regeneration and some downloads use Render files.
+
+### Reference Flow
+
+- Reference library is globally stored under `dashboard_storage/reference_images`.
+- Product workspace is globally stored under `dashboard_storage/reference_workspace`.
+- The active V2 Reference worker executes directly on Render.
+- Per-run reference/product copies are written to Render disk.
+- Prompt text, comments, source lists, browser profiles, logs and outputs are written on Render.
+- Reference resources are not correctly owner-scoped.
+- Reference runs are not consistently represented in MongoDB production listings.
+
+### Local Agent
+
+- Local SQLite job payloads currently retain embedded prompt and base64 content.
+- The local manifest currently models images but not complete runs, documents, prompts or upload sets.
+- Current owner HMAC capabilities are permanent and embedded in URLs stored in MongoDB.
+- Current artifacts are mutable files with incomplete version/history indexing.
+- Whole-run deletion does not purge local data.
+- Content-addressed objects have no references or garbage collection.
+
+## Target End-to-End Workflow
+
+1. Dashboard requests a new run envelope from Render.
+2. Render allocates `run_id`, owner scope, run number and selected `device_id` only.
+3. Dashboard pairs with the local data plane through an authenticated challenge.
+4. Browser creates a local workspace for the allocated run.
+5. Browser streams images and documents directly to localhost.
+6. Local agent validates and commits resources into content-addressed storage.
+7. Local agent sends metadata projections to Render through an idempotent outbox.
+8. Dashboard requests run execution from Render using only `run_id`, `workspace_id`, command and bounded settings.
+9. Render creates a metadata-only agent job pinned to the authoritative device.
+10. Browser snapshots the effective Mongo-backed dashboard config into the local run and securely materializes the user's encrypted Mongo-backed provider settings to the paired local agent for execution.
+11. Local agent calls the selected copy provider directly.
+12. Local agent stores provider traces, generated copy and assembled prompts locally.
+13. Local agent creates explicit ordered browser upload sets for each prompt.
+14. Local browser automation uploads exact local resources to ChatGPT or Gemini.
+15. Local agent stores partial/final outputs before announcing metadata changes.
+16. Dashboard reads run metadata from Render and resource content directly from localhost.
+17. Edits, revisions, replacements, regeneration, exports and downloads go directly to localhost.
+18. Deletion creates a MongoDB tombstone and an idempotent local purge command.
+
+## Device Selection
+
+Do not select the most recently active agent blindly. Local browser access to `127.0.0.1` refers only to the machine running that browser.
+
+Each agent registration must expose a stable random `device_id` and supported protocol/features. A dashboard session must pair with the localhost device on the same machine. New jobs must be pinned to that `device_id` and `agent_id`.
+
+If the authoritative device is offline, show metadata with a clear unavailable state. Do not silently send a job to another computer that does not have the referenced content.
+
+## Secure Local Pairing
+
+Replace permanent query capabilities with this challenge flow:
+
+1. Localhost returns a random challenge and `device_id`.
+2. Authenticated dashboard submits the challenge to Render.
+3. Render validates that the device belongs to the user/owner.
+4. Render sends challenge approval through the authenticated agent WebSocket.
+5. Browser exchanges the approved challenge at localhost.
+6. Localhost issues a short-lived scoped session token.
+7. Browser keeps the token in memory or `sessionStorage`.
+8. Mutation requests use an authorization header.
+9. Images use authenticated `fetch()` and Blob object URLs rather than tokenized `<img>` URLs.
+10. Event streaming uses authenticated streaming fetch or a dedicated short-lived event token.
+
+Required scopes:
+
+```text
+manifest:read
+content:read
+assets:write
+documents:write
+prompts:write
+runs:execute
+outputs:write
+revisions:write
+delete
+```
+
+Require exact production-origin CORS, reject `null` origins, validate loopback `Host`, support Private Network Access preflight, and never treat CORS as authentication.
+
+## Local Database Schema
+
+Use transactional schema migrations and preserve the existing database with a backup before upgrading.
+
+### `objects`
+
+```text
+sha256 PRIMARY KEY
+relative_path UNIQUE
+bytes
+media_type
+created_at
+verified_at
+```
+
+### `resources`
+
+```text
+resource_id PRIMARY KEY
+owner_key
+kind
+logical_key
+current_version
+status
+created_at
+updated_at
+deleted_at
+```
+
+Supported kinds include:
+
+```text
+product_image
+reference_image
+product_document
+config_file
+provider_config
+copy_batch
+prompt
+run_manifest
+output_image
+revision_prompt
+log
+trace
+import
+export
+```
+
+### `resource_versions`
+
+```text
+resource_id
+version
+object_sha256
+content_hash
+metadata_json
+created_at
+PRIMARY KEY(resource_id, version)
+```
+
+### `runs`
+
+```text
+run_id PRIMARY KEY
+owner_key
+device_id
+workspace_id
+run_number
+display_batch
+flow_type
+status
+manifest_resource_id
+manifest_version
+created_at
+updated_at
+```
+
+### `run_entries`
+
+```text
+run_id
+entry_id
+resource_id
+resource_version
+role
+prompt_id
+item_id
+aspect_ratio
+position
+metadata_json
+PRIMARY KEY(run_id, entry_id)
+```
+
+### `upload_sets`
+
+```text
+upload_set_id PRIMARY KEY
+run_id
+prompt_id
+phase
+version
+created_at
+```
+
+### `upload_set_entries`
+
+```text
+upload_set_id
+position
+resource_id
+resource_version
+role
+PRIMARY KEY(upload_set_id, position)
+```
+
+Supported roles include:
+
+```text
+product
+logo
+reference
+source_creative
+replacement
+```
+
+### `outputs`
+
+```text
+output_id PRIMARY KEY
+run_id
+prompt_id
+item_id
+aspect_ratio
+current_version
+status
+created_at
+updated_at
+```
+
+### `output_versions`
+
+```text
+output_id
+version
+resource_id
+resource_version
+source_output_version
+revision_id
+created_at
+PRIMARY KEY(output_id, version)
+```
+
+### `revisions`
+
+Keep source and result output versions, local comment/prompt resource, engine, status, attempt, error and timestamps. Never overwrite history without an indexed prior version.
+
+### `change_log`
+
+Use a monotonic sequence per local root. Record owner, resource type, resource ID, version, operation and timestamp. Support reconnect after a known sequence.
+
+### `outbox`
+
+Every remote projection event must have a stable `event_id`, operation ID and serialized metadata-only payload. Render must deduplicate event IDs.
+
+### Object Garbage Collection
+
+Maintain references from resource versions and output versions. Delete an object only when no live or retained version references it. Run deletion must respect revision retention and explicit purge behavior.
+
+## Local API Contract
+
+Implement under `/v1` rather than continuing to expand image-only legacy routes.
+
+### Discovery and Pairing
+
+```text
+GET    /v1/info
+POST   /v1/pairing/challenges
+POST   /v1/pairing/sessions
+DELETE /v1/pairing/sessions/current
+```
+
+`/v1/info` returns protocol versions, device ID and supported capabilities. It must not expose absolute local paths, raw secrets, PIDs, or owner data.
+
+### Assets
+
+```text
+POST   /v1/assets
+GET    /v1/assets
+GET    /v1/assets/{resource_id}
+GET    /v1/assets/{resource_id}/content
+HEAD   /v1/assets/{resource_id}/content
+DELETE /v1/assets/{resource_id}
+```
+
+Uploads must stream to a temporary file, enforce aggregate/per-file limits, verify extension and magic bytes, hash while streaming, and atomically commit database/object references.
+
+### Documents and Configs
+
+```text
+GET /v1/documents
+PUT /v1/documents/{logical_key}
+GET /v1/documents/{logical_key}
+GET /v1/documents/{logical_key}/versions
+
+GET /v1/configs
+PUT /v1/configs/{logical_key}
+GET /v1/configs/{logical_key}
+GET /v1/configs/{logical_key}/versions
+```
+
+Use ETags or explicit expected versions. Return `409 Conflict` for stale writes.
+
+### Runs and Prompts
+
+```text
+POST   /v1/runs
+GET    /v1/runs
+GET    /v1/runs/{run_id}
+POST   /v1/runs/{run_id}/execute
+GET    /v1/runs/{run_id}/manifest
+GET    /v1/runs/{run_id}/prompts
+GET    /v1/prompts/{prompt_id}/content
+PUT    /v1/prompts/{prompt_id}
+POST   /v1/runs/{run_id}/prompt-imports
+GET    /v1/runs/{run_id}/prompt-export
+DELETE /v1/runs/{run_id}
+```
+
+### Generation and Outputs
+
+```text
+POST   /v1/runs/{run_id}/generations
+GET    /v1/runs/{run_id}/outputs
+GET    /v1/outputs/{output_id}
+GET    /v1/outputs/{output_id}/content
+POST   /v1/outputs/{output_id}/replacements
+POST   /v1/outputs/{output_id}/revisions
+GET    /v1/outputs/{output_id}/versions
+POST   /v1/outputs/{output_id}/versions/{version}/activate
+POST   /v1/outputs/{output_id}/archive
+POST   /v1/outputs/{output_id}/restore
+DELETE /v1/outputs/{output_id}
+```
+
+### Downloads and Events
+
+```text
+GET /v1/runs/{run_id}/download
+GET /v1/changes?after=<sequence>&limit=<limit>
+GET /v1/events?after=<sequence>
+```
+
+Support range requests and streamed ZIP generation. SSE/stream reconnect must resume from a known sequence.
+
+## Browser Upload Sets
+
+Never ask automation scripts to scan an arbitrary directory and never infer upload membership from filename stems.
+
+Every prompt execution must receive an explicit ordered upload manifest similar to:
+
+```json
+{
+  "upload_set_id": "ups_...",
+  "prompt_id": "prm_...",
+  "entries": [
+    {"position": 1, "resource_id": "res_reference", "version": 1, "role": "reference"},
+    {"position": 2, "resource_id": "res_product_1", "version": 3, "role": "product"},
+    {"position": 3, "resource_id": "res_product_2", "version": 1, "role": "product"}
+  ]
+}
+```
+
+The local agent materializes the set into safe local paths and passes a generated JSON manifest to ChatGPT/Gemini automation.
+
+Structured 4:5 prompts normally use selected product assets. Reference 4:5 prompts use exactly one selected reference followed by selected product assets. 9:16 conversion uses the matching generated 4:5 output as `source_creative`.
+
+## Structured Flow Implementation
+
+1. Allocate Structured copy runs on Render without requiring a running or previously registered local agent.
+2. Resolve the eight bounded dashboard configs and encrypted owner provider credentials on Render.
+3. Execute Google/OpenCode requests, validation, bounded repair, and `generate_ads` prompt assembly in a durable Mongo-backed Render job.
+4. Persist only provider/model/status/duration/count/hash diagnostics; never persist LLM request, response, normalized-copy, or plaintext prompt bodies.
+5. Encrypt the final prompt bundle into an owner-scoped TTL delivery record. Assign an unclaimed delivery atomically to the first authenticated local agent for that account.
+6. Import and hash-verify final prompts into owner-scoped local resources, then acknowledge and immediately delete delivery ciphertext.
+7. Keep product images out of copy generation. Resolve them from local storage only when 4:5 image generation starts.
+8. Materialize the bounded 9:16 conversion template from Render only when local browser conversion starts.
+9. Route selected-prompt, 4:5 batch, both-aspect and standalone 9:16 generation through local upload sets.
+10. Keep prompt editing/import/export and all generated-image lifecycle operations local.
+11. Remove new writes to Render `output`, `runtime`, run inputs and generated-image trees.
+
+## Reference Flow Implementation
+
+1. Move the reference library to owner-scoped local resources.
+2. Move Reference Workspace product images, product document and starting prompt local.
+3. Remove global Render workspace/list/delete behavior.
+4. Preserve explicit selection of references and product images through resource IDs.
+5. Resolve effective personas/config from MongoDB, then snapshot the selected values into the local run before execution.
+6. For each persona and reference, build and store the prompt locally.
+7. Create one upload set containing that reference first and selected product images after it.
+8. Execute ChatGPT/Gemini on the local worker.
+9. Store 4:5 outputs and metadata locally.
+10. Convert each output to 9:16 using its exact 4:5 output version.
+11. Publish run/status metadata through the outbox.
+12. Make Reference runs visible through normal metadata-only Mongo run listing.
+13. Eliminate Render Reference threads, subprocess files, output folders, logs and status JSON.
+
+## Provider Configuration
+
+Provider API URLs, model selections, and API keys are user-scoped MongoDB
+documents. API keys are Fernet-encrypted with Render's `ENCRYPTION_KEY`; list
+and ordinary read endpoints return only `has_secret`, never plaintext or
+ciphertext. An authenticated, owner-scoped, `no-store` materialization endpoint
+transfers the decrypted setting to the paired local agent immediately before
+local execution. Provider request/response bodies remain local.
+
+Google OAuth credentials used for dashboard login remain Render environment secrets because they belong to authentication, not generation content.
+
+## Organization Configuration
+
+The eight named dashboard configuration files are MongoDB-backed control-plane
+documents. Personal and organization owners have separate active documents and
+version history. Shared organization mode resolves the organization document;
+individual mode resolves each member's personal document. Config browsing,
+editing, copying, rollback, and persona loading must work immediately after
+login without a local agent.
+
+Config values are bounded strings: at most 12 MiB per file and 12 MiB total per
+update, leaving BSON headroom below MongoDB's 16 MiB document limit. Provider
+credentials are not dashboard config files and remain local.
+
+## MongoDB Target Fields
+
+### Runs
+
+```json
+{
+  "run_id": "run_...",
+  "owner_type": "user",
+  "owner_id": "usr_...",
+  "created_by_user_id": "usr_...",
+  "agent_id": "agent_...",
+  "device_id": "device_...",
+  "run_number": 12,
+  "display_batch": "v12",
+  "flow_type": "structured",
+  "status": "completed",
+  "local_workspace_id": "wrk_...",
+  "local_manifest_resource_id": "res_...",
+  "local_manifest_version": 8,
+  "prompt_count": 20,
+  "image_count": 40,
+  "created_at": 0,
+  "updated_at": 0
+}
+```
+
+### Prompts
+
+```json
+{
+  "prompt_id": "prm_...",
+  "run_id": "run_...",
+  "resource_id": "res_...",
+  "resource_version": 2,
+  "sha256": "...",
+  "format": "HERO",
+  "persona": "always_hungry",
+  "language": "EN",
+  "status": "ready"
+}
+```
+
+### Images
+
+```json
+{
+  "artifact_id": "art_...",
+  "run_id": "run_...",
+  "prompt_id": "prm_...",
+  "resource_id": "res_...",
+  "resource_version": 3,
+  "device_id": "device_...",
+  "sha256": "...",
+  "bytes": 123456,
+  "width": 1080,
+  "height": 1350,
+  "aspect_ratio": "4:5",
+  "status": "available"
+}
+```
+
+### Agent Jobs
+
+```json
+{
+  "job_id": "job_...",
+  "agent_id": "agent_...",
+  "device_id": "device_...",
+  "user_id": "usr_...",
+  "run_id": "run_...",
+  "job_type": "execute_run",
+  "command": "generate_images",
+  "parameters": {
+    "engine": "chatgpt",
+    "mode": "both"
+  },
+  "status": "pending",
+  "progress_code": "queued",
+  "created_at": 0,
+  "purge_at": null
+}
+```
+
+Never put content, paths, comments, URLs, logs, local capabilities or provider secrets into these documents.
+
+## Idempotency and Offline Behavior
+
+1. Every mutation receives a client-generated operation ID.
+2. MongoDB enforces operation uniqueness within owner scope.
+3. Every outbox event has a stable event ID.
+4. Render acknowledges already-processed events safely.
+5. Every claimed job has a lease generation/fencing token.
+6. Progress and terminal updates must include the current fence.
+7. A stale worker cannot complete a reassigned job.
+8. Local changes commit before remote announcements.
+9. Render outages do not stop active local work.
+10. Reconnect synchronizes changes after the last acknowledged sequence.
+11. Local authority wins for local resource content and versions.
+12. Render authority wins only for ownership and control-state transitions.
+
+## Deletion Contract
+
+1. Render marks a run `deleting` and stores a tombstone.
+2. Render queues a metadata-only local purge command.
+3. Local agent stops active operations for that run.
+4. Local agent deletes run entries, prompts, assets owned only by the run, outputs, revisions, staging and logs according to retention policy.
+5. Local agent decrements object references and removes unreferenced objects.
+6. Local agent writes a durable deletion receipt/outbox event.
+7. Render acknowledges the event and removes/minimizes prompt/image/job projections.
+8. Render marks the run `deleted` or removes it after a grace period.
+9. Offline devices retain tombstones until local deletion is acknowledged.
+
+## Migration Strategy
+
+### New Writes
+
+Once local protocol V2 is ready, stop all new content writes to Render and MongoDB immediately. Do not dual-write new content bodies.
+
+### Existing Local Data
+
+Extend the current idempotent migration foundation to import:
+
+- Existing local artifacts.
+- Existing legacy output roots.
+- Existing local revision history.
+- Existing content-store objects.
+- Recoverable local prompt/job staging.
+
+### Existing Mongo Content
+
+Provide a one-time migration command that:
+
+1. Inspects generated prompt/job/trace content without mutation; dashboard config collections are explicitly preserved in MongoDB.
+2. Imports content into the local resource store.
+3. Computes and verifies hashes.
+4. Writes metadata references.
+5. Produces a redacted report.
+6. Removes content bodies only with `--apply` after verification.
+7. Is idempotent on rerun.
+
+### Existing Render Files
+
+Existing owner-scoped Render files may be imported only through an explicit migration path. Global ownerless reference/workspace files must be reported as unassigned and must not be automatically assigned to a user.
+
+### Compatibility Window
+
+Legacy content reads may remain read-only for one migration window because persisted production data exists. Do not maintain permanent backward-compatible write paths.
+
+## Render Cleanup
+
+After migration, remove runtime content writes and static mounts for:
+
+```text
+/generated_images
+/output
+/storage
+/input
+```
+
+Retain only the frontend static mount and immutable application assets.
+
+Update readiness checks to verify:
+
+- Mongo connectivity.
+- Local-data-plane protocol compatibility.
+- Metadata-only agent-job policy.
+- TTL/index presence.
+- Online device counts.
+- Missing/offline resource references.
+- Absence of configured cloud/local Render content storage.
+
+Update `render.yaml` so it no longer claims that generated content uses Render-local storage.
+
+## Free-Tier Constraints
+
+- Keep MongoDB documents small and bounded.
+- Use TTL for terminal agent jobs.
+- Keep progress and errors bounded to short codes/messages.
+- Avoid overlapping indexes.
+- Do not use GridFS.
+- Do not use Render persistent disks.
+- Do not add Redis.
+- Do not upload generated images to Cloudinary.
+- Use one process-compatible control design; WebSocket notification loss must be covered by polling.
+- Handle Render sleep/wakeup through durable local outbox and reconnect.
+
+## Feature-Parity Checklist
+
+- [x] Structured run creation.
+- [x] Structured copy generation.
+- [x] Personal config.
+- [x] Shared Mongo-backed organization config.
+- [x] Individual organization config.
+- [x] Product document editing.
+- [x] Product image upload/list/delete.
+- [x] Prompt listing and full-content viewing.
+- [x] Prompt editing.
+- [x] Prompt XLSX import/export.
+- [x] Selected-prompt 4:5 generation.
+- [x] Batch 4:5 generation.
+- [x] Combined 4:5 and 9:16 generation.
+- [x] Standalone 9:16 conversion.
+- [x] Reference library upload/list/delete.
+- [x] Reference product workspace.
+- [x] Reference-specific comments.
+- [x] Persona selection.
+- [x] Reference 4:5 generation.
+- [x] Reference 9:16 conversion.
+- [x] ChatGPT engine.
+- [x] Gemini engine.
+- [x] Live progress.
+- [x] Partial image gallery.
+- [x] Dashboard reload and reconnect.
+- [x] Image revision.
+- [x] Image replacement.
+- [x] Archive/regenerate/restore.
+- [x] Individual image deletion.
+- [x] Whole-run deletion.
+- [x] Single image download.
+- [x] Batch ZIP download.
+- [x] Local backup and restore.
+- [x] Metadata-only admin exports.
+- [x] Offline-device UX.
+
+## Required Test Suites
+
+### Local Schema and Storage
+
+- Schema migration and rollback safety.
+- Content hashing and deduplication.
+- Resource version immutability.
+- Object reference counting and garbage collection.
+- Run-manifest consistency.
+- Revision and replacement lineage.
+- Transactional deletion.
+
+### Local API Security
+
+- Exact-origin CORS.
+- `null` origin rejection.
+- Loopback host validation.
+- Private Network Access preflights.
+- Pairing expiry and revocation.
+- Scope enforcement.
+- Cross-user, cross-org and cross-device denial.
+- Upload traversal, MIME mismatch and size limits.
+- Idempotent upload retries.
+- ETag/version conflicts.
+
+### Control Plane
+
+- Agent jobs contain no bodies, base64, paths, comments, URLs or secrets.
+- Job/device ownership enforcement.
+- Claim fencing.
+- Event idempotency.
+- Terminal job TTL.
+- Bounded progress/errors.
+- Missing/offline resource state.
+- Deletion tombstone reconciliation.
+
+### Structured Flow
+
+- Browser uploads never touch Render endpoints.
+- Local provider execution.
+- Local copy and prompt assembly.
+- Exact product upload sets.
+- Selected/batch/both/9:16 modes.
+- Prompt edit/import/export.
+
+### Reference Flow
+
+- Owner-scoped libraries/workspaces.
+- Exact reference-first upload order.
+- Selected product-only uploads.
+- Local prompt assembly and comments.
+- 4:5 and matching 9:16 lineage.
+- Live progress and completed-run listing.
+
+### Lifecycle
+
+- Local revisions and version activation.
+- Replacement, archive, regeneration and restore.
+- Individual and run deletion.
+- Downloads and ZIP streaming.
+- Agent restart during jobs and revisions.
+- Render outage during execution and completion.
+- Render restart with no lost workflow data.
+
+### Boundary Enforcement
+
+Add static and dynamic assertions that fail if MongoDB or Render receives:
+
+```text
+base64
+prompt body
+document body
+plaintext or API-visible provider key outside the owner-scoped materialization endpoint
+LLM request/response body
+localhost URL
+local capability
+absolute local path
+browser log body
+revision comment
+```
+
+The assertion intentionally permits the eight validated dashboard config bodies
+and encrypted provider keys plus their bounded URL/model settings.
+
+Run the application with Render content directories read-only during integration tests. Every Structured and Reference feature must still pass.
+
+## Verification Commands
+
+Use the repository's environment and adapt exact test modules as they are introduced:
+
+```bash
+source .venv/bin/activate
+
+python -m py_compile \
+  scripts/local_agent.py \
+  local_agent_runtime/*.py \
+  dashboard/backend/control_app.py \
+  dashboard/backend/control_plane_policy.py \
+  dashboard/backend/agent/*.py \
+  scripts/migrate_content_to_local.py
+
+python -m unittest discover -s tests -p 'test_*.py'
+
+python tests/test_smoke.py
+
+node --check dashboard/web/src/lib/local-data-plane.js
+npx --prefix dashboard/web tsc --noEmit
+
+git diff --check
+
+graphify update .
+```
+
+`tests/test_browser_local_data_plane_e2e.py` covers a real Chromium HTTPS
+dashboard origin calling HTTP loopback for authenticated uploads, downloads,
+reload, and resumable event-stream reconnect. Local API security tests cover
+exact-origin Private Network Access preflights.
+
+Real ChatGPT and Gemini smoke tests must be run manually after deterministic fake-engine tests pass.
+
+## Commit Sequence
+
+Use multiple focused commits. Update the status ledger in this file after each phase.
+
+1. `docs: define local data plane refactor`
+2. `security: remove exposed credentials from scripts`
+3. `feat(local): add versioned local resource storage`
+4. `feat(local): add scoped localhost data plane API`
+5. `feat(agent): add secure browser device pairing`
+6. `feat(web): upload structured and reference assets locally`
+7. `refactor(agent): use metadata-only control jobs`
+8. `feat(agent): execute structured copy generation locally`
+9. `feat(agent): execute structured browser generation locally`
+10. `feat(agent): execute reference workflow locally`
+11. `feat(local): complete local content lifecycle`
+12. `refactor(server): remove runtime content persistence`
+13. `feat(migration): migrate content to local references`
+14. `test: enforce stateless render data boundary`
+15. `docs: document local-first deployment and backup`
+
+Before each commit, inspect:
+
+```bash
+git status
+git diff
+git diff --check
+git log --oneline -10
+```
+
+Stage only files for that phase. Preserve unrelated user or concurrent-agent changes. Do not amend commits unless explicitly instructed. Do not push unless explicitly instructed.
+
+## Status Ledger
+
+Update this table during implementation. Include commit SHA and verification result.
+
+| Phase | Status | Commit | Verification | Notes |
+|---|---|---|---|---|
+| Plan and boundary | Complete | `09c48a4` | Plan and boundary committed | Authoritative implementation boundary recorded |
+| Security cleanup | Complete (repository) | `5191b7f` | 3 focused security tests pass | External credential and exposed-session rotation remain outstanding |
+| Local schema | Complete (repository) | `7156263` | 11 focused schema tests and 22 existing local-agent storage/migration/runtime tests pass (33 total); local-agent `py_compile` and `git diff --check` pass | Committed by parent |
+| Local API | Complete (repository) | `80c3665` | 16 focused API tests and 33 existing local-agent storage/migration/runtime tests pass (49 total); local-agent `py_compile` and `git diff --check` pass | Committed by parent |
+| Device pairing | Complete (repository) | `9ade08a` | 8 focused pairing tests and 51 existing local-agent/API tests pass (59 total); `py_compile`, frontend `node --check`, and `git diff --check` pass | Committed by parent |
+| Direct browser uploads | Complete (repository) | `7250fd7` | 9 focused allocation/frontend/network-boundary tests and 35 relevant pairing/local-data-plane/transport tests pass (44 total); `py_compile`, edited frontend `node --check`, and `git diff --check` pass | Committed by parent |
+| Metadata-only jobs | Complete (repository) | `7ec1845` | 14 focused metadata-job tests and 58 existing agent/local-data-plane tests pass (72 total); `py_compile` passes | Committed by parent; full smoke has 3 pre-existing environment/startup failures with Mongo unavailable |
+| Local structured copy | Complete (repository) | `d736a89` | 6 focused structured-copy tests and 71 existing agent/local-data-plane tests pass (77 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
+| Local structured images | Complete (repository) | `8af3035` | 8 focused deterministic browser tests and 55 structured/local-data-plane/control/frontend regressions pass (63 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
+| Local reference flow | Complete (repository) | `29b0e6d` | 8 focused Reference tests and 63 local-data-plane/control/frontend regressions pass (71 total); `py_compile`, edited frontend `node --check`, lints, `git diff --check`, and Graphify update pass | Committed by parent; real ChatGPT and Gemini browser smoke tests remain manual final verification |
+| Local lifecycle parity | Complete (repository) | `5eac75f` | Focused lifecycle, config/org/offline, local-data-plane, metadata-boundary, and frontend regressions pass; full verification recorded by implementing agent | Committed by parent |
+| Stateless Render cleanup | Complete (repository) | `ae469c4` | 13 focused stateless/read-only boundary tests, 127 current regression tests, standalone smoke, backend `py_compile`, lints, `git diff --check`, and Graphify update pass | Committed by parent |
+| Migration | Complete (repository) | `145d7fc` | 10 focused migration tests, 137 regression tests, 406 smoke assertions, `py_compile`, lints, `git diff --check`, and Graphify update pass | Dry-run-first, hash-verified migration committed |
+| Full verification | Complete (repository) | `1761077` | 78 boundary/parity tests pass, including real Chromium HTTPS-dashboard-to-loopback upload, download, event reconnect, and reload coverage; 52 Structured/Reference/lifecycle tests pass with Render content directories read-only; 141 full regression tests and 406 smoke assertions pass | Automated boundary verification committed; live ChatGPT/Gemini sessions remain final external verification |
+| Operations documentation | Complete (repository) | `1440df0` | Deployment, pairing, provider storage, migration, backup/restore, replication, outage recovery, deletion, troubleshooting, and external security actions documented | Operations runbook committed |
+| Mongo-backed dashboard configs | Complete (repository) | `7573c6f`, `4137e27`, `43e0f3f`, plus persona-defaults follow-up | 8 focused Mongo config tests, 153 full regression tests, standalone smoke assertions, backend/frontend compilation, and lints pass | Restores all eight personal/org config files and editable personas, removes legacy Studio content routes, forces frontend asset revalidation, and validates production config/default endpoints plus MongoDB's document limit |
+| Mongo-backed provider settings | Complete (repository) | `79dd3b3`, `5381355` | 5 focused provider tests, 193 full regression tests, backend/frontend syntax checks, lints, and Graphify update pass | Stores URL/model plus Fernet-encrypted API keys by user; replacement keys overwrite prior ciphertext and expose only a non-secret fingerprint so users can verify rotation |
+| Legacy agent-job storage cleanup | Complete (repository) | `5381355` | 2 focused legacy-cleanup tests, 193 full regression tests, compilation, lints, and Graphify update pass | Sanitizes legacy content-bearing `agent_jobs` before index creation, unsets oversized payloads, deletes jobs that cannot satisfy the metadata-only protocol, and leaves current jobs bounded to 8 KiB with terminal TTL cleanup |
+| Retired API compatibility audit | Complete (repository) | `76802f3`, `7b10b14`, `757aab5`, `31e20b4`, `2e88a36`, `5393251`, `580beb9`, plus multi-account follow-up | 174 full regression tests pass; all frontend JavaScript and backend/local-runtime Python compile; production frontend-to-policy audit passes; Graphify update passes | Removes all shipped browser dependencies on retired Render content routes, keeps Structured copy independent of product images, reconciles stale owner/device-scoped metadata, propagates local prompt deletion, and stores separate local-agent credentials per dashboard account on shared machines |
+| Render Structured copy pipeline | Complete (repository) | `715d8bc`, `d8d75b7`, `7f8d525`, `c2c9641`, `9e005f7`, `a709126`, `75ae611` | 20 focused Render generation/delivery/diagnostic tests, 205 full regression tests, standalone smoke assertions, backend/frontend compilation, lints, and Graphify update pass | Runs Structured planning, validation, repair, prompt assembly, and sanitized tracing on Render; normalizes dashboard model IDs and common provider copy aliases such as `copy_en`; sends an explicit language-keyed output schema and preserves requested plan formats; surfaces bounded, secret-redacted provider errors and malformed output; retains only each user's five most recent diagnostics; stores encrypted TTL prompt delivery ciphertext; imports final prompts locally before acknowledgement and deletion |
+| Local provider relay | Complete (repository) | `f906150`, `b47264c`, `9694f35`, `600cb5a`, `f4d9706`, `8332b87`, `5d31166`, `eccf31f`, `47c94c2`, `5b4e68d`, `5546a17` | 9 focused relay tests, 204 full regression tests, standalone smoke assertions, backend/local compilation, all frontend JavaScript syntax checks, lints, and Graphify update pass | Executes only allowlisted OpenCode/Google HTTPS calls from the local agent with no client-side response timeout; uses bounded one-time in-memory calls pinned to the authenticated user, agent, and device; synchronizes cross-thread connection selection; authenticates inside the encrypted WebSocket after the proxy upgrade; reports connected only after capability acknowledgement; keeps transient offline/disconnect jobs queued and resumes earlier transient failures when the matching agent reconnects; negotiates capability over the live WebSocket without Mongo persistence; keeps API keys and request/response bodies out of MongoDB and Render disk; Render retains planning, validation, repair, assembly, encrypted prompt delivery, and sanitized recent traces |
+| Delivered prompt visibility | Complete (repository) | `317ea8b`, `93ee093`, `cb72008`, `4db1785`, `9715266`, `9254586` | Focused localhost frontend tests, 209 full regression tests, all frontend JavaScript syntax checks, lints, and Graphify update pass | Confirms delivered prompt resources and run entries are read from the authoritative local agent; removes an undefined prompt-card identifier that aborted rendering after controls appeared; rerenders the run carousel only when local device/output state changes and restores expanded prompt editors across necessary rerenders; displays and edits only the format-specific `EXACT ON-IMAGE COPY` block while preserving every other generation-prompt section; preserves visible error reporting if any future card construction fails |
+| Browser image readiness | Complete (repository) | `877a74c`, `953851c`, `4edce0b`, `481b9f4`, `a12e68e`, `2dc475f` | 29 focused browser/pairing/delivery tests, 218 full regression tests, standalone smoke checks, backend/local/frontend compilation, lints, and Graphify update pass | Requires every ChatGPT upload thumbnail to be fully loaded, stable, and free of upload activity/spinners before per-file progress, duplicate handling, final settling, or submission can advance; accepts only complete assistant-response images that remain generation-idle and stable before their resource or download control is confirmed; removes the unsafe timeout fallback to unrelated visible images; does not complete a prompt until valid image bytes are saved; streams browser subprocess progress to the local terminal; propagates the selected CDP endpoint; repairs missing browser pairing sessions while preferring the run's exact agent registration; and heals stale Render run bindings from the agent/device that actually acknowledges local prompt storage |
+
+Repository implementation and automated verification are complete. Final
+production sign-off requires these external actions, which cannot be performed
+from the repository test environment:
+
+1. Rotate the previously exposed MongoDB password and update Render.
+2. Revoke the previously exposed dashboard session.
+3. Run one real ChatGPT and one real Gemini Structured and Reference smoke flow
+   using valid local browser sessions, including matching 4:5 and 9:16 outputs.
+
+## Definition of Done
+
+The refactor is complete only when all of the following are true:
+
+1. Browser developer tools show user file uploads going to `127.0.0.1`, never the Render origin.
+2. MongoDB inspection confirms that no content bodies except the eight bounded dashboard config files, their version snapshots, encrypted provider secrets, and TTL-bound encrypted prompt deliveries are present; no plaintext prompt, LLM request/response, base64 file, local path, localhost URL, or capability is stored.
+3. Render runtime-content directories can be read-only without breaking any feature.
+4. Structured copy planning, validation, repair, and prompt assembly run on Render; provider HTTPS calls, final prompt storage, and all Structured browser automation remain local.
+5. Reference library, workspace, prompt assembly and browser automation run locally.
+6. Exact browser upload membership is represented by tested upload-set resources.
+7. Prompt and image lifecycle operations are fully local.
+8. Dashboard config/persona loading works from MongoDB without a local agent; run content reload works from Mongo metadata plus localhost content.
+9. Offline local agents display unavailable metadata without broken or cross-device URLs.
+10. Render restarts do not lose required data.
+11. Local agent restarts recover jobs, revisions and synchronization safely.
+12. Deletion reconciles correctly after offline periods.
+13. Migration is dry-run-first, idempotent and hash-verified.
+14. All focused, smoke, security and E2E tests pass.
+15. Real ChatGPT and Gemini smoke tests pass.
+16. Graphify is updated.
+17. The status ledger is fully completed.
+
+Do not declare completion based only on unit tests or only on Structured Flow. Reference Flow and all lifecycle operations are mandatory.
+
+## Primary Files Expected To Change
+
+### Local Runtime
+
+```text
+local_agent_runtime/storage.py
+local_agent_runtime/artifact_server.py
+local_agent_runtime/transport.py
+local_agent_runtime/migration.py
+local_agent_runtime/__init__.py
+scripts/local_agent.py
+scripts/chatgpt_web_sutomation.py
+scripts/gemini_web_automation.py
+scripts/reference_image_job.py
+```
+
+Split the growing storage and HTTP implementations into focused modules when doing so makes transactional boundaries and security easier to verify. Do not create abstraction layers that have no concrete reuse.
+
+### Render Control Plane
+
+```text
+dashboard/backend/app.py
+dashboard/backend/agent/auth.py
+dashboard/backend/agent/connections.py
+dashboard/backend/agent/routes.py
+dashboard/backend/agent/service.py
+dashboard/backend/db/collections.py
+dashboard/backend/db/indexes.py
+dashboard/backend/routes/batch.py
+dashboard/backend/routes/defaults.py
+dashboard/backend/routes/execute.py
+dashboard/backend/routes/export_import.py
+dashboard/backend/routes/runs.py
+dashboard/backend/services/run_storage.py
+dashboard/backend/services/user_config.py
+dashboard/backend/services/config_version_service.py
+dashboard/backend/services/json_blobs.py
+dashboard/backend/reference_flow.py
+dashboard/backend/reference_library.py
+dashboard/backend/reference_workspace.py
+dashboard/backend/reference_workspace_v2.py
+render.yaml
+```
+
+### Dashboard Frontend
+
+Add a focused client module:
+
+```text
+dashboard/web/src/lib/local-data-plane.js
+```
+
+Integrate it with:
+
+```text
+dashboard/web/src/lib/api.ts
+dashboard/web/src/pages/Studio.tsx
+dashboard/web/src/pages/studio/ReferencePanel.tsx
+dashboard/web/src/components/AgentStatus.tsx
+```
+
+### Tests
+
+Retain and evolve existing local-agent tests, then add focused suites:
+
+```text
+tests/test_local_data_plane_schema.py
+tests/test_local_data_plane_assets.py
+tests/test_local_data_plane_security.py
+tests/test_agent_metadata_jobs.py
+tests/test_structured_local_flow.py
+tests/test_reference_local_flow.py
+tests/test_local_output_lifecycle.py
+tests/test_localhost_frontend_integration.py
+tests/test_smoke.py
+```

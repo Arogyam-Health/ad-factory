@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "plugin": ["./plugins/gemini-enum-fix.js"],
   "mcp": {
     "playwright": {
       "type": "local",

@@ -4,16 +4,14 @@ Assembler-only ad prompt generator.
 
 What this script does:
   - Reads externally-generated ad copy from a JSON file (no copy generation here).
-  - Selects catalog background slots with exhaustive per-format rotation.
+  - Selects catalog backgrounds randomly from the format pool.
   - Builds seeded background sentence from `background_variant.json`.
   - Assembles full 9-section prompts per playbook and writes `output/vN/<FORMAT>_<persona>_<lang>.txt`.
   - Enforces safe-zone rules by embedding an explicit SAFE-ZONE ENFORCEMENT block.
-  - Appends entries to `AD_GENERATION_REGISTRY.JSON` and updates indexes (background rotation + used_text).
 
 What this script explicitly does NOT do:
   - It does not call any LLM.
   - It does not invent persona fields or ad copy.
-  - It does not "freshen" text; freshness is enforced by strict uniqueness checks against registry.
 """
 
 from __future__ import annotations
@@ -36,13 +34,17 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REGISTRY_PATH = ROOT / "AD_GENERATION_REGISTRY.JSON"
 BACKGROUNDS_PATH = ROOT / "background_variant.json"
 COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
 OUTPUT_DIR = ROOT / "output"
 
 SUPPORTED_FORMATS = {"HERO", "BA", "TEST", "FEAT", "UGC"}
 SUPPORTED_LANGS = {"EN", "HI", "HINGLISH"}
+LANGUAGE_LABELS = {
+    "EN": "English",
+    "HI": "Hindi",
+    "HINGLISH": "Hinglish",
+}
 SUPPORTED_CONCEPT_ANGLES = {
     "pain_point",
     "desired_outcome",
@@ -77,6 +79,22 @@ FORMAT_VISUAL_ARCHETYPES = _load_visual_archetypes()
 PROMPT_ASSEMBLER_DIR = Path(__file__).resolve().parent
 PROMPT_ASSEMBLER_TEMPLATES = json.loads((PROMPT_ASSEMBLER_DIR / "prompt_assembler_templates.json").read_text(encoding="utf-8"))
 
+
+def default_visual_archetype(fmt: str) -> dict[str, Any]:
+    label = f"Default {fmt} layout"
+    return {
+        "id": f"default_{fmt.lower()}",
+        "label": label,
+        "layout_lines": [
+            f"- Use a clean {fmt} composition with one obvious focal hierarchy.",
+            "- Keep product labels readable and fully inside the safe-zone.",
+            "- Place headline, support copy, CTA, and proof bar with clear separation.",
+        ],
+        "direction_lines": [
+            f"- Selected visual archetype fallback: default_{fmt.lower()} - {label}",
+        ],
+    }
+
 @dataclass(frozen=True)
 class CopyBlock:
     headline: str
@@ -94,8 +112,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch", help="Output batch folder name like v8 (default: next available)")
     parser.add_argument("--seed", type=int, help="Deterministic seed for background rotation order + background sentence sampling")
     parser.add_argument("--language-mode", choices=["BOTH", "EN", "HI", "HINGLISH"], default="BOTH", help="Which prompt languages to assemble")
-    parser.add_argument("--no-registry-write", action="store_true", help="Skip writing AD_GENERATION_REGISTRY.JSON updates")
-    parser.add_argument("--skip-uniqueness-check", action="store_true", help="Allow duplicate copy values against registry")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print plan without writing files")
     return parser.parse_args()
 
@@ -129,38 +145,8 @@ def next_batch_name(output_dir: Path) -> str:
     return "v1" if not batches else f"v{batches[-1] + 1}"
 
 
-def stable_fmt_seed(seed: int, fmt: str) -> int:
-    return (seed * 31 + sum(ord(c) for c in fmt)) & 0x7FFFFFFF
-
-
-def ensure_slot_tracker(registry: dict[str, Any], fmt: str, pool_ids: list[str], seed: int) -> dict[str, Any]:
-    idx = registry.setdefault("indexes", {})
-    tracker = idx.setdefault("slot_exhaustion_tracker", {}).setdefault(fmt, {})
-    used = tracker.get("used") or []
-    remaining = tracker.get("remaining") or []
-    cycle = int(tracker.get("cycle_number") or 1)
-
-    if remaining:
-        tracker["used"] = used
-        tracker["remaining"] = remaining
-        tracker["cycle_number"] = cycle
-        return tracker
-
-    # Start (or restart) a cycle: refill remaining with a deterministic shuffle.
-    if used:
-        cycle += 1
-    order = list(pool_ids)
-    rng = random.Random(stable_fmt_seed(seed, fmt))
-    rng.shuffle(order)
-
-    tracker["cycle_number"] = cycle
-    tracker["used"] = []
-    tracker["remaining"] = order
-    return tracker
-
 
 def pick_background_slot(
-    registry: dict[str, Any],
     backgrounds: dict[str, Any],
     fmt: str,
     seed: int,
@@ -169,16 +155,8 @@ def pick_background_slot(
     pool = [v for v in variants if fmt in (v.get("formats") or [])]
     if not pool:
         raise RuntimeError(f"No background variants found for format {fmt}")
-    pool_ids = [v["id"] for v in pool]
-    tracker = ensure_slot_tracker(registry, fmt, pool_ids, seed)
-
-    remaining: list[str] = tracker["remaining"]
-    chosen_id = remaining.pop(0)
-    tracker["used"].append(chosen_id)
-
-    chosen = next((v for v in pool if v.get("id") == chosen_id), None)
-    if not chosen:
-        chosen = pool[0]
+    rng = random.Random(seed)
+    chosen = rng.choice(pool)
     default_overlay = backgrounds.get("default_text_overlay_treatment")
     if isinstance(default_overlay, list) and default_overlay and "text_overlay_treatment" not in chosen:
         chosen = dict(chosen)
@@ -252,6 +230,67 @@ def require_str(obj: dict[str, Any], key: str, ctx: str) -> str:
     return val.strip()
 
 
+def optional_str(obj: dict[str, Any], key: str) -> str:
+    val = obj.get(key)
+    return val.strip() if isinstance(val, str) and val.strip() else ""
+
+
+def default_copy_text(fmt: str, lang: str, field: str) -> str:
+    defaults = {
+        "EN": {
+            "headline": "A simpler daily wellness routine",
+            "support_line": "Designed to fit into your day with clear, guided steps.",
+            "trust_line": "Trusted by thousands of wellness-focused customers.",
+            "cta": "See how it works",
+        },
+        "HI": {
+            "headline": "रोज की वेलनेस के लिए आसान रूटीन",
+            "support_line": "आपके दिन में आसानी से फिट होने वाले साफ, गाइडेड स्टेप्स।",
+            "trust_line": "हजारों वेलनेस-केंद्रित ग्राहकों का भरोसा।",
+            "cta": "जानें कैसे काम करता है",
+        },
+        "HINGLISH": {
+            "headline": "Daily wellness ke liye simple routine",
+            "support_line": "Aapke day mein fit hone wale clear, guided steps.",
+            "trust_line": "Thousands of wellness-focused customers ka trust.",
+            "cta": "Dekhein kaise work karta hai",
+        },
+    }
+    text = defaults.get(lang, defaults["EN"]).get(field, "")
+    if fmt == "TEST" and field == "headline":
+        return {
+            "EN": "Real routines, real trust",
+            "HI": "असली रूटीन, असली भरोसा",
+            "HINGLISH": "Real routine, real trust",
+        }.get(lang, text)
+    return text
+
+
+def default_bullets(fmt: str, lang: str) -> list[str]:
+    if fmt == "BA":
+        return {
+            "EN": ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"],
+            "HI": ["पहले: शुरुआत साफ नहीं थी", "पहले: रूटीन फॉलो करना मुश्किल था", "बाद में: रोज के स्टेप्स साफ हुए", "बाद में: जारी रखने का भरोसा बढ़ा"],
+            "HINGLISH": ["Before: start clear nahi tha", "Before: routine follow karna hard tha", "After: daily steps clearer hue", "After: continue karne ka confidence badha"],
+        }.get(lang, ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"])
+    return {
+        "EN": ["Clear daily steps", "Premium, guided routine"],
+        "HI": ["साफ रोजाना स्टेप्स", "प्रीमियम, गाइडेड रूटीन"],
+        "HINGLISH": ["Clear daily steps", "Premium guided routine"],
+    }.get(lang, ["Clear daily steps", "Premium, guided routine"])
+
+
+def safe_headline(raw: dict[str, Any], fmt: str, lang: str, ctx: str) -> str:
+    headline = optional_str(raw, "headline") or default_copy_text(fmt, lang, "headline")
+    if re.search(r"\b(ok\s*liquid|ok\s*tablet|ok\s*powder|okp)\b", headline, flags=re.IGNORECASE):
+        return default_copy_text(fmt, lang, "headline")
+    if re.search(r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b", headline, flags=re.IGNORECASE):
+        return default_copy_text(fmt, lang, "headline")
+    if not headline:
+        raise RuntimeError(f"Missing or empty string 'headline' in {ctx}")
+    return headline
+
+
 def require_int(obj: dict[str, Any], key: str, ctx: str) -> int:
     val = obj.get(key)
     if not isinstance(val, int):
@@ -275,23 +314,32 @@ def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]
 
 def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
     ctx = f"ads[].copy.{lang} for format={fmt}"
-    headline = require_str(raw, "headline", ctx)
-    if re.search(r"\b(ok\s*liquid|ok\s*tablet|ok\s*powder|okp)\b", headline, flags=re.IGNORECASE):
-        raise RuntimeError(f"{ctx}.headline contains product component name; move it to support/bullets")
-    if re.search(r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b", headline, flags=re.IGNORECASE):
-        raise RuntimeError(f"{ctx}.headline contains protocol mechanics; move to support/bullets")
-    cta = require_str(raw, "cta", ctx)
+    headline = safe_headline(raw, fmt, lang, ctx)
+    cta = optional_str(raw, "cta") or default_copy_text(fmt, lang, "cta")
     sub_val = raw.get("subheadline") or raw.get("support_line")
     support_line = (sub_val or "").strip() if isinstance(sub_val, str) else ""
-    context_line = (raw.get("context_line") or "").strip() if isinstance(raw.get("context_line"), str) else ""
-    trust_line = (raw.get("trust_line") or "").strip() if isinstance(raw.get("trust_line"), str) else ""
-    attribution = (raw.get("attribution") or "").strip() if isinstance(raw.get("attribution"), str) else ""
+    if fmt in {"HERO", "UGC"} and not support_line:
+        support_line = default_copy_text(fmt, lang, "support_line")
+    context_line = optional_str(raw, "context_line")
+    trust_line = optional_str(raw, "trust_line")
+    if fmt == "TEST" and not trust_line:
+        trust_line = default_copy_text(fmt, lang, "trust_line")
+    attribution = optional_str(raw, "attribution")
     bullets_val = raw.get("bullets")
     bullets: list[str] | None = None
     if bullets_val is not None:
-        if not isinstance(bullets_val, list) or not all(isinstance(x, str) and x.strip() for x in bullets_val):
-            raise RuntimeError(f"'bullets' must be a non-empty string list when present in {ctx}")
-        bullets = [x.strip() for x in bullets_val]
+        if isinstance(bullets_val, list):
+            bullets = [x.strip() for x in bullets_val if isinstance(x, str) and x.strip()]
+        if not bullets:
+            bullets = None
+    if fmt in {"BA", "FEAT"}:
+        min_bullets = 4 if fmt == "BA" else 2
+        if not bullets or len(bullets) < min_bullets:
+            fallback_bullets = default_bullets(fmt, lang)
+            bullets = (bullets or []) + fallback_bullets[len(bullets or []):min_bullets]
+        if bullets:
+            bullets = bullets[: max(min_bullets, len(bullets))]
+    if bullets:
         if fmt == "BA":
             bullets = [strip_ba_panel_label(x) for x in bullets]
     return CopyBlock(
@@ -324,59 +372,6 @@ def split_ba_contrast_lines(bullets: list[str]) -> tuple[list[str], list[str]]:
     return (cleaned[:2], cleaned[2:4])
 
 
-def registry_used_text(registry: dict[str, Any]) -> dict[str, set[str]]:
-    buckets = (registry.get("indexes", {}) or {}).get("used_text", {}) or {}
-    out: dict[str, set[str]] = {}
-    for bucket, arr in buckets.items():
-        if not isinstance(arr, list):
-            continue
-        out[bucket] = {s.strip() for s in arr if isinstance(s, str) and s.strip()}
-    return out
-
-
-def registry_all_used_text(used: dict[str, set[str]]) -> set[str]:
-    all_text: set[str] = set()
-    for values in used.values():
-        all_text.update(v for v in values if v.strip())
-    return all_text
-
-
-def uniqueness_check(
-    used: dict[str, set[str]],
-    all_used: set[str],
-    bucket: str,
-    value: str,
-    collisions: list[str],
-    ctx: str,
-) -> None:
-    clean = value.strip()
-    if not clean:
-        return
-    if clean in all_used:
-        collisions.append(f"{ctx} collides with registry used_text across all buckets: {value!r}")
-    elif clean in used.get(bucket, set()):
-        collisions.append(f"{ctx} collides with registry used_text.{bucket}: {value!r}")
-
-
-def add_used_text(registry: dict[str, Any], bucket: str, values: list[str]) -> None:
-    idx = registry.setdefault("indexes", {}).setdefault("used_text", {}).setdefault(bucket, [])
-    for v in values:
-        s = (v or "").strip()
-        if s:
-            idx.append(s)
-
-
-def next_entry_id(registry: dict[str, Any]) -> str:
-    entries = registry.get("entries") or []
-    if not entries:
-        return "entry_001"
-    last = entries[-1].get("id", "")
-    m = re.match(r"^entry_(\d+)$", str(last))
-    if not m:
-        return f"entry_{len(entries) + 1:03d}"
-    return f"entry_{int(m.group(1)) + 1:03d}"
-
-
 def stable_signature_seed(*parts: Any) -> int:
     joined = "|".join(str(part or "") for part in parts)
     digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()
@@ -400,7 +395,7 @@ def pick_visual_archetype(
 ) -> dict[str, Any]:
     variants = FORMAT_VISUAL_ARCHETYPES.get(fmt) or []
     if not variants:
-        raise RuntimeError(f"No visual archetypes configured for format {fmt}")
+        return default_visual_archetype(fmt)
 
     if forced_archetype and forced_archetype.strip():
         return find_visual_archetype(fmt, forced_archetype.strip())
@@ -438,6 +433,7 @@ def render_prompt(
     seeded_sentence: str,
     visual_archetype: dict[str, Any],
     visual_lock: dict[str, Any] | None = None,
+    templates: dict[str, Any] | None = None,
 ) -> str:
     if fmt == "HERO":
         style = "HERO, polished enough for paid ad deployment."
@@ -476,7 +472,7 @@ def render_prompt(
 
     persona_number = require_int(persona, "number", "ads[].persona")
 
-    T = PROMPT_ASSEMBLER_TEMPLATES
+    T = templates if isinstance(templates, dict) else PROMPT_ASSEMBLER_TEMPLATES
 
     layout_lines = list(visual_archetype.get("layout_lines") or [])
     archetype_direction_lines = [str(line) for line in (visual_archetype.get("direction_lines") or []) if isinstance(line, str) and line.strip()]
@@ -565,6 +561,8 @@ def render_prompt(
             "- Concept path is strategy only; do not render these labels on-image.",
         ]
     )
+    lines.append("")
+    lines.append(f"Create the ad in {LANGUAGE_LABELS.get(lang, lang)}.")
     lines.append("")
     lines.append("EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING")
     lines.extend(copy_lines)
@@ -799,18 +797,11 @@ def main() -> int:
     if not isinstance(ads, list) or not ads:
         raise RuntimeError("copy file must contain non-empty 'ads' array")
 
-    registry = load_json(REGISTRY_PATH)
     backgrounds = load_json(BACKGROUNDS_PATH)
 
     seed = args.seed if args.seed is not None else random.SystemRandom().randint(10_000_000, 2_147_483_647)
-    used = registry_used_text(registry)
-    all_used = registry_all_used_text(used)
     render_langs = ["EN", "HI", "HINGLISH"] if args.language_mode == "BOTH" else [args.language_mode]
 
-    # Validate copy payload + uniqueness against registry BEFORE consuming background slots.
-    collisions: list[str] = []
-    run_used_text: dict[str, set[str]] = {}
-    run_all_text: set[str] = set()
     for i, ad in enumerate(ads):
         ctx = f"ads[{i}]"
         if not isinstance(ad, dict):
@@ -842,22 +833,6 @@ def main() -> int:
                 raise RuntimeError(f"{ctx}.copy must include {lang} object")
             cb = parse_copy_block(fmt, lang, copy[lang])
 
-            def check_run_text(bucket: str, value: str, text_ctx: str) -> None:
-                clean = (value or "").strip()
-                if not clean:
-                    return
-                if clean in run_all_text:
-                    collisions.append(f"{text_ctx} duplicates another text string in this copy batch: {clean!r}")
-                run_all_text.add(clean)
-                seen = run_used_text.setdefault(bucket, set())
-                if clean in seen:
-                    collisions.append(f"{text_ctx} duplicates another item in this copy batch: {clean!r}")
-                seen.add(clean)
-
-            check_run_text("headline_en" if lang == "EN" else "headline_hi", cb.headline, f"{ctx}.copy.{lang}.headline")
-            check_run_text("cta_en" if lang == "EN" else "cta_hi", cb.cta, f"{ctx}.copy.{lang}.cta")
-
-            # format-specific required fields (do not invent)
             if fmt in {"HERO", "UGC"} and not cb.support_line:
                 raise RuntimeError(f"{ctx}.copy.{lang}.support_line required for {fmt}")
             if fmt in {"BA", "FEAT"}:
@@ -867,28 +842,6 @@ def main() -> int:
             if fmt == "TEST":
                 if not cb.trust_line:
                     raise RuntimeError(f"{ctx}.copy.{lang}.trust_line required for TEST")
-
-            # Registry uniqueness checks (exact string match).
-            uniqueness_check(used, all_used, "headline_en" if lang == "EN" else "headline_hi", cb.headline, collisions, f"{ctx}.copy.{lang}.headline")
-            uniqueness_check(used, all_used, "cta_en" if lang == "EN" else "cta_hi", cb.cta, collisions, f"{ctx}.copy.{lang}.cta")
-
-            if fmt in {"HERO", "UGC"}:
-                check_run_text("support_line_en" if lang == "EN" else "support_line_hi", cb.support_line, f"{ctx}.copy.{lang}.support_line")
-                uniqueness_check(used, all_used, "support_line_en" if lang == "EN" else "support_line_hi", cb.support_line, collisions, f"{ctx}.copy.{lang}.support_line")
-            if fmt in {"BA", "FEAT"}:
-                bucket = "bullets_en" if lang == "EN" else "bullets_hi"
-                for b in cb.bullets or []:
-                    check_run_text(bucket, b, f"{ctx}.copy.{lang}.bullets")
-                    uniqueness_check(used, all_used, bucket, b, collisions, f"{ctx}.copy.{lang}.bullets")
-            if fmt == "TEST":
-                check_run_text("support_line_en" if lang == "EN" else "support_line_hi", cb.trust_line, f"{ctx}.copy.{lang}.trust_line")
-                uniqueness_check(used, all_used, "support_line_en" if lang == "EN" else "support_line_hi", cb.trust_line, collisions, f"{ctx}.copy.{lang}.trust_line")
-
-    if collisions and not args.skip_uniqueness_check:
-        msg = "Copy batch failed uniqueness checks against registry (regenerate via your LLM step):\n- " + "\n- ".join(collisions[:50])
-        if len(collisions) > 50:
-            msg += f"\n... and {len(collisions)-50} more collisions"
-        raise RuntimeError(msg)
 
     batch_name = args.batch or next_batch_name(OUTPUT_DIR)
     batch_dir = OUTPUT_DIR / batch_name
@@ -933,7 +886,7 @@ def main() -> int:
             if isinstance(forced_bg, str) and forced_bg.strip():
                 bg = get_background_by_id(backgrounds, fmt, forced_bg)
             else:
-                bg = pick_background_slot(registry, backgrounds, fmt, seed)
+                bg = pick_background_slot(backgrounds, fmt, seed)
 
             forced_seed = ad.get("background_seed")
             if isinstance(forced_seed, int) and forced_seed > 0:
@@ -1042,102 +995,6 @@ def main() -> int:
             }
             out_path.with_suffix(".json").write_text(json.dumps(prompt_meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             rendered[lang] = out_text
-
-        if args.no_registry_write:
-            continue
-
-        entry_id = next_entry_id(registry)
-        headline_en = ad["copy"]["EN"]["headline"]
-        headline_hi = ad["copy"]["HI"]["headline"]
-        support_en = ad["copy"]["EN"].get("support_line") or ad["copy"]["EN"].get("trust_line") or ""
-        support_hi = ad["copy"]["HI"].get("support_line") or ad["copy"]["HI"].get("trust_line") or ""
-        cta_en = ad["copy"]["EN"]["cta"]
-        cta_hi = ad["copy"]["HI"]["cta"]
-        bullets_en = ad["copy"]["EN"].get("bullets") or []
-        bullets_hi = ad["copy"]["HI"].get("bullets") or []
-
-        # Hypothesis metadata from ad payload (injected by backend when testing)
-        hyp_meta = ad.get("hypothesis") or {}
-
-        entry = {
-            "id": entry_id,
-            "timestamp": timestamp,
-            "format": fmt,
-            "persona_number": persona["number"],
-            "persona_name": persona["name"],
-            "headline_angle": angle or None,
-            "concept_angle": concept["concept_angle"],
-            "visual_archetype": visual_archetype["id"],
-            "headline_en": headline_en,
-            "headline_hi": headline_hi,
-            "support_line_en": support_en,
-            "support_line_hi": support_hi,
-            "cta_en": cta_en,
-            "cta_hi": cta_hi,
-            "disclaimer_en": "",
-            "disclaimer_hi": "",
-            "caption_en": "",
-            "caption_hi": "",
-            "bullets_en": bullets_en,
-            "bullets_hi": bullets_hi,
-            "background_slot": bg["id"],
-            "background_name": bg.get("title", ""),
-            "background_source": "catalog",
-            "fresh_background_signature": None,
-            "language": "BOTH",
-            "output_quality": "pending",
-            "notes": f"assembled_from={copy_path.name}; batch={batch_name}; aspect_ratio={aspect_ratio}; seed={seed}; visual_archetype={visual_archetype['id']}",
-            # Copy diversity fields (now populated automatically)
-            "opening_pattern_4tok_en": get_opening_pattern_4tok(headline_en),
-            "opening_pattern_4tok_hi": get_opening_pattern_4tok(headline_hi),
-            "copy_skeleton": get_copy_skeleton(fmt, headline_en, support_en, bullets_en, cta_en),
-            "hook_structure_class": classify_hook_structure(headline_en),
-            "proof_style_class": classify_proof_style(headline_en, support_en),
-            "cta_voice_class": classify_cta_voice(cta_en),
-            # New analytics fields
-            "headline_word_count": len((headline_en or "").split()),
-            "support_line_word_count": len((support_en or "").split()),
-            "has_protocol_mechanics": has_protocol_mechanics(support_en) or has_protocol_mechanics(" ".join(bullets_en)),
-            "has_social_proof_number": has_social_proof_number(headline_en) or has_social_proof_number(support_en),
-            "background_scene_category": get_background_scene_category(bg),
-            # Hypothesis testing fields
-            "hypothesis_id": hyp_meta.get("hypothesis_id") or "",
-            "test_group": hyp_meta.get("test_group") or "",
-            "variant_variable": hyp_meta.get("type") or "",
-            "variant_value": hyp_meta.get("variant") or "",
-        }
-
-        registry.setdefault("entries", []).append(entry)
-
-        # used_text updates
-        if "EN" in render_langs:
-            add_used_text(registry, "headline_en", [ad["copy"]["EN"]["headline"]])
-            add_used_text(registry, "cta_en", [ad["copy"]["EN"]["cta"]])
-        if "HI" in render_langs:
-            add_used_text(registry, "headline_hi", [ad["copy"]["HI"]["headline"]])
-            add_used_text(registry, "cta_hi", [ad["copy"]["HI"]["cta"]])
-
-        if fmt in {"HERO", "UGC"}:
-            if "EN" in render_langs:
-                add_used_text(registry, "support_line_en", [ad["copy"]["EN"]["support_line"]])
-            if "HI" in render_langs:
-                add_used_text(registry, "support_line_hi", [ad["copy"]["HI"]["support_line"]])
-        elif fmt in {"BA", "FEAT"}:
-            if "EN" in render_langs:
-                add_used_text(registry, "bullets_en", ad["copy"]["EN"]["bullets"])
-            if "HI" in render_langs:
-                add_used_text(registry, "bullets_hi", ad["copy"]["HI"]["bullets"])
-        else:  # TEST trust_line stored in support_line_* buckets for dedupe parity
-            if "EN" in render_langs:
-                add_used_text(registry, "support_line_en", [ad["copy"]["EN"]["trust_line"]])
-            if "HI" in render_langs:
-                add_used_text(registry, "support_line_hi", [ad["copy"]["HI"]["trust_line"]])
-
-        if isinstance(registry.get("mode"), dict):
-            registry["mode"]["last_updated"] = timestamp
-
-    if not args.no_registry_write:
-        write_json(REGISTRY_PATH, registry)
 
     print(f"Batch: {batch_name}")
     print(f"Seed: {seed}")

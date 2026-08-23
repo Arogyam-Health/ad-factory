@@ -431,21 +431,5 @@
     "relevant_ok_kit_role": "Obesity Killer Kit is positioned as a structured guided course, not another random powder or loose supplement. It combines hunger support, a clear routine, food guidance, and coach support. It was developed through decades of obesity-focused Ayurvedic practice by Dr. Arun Tyagi, and the defined money-back policy helps reduce skepticism from previous failed attempts.",
     "guardrail": "Do not demean gym, yoga, diets, or other brands. Do not promise this works for everyone.",
     "headline_anchor_rule": "Must imply tried everything + weight loss."
-  },
-  {
-    "persona_number": 29,
-    "persona_name": "Gym-Averse Dieter",
-    "core_pattern": "Wants weight loss but does not want gym, heavy workouts, or a routine that feels physically intense.",
-    "primary_tags": [
-      "low_workout_requirement",
-      "five_minute_routine",
-      "multi_action_system"
-    ],
-    "common_indian_moments": "No time for gym, not liking workouts, knee pain or low stamina, feeling awkward in gym, office fatigue, household work, quitting workouts after a few days.",
-    "failed_attempts": "Gym memberships, YouTube workouts, walking plans, yoga starts, intense challenges.",
-    "why_it_failed": "Exercise routines were too time-consuming, tiring, boring, or hard to sustain. Results also felt slow when the plan depended mainly on workouts.",
-    "relevant_ok_kit_role": "Obesity Killer Kit results in 3-5 kg weight loss with 1 Kit without elaborate workout routines. Just walking is enough. The multi-action system works on lower calorie intake and burns more calories through improved digestion and metabolism. So dependence on heavy workout reduces.",
-    "guardrail": "Do not say no movement, no effort, or gym is useless.",
-    "headline_anchor_rule": "Must imply no gym/heavy workout + weight loss."
   }
 ]

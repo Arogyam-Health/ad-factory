@@ -1,69 +1,483 @@
 {
-  "format": "v2",
-  "_description": "Creative direction metadata for LLM ad copy generation.",
+  "format": "v1",
+  "_description": "Headline and support line architecture templates for LLM ad copy generation. Edit this file to change what structures the LLM produces — no code changes needed. Each entry has a template (describes the sentence shape) and examples (show real implementations).",
+
+  "persona_specificity_layer": {
+    "wedding_event_deadline": {
+      "tension_vocabulary": [
+        "the date is fixed",
+        "photos last forever",
+        "relatives will notice",
+        "lehenga/sherwani/bridesmaid dress",
+        "3 weeks / 6 weeks left",
+        "can't afford to feel weak on the day",
+        "last time to course-correct"
+      ],
+      "forbidden_generics": [
+        "weight loss journey",
+        "results",
+        "progress",
+        "the routine",
+        "this system"
+      ],
+      "headline_specificity_rule": "Headline must name either the countdown, the garment/occasion, or the social visibility moment. At least one anchor from tension_vocabulary must appear or be semantically present.",
+      "support_specificity_rule": "Support line must address why crash plans fail for this persona (weakness, unpredictability before big day) and how this product avoids that failure mode."
+    }
+  },
+
+  "voice_constraints": {
+    "universal": {
+      "forbidden_rhythm_patterns": [
+        "parallel noun-verb structure (X Fails / Y Wins)",
+        "two abstract nouns joined by a preposition",
+        "generic action-result pairs (Lose Weight, Feel Great)"
+      ],
+      "tone_target": "Write like a calm, informed friend who has navigated this before - not like a brand tagline and not like a health disclaimer.",
+      "specificity_floor": "Every headline must contain at least one concrete element: a number, a named item, a named occasion, or a specific body/life moment. Headlines with zero concrete elements are rejected."
+    },
+    "wedding_event_deadline": {
+      "tone_target": "Calm and motivating. The reader is slightly anxious but functional. Do not amplify panic. Give them the feeling that this is manageable and they are not out of time yet.",
+      "forbidden_tones": [
+        "dramatic transformation language",
+        "crash diet urgency",
+        "before/after shock framing"
+      ]
+    }
+  },
+
+  "skeleton_ban": [
+    "[Noun] [Verb] When [Noun] [Verb]",
+    "[Noun] [Verb] Because [Noun] [Verb]",
+    "[Abstract] Shouldn't Feel Like [Abstract]",
+    "Weight Loss [Verb] [Preposition] [Noun]"
+  ],
+
   "headline_architectures": {
-    "hook_structure": {
-      "question_led": {
-        "intent": "Open with one weight-loss question the persona would actually ask themselves.",
-        "headline_role": "Ask a compact, specific question without answering it in the headline.",
-        "support_role": "Answer naturally with mechanism and proof.",
-        "route_bias": ["specific_lived_moment", "objection_flip"],
-        "avoid_skeletons": ["tired of plans that", "what if weight loss"]
+    "concept_structure": {
+      "four_us": {
+        "template": "Structure: one short, catchy, finished ad line built from ONE payload piece: outcome, pain, proof, or contrast. Usually 4-8 words. The headline itself must clearly signal weight loss or an unmistakable weight-loss proxy. Do not stack outcome + mechanism + proof + timing in the headline; move the extra payload into the support line. Must feel useful, unique, and specific without reading like a list.",
+        "examples": [
+          "Lose Weight Without a Separate Diet",
+          "A 15-Day Weight-Loss Reset",
+          "Hunger Control That Fits Home Food"
+        ],
+        "support_strategy": {
+          "direction": "Make the short promise specific and believable with proof, mechanism, and practical ease.",
+          "must_include": ["specific detail", "unique mechanism or proof", "ease/no-sacrifice detail"],
+          "avoid": "Do not turn support into another slogan."
+        }
       },
-      "proof_led": {
-        "intent": "Use one credibility marker or trust anchor tied to weight-loss relevance.",
-        "headline_role": "Lead with one proof idea, not a stack of numbers or claims.",
-        "support_role": "Explain why the proof matters to this buyer.",
-        "route_bias": ["proof_or_authority"],
-        "avoid_skeletons": ["doctor-formulated weight loss", "70,000+ people tried"]
+      "pas": {
+        "template": "Structure: headline names only the sharp weight-loss problem or tension as a finished ad line or natural ad question. The subject and blocker must logically match: cravings, hunger, strict diets, workdays, family meals, or stalled routines can block weight loss; do not make weight loss itself quit, sabotage, or need accountability. Do not complete the full PAS arc in the headline. Put consequence and solution in the support line so the headline stays punchy and human.",
+        "examples": [
+          "Cravings Keep Blocking Weight Loss?",
+          "Strict Diets Keep Breaking at Dinner?"
+        ],
+        "support_strategy": {
+          "direction": "Add consequence and product-led solution after the headline names the problem.",
+          "must_include": ["consequence", "solution bridge", "credible product detail"],
+          "avoid": "Do not keep agitating without a solution."
+        }
       },
-      "contrast_loop": {
-        "intent": "Contrast the old hard path with a more realistic product-led path.",
-        "headline_role": "Use contrast only if it sounds natural and specific.",
-        "support_role": "Make the easier path believable without implying effortless results.",
-        "route_bias": ["failed_attempt_contrast", "daily_life_scene", "objection_flip"],
-        "avoid_skeletons": ["weight loss should not feel like", "lose weight without losing"]
+      "bab": {
+        "template": "Structure: headline shows one before/after weight-loss contrast in the fewest words possible, as a complete ad line. Both sides of the contrast must belong to the same idea: old friction versus better path, not two unrelated benefits. Keep the bridge mechanism for the support line. Use a natural contrast word such as without, instead, still, or but.",
+        "examples": [
+          "Less Hunger, More Progress",
+          "Lose Weight, Keep Homemade Food"
+        ],
+        "support_strategy": {
+          "direction": "Explain the bridge between current struggle and progress state.",
+          "must_include": ["bridge mechanism", "routine detail", "progress cue"],
+          "avoid": "Do not repeat the contrast without saying how the shift happens."
+        }
       },
-      "confession_led": {
-        "intent": "Open with a believable shared struggle, not a dramatic personal story.",
-        "headline_role": "Use a human admission or lived moment tied to weight loss.",
-        "support_role": "Resolve it through routine, proof, or guidance.",
-        "route_bias": ["specific_lived_moment", "pain_moment"],
-        "avoid_skeletons": ["every weight-loss diet felt", "i finally found"]
+      "fab": {
+        "template": "Structure: headline spotlights either the feature OR the benefit, not the full feature-advantage-benefit chain. Support line must complete the chain by adding the missing advantage and weight-loss reason.",
+        "examples": [
+          "Doctor-Formulated Weight Loss",
+          "31 Ingredients, One Simple Routine"
+        ],
+        "support_strategy": {
+          "direction": "Complete the feature-advantage-benefit chain that the short headline starts.",
+          "must_include": ["missing FAB link", "daily advantage", "weight-loss outcome"],
+          "avoid": "Do not list features without explaining the buyer benefit."
+        }
       },
-      "command_led": {
-        "intent": "Offer helpful direction without sounding pushy or generic.",
-        "headline_role": "Make the action specific to weight-loss behavior or routine fit.",
-        "support_role": "Justify the action with mechanism, ease, and proof.",
-        "route_bias": ["simple_routine_ease", "desired_outcome"],
-        "avoid_skeletons": ["start your weight loss journey", "try a 15-day"]
+      "pab": {
+        "template": "Structure: Open with the specific problem, agitate the friction, then bridge to the solution. Headline names the problem; support line agitates and bridges.",
+        "examples": [
+          "Tried Starving Before a Wedding. It Never Worked.",
+          "6 Weeks Left and Crash Diets Make You Look Worse",
+          "The Outfit Is Ready. The Plan Wasn't."
+        ],
+        "support_strategy": {
+          "direction": "Agitate the problem named in the headline, then bridge to the product solution.",
+          "must_include": ["agitation", "bridge mechanism", "solution link"],
+          "avoid": "Do not solve the problem in the headline."
+        }
       }
     },
+
+    "hook_structure": {
+      "question_led": {
+        "template": "Structure: Open with one weight-loss question the persona would actually ask themselves. Keep it short and specific; do not answer the question inside the headline. The question must have a clear object and a real-world blocker, so it never reads vague or incomplete.",
+        "examples": [
+          "What If Weight Loss Didn't Mean Cooking Separately?",
+          "Tired of Plans That Don't Survive Your Real Schedule?"
+        ],
+        "support_strategy": {
+          "direction": "Resolve the headline question with mechanism and proof, but write it as standalone ad copy rather than an FAQ answer.",
+          "must_include": ["mechanism", "proof or ease detail", "weight-loss link"],
+          "avoid": "Do not ask another question in the support line. Do not begin with Because, It can, You can, Yes, No, or Many do."
+        }
+      },
+      "proof_led": {
+        "template": "Structure: Open with one credibility marker, number, or trust anchor tied to weight loss. Do not add every proof point. The support line explains why that proof matters for the persona's result.",
+        "examples": [
+          "Doctor-Formulated Weight Loss",
+          "70,000+ People Tried This Weight-Loss System"
+        ],
+        "support_strategy": {
+          "direction": "Explain why the proof matters to the buyer and connect it to a practical result.",
+          "must_include": ["meaning of proof", "daily advantage", "result link"],
+          "avoid": "Do not repeat the same proof number as the whole support line."
+        }
+      },
+      "contrast_loop": {
+        "template": "Structure: Use a natural contrast word (but, yet, still, without, instead, doesn't have to) to show the old weight-loss friction versus the better path. Keep it compact and sentence-like; the support line carries the reason.",
+        "examples": [
+          "Lose Weight Without Losing Your Mind — Or Your Kitchen",
+          "Weight Loss That Works on Hectic Days, Not Just Perfect Ones"
+        ],
+        "support_strategy": {
+          "direction": "Complete the contrast with the hard path, easier path, and the mechanism that makes it believable.",
+          "must_include": ["old friction", "new path", "specific mechanism"],
+          "avoid": "Do not make the easier path sound effortless or magical."
+        }
+      },
+      "confession_led": {
+        "template": "Structure: Open as a believable first-person-like weight-loss admission or shared struggle. Keep only the admission in the headline; put the resolution in support. Grounded, not dramatic.",
+        "examples": [
+          "Every Weight-Loss Diet Felt Too Hard.",
+          "Yes, You Can Lose Weight on Homemade Food"
+        ],
+        "support_strategy": {
+          "direction": "Resolve the admission with what changes after the struggle.",
+          "must_include": ["resolution", "product step", "trust detail"],
+          "avoid": "Do not overdramatize or invent a personal medical story."
+        }
+      },
+      "command_led": {
+        "template": "Structure: Direct instruction or invitation tied to weight loss. Must sound like helpful guidance, not a pushy order. Keep the command short; the support line explains the benefit.",
+        "examples": [
+          "Try a 15-Day Weight-Loss System",
+          "See the Routine That Supports Weight Loss"
+        ],
+        "support_strategy": {
+          "direction": "Justify the action with mechanism, ease, and expected progress.",
+          "must_include": ["why act", "mechanism", "progress or ease detail"],
+          "avoid": "Do not sound like a manual or repeat the CTA."
+        }
+      }
+    },
+
     "concept_angle": {
       "pain_point": {
-        "meaning": "Lead with the customer problem."
+        "template": "Structure: Open with one specific, concrete weight-loss friction. Name the exact struggle the persona feels in a short line. Do not explain the fix inside the headline.",
+        "examples": [
+          "Weight Loss Gets Harder When Cravings Control Your Day",
+          "PCOD Can Slow Weight Loss"
+        ],
+        "support_strategy": {
+          "direction": "Resolve the pain named or implied by the headline with persona friction, mechanism, and proof.",
+          "must_include": ["persona-specific pain", "mechanism or routine", "one proof or constraint"],
+          "avoid": "Do not restate the pain without a resolution. Do not use vague comfort lines."
+        }
       },
       "desired_outcome": {
-        "meaning": "Lead with the result the customer wants."
+        "template": "Structure: Open with the practical weight-loss result or felt relief. Keep it believable, specific, and short. Use at most one concrete number in the headline.",
+        "examples": [
+          "Lose 3 to 5 Kg",
+          "Feel Lighter in 15 Days — With Homemade Food"
+        ],
+        "support_strategy": {
+          "direction": "Make the outcome believable with mechanism, daily-life fit, and no-sacrifice detail.",
+          "must_include": ["specific outcome detail", "mechanism", "no-sacrifice or ease detail"],
+          "avoid": "Do not add another big promise. Support the promise with practical proof."
+        }
       },
       "social_proof": {
-        "meaning": "Lead with other customers words, experiences, or proof."
+        "template": "Structure: Open with real crowd evidence from the product doc, such as user count, served-users proof, or trust numbers, tied to weight loss. Use one proof anchor only; support line connects it to the outcome. Do not invent testimonials as proof.",
+        "examples": [
+          "70,000+ People Tried This Weight-Loss System",
+          "200+ Weight-Loss Videos. One Doctor-Formulated System."
+        ],
+        "support_strategy": {
+          "direction": "Turn the proof into buyer relevance and connect it to result or mechanism.",
+          "must_include": ["proof anchor", "buyer relevance", "result or mechanism link"],
+          "avoid": "Do not stack vanity metrics. One proof point is enough; explain its meaning."
+        }
       },
       "authority": {
-        "meaning": "Lead with doctor credibility, expertise, hospital backing, or Ayurvedic authority."
-      },
-      "story": {
-        "meaning": "Lead with a relatable customer moment, mini-narrative, or lived situation."
+        "template": "Structure: Open with doctor, Ayurveda, or institutional credibility. Keep only the authority hook in headline; support line connects it to weight loss.",
+        "examples": [
+          "Doctor-Formulated by Dr. Arun Tyagi",
+          "Ayurvedic Weight Loss, Properly Formulated"
+        ],
+        "support_strategy": {
+          "direction": "Translate authority into practical daily benefit and weight-loss relevance.",
+          "must_include": ["authority source", "practical advantage", "weight-loss link"],
+          "avoid": "Do not say only 'doctor-formulated' again. Explain why it matters."
+        }
       },
       "curiosity": {
-        "meaning": "Lead with intrigue or a question that creates genuine interest."
+        "template": "Structure: Open with a weight-loss mechanism gap or question that makes the reader want the explanation. Ask or tease only one specific gap; support line gives the reveal.",
+        "examples": [
+          "Why Weight Loss Breaks by Week Two",
+          "The 5-Minute Weight-Loss Routine Gap"
+        ],
+        "support_strategy": {
+          "direction": "Resolve the curiosity gap with a clear mechanism and weight-loss link, without sounding like an FAQ answer.",
+          "must_include": ["mechanism", "result link", "proof or routine detail"],
+          "avoid": "Do not create a second mystery. Do not begin with Because, It can, You can, Yes, No, or Many do."
+        }
       },
       "comparison": {
-        "meaning": "Lead with a contrast against common failed methods or alternatives."
+        "template": "Structure: Contrast this system with one harder alternative — strict diets, gym routines, or separate meal prep. Keep it short. Support line shows why this path needs less sacrifice.",
+        "examples": [
+          "Weight Loss That Doesn't Require a Separate Kitchen",
+          "No Gym. No Crash Diet. Just 15 Days With a Guided System."
+        ],
+        "support_strategy": {
+          "direction": "Explain the easier alternative by contrasting the hard path with the lower-friction routine.",
+          "must_include": ["hard alternative", "different product path", "less-sacrifice detail"],
+          "avoid": "Do not attack competitors or exaggerate effortless results."
+        }
       },
       "offer": {
-        "meaning": "Lead with the deal, course box, guarantee, kit value, or buying proposition."
+        "template": "Structure: Open with one practical reason to act now: result window, kit completeness, guarantee logic, or risk reduction. Keep it concrete and time-aware. Never mention price.",
+        "examples": [
+          "15 Days to Visible Progress",
+          "A Complete Ayurvedic Weight-Loss Kit"
+        ],
+        "support_strategy": {
+          "direction": "Support the reason to act with result window, kit completeness, or risk reduction without price language.",
+          "must_include": ["reason to act", "what is included or reduced-risk", "weight-loss relevance"],
+          "avoid": "Do not use sale language, urgency pressure, discount framing, or price terms."
+        }
+      }
+    },
+
+    "awareness_stage": {
+      "unaware": {
+        "template": "Structure: Name one hidden daily friction that blocks weight-loss progress but the reader hasn't labeled as solvable. Do not assume they want this product. Support line introduces the better path.",
+        "examples": [
+          "Late-Day Cravings Steal Weight-Loss Progress",
+          "Eating Less Still Feels Stuck?"
+        ],
+        "support_strategy": {
+          "direction": "Connect the hidden friction to a solvable weight-loss mechanism before introducing the routine softly.",
+          "must_include": ["hidden friction", "why it affects progress", "soft product bridge"],
+          "avoid": "Do not assume the reader already wants the product."
+        }
+      },
+      "problem_aware": {
+        "template": "Structure: Start from a problem the reader already knows they have. Validate it in a short, catchy line. Support line makes the next step feel clear and smaller than expected.",
+        "examples": [
+          "Struggling With Stubborn Weight?",
+          "PCOD Weight Loss Feels Harder"
+        ],
+        "support_strategy": {
+          "direction": "Validate the known problem and make the next step feel smaller with mechanism and ease.",
+          "must_include": ["known problem", "clear next step", "ease detail"],
+          "avoid": "Do not over-explain basic weight-loss pain."
+        }
+      },
+      "solution_aware": {
+        "template": "Structure: Assume the reader has tried weight-loss fixes before. Headline names the failed-pattern tension; support line shows why this system is easier, safer, or more guided.",
+        "examples": [
+          "Tried Diets That Didn't Stick?",
+          "This Weight-Loss Plan Comes Guided"
+        ],
+        "support_strategy": {
+          "direction": "Differentiate from previous attempts with guidance, easier adherence, or safer-feeling support.",
+          "must_include": ["past attempt friction", "differentiator", "proof or guidance"],
+          "avoid": "Do not dismiss their past effort."
+        }
+      },
+      "product_aware": {
+        "template": "Structure: Assume the reader already knows about the weight-loss kit. Headline gives one proof push, urgency cue, trust anchor, or simplicity reason to act now. Support line carries the specifics.",
+        "examples": [
+          "15-Day Weight Loss You Can Trust",
+          "Still Considering the Weight-Loss Kit?"
+        ],
+        "support_strategy": {
+          "direction": "Give the final push with proof, simplicity, result window, or risk reduction.",
+          "must_include": ["trust or urgency cue", "specific reason to act", "simple next step"],
+          "avoid": "Do not re-introduce the whole product from scratch."
+        }
+      }
+    }
+  },
+
+  "non_headline_hypotheses": {
+    "_description": "Hypothesis controls that affect proof framing or CTA voice instead of headline sentence structure. These are kept separate from headline_architectures so H4/H5 do not pretend to be headline templates, but they still get sent to the LLM as controlled guidance.",
+    "proof_style": {
+      "authority_anchor": {
+        "template": "Use doctor-formulated or Ayurvedic credibility as the trust lane. Avoid vague expert-backed filler.",
+        "examples": [
+          "Doctor-formulated routine built for daily weight-loss support.",
+          "Ayurvedic formulation credibility, explained through practical routine confidence."
+        ],
+        "support_strategy": {
+          "direction": "Make authority the support line's trust engine, then translate it into routine confidence.",
+          "must_include": ["authority proof", "why it matters", "daily benefit"],
+          "avoid": "Do not use vague expert-backed language without a concrete daily benefit."
+        }
+      },
+      "social_proof": {
+        "template": "Use user count, served-users proof, or trust numbers from the product doc where safe. Make it specific. Do not invent testimonials or reviews as proof.",
+        "examples": [
+          "Trusted by 70,000+ people for structured weight-loss support.",
+          "Use product-doc trust numbers, then explain why they matter to the buyer."
+        ],
+        "support_strategy": {
+          "direction": "Make social proof the support line's trust engine and connect it to why the buyer can trust the routine.",
+          "must_include": ["social proof", "buyer relevance", "result or routine link"],
+          "avoid": "Do not stack multiple proof numbers without explaining them."
+        }
+      },
+      "mechanism_explainer": {
+        "template": "Explain the product mechanism simply: hunger/cravings, routine, fullness, digestion, or adherence.",
+        "examples": [
+          "Supports cravings and fullness so the routine is easier to follow.",
+          "Explain the weight-loss mechanism without medical or cure language."
+        ],
+        "support_strategy": {
+          "direction": "Make mechanism clarity the support line's trust engine in plain language.",
+          "must_include": ["specific mechanism", "plain-language explanation", "weight-loss link"],
+          "avoid": "Do not sound medical, technical, or cure-oriented."
+        }
+      },
+      "routine_clarity": {
+        "template": "Make the proof feel easy to follow: clear steps, low guesswork, simple daily routine.",
+        "examples": [
+          "A simple daily routine with guidance instead of guesswork.",
+          "Low-friction steps that fit homemade food."
+        ],
+        "support_strategy": {
+          "direction": "Make ease of following the support line's trust engine.",
+          "must_include": ["simple step", "low-friction routine", "guidance or time fit"],
+          "avoid": "Do not make it sound effortless or automatic."
+        }
+      },
+      "objection_flip": {
+        "template": "Address a real doubt directly, then resolve it with proof or mechanism. Avoid sounding defensive.",
+        "examples": [
+          "If strict diets have not lasted, this routine works around homemade food.",
+          "For hesitation around hunger, explain craving support and guided adherence."
+        ],
+        "support_strategy": {
+          "direction": "Reduce resistance by addressing one real doubt and resolving it with proof or mechanism.",
+          "must_include": ["buyer doubt", "resolution", "proof or mechanism"],
+          "avoid": "Do not introduce a new fear the headline did not imply."
+        }
+      }
+    },
+    "cta_voice": {
+      "urgent_start": {
+        "template": "Ask for action now/today without sounding pushy or using sale pressure.",
+        "examples": [
+          "Start Today",
+          "Begin Your 15-Day Routine"
+        ]
+      },
+      "guided_next_step": {
+        "template": "Ask the user to see, check, or view the plan/protocol/steps.",
+        "examples": [
+          "See The 15-Day Plan",
+          "View The Routine Steps"
+        ]
+      },
+      "reassurance_start": {
+        "template": "Make the next step feel safe or low-risk: check fit, see if it suits, try safely.",
+        "examples": [
+          "Check If It Fits",
+          "See If It Suits You"
+        ]
+      },
+      "challenge_action": {
+        "template": "Frame the action as a 15-day test or challenge. Keep it compliant and simple.",
+        "examples": [
+          "Try The 15-Day Challenge",
+          "Take The 15-Day Test"
+        ]
+      },
+      "discovery_action": {
+        "template": "Invite learning: see how it works, learn the steps, discover the routine.",
+        "examples": [
+          "See How It Works",
+          "Discover The Routine"
+        ]
+      }
+    }
+  },
+
+  "support_line_architectures": {
+    "_rotation": "Deterministically rotate across personas using (persona_number + format_index). Each persona gets the architecture at index (persona_number + format_index) % len(rotation_order).",
+    "composition_rule": "Final support line = active support_strategy meaning from the selected headline/hypothesis architecture + assigned support_line_architecture sentence shape. The support line must complete the headline, not repeat it, and prove the exact relationship named in the headline. Keep it as short ad copy: one compact sentence, ideally 12-22 words, maximum 24 words for HERO/UGC.",
+    "rotation_order": [
+      "pain_first",
+      "result_first",
+      "contrast",
+      "simple_facts",
+      "question_led",
+      "bridge"
+    ],
+    "definitions": {
+      "pain_first": {
+        "template": "Structure: Support line completes what the short headline leaves out in one compact sentence, ideally 12-22 words. Open with the persona's specific friction, then explain the product bridge and one credibility anchor. Flow: [headline context] → [mechanism] → [proof]. Avoid generic reassurance.",
+        "examples": {
+          "generic": "For late-day cravings that break consistency, OK Liquid supports hunger control while tracker guidance keeps the 15-day plan practical.",
+          "wedding_event_deadline": "With a fixed wedding date, crash plans risk weakness; OK Liquid supports eating less steadily while tracker guidance keeps the 15-day window visible.",
+          "pcod": "For PCOD-linked weight struggles, OK Liquid supports hunger control while tracker guidance keeps the 15-day plan practical."
+        },
+        "example_selection_rule": "Use the persona-keyed example if available; fall back to generic."
+      },
+      "result_first": {
+        "template": "Structure: Support line adds the measurable outcome if the headline only hooks, in one compact sentence, ideally 12-22 words. Then explain the mechanism and what the persona does not sacrifice. Flow: [outcome detail] → [mechanism] → [no-sacrifice point].",
+        "examples": [
+          "Target 3 to 5 kg in 15 days with craving support, a simple routine, and homemade food."
+        ]
+      },
+      "contrast": {
+        "template": "Structure: Support line explains the contrast promised by the headline in one compact sentence, ideally 12-22 words. Name what usually fails, why it fails for this persona, and what this system does instead. Flow: [failed approach] → [why] → [different system].",
+        "examples": [
+          "Most strict diets collapse at home; this 5-minute routine supports weight loss with homemade food."
+        ]
+      },
+      "simple_facts": {
+        "template": "Structure: One compact sentence with 2 concrete facts removed from the headline. Each phrase must support the headline: mechanism, proof, routine, or constraint. No fluff. Maximum 24 words for HERO/UGC.",
+        "examples": [
+          "31 ingredients, doctor-formulated routine, and trained coach support keep the 15-day weight-loss plan clear."
+        ]
+      },
+      "question_led": {
+        "template": "Structure: If the headline is a question, support it like an ad line, not an FAQ answer. Do not start with Because, Yes, No, It can, You can, Many do, or The answer is. Use the exact blocker from the headline, then the system's specific mechanism and one proof/detail. Flow: [headline blocker] → [mechanism] → [proof/detail]. Maximum 24 words for HERO/UGC.",
+        "examples": [
+          "Craving control starts with morning OK Liquid, while tracker guidance keeps the 15-day weight-loss routine practical."
+        ]
+      },
+      "bridge": {
+        "template": "Structure: Show progression from the headline hook to mechanism to outcome in one compact sentence with three connected phrases. Each phrase adds new payload, not a repeat. Flow: [hook context] → [system step] → [measurable result]. Maximum 24 words for HERO/UGC.",
+        "examples": {
+          "generic": "Late-day cravings break consistency, morning OK Liquid supports eating less, and tracker guidance keeps the 15-day goal visible.",
+          "wedding_event_deadline": "The outfit date is fixed, morning OK Liquid supports eating less, and tracker guidance keeps the 15-day goal visible.",
+          "pcod": "PCOD-linked cravings break consistency, morning OK Liquid supports hunger control, and tracker guidance keeps the 15-day plan practical."
+        },
+        "example_selection_rule": "Use the persona-keyed example if available; fall back to generic."
       }
     }
   }
+
 }
