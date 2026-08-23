@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
 import { asConfigText } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { Persona, Run, StudioPayload } from "@/lib/types";
 import { Button } from "@/components/Button";
+import { FileField } from "@/components/FileField";
 import { FileViewer } from "@/components/FileViewer";
 
 type Asset = { resource_id: string; url?: string; filename?: string; version?: number };
 
-type Props = {
+type ReferenceProps = {
   authenticated: boolean;
   userId: string;
   deviceId: string;
@@ -18,25 +19,50 @@ type Props = {
   language: string;
   setLanguage: (value: string) => void;
   studio: StudioPayload | null;
+  status: string;
   setStatus: (value: string) => void;
   onRuns: (runs: Run[]) => void;
+  canEditFiles?: boolean;
+  configVersion?: number;
+  configOwnerType?: string;
+  configOrgId?: string;
+  onConfigSaved?: (key: string, text: string) => void;
+};
+
+type ReferenceApi = ReferenceProps & {
+  refs: Asset[];
+  products: Asset[];
+  pickedRefs: Set<string>;
+  pickedProducts: Set<string>;
+  comments: Record<string, string>;
+  setComments: (value: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
+  engine: string;
+  setEngine: (value: string) => void;
+  make916: boolean;
+  setMake916: (value: boolean) => void;
+  busy: boolean;
+  jobId: string;
+  runId: string;
+  jobCount: number;
+  viewer: string;
+  setViewer: (value: string) => void;
+  toggleRef: (id: string) => void;
+  toggleProduct: (id: string) => void;
+  uploadKind: (kind: "reference_image" | "product_image", files: FileList | null) => Promise<void>;
+  startReference: () => Promise<void>;
+  cancelReference: () => Promise<void>;
 };
 
 const LANGUAGES = ["ALL", "EN", "HI", "HINGLISH"];
+const ReferenceCtx = createContext<ReferenceApi | null>(null);
 
-export function ReferencePanel({
-  authenticated,
-  userId,
-  deviceId,
-  personas,
-  selected,
-  togglePersona,
-  language,
-  setLanguage,
-  studio,
-  setStatus,
-  onRuns,
-}: Props) {
+function useReference() {
+  const ctx = useContext(ReferenceCtx);
+  if (!ctx) throw new Error("Reference pane must sit inside ReferenceFlow");
+  return ctx;
+}
+
+export function ReferenceFlow({ children, ...props }: ReferenceProps & { children: ReactNode }) {
   const [refs, setRefs] = useState<Asset[]>([]);
   const [products, setProducts] = useState<Asset[]>([]);
   const [pickedRefs, setPickedRefs] = useState<Set<string>>(new Set());
@@ -45,155 +71,222 @@ export function ReferencePanel({
   const [engine, setEngine] = useState("chatgpt");
   const [make916, setMake916] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [viewer, setViewer] = useState<string>("");
+  const [viewer, setViewer] = useState("");
   const [jobId, setJobId] = useState("");
   const [runId, setRunId] = useState("");
 
-  const jobCount = selected.size * Math.max(pickedRefs.size, 0) * (language === "ALL" ? 3 : 1);
+  const jobCount = props.selected.size * Math.max(pickedRefs.size, 0) * (props.language === "ALL" ? 3 : 1);
 
   useEffect(() => {
-    if (!deviceId) return;
+    if (!props.deviceId) return;
     let cancelled = false;
     Promise.all([
-      localDataPlane.listAssets({ kind: "reference_image", deviceId }),
-      localDataPlane.listAssets({ kind: "product_image", deviceId }),
+      localDataPlane.listAssets({ kind: "reference_image", deviceId: props.deviceId }),
+      localDataPlane.listAssets({ kind: "product_image", deviceId: props.deviceId }),
     ]).then(async ([refItems, productItems]) => {
       if (cancelled) return;
       const withUrls = async (items: Asset[]) => Promise.all(
         items.slice(0, 24).map(async (item) => ({
           ...item,
-          url: await localDataPlane.assetObjectUrl(item.resource_id, deviceId, item.version).catch(() => ""),
+          url: await localDataPlane.assetObjectUrl(item.resource_id, props.deviceId, item.version).catch(() => ""),
         })),
       );
       setRefs(await withUrls(refItems));
       setProducts(await withUrls(productItems));
-    }).catch((err) => setStatus(String(err)));
+    }).catch((err) => props.setStatus(String(err)));
     return () => {
       cancelled = true;
     };
-  }, [deviceId, setStatus]);
+  }, [props.deviceId, props.setStatus]);
 
   async function refreshKind(kind: "reference_image" | "product_image") {
-    const items = await localDataPlane.listAssets({ kind, deviceId });
+    const items = await localDataPlane.listAssets({ kind, deviceId: props.deviceId });
     const withUrls = await Promise.all(
       items.slice(0, 24).map(async (item) => ({
         ...item,
-        url: await localDataPlane.assetObjectUrl(item.resource_id, deviceId, item.version).catch(() => ""),
+        url: await localDataPlane.assetObjectUrl(item.resource_id, props.deviceId, item.version).catch(() => ""),
       })),
     );
     if (kind === "reference_image") setRefs(withUrls);
     else setProducts(withUrls);
   }
 
-  async function startReference() {
-    if (!authenticated) {
-      setStatus("Sign in before sending a reference plate.");
-      return;
-    }
-    if (!selected.size || !pickedRefs.size || !pickedProducts.size) {
-      setStatus("Pick personas, reference images, and product assets.");
-      return;
-    }
-    const starting = asConfigText(studio?.config?.reference_starting_prompt);
-    const productDoc = asConfigText(studio?.config?.reference_product_master_doc);
-    const personasText = asConfigText(studio?.config?.persona_seeds);
-    const conversion = asConfigText(studio?.config?.conversion_916_prompt);
-    if (!starting.trim() || !productDoc.trim() || !personasText.trim()) {
-      setStatus("Generic/reference files are empty. Open Config and fill the reference docs.");
-      return;
-    }
-    setBusy(true);
-    setStatus("Preparing reference run…");
-    try {
-      const envelope = await localDataPlane.allocateLocalRun({
-        ownerType: "user",
-        ownerId: userId,
-        flowType: "reference",
-        settings: { engine, generate_916: make916 },
+  const value = useMemo<ReferenceApi>(() => ({
+    ...props,
+    refs,
+    products,
+    pickedRefs,
+    pickedProducts,
+    comments,
+    setComments,
+    engine,
+    setEngine,
+    make916,
+    setMake916,
+    busy,
+    jobId,
+    runId,
+    jobCount,
+    viewer,
+    setViewer,
+    toggleRef(id) {
+      setPickedRefs((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
       });
-      const productDocument = await localDataPlane.putText(
-        "documents",
-        `${envelope.run_id}-reference-product-document`,
-        productDoc,
-        { deviceId: envelope.device_id, operationId: `${envelope.run_id}-product-document`, runId: envelope.run_id, role: "reference_product_document" },
-      );
-      const startingPrompt = await localDataPlane.putText(
-        "configs",
-        `${envelope.run_id}-reference-starting-prompt`,
-        starting,
-        { deviceId: envelope.device_id, operationId: `${envelope.run_id}-starting-prompt`, runId: envelope.run_id, role: "reference_starting_prompt" },
-      );
-      const personaConfig = await localDataPlane.putText(
-        "configs",
-        `${envelope.run_id}-reference-personas`,
-        personasText,
-        { deviceId: envelope.device_id, operationId: `${envelope.run_id}-persona-config`, runId: envelope.run_id, role: "reference_persona_config" },
-      );
-      let conversionPrompt = null;
-      if (make916 && conversion.trim()) {
-        conversionPrompt = await localDataPlane.putText(
-          "configs",
-          `${envelope.run_id}-reference-conversion-916`,
-          conversion,
-          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-conversion-916`, runId: envelope.run_id, role: "conversion_prompt" },
+    },
+    toggleProduct(id) {
+      setPickedProducts((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    async uploadKind(kind, files) {
+      if (!files?.length || !props.deviceId) return;
+      await localDataPlane.uploadAssets(files, { kind, deviceId: props.deviceId });
+      await refreshKind(kind);
+    },
+    async startReference() {
+      if (!props.authenticated) {
+        props.setStatus("Sign in before sending a reference plate.");
+        return;
+      }
+      if (!props.selected.size || !pickedRefs.size || !pickedProducts.size) {
+        props.setStatus("Pick personas, reference images, and product assets.");
+        return;
+      }
+      const starting = asConfigText(props.studio?.config?.reference_starting_prompt);
+      const productDoc = asConfigText(props.studio?.config?.reference_product_master_doc);
+      const personasText = asConfigText(props.studio?.config?.persona_seeds);
+      const conversion = asConfigText(props.studio?.config?.conversion_916_prompt);
+      if (!starting.trim() || !productDoc.trim() || !personasText.trim()) {
+        props.setStatus("Generic/reference files are empty. Open Config and fill the reference docs.");
+        return;
+      }
+      setBusy(true);
+      props.setStatus("Preparing reference run…");
+      try {
+        const envelope = await localDataPlane.allocateLocalRun({
+          ownerType: "user",
+          ownerId: props.userId,
+          flowType: "reference",
+          settings: { engine, generate_916: make916 },
+        });
+        const productDocument = await localDataPlane.putText(
+          "documents",
+          `${envelope.run_id}-reference-product-document`,
+          productDoc,
+          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-product-document`, runId: envelope.run_id, role: "reference_product_document" },
         );
-      }
-      const referenceDeclarations = [];
-      for (const item of refs.filter((ref) => pickedRefs.has(ref.resource_id))) {
-        const declaration: Record<string, unknown> = { resource_id: item.resource_id, version: item.version };
-        const comment = comments[item.resource_id]?.trim();
-        if (comment) {
-          const saved = await localDataPlane.putText(
+        const startingPrompt = await localDataPlane.putText(
+          "configs",
+          `${envelope.run_id}-reference-starting-prompt`,
+          starting,
+          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-starting-prompt`, runId: envelope.run_id, role: "reference_starting_prompt" },
+        );
+        const personaConfig = await localDataPlane.putText(
+          "configs",
+          `${envelope.run_id}-reference-personas`,
+          personasText,
+          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-persona-config`, runId: envelope.run_id, role: "reference_persona_config" },
+        );
+        let conversionPrompt = null;
+        if (make916 && conversion.trim()) {
+          conversionPrompt = await localDataPlane.putText(
             "configs",
-            `${envelope.run_id}-reference-comment-${item.resource_id}`,
-            comment,
-            { deviceId: envelope.device_id, operationId: `${envelope.run_id}-comment-${item.resource_id}` },
+            `${envelope.run_id}-reference-conversion-916`,
+            conversion,
+            { deviceId: envelope.device_id, operationId: `${envelope.run_id}-conversion-916`, runId: envelope.run_id, role: "conversion_prompt" },
           );
-          declaration.comment_resource_id = saved.resource_id;
-          declaration.comment_version = saved.version;
         }
-        referenceDeclarations.push(declaration);
+        const referenceDeclarations = [];
+        for (const item of refs.filter((ref) => pickedRefs.has(ref.resource_id))) {
+          const declaration: Record<string, unknown> = { resource_id: item.resource_id, version: item.version };
+          const comment = comments[item.resource_id]?.trim();
+          if (comment) {
+            const saved = await localDataPlane.putText(
+              "configs",
+              `${envelope.run_id}-reference-comment-${item.resource_id}`,
+              comment,
+              { deviceId: envelope.device_id, operationId: `${envelope.run_id}-comment-${item.resource_id}` },
+            );
+            declaration.comment_resource_id = saved.resource_id;
+            declaration.comment_version = saved.version;
+          }
+          referenceDeclarations.push(declaration);
+        }
+        await localDataPlane.putText(
+          "configs",
+          `${envelope.run_id}-reference-settings`,
+          JSON.stringify({
+            references: referenceDeclarations,
+            products: products.filter((item) => pickedProducts.has(item.resource_id)).map((item) => ({
+              resource_id: item.resource_id,
+              version: item.version,
+            })),
+            persona_ids: [...props.selected].map(String),
+            language_mode: props.language,
+            product_document: { resource_id: productDocument.resource_id, version: productDocument.version },
+            starting_prompt: { resource_id: startingPrompt.resource_id, version: startingPrompt.version },
+            persona_config: { resource_id: personaConfig.resource_id, version: personaConfig.version },
+            ...(conversionPrompt ? { conversion_prompt: { resource_id: conversionPrompt.resource_id, version: conversionPrompt.version } } : {}),
+          }),
+          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-settings`, runId: envelope.run_id, role: "reference_settings" },
+        );
+        const queued = await fetchJSON<{ job_id?: string }>(`/api/runs/${encodeURIComponent(envelope.run_id)}/reference-generation`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            operation_id: `${envelope.run_id}-reference-generation`,
+            engine,
+            mode: make916 ? "both" : "45",
+          }),
+        });
+        setRunId(envelope.run_id);
+        setJobId(queued.job_id || "");
+        invalidateRuns();
+        const data = await fetchJSON<{ runs?: Run[] }>("/api/runs?flow=reference", { noCache: true });
+        props.onRuns(data.runs || []);
+        props.setStatus(`Reference plate ${envelope.display_batch || envelope.run_id} queued.`);
+      } catch (err) {
+        props.setStatus(String(err));
+      } finally {
+        setBusy(false);
       }
-      await localDataPlane.putText(
-        "configs",
-        `${envelope.run_id}-reference-settings`,
-        JSON.stringify({
-          references: referenceDeclarations,
-          products: products.filter((item) => pickedProducts.has(item.resource_id)).map((item) => ({
-            resource_id: item.resource_id,
-            version: item.version,
-          })),
-          persona_ids: [...selected].map(String),
-          language_mode: language,
-          product_document: { resource_id: productDocument.resource_id, version: productDocument.version },
-          starting_prompt: { resource_id: startingPrompt.resource_id, version: startingPrompt.version },
-          persona_config: { resource_id: personaConfig.resource_id, version: personaConfig.version },
-          ...(conversionPrompt ? { conversion_prompt: { resource_id: conversionPrompt.resource_id, version: conversionPrompt.version } } : {}),
-        }),
-        { deviceId: envelope.device_id, operationId: `${envelope.run_id}-settings`, runId: envelope.run_id, role: "reference_settings" },
-      );
-      const queued = await fetchJSON<{ job_id?: string }>(`/api/runs/${encodeURIComponent(envelope.run_id)}/reference-generation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          operation_id: `${envelope.run_id}-reference-generation`,
-          engine,
-          mode: make916 ? "both" : "45",
-        }),
-      });
-      setRunId(envelope.run_id);
-      setJobId(queued.job_id || "");
-      invalidateRuns();
-      const data = await fetchJSON<{ runs?: Run[] }>("/api/runs?flow=reference", { noCache: true });
-      onRuns(data.runs || []);
-      setStatus(`Reference plate ${envelope.display_batch || envelope.run_id} queued.`);
-    } catch (err) {
-      setStatus(String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    async cancelReference() {
+      try {
+        await fetchJSON(`/api/agents/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+        props.setStatus(`Cancel requested for ${runId}.`);
+      } catch (err) {
+        props.setStatus(String(err));
+      }
+    },
+  }), [
+    props,
+    refs,
+    products,
+    pickedRefs,
+    pickedProducts,
+    comments,
+    engine,
+    make916,
+    busy,
+    jobId,
+    runId,
+    jobCount,
+    viewer,
+  ]);
 
+  return <ReferenceCtx.Provider value={value}>{children}</ReferenceCtx.Provider>;
+}
+
+export function ReferenceCompose() {
+  const { language, setLanguage, personas, selected, togglePersona, jobCount } = useReference();
   return (
     <>
       <div className="chips" style={{ marginBottom: 12 }}>
@@ -204,7 +297,7 @@ export function ReferencePanel({
         ))}
       </div>
       <p className="hint" style={{ marginBottom: 12 }}>{jobCount} jobs · personas × selected references × language</p>
-      <div className="persona-grid" style={{ marginBottom: 16 }}>
+      <div className="persona-grid">
         {personas.map((persona) => (
           <button
             key={persona.number}
@@ -216,123 +309,121 @@ export function ReferencePanel({
             <span>{persona.name}</span>
           </button>
         ))}
+        {!personas.length ? <p className="hint">No personas on this plate yet.</p> : null}
       </div>
-      <label className="hint">
-        Reference library
-        <input
-          type="file"
-          multiple
-          accept="image/png,image/jpeg,image/webp"
-          disabled={!deviceId}
-          style={{ display: "block", margin: "8px 0 12px" }}
-          onChange={async (event) => {
-            const files = event.target.files;
-            if (!files?.length || !deviceId) return;
-            await localDataPlane.uploadAssets(files, { kind: "reference_image", deviceId });
-            await refreshKind("reference_image");
-            event.target.value = "";
-          }}
-        />
-      </label>
+    </>
+  );
+}
+
+export function ReferenceDesk() {
+  const ctx = useReference();
+  return (
+    <>
+      <p className="hint" style={{ marginBottom: 14 }}>{ctx.status}</p>
+      <label className="hint">Reference library</label>
+      <FileField
+        id="referenceLibraryFiles"
+        label="Choose references"
+        multiple
+        accept="image/png,image/jpeg,image/webp"
+        disabled={!ctx.deviceId}
+        emptyHint={ctx.deviceId ? "No file chosen" : "Pair the local agent first"}
+        onFiles={(files, input) => {
+          void ctx.uploadKind("reference_image", files);
+          input.value = "";
+        }}
+      />
       <div className="asset-strip">
-        {refs.map((item) => (
+        {ctx.refs.map((item) => (
           <button
             key={item.resource_id}
             type="button"
-            className={`asset-thumb${pickedRefs.has(item.resource_id) ? " active" : ""}`}
-            onClick={() => setPickedRefs((prev) => {
-              const next = new Set(prev);
-              if (next.has(item.resource_id)) next.delete(item.resource_id);
-              else next.add(item.resource_id);
-              return next;
-            })}
+            className={`asset-thumb${ctx.pickedRefs.has(item.resource_id) ? " active" : ""}`}
+            onClick={() => ctx.toggleRef(item.resource_id)}
           >
             {item.url ? <img src={item.url} alt={item.filename || "Reference"} /> : <span>ref</span>}
           </button>
         ))}
       </div>
-      {[...pickedRefs].slice(0, 1).map((id) => (
+      {[...ctx.pickedRefs].slice(0, 1).map((id) => (
         <textarea
           key={id}
           className="cfg-textarea"
           rows={3}
           placeholder="Optional comment for the selected reference"
-          value={comments[id] || ""}
-          onChange={(e) => setComments((prev) => ({ ...prev, [id]: e.target.value }))}
+          value={ctx.comments[id] || ""}
+          onChange={(e) => ctx.setComments((prev) => ({ ...prev, [id]: e.target.value }))}
         />
       ))}
-      <label className="hint" style={{ display: "block", marginTop: 12 }}>
-        Product assets
-        <input
-          type="file"
-          multiple
-          accept="image/*"
-          disabled={!deviceId}
-          style={{ display: "block", margin: "8px 0 12px" }}
-          onChange={async (event) => {
-            const files = event.target.files;
-            if (!files?.length || !deviceId) return;
-            await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
-            await refreshKind("product_image");
-            event.target.value = "";
-          }}
-        />
-      </label>
+      <label className="hint" style={{ display: "block", marginTop: 12 }}>Product assets</label>
+      <FileField
+        id="referenceProductFiles"
+        label="Choose products"
+        multiple
+        accept="image/*"
+        disabled={!ctx.deviceId}
+        emptyHint={ctx.deviceId ? "No file chosen" : "Pair the local agent first"}
+        onFiles={(files, input) => {
+          void ctx.uploadKind("product_image", files);
+          input.value = "";
+        }}
+      />
       <div className="asset-strip">
-        {products.map((item) => (
+        {ctx.products.map((item) => (
           <button
             key={item.resource_id}
             type="button"
-            className={`asset-thumb${pickedProducts.has(item.resource_id) ? " active" : ""}`}
-            onClick={() => setPickedProducts((prev) => {
-              const next = new Set(prev);
-              if (next.has(item.resource_id)) next.delete(item.resource_id);
-              else next.add(item.resource_id);
-              return next;
-            })}
+            className={`asset-thumb${ctx.pickedProducts.has(item.resource_id) ? " active" : ""}`}
+            onClick={() => ctx.toggleProduct(item.resource_id)}
           >
             {item.url ? <img src={item.url} alt={item.filename || "Product"} /> : <span>pack</span>}
           </button>
         ))}
       </div>
       <div className="action-row" style={{ margin: "14px 0" }}>
-        <Button variant="ghost" onClick={() => setViewer("persona_seeds")}>View persona seed</Button>
-        <Button variant="ghost" onClick={() => setViewer("reference_starting_prompt")}>Reference starting prompt</Button>
-        <Button variant="ghost" onClick={() => setViewer("reference_product_master_doc")}>Product document</Button>
-        <Button variant="ghost" onClick={() => setViewer("conversion_916_prompt")}>9:16 conversion</Button>
+        <Button variant="ghost" onClick={() => ctx.setViewer("persona_seeds")}>
+          {ctx.canEditFiles ? "Edit persona seed" : "View persona seed"}
+        </Button>
+        <Button variant="ghost" onClick={() => ctx.setViewer("reference_starting_prompt")}>
+          {ctx.canEditFiles ? "Edit starting prompt" : "Reference starting prompt"}
+        </Button>
+        <Button variant="ghost" onClick={() => ctx.setViewer("reference_product_master_doc")}>
+          {ctx.canEditFiles ? "Edit product document" : "Product document"}
+        </Button>
+        <Button variant="ghost" onClick={() => ctx.setViewer("conversion_916_prompt")}>
+          {ctx.canEditFiles ? "Edit 9:16 conversion" : "9:16 conversion"}
+        </Button>
       </div>
       <label className="hint">
         Image engine
-        <select className="field" value={engine} onChange={(e) => setEngine(e.target.value)}>
+        <select className="field" value={ctx.engine} onChange={(e) => ctx.setEngine(e.target.value)}>
           <option value="chatgpt">ChatGPT</option>
           <option value="gemini">Gemini</option>
         </select>
       </label>
       <label className="toggle-row">
-        <input type="checkbox" checked={make916} onChange={(e) => setMake916(e.target.checked)} />
+        <input type="checkbox" checked={ctx.make916} onChange={(e) => ctx.setMake916(e.target.checked)} />
         Create 9:16 after 4:5
       </label>
       <div className="action-row">
-        <Button variant="primary" disabled={busy || !authenticated} onClick={() => void startReference()}>
-          {busy ? "Queuing…" : "Run reference flow"}
+        <Button variant="primary" disabled={ctx.busy || !ctx.authenticated} onClick={() => void ctx.startReference()}>
+          {ctx.busy ? "Queuing…" : "Run reference flow"}
         </Button>
-        <Button
-          variant="ghost"
-          disabled={!jobId}
-          onClick={async () => {
-            try {
-              await fetchJSON(`/api/agents/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
-              setStatus(`Cancel requested for ${runId}.`);
-            } catch (err) {
-              setStatus(String(err));
-            }
-          }}
-        >
+        <Button variant="ghost" disabled={!ctx.jobId} onClick={() => void ctx.cancelReference()}>
           Cancel
         </Button>
       </div>
-      {viewer ? (
-        <FileViewer configKey={viewer} value={studio?.config?.[viewer]} onClose={() => setViewer("")} />
+      {ctx.viewer ? (
+        <FileViewer
+          configKey={ctx.viewer}
+          value={ctx.studio?.config?.[ctx.viewer]}
+          canEdit={Boolean(ctx.canEditFiles)}
+          version={ctx.configVersion}
+          ownerType={ctx.configOwnerType}
+          orgId={ctx.configOrgId}
+          onClose={() => ctx.setViewer("")}
+          onSaved={ctx.onConfigSaved}
+        />
       ) : null}
     </>
   );

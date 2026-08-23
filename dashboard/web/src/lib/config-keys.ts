@@ -1,3 +1,5 @@
+import { fetchJSON, invalidateDefaults } from "@/lib/api";
+
 export const CONFIG_KEYS = [
   "product_master_doc",
   "starting_prompt",
@@ -59,4 +61,39 @@ export function asConfigText(value: unknown): string {
 
 export function studioOrgKey(userId: string) {
   return `adFactoryStudioOrg:${userId}`;
+}
+
+export type ConfigSaveTarget = {
+  canEdit?: boolean;
+  version?: number;
+  ownerType?: string;
+  orgId?: string;
+};
+
+export function validateConfigText(key: string, text: string) {
+  if (!JSON_KEYS.has(key)) return text;
+  try {
+    JSON.parse(text || (key === "persona_seeds" ? "[]" : "{}"));
+  } catch {
+    throw new Error(`Invalid JSON in ${KEY_LABELS[key] || key}`);
+  }
+  return text;
+}
+
+export async function saveConfigFile(key: string, text: string, target: ConfigSaveTarget) {
+  if (!target.canEdit) throw new Error("Sign in to save your own files.");
+  validateConfigText(key, text);
+  const path = target.ownerType === "org" && target.orgId
+    ? `/api/orgs/${encodeURIComponent(target.orgId)}/config`
+    : "/api/user/config";
+  const result = await fetchJSON<{ status?: string; config?: Record<string, unknown> }>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      config: { [key]: text },
+      expected_version: target.version,
+    }),
+  });
+  invalidateDefaults();
+  return result;
 }

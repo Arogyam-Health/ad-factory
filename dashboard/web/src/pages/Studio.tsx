@@ -8,7 +8,8 @@ import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
 import { Skeleton, SkeletonLines } from "@/components/Skeleton";
 import { FileViewer } from "@/components/FileViewer";
-import { ReferencePanel } from "@/pages/studio/ReferencePanel";
+import { FileField } from "@/components/FileField";
+import { ReferenceCompose, ReferenceDesk, ReferenceFlow } from "@/pages/studio/ReferencePanel";
 
 const FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"] as const;
 const LANGUAGES = ["ALL", "EN", "HI", "HINGLISH"] as const;
@@ -46,6 +47,7 @@ export function StudioPage() {
   const [copyJobId, setCopyJobId] = useState("");
   const [activeRunId, setActiveRunId] = useState("");
   const [viewer, setViewer] = useState("");
+  const [configMeta, setConfigMeta] = useState<EffectiveConfig | null>(null);
   const [orgId, setOrgId] = useState(() => (
     user.user_id ? localStorage.getItem(studioOrgKey(user.user_id)) || "personal" : "personal"
   ));
@@ -116,7 +118,7 @@ export function StudioPage() {
             fetchJSON<{ runs?: Run[] }>(runUrl),
             fetchJSON<EffectiveConfig>(
               orgId !== "personal" ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}` : "/api/config/effective",
-            ).catch(() => ({ config: {} })),
+            ).catch(() => ({ config: {} } as EffectiveConfig)),
           ]);
           if (cancelled) return;
           const nextPersonas = (personasData.personas || defaults.personas || [])
@@ -124,6 +126,7 @@ export function StudioPage() {
             .filter((p) => p.number);
           setPersonas(nextPersonas);
           setStudio({ ...defaults, config: effective.config || defaults.config, personas: nextPersonas });
+          setConfigMeta(effective);
           setRuns(runData.runs || []);
           if (defaults.batch_size) setBatchSize(defaults.batch_size);
         } else {
@@ -131,6 +134,7 @@ export function StudioPage() {
           if (cancelled) return;
           setStudio(data);
           setPersonas(data.personas || []);
+          setConfigMeta({ can_edit: false, source: "generic", mode: "generic" });
           const runData = await fetchJSON<{ runs?: Run[] }>(runUrl).catch(() => ({ runs: [] }));
           setRuns(runData.runs || []);
         }
@@ -243,8 +247,18 @@ export function StudioPage() {
   }
 
   const orgSources = sources.filter((item) => item.type === "org");
+  const canEditFiles = Boolean(configMeta?.can_edit) && user.authenticated;
+  const configOrgId = configMeta?.owner_type === "org"
+    ? (configMeta.org?.org_id || (orgId !== "personal" ? orgId : ""))
+    : "";
 
-  return (
+  function applySavedFile(key: string, text: string) {
+    setStudio((prev) => (prev ? { ...prev, config: { ...prev.config, [key]: text } } : prev));
+    setConfigMeta((prev) => (prev ? { ...prev, version: (prev.version ?? 0) + 1 } : prev));
+    setStatus(`${KEY_LABELS[key] || key} saved.`);
+  }
+
+  const studioBody = (
     <Bento>
       <Tile span="hero" kicker="01 · Composition" title="Personas and formats">
         <div className="chips" style={{ marginBottom: 16 }}>
@@ -285,21 +299,7 @@ export function StudioPage() {
         ) : null}
 
         {flow === "reference" ? (
-          loading ? <SkeletonGridLite /> : (
-            <ReferencePanel
-              authenticated={user.authenticated}
-              userId={user.user_id}
-              deviceId={deviceId}
-              personas={personas}
-              selected={selected}
-              togglePersona={togglePersona}
-              language={language}
-              setLanguage={setLanguage}
-              studio={studio}
-              setStatus={setStatus}
-              onRuns={setRuns}
-            />
-          )
+          loading ? <SkeletonGridLite /> : <ReferenceCompose />
         ) : (
           <>
             <p className="tile-kicker">Language</p>
@@ -423,39 +423,38 @@ export function StudioPage() {
                   {runs.map((run) => <option key={`p-${run.run_id}`} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
                 </select>
               </label>
-              <label className="hint" style={{ display: "block", marginBottom: 12 }}>
+              <label className="hint" style={{ display: "block", marginBottom: 4 }}>
                 Input images
-                <input
-                  id="inputImageFiles"
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  disabled={!deviceId || assetBusy}
-                  style={{ display: "block", marginTop: 8 }}
-                  onChange={async (event) => {
-                    const files = event.target.files;
-                    if (!files?.length || !deviceId) return;
-                    setAssetBusy(true);
-                    try {
-                      await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
-                      const items = await localDataPlane.listAssets({ kind: "product_image", deviceId });
-                      const withUrls = await Promise.all(
-                        items.slice(0, 12).map(async (item) => ({
-                          ...item,
-                          url: await localDataPlane.assetObjectUrl(item.resource_id, deviceId, item.version).catch(() => ""),
-                        })),
-                      );
-                      setAssets(withUrls);
-                      setStatus(`Stored ${files.length} image${files.length === 1 ? "" : "s"} on this device.`);
-                    } catch (err) {
-                      setStatus(String(err));
-                    } finally {
-                      setAssetBusy(false);
-                      event.target.value = "";
-                    }
-                  }}
-                />
               </label>
+              <FileField
+                id="inputImageFiles"
+                label="Choose images"
+                multiple
+                accept="image/*"
+                disabled={!deviceId || assetBusy}
+                emptyHint={deviceId ? "No file chosen" : "Pair the local agent first"}
+                onFiles={async (files, input) => {
+                  if (!files?.length || !deviceId) return;
+                  setAssetBusy(true);
+                  try {
+                    await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
+                    const items = await localDataPlane.listAssets({ kind: "product_image", deviceId });
+                    const withUrls = await Promise.all(
+                      items.slice(0, 12).map(async (item) => ({
+                        ...item,
+                        url: await localDataPlane.assetObjectUrl(item.resource_id, deviceId, item.version).catch(() => ""),
+                      })),
+                    );
+                    setAssets(withUrls);
+                    setStatus(`Stored ${files.length} image${files.length === 1 ? "" : "s"} on this device.`);
+                  } catch (err) {
+                    setStatus(String(err));
+                  } finally {
+                    setAssetBusy(false);
+                    input.value = "";
+                  }
+                }}
+              />
               {assets.length ? (
                 <div className="asset-strip" style={{ marginBottom: 16 }}>
                   {assets.map((item) => (
@@ -490,14 +489,16 @@ export function StudioPage() {
         </Tile>
       ) : (
         <Tile span="side" kicker="02 · Reference desk" title="Context">
-          <p className="hint">{status}</p>
-          <p className="hint" style={{ marginTop: 10 }}>
-            Reference starting prompt and product doc come from the generic or signed-in config. Images stay on this device.
-          </p>
+          {loading ? <SkeletonLines lines={8} /> : <ReferenceDesk />}
         </Tile>
       )}
 
       <Tile span="wide" kicker="03 · Copy desk" title="Config files on this plate">
+        <p className="hint" style={{ marginBottom: 12 }}>
+          {canEditFiles
+            ? "Open a file to edit it. Save writes to the selected Mongo config, same as the Config desk."
+            : "Open a file to read it. Sign in to edit your own plate."}
+        </p>
         <div className="file-card-grid">
           {CONFIG_KEYS.map((key) => (
             <button key={key} type="button" className="file-card" onClick={() => setViewer(key)}>
@@ -593,8 +594,44 @@ export function StudioPage() {
           <p className="hint">No runs in this flow yet. The stage stays empty until a plate lands.</p>
         )}
       </Tile>
-      {viewer ? <FileViewer configKey={viewer} value={studio?.config?.[viewer]} onClose={() => setViewer("")} /> : null}
+      {viewer ? (
+        <FileViewer
+          configKey={viewer}
+          value={studio?.config?.[viewer]}
+          canEdit={canEditFiles}
+          version={configMeta?.version}
+          ownerType={configMeta?.owner_type}
+          orgId={configOrgId}
+          onClose={() => setViewer("")}
+          onSaved={applySavedFile}
+        />
+      ) : null}
     </Bento>
+  );
+
+  if (flow !== "reference") return studioBody;
+  return (
+    <ReferenceFlow
+      authenticated={user.authenticated}
+      userId={user.user_id}
+      deviceId={deviceId}
+      personas={personas}
+      selected={selected}
+      togglePersona={togglePersona}
+      language={language}
+      setLanguage={setLanguage}
+      studio={studio}
+      status={status}
+      setStatus={setStatus}
+      onRuns={setRuns}
+      canEditFiles={canEditFiles}
+      configVersion={configMeta?.version}
+      configOwnerType={configMeta?.owner_type}
+      configOrgId={configOrgId}
+      onConfigSaved={applySavedFile}
+    >
+      {studioBody}
+    </ReferenceFlow>
   );
 }
 
