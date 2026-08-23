@@ -108,7 +108,10 @@ class ControlPlaneIndexTests(unittest.TestCase):
         from dashboard.backend.db.indexes import _drop_obsolete_indexes
 
         runs = _Collection(
-            [{"name": "owner_type_1_owner_id_1_run_number_1", "unique": True}]
+            [
+                {"name": "owner_type_1_owner_id_1_run_number_1", "unique": True},
+                {"name": "owner_type_1_owner_id_1_flow_family_1_run_number_1", "unique": True},
+            ]
         )
         counters = _Collection(
             [{"name": "owner_type_1_owner_id_1", "unique": True}]
@@ -118,8 +121,15 @@ class ControlPlaneIndexTests(unittest.TestCase):
         result = _drop_obsolete_indexes(db)
 
         self.assertEqual(result[f"{COLL_RUNS}.owner_type_1_owner_id_1_run_number_1"], 1)
+        self.assertEqual(result[f"{COLL_RUNS}.owner_type_1_owner_id_1_flow_family_1_run_number_1"], 1)
         self.assertEqual(result[f"{COLL_RUN_COUNTERS}.owner_type_1_owner_id_1"], 1)
-        self.assertEqual(runs.dropped, ["owner_type_1_owner_id_1_run_number_1"])
+        self.assertEqual(
+            runs.dropped,
+            [
+                "owner_type_1_owner_id_1_run_number_1",
+                "owner_type_1_owner_id_1_flow_family_1_run_number_1",
+            ],
+        )
         self.assertEqual(counters.dropped, ["owner_type_1_owner_id_1"])
 
     def test_org_domain_index_becomes_unique_and_sparse(self) -> None:

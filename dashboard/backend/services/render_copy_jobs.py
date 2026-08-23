@@ -19,6 +19,7 @@ from dashboard.backend.db.collections import (
     COLL_ORG_MEMBERS,
 )
 from dashboard.backend.agent.service import reserve_run_number
+from dashboard.backend.services.run_storage import display_batch_label
 from dashboard.backend.control_plane_policy import validate_metadata_document
 from dashboard.backend.services.prompt_delivery import (
     decrypt_prompt_bundle,
@@ -76,7 +77,9 @@ def allocate_render_copy_run(
     now = time.time()
     doc = None
     for _ in range(8):
-        run_number = reserve_run_number(owner_type, owner_id, "structured")
+        run_number = reserve_run_number(
+            owner_type, owner_id, "structured", user_id=user_id
+        )
         candidate = {
             "run_id": "run_" + uuid.uuid4().hex,
             "user_id": user_id,
@@ -86,7 +89,7 @@ def allocate_render_copy_run(
             "agent_id": "",
             "device_id": "",
             "run_number": run_number,
-            "display_batch": f"v{run_number}",
+            "display_batch": display_batch_label("structured", run_number),
             "flow_type": "structured",
             "flow_family": "structured",
             "status": "allocated",

@@ -1433,6 +1433,7 @@ class LocalDataPlane:
                         str(payload.get("workspace_id") or "")
                     ),
                     run_number=int(payload.get("run_number") or 0),
+                    display_batch=str(payload.get("display_batch") or "") or None,
                     flow_type=flow_type,
                     operation_id=self._operation_id(handler, payload),
                 )

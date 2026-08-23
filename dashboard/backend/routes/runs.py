@@ -159,7 +159,7 @@ def list_runs(request: Request) -> dict[str, Any]:
     user_id = _user_id(request)
     query: dict[str, Any] = {
         "user_id": user_id,
-        "status": {"$nin": ["deleted"]},
+        "status": {"$nin": ["deleted", "deleting"]},
     }
     flow = str(request.query_params.get("flow") or "").strip().lower()
     if flow == "reference":
@@ -437,7 +437,7 @@ def purge_run_metadata(db: Any, *, user_id: str, run_id: str) -> None:
     if run:
         rewind_run_counter(
             str(run.get("owner_type") or "user"),
-            str(run.get("owner_id") or user_id),
+            str(run.get("user_id") or user_id),
             str(run.get("flow_type") or "structured"),
             db=db,
         )
@@ -484,7 +484,8 @@ def delete_run_for_user(db: Any, *, user_id: str, run_id: str) -> dict[str, Any]
                     "acknowledged_at": None,
                 },
                 "updated_at": now,
-            }
+            },
+            "$unset": {"run_number": ""},
         },
     )
     job = create_job(

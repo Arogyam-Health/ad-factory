@@ -314,7 +314,12 @@ def get_invite_details(token: str) -> dict[str, Any]:
     if status == "revoked":
         return {"valid": False, "status": "revoked", "message": "Invite has been revoked."}
     if status == "accepted":
-        return {"valid": False, "status": "accepted", "message": "Invite has already been accepted."}
+        return {
+            "valid": False,
+            "status": "accepted",
+            "redirect": "/",
+            "message": "Invite has already been accepted.",
+        }
 
     # Check expiry
     now = time.time()
@@ -358,6 +363,17 @@ def accept_invite(
     if status == "revoked":
         raise HTTPException(status_code=400, detail="Invite has been revoked.")
     if status == "accepted":
+        org_id = invite.get("org_id", "")
+        org = get_org_by_id(org_id)
+        existing_member = find_active_membership(org_id, user_email)
+        if existing_member or str(invite.get("accepted_by_user_id") or "") == user_id:
+            return {
+                "status": "accepted",
+                "already_accepted": True,
+                "redirect": "/",
+                "org": _json_safe(org) if org else {"name": "Organization"},
+                "membership": _json_safe(existing_member) if existing_member else None,
+            }
         raise HTTPException(status_code=400, detail="Invite has already been accepted.")
 
     # Check expiry

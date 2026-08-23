@@ -730,7 +730,12 @@ class AgentState:
                     device_id,
                     workspace_id,
                     int(run_number),
-                    display_batch or f"v{int(run_number)}",
+                    display_batch
+                    or (
+                        f"ref_v{int(run_number)}"
+                        if flow_type == "reference"
+                        else f"v{int(run_number)}"
+                    ),
                     flow_type,
                     status,
                     manifest_resource_id,

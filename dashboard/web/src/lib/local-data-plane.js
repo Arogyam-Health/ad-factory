@@ -441,7 +441,7 @@ export class LocalDataPlaneClient {
     return operationId("wrk");
   }
 
-  async createRun({ runId, workspaceId, runNumber, flowType, deviceId }) {
+  async createRun({ runId, workspaceId, runNumber, flowType, deviceId, displayBatch }) {
     return readJson(await this.authorizedFetch("/v1/runs", {
       method: "POST",
       headers: {
@@ -452,6 +452,7 @@ export class LocalDataPlaneClient {
         run_id: runId,
         workspace_id: workspaceId,
         run_number: runNumber,
+        display_batch: displayBatch || "",
         flow_type: flowType,
         operation_id: `create-${runId}`,
       }),
@@ -505,6 +506,7 @@ export class LocalDataPlaneClient {
       runId: envelope.run_id,
       workspaceId,
       runNumber: envelope.run_number,
+      displayBatch: envelope.display_batch,
       flowType,
       deviceId: envelope.device_id,
     });

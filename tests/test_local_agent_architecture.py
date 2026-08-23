@@ -263,78 +263,98 @@ class RunNumberTests(unittest.TestCase):
             1,
         )
 
-    def test_next_number_reuses_trailing_gap_after_deletes(self) -> None:
-        from dashboard.backend.db.collections import COLL_RUN_COUNTERS, COLL_RUNS
-        from dashboard.backend.services.run_storage import reserve_run_number
-
-        remaining = [
-            {"owner_type": "user", "owner_id": "u1", "run_number": number}
-            for number in range(1, 13)
-        ]
-        counter = {"value": 16}
-
-        class Runs:
-            def find_one(self, query, projection=None, sort=None):
-                matched = [
-                    doc
-                    for doc in remaining
-                    if doc["owner_type"] == query.get("owner_type")
-                    and doc["owner_id"] == query.get("owner_id")
-                ]
-                if sort:
-                    field, direction = sort[0]
-                    matched.sort(key=lambda doc: doc.get(field) or 0, reverse=direction < 0)
-                return matched[0] if matched else None
-
-            def find(self, query, projection=None):
-                return []
-
-        class Counters:
-            def update_one(self, query, update, upsert=False):
-                if "$set" in update and "value" in update["$set"]:
-                    counter["value"] = update["$set"]["value"]
-                return SimpleNamespace(modified_count=1)
-
-            def find_one_and_update(self, query, update, **kwargs):
-                counter["value"] = int(counter.get("value") or 0) + int(
-                    update["$inc"]["value"]
-                )
-                return {**query, "value": counter["value"]}
-
-        db = {COLL_RUNS: Runs(), COLL_RUN_COUNTERS: Counters()}
-        with patch(
-            "dashboard.backend.services.run_storage.get_sync_db", return_value=db
-        ):
-            self.assertEqual(reserve_run_number("user", "u1"), 13)
-            remaining.append(
-                {"owner_type": "user", "owner_id": "u1", "run_number": 13}
-            )
-            self.assertEqual(reserve_run_number("user", "u1"), 14)
-
-    def test_structured_and_reference_numbers_are_independent(self) -> None:
-        from dashboard.backend.db.collections import COLL_RUN_COUNTERS, COLL_RUNS
-        from dashboard.backend.services.run_storage import reserve_run_number
+    def test_next_number_reuses_deleted_slot_for_this_account_only(self) -> None:
+        from dashboard.backend.db.collections import COLL_RUNS
+        from dashboard.backend.services.run_storage import (
+            display_batch_label,
+            reserve_run_number,
+        )
 
         remaining = [
             {
-                "owner_type": "user",
-                "owner_id": "u1",
+                "user_id": "u1",
+                "status": "copy_completed",
                 "run_number": number,
                 "flow_type": "structured",
                 "flow_family": "structured",
             }
-            for number in range(1, 19)
+            for number in (1, 2)
         ] + [
             {
-                "owner_type": "user",
-                "owner_id": "u1",
+                "user_id": "other",
+                "status": "completed",
+                "run_number": number,
+                "flow_type": "structured",
+                "flow_family": "structured",
+            }
+            for number in (1, 2, 3, 4, 5)
+        ]
+
+        def matches(doc: dict, query: dict) -> bool:
+            if doc.get("user_id") != query.get("user_id"):
+                return False
+            status = str(doc.get("status") or "")
+            excluded = (query.get("status") or {}).get("$nin") or []
+            if status in excluded:
+                return False
+            if "$and" in query:
+                return str(doc.get("flow_family") or "structured") != "reference"
+            if "$or" in query:
+                return str(doc.get("flow_family") or "") == "reference"
+            return True
+
+        class Runs:
+            def find(self, query, projection=None):
+                return [doc for doc in remaining if matches(doc, query)]
+
+        db = {COLL_RUNS: Runs()}
+        with patch(
+            "dashboard.backend.services.run_storage.get_sync_db", return_value=db
+        ):
+            self.assertEqual(reserve_run_number("user", "u1", user_id="u1"), 3)
+            remaining.append(
+                {
+                    "user_id": "u1",
+                    "status": "allocated",
+                    "run_number": 3,
+                    "flow_type": "structured",
+                    "flow_family": "structured",
+                }
+            )
+            self.assertEqual(reserve_run_number("user", "u1", user_id="u1"), 4)
+            remaining[:] = [
+                doc
+                for doc in remaining
+                if not (doc.get("user_id") == "u1" and doc.get("run_number") == 3)
+            ]
+            self.assertEqual(reserve_run_number("user", "u1", user_id="u1"), 3)
+            self.assertEqual(reserve_run_number("user", "u2", user_id="u2"), 1)
+            self.assertEqual(display_batch_label("structured", 3), "v3")
+            self.assertEqual(display_batch_label("reference", 1), "ref_v1")
+
+    def test_structured_and_reference_numbers_are_independent(self) -> None:
+        from dashboard.backend.db.collections import COLL_RUNS
+        from dashboard.backend.services.run_storage import reserve_run_number
+
+        remaining = [
+            {
+                "user_id": "u1",
+                "status": "completed",
+                "run_number": number,
+                "flow_type": "structured",
+                "flow_family": "structured",
+            }
+            for number in range(1, 3)
+        ] + [
+            {
+                "user_id": "u1",
+                "status": "completed",
                 "run_number": number,
                 "flow_type": "reference",
                 "flow_family": "reference",
             }
-            for number in (13, 14)
+            for number in (1,)
         ]
-        counters: dict[str, int] = {"structured": 18, "reference": 14}
 
         def family_of(doc: dict) -> str:
             return str(
@@ -347,9 +367,11 @@ class RunNumberTests(unittest.TestCase):
             )
 
         def matches(doc: dict, query: dict) -> bool:
-            if doc.get("owner_type") != query.get("owner_type"):
+            if doc.get("user_id") != query.get("user_id"):
                 return False
-            if doc.get("owner_id") != query.get("owner_id"):
+            status = str(doc.get("status") or "")
+            excluded = (query.get("status") or {}).get("$nin") or []
+            if status in excluded:
                 return False
             if "$or" in query:
                 return family_of(doc) == "reference"
@@ -358,46 +380,25 @@ class RunNumberTests(unittest.TestCase):
             return family_of(doc) == (query.get("flow_family") or "structured")
 
         class Runs:
-            def find_one(self, query, projection=None, sort=None):
-                matched = [doc for doc in remaining if matches(doc, query)]
-                if sort:
-                    field, direction = sort[0]
-                    matched.sort(key=lambda doc: doc.get(field) or 0, reverse=direction < 0)
-                return matched[0] if matched else None
-
             def find(self, query, projection=None):
                 return [doc for doc in remaining if matches(doc, query)]
 
-        class Counters:
-            def update_one(self, query, update, upsert=False):
-                family = str(query.get("flow_family") or "structured")
-                if "$set" in update and "value" in update["$set"]:
-                    counters[family] = update["$set"]["value"]
-                return SimpleNamespace(modified_count=1)
-
-            def find_one_and_update(self, query, update, **kwargs):
-                family = str(query.get("flow_family") or "structured")
-                counters[family] = int(counters.get(family) or 0) + int(
-                    update["$inc"]["value"]
-                )
-                return {**query, "value": counters[family]}
-
-        db = {COLL_RUNS: Runs(), COLL_RUN_COUNTERS: Counters()}
+        db = {COLL_RUNS: Runs()}
         with patch(
             "dashboard.backend.services.run_storage.get_sync_db", return_value=db
         ):
-            self.assertEqual(reserve_run_number("user", "u1", flow_type="reference"), 15)
+            self.assertEqual(reserve_run_number("user", "u1", flow_type="reference", user_id="u1"), 2)
             remaining.append(
                 {
-                    "owner_type": "user",
-                    "owner_id": "u1",
-                    "run_number": 15,
+                    "user_id": "u1",
+                    "status": "allocated",
+                    "run_number": 2,
                     "flow_type": "reference",
                     "flow_family": "reference",
                 }
             )
-            self.assertEqual(reserve_run_number("user", "u1", flow_type="structured"), 19)
-            self.assertEqual(reserve_run_number("user", "u1", flow_type="reference"), 16)
+            self.assertEqual(reserve_run_number("user", "u1", flow_type="structured", user_id="u1"), 3)
+            self.assertEqual(reserve_run_number("user", "u1", flow_type="reference", user_id="u1"), 3)
 
 
 class ScopedPromptNameTests(unittest.TestCase):

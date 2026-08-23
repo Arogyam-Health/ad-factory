@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import time
 from typing import Any, Optional
 
@@ -10,6 +9,7 @@ from dashboard.backend.control_plane_policy import validate_metadata_document
 from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_IMAGES
 
 REFERENCE_FLOW_TYPES = frozenset({"reference", "reference_image"})
+_DEAD_RUN_STATUSES = frozenset({"deleted", "deleting", "purge_failed"})
 
 
 def numbering_scope(flow_type: str | None) -> str:
@@ -34,92 +34,83 @@ def _flow_numbering_query(flow_type: str | None) -> dict[str, Any]:
     }
 
 
+def display_batch_label(flow_type: str | None, run_number: int) -> str:
+    if numbering_scope(flow_type) == "reference":
+        return f"ref_v{int(run_number)}"
+    return f"v{int(run_number)}"
+
+
+def _live_run_query(account_id: str, flow_type: str | None) -> dict[str, Any]:
+    return {
+        "user_id": account_id,
+        "status": {"$nin": sorted(_DEAD_RUN_STATUSES)},
+        "run_number": {"$exists": True},
+        **_flow_numbering_query(flow_type),
+    }
+
+
+def _used_run_numbers(db: Any, account_id: str, flow_type: str | None) -> set[int]:
+    used: set[int] = set()
+    for doc in db[COLL_RUNS].find(_live_run_query(account_id, flow_type), {"run_number": 1}):
+        try:
+            number = int(doc.get("run_number") or 0)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            used.add(number)
+    return used
+
+
+def next_available_run_number(
+    account_id: str,
+    flow_type: str = "structured",
+    *,
+    db: Any | None = None,
+) -> int:
+    """Lowest unused vN for this dashboard account and flow."""
+    used = _used_run_numbers(db or get_sync_db(), account_id, flow_type)
+    number = 1
+    while number in used:
+        number += 1
+    return number
+
+
 def reserve_run_number(
     owner_type: str,
     owner_id: str,
     flow_type: str = "structured",
     *,
     collection: Any | None = None,
+    user_id: str | None = None,
+    db: Any | None = None,
 ) -> int:
-    """Atomically reserve the next display number for one owner and flow.
+    """Reserve the lowest free display number for this account and flow.
 
-    Structured v18 does not consume Reference v15. Deleting trailing numbers
-    in one flow also leaves the other flow's sequence alone.
+    Names belong to the signed-in dashboard user, not the org and not another
+    account on the same machine. Structured and Reference keep separate
+    sequences. Deleting v3 makes the next structured plate v3 again.
     """
-    if not owner_type or not owner_id:
+    account_id = str(user_id or owner_id or "")
+    if not account_id:
         raise ValueError("owner_type and owner_id are required")
-    family = numbering_scope(flow_type)
-    scope = {
-        "owner_type": owner_type,
-        "owner_id": owner_id,
-        "flow_family": family,
-    }
-    if collection is None:
-        from pymongo import ReturnDocument
-        from dashboard.backend.db.collections import COLL_RUN_COUNTERS
-
-        db = get_sync_db()
-        collection = db[COLL_RUN_COUNTERS]
-        highest = _highest_run_number(db, owner_type, owner_id, flow_type)
-        now = time.time()
-        collection.update_one(
-            scope,
+    if collection is not None:
+        family = numbering_scope(flow_type)
+        doc = collection.find_one_and_update(
             {
-                "$set": {
-                    **scope,
-                    "value": highest,
-                    "updated_at": now,
-                },
-                "$setOnInsert": {"created_at": now},
+                "owner_type": owner_type,
+                "owner_id": owner_id,
+                "flow_family": family,
+            },
+            {
+                "$inc": {"value": 1},
+                "$setOnInsert": {"created_at": time.time()},
+                "$set": {"updated_at": time.time()},
             },
             upsert=True,
+            return_document=True,
         )
-        return_document = ReturnDocument.AFTER
-    else:
-        return_document = True
-    doc = collection.find_one_and_update(
-        scope,
-        {
-            "$inc": {"value": 1},
-            "$setOnInsert": {"created_at": time.time()},
-            "$set": {"updated_at": time.time()},
-        },
-        upsert=True,
-        return_document=return_document,
-    )
-    return int(doc["value"])
-
-
-def _highest_run_number(
-    db: Any, owner_type: str, owner_id: str, flow_type: str = "structured"
-) -> int:
-    latest = db[COLL_RUNS].find_one(
-        {
-            "owner_type": owner_type,
-            "owner_id": owner_id,
-            "run_number": {"$exists": True},
-            **_flow_numbering_query(flow_type),
-        },
-        {"run_number": 1},
-        sort=[("run_number", -1)],
-    )
-    highest = int((latest or {}).get("run_number") or 0)
-    if owner_type == "user" and numbering_scope(flow_type) == "structured":
-        legacy_runs = db[COLL_RUNS].find(
-            {
-                "user_id": owner_id,
-                "batch": {"$regex": r"^v\d+$"},
-                **_flow_numbering_query(flow_type),
-            },
-            {"batch": 1},
-        )
-        for legacy in legacy_runs:
-            match = re.fullmatch(
-                r"v(\d+)", str(legacy.get("batch") or ""), flags=re.IGNORECASE
-            )
-            if match:
-                highest = max(highest, int(match.group(1)))
-    return highest
+        return int(doc["value"])
+    return next_available_run_number(account_id, flow_type, db=db)
 
 
 def rewind_run_counter(
@@ -136,7 +127,8 @@ def rewind_run_counter(
 
     db = db or get_sync_db()
     family = numbering_scope(flow_type)
-    highest = _highest_run_number(db, owner_type, owner_id, flow_type)
+    used = _used_run_numbers(db, str(owner_id), flow_type)
+    highest = max(used) if used else 0
     now = time.time()
     db[COLL_RUN_COUNTERS].update_one(
         {
@@ -169,12 +161,17 @@ def create_run(user_id: str, run_id: str, run_data: dict[str, Any]) -> dict[str,
     now = time.time()
     owner_type = str(run_data.get("owner_type") or "user")
     owner_id = str(run_data.get("owner_id") or user_id)
+    flow_type = str(run_data.get("flow_type") or "structured")
     run_number = int(
         run_data.get("run_number")
-        or reserve_run_number(owner_type, owner_id, str(run_data.get("flow_type") or "structured"))
+        or reserve_run_number(
+            owner_type,
+            owner_id,
+            flow_type,
+            user_id=user_id,
+        )
     )
-    display_batch = str(run_data.get("display_batch") or f"v{run_number}")
-    flow_type = str(run_data.get("flow_type") or "structured")
+    display_batch = str(run_data.get("display_batch") or display_batch_label(flow_type, run_number))
     doc = {
         "user_id": user_id,
         "run_id": run_id,
@@ -241,7 +238,7 @@ def delete_run(user_id: str, run_id: str) -> None:
     if run:
         rewind_run_counter(
             str(run.get("owner_type") or "user"),
-            str(run.get("owner_id") or user_id),
+            str(run.get("user_id") or user_id),
             str(run.get("flow_type") or "structured"),
         )
 

@@ -17,7 +17,11 @@ from dashboard.backend.db.collections import (
     COLL_RUNS,
 )
 from dashboard.backend.security.crypto import generate_token, hash_token
-from dashboard.backend.services.run_storage import numbering_scope, reserve_run_number
+from dashboard.backend.services.run_storage import (
+    display_batch_label,
+    numbering_scope,
+    reserve_run_number,
+)
 from pymongo.errors import DuplicateKeyError
 
 
@@ -468,7 +472,9 @@ def allocate_run_envelope(
     now = time.time()
     doc = None
     for _ in range(8):
-        run_number = reserve_run_number(owner_type, owner_id, flow_type)
+        run_number = reserve_run_number(
+            owner_type, owner_id, flow_type, user_id=user_id
+        )
         candidate = {
             "run_id": run_id,
             "user_id": user_id,
@@ -478,7 +484,7 @@ def allocate_run_envelope(
             "agent_id": agent_id,
             "device_id": device_id,
             "run_number": run_number,
-            "display_batch": f"v{run_number}",
+            "display_batch": display_batch_label(flow_type, run_number),
             "flow_type": flow_type,
             "flow_family": numbering_scope(flow_type),
             "status": "allocated",

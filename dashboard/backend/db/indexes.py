@@ -46,8 +46,7 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
         IndexModel([(FIELD_STATUS, ASCENDING)]),
         IndexModel(
             [
-                ("owner_type", ASCENDING),
-                ("owner_id", ASCENDING),
+                (FIELD_USER_ID, ASCENDING),
                 ("flow_family", ASCENDING),
                 ("run_number", ASCENDING),
             ],
@@ -236,6 +235,7 @@ INDEX_SPECS: dict[str, list[IndexModel]] = {
 
 OBSOLETE_INDEXES: tuple[tuple[str, str], ...] = (
     (COLL_RUNS, "owner_type_1_owner_id_1_run_number_1"),
+    (COLL_RUNS, "owner_type_1_owner_id_1_flow_family_1_run_number_1"),
     (COLL_RUN_COUNTERS, "owner_type_1_owner_id_1"),
 )
 
