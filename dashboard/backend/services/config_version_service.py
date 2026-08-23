@@ -185,6 +185,31 @@ def get_config_version(config_id: str, version_id: str) -> dict | None:
     }
 
 
+def delete_config_version(config_id: str, version_id: str) -> bool:
+    result = get_sync_db()[COLL_CONFIG_VERSIONS].delete_one({
+        "config_id": config_id,
+        "version_id": version_id,
+    })
+    return int(result.deleted_count or 0) == 1
+
+
+def delete_old_config_versions(config_id: str) -> dict[str, Any]:
+    coll = get_sync_db()[COLL_CONFIG_VERSIONS]
+    newest = coll.find_one({"config_id": config_id}, sort=[("created_at", -1)])
+    if newest is None:
+        return {"deleted": 0, "kept": 0, "kept_version_id": ""}
+    kept_id = str(newest.get("version_id") or "")
+    result = coll.delete_many({
+        "config_id": config_id,
+        "version_id": {"$ne": kept_id},
+    })
+    return {
+        "deleted": int(result.deleted_count or 0),
+        "kept": 1,
+        "kept_version_id": kept_id,
+    }
+
+
 def rollback_config_to_version(
     config_id: str,
     version_id: str,
@@ -212,14 +237,15 @@ def rollback_config_to_version(
         entry = snapshot_files.get(k, {})
         flat_files[k] = entry.get("content", "") if isinstance(entry, dict) else ""
 
-    create_config_version_before_update(
-        config_doc=existing_doc,
-        new_files=flat_files,
-        changed_by_user_id=actor_user_id,
-        changed_by_email=actor_email,
-        change_reason="rollback_before",
-        org_id=org_id,
-    )
+    if owner_type == "org":
+        create_config_version_before_update(
+            config_doc=existing_doc,
+            new_files=flat_files,
+            changed_by_user_id=actor_user_id,
+            changed_by_email=actor_email,
+            change_reason="rollback_before",
+            org_id=org_id,
+        )
 
     result = create_or_update_config(
         owner_type=owner_type,
@@ -274,7 +300,7 @@ def copy_config(
     else:
         final_files = dict(source_files)
 
-    if target_doc:
+    if target_doc and target_owner_type == "org":
         create_config_version_before_update(
             config_doc=target_doc,
             new_files=final_files,

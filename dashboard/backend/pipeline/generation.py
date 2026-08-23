@@ -271,7 +271,7 @@ def _latest_online_agent_for_user(user_id: str) -> dict[str, Any]:
     if not agent:
         raise HTTPException(
             status_code=400,
-            detail="No local agent is online. Run: python scripts/local_agent.py --api-base https://ad-factory-3rn5.onrender.com --token <agent-token>",
+            detail="No local agent is online. Run: python scripts/start_local_agent.py --api-base https://ad-factory-pzgh.onrender.com --token <agent-token>",
         )
     return agent
 

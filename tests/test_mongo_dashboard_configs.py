@@ -83,6 +83,8 @@ class MongoDashboardConfigTests(unittest.TestCase):
             ("GET", "/api/config/effective"),
             ("GET", "/api/config/persona-summary"),
             ("GET", "/api/config/cfg_1/versions"),
+            ("DELETE", "/api/config/cfg_1/versions/ver_1"),
+            ("POST", "/api/config/cfg_1/prune-old-versions"),
             ("PUT", "/api/user/config"),
             ("GET", "/api/orgs/org_1/config"),
             ("PUT", "/api/orgs/org_1/config"),
@@ -362,6 +364,125 @@ class MongoDashboardConfigTests(unittest.TestCase):
 
         self.assertNotIn("user_configs", _COLLECTION_KINDS)
         self.assertNotIn("config_versions", _COLLECTION_KINDS)
+
+    def test_personal_config_save_does_not_create_a_version(self) -> None:
+        from dashboard.backend.services.user_config import create_or_update_config
+
+        db = _DB(
+            {
+                "_id": "cfg_personal",
+                "owner_type": "user",
+                "owner_id": "usr_1",
+                "is_active": True,
+                "version": 1,
+                "files": {
+                    "starting_prompt": {
+                        "content": "old",
+                        "content_type": "text/plain",
+                        "updated_at": 1,
+                    }
+                },
+            }
+        )
+        with (
+            patch("dashboard.backend.services.user_config.get_sync_db", return_value=db),
+            patch(
+                "dashboard.backend.services.config_version_service.create_config_version_before_update"
+            ) as snapshot,
+        ):
+            create_or_update_config(
+                owner_type="user",
+                owner_id="usr_1",
+                files={"starting_prompt": "new"},
+                actor_user_id="usr_1",
+            )
+        snapshot.assert_not_called()
+        self.assertEqual(
+            db.collection.document["files"]["starting_prompt"]["content"],
+            "new",
+        )
+
+    def test_org_config_save_creates_a_version(self) -> None:
+        from dashboard.backend.services.user_config import create_or_update_config
+
+        db = _DB(
+            {
+                "_id": "cfg_org",
+                "owner_type": "org",
+                "owner_id": "org_1",
+                "is_active": True,
+                "version": 1,
+                "files": {
+                    "starting_prompt": {
+                        "content": "old",
+                        "content_type": "text/plain",
+                        "updated_at": 1,
+                    }
+                },
+            }
+        )
+        with (
+            patch("dashboard.backend.services.user_config.get_sync_db", return_value=db),
+            patch(
+                "dashboard.backend.services.config_version_service.create_config_version_before_update"
+            ) as snapshot,
+        ):
+            create_or_update_config(
+                owner_type="org",
+                owner_id="org_1",
+                files={"starting_prompt": "new"},
+                actor_user_id="usr_1",
+                org_id="org_1",
+            )
+        snapshot.assert_called_once()
+
+    def test_delete_old_config_versions_keeps_newest(self) -> None:
+        from dashboard.backend.services import config_version_service
+
+        class _Versions:
+            def __init__(self) -> None:
+                self.docs = [
+                    {"config_id": "cfg_1", "version_id": "ver_old", "created_at": 1},
+                    {"config_id": "cfg_1", "version_id": "ver_new", "created_at": 9},
+                    {"config_id": "cfg_1", "version_id": "ver_mid", "created_at": 5},
+                ]
+
+            def find_one(self, query, sort=None):
+                matches = [doc for doc in self.docs if doc["config_id"] == query["config_id"]]
+                if sort:
+                    matches.sort(key=lambda doc: doc.get("created_at", 0), reverse=True)
+                return matches[0] if matches else None
+
+            def delete_one(self, query):
+                before = len(self.docs)
+                self.docs = [
+                    doc
+                    for doc in self.docs
+                    if not (
+                        doc["config_id"] == query["config_id"]
+                        and doc["version_id"] == query["version_id"]
+                    )
+                ]
+                return type("R", (), {"deleted_count": before - len(self.docs)})()
+
+            def delete_many(self, query):
+                kept = query.get("version_id", {}).get("$ne")
+                before = len(self.docs)
+                self.docs = [
+                    doc
+                    for doc in self.docs
+                    if doc["config_id"] != query["config_id"] or doc["version_id"] == kept
+                ]
+                return type("R", (), {"deleted_count": before - len(self.docs)})()
+
+        versions = _Versions()
+        with patch.object(config_version_service, "get_sync_db", return_value={"config_versions": versions}):
+            deleted = config_version_service.delete_config_version("cfg_1", "ver_mid")
+            self.assertTrue(deleted)
+            result = config_version_service.delete_old_config_versions("cfg_1")
+        self.assertEqual(result["kept_version_id"], "ver_new")
+        self.assertEqual(result["deleted"], 1)
+        self.assertEqual([doc["version_id"] for doc in versions.docs], ["ver_new"])
 
     def test_stale_expected_version_is_rejected(self) -> None:
         from dashboard.backend.services.user_config import (

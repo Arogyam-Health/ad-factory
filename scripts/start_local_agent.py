@@ -15,7 +15,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_API_BASE = "https://ad-factory-3rn5.onrender.com"
+DEFAULT_API_BASE = "https://ad-factory-pzgh.onrender.com"
+LEGACY_API_BASES = frozenset({
+    "https://ad-factory-3rn5.onrender.com",
+})
+
+
+def resolve_default_api_base(raw: str | None = None) -> str:
+    value = str(raw if raw is not None else os.getenv("AGENT_API_BASE", "")).rstrip("/")
+    if not value or value in LEGACY_API_BASES:
+        return DEFAULT_API_BASE
+    return value
 
 
 def repo_root() -> Path:
@@ -73,7 +83,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--api-base",
-        default=os.getenv("AGENT_API_BASE", DEFAULT_API_BASE),
+        default=resolve_default_api_base(),
         help="Render dashboard URL",
     )
     parser.add_argument(

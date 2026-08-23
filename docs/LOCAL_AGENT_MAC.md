@@ -6,7 +6,7 @@ and stores ads under `~/ad-factory-agent`.
 Pairing uses `127.0.0.1`, so open the dashboard in a browser **on this same
 Mac**.
 
-Default production URL: `https://ad-factory-3rn5.onrender.com`
+Default production URL: `https://ad-factory-pzgh.onrender.com`
 
 ## 1. Install Python and Chrome
 
@@ -86,7 +86,7 @@ Typical Mac paths:
 ## 4. Copy the dashboard session cookie
 
 1. On this Mac, open Chrome and sign in to
-   `https://ad-factory-3rn5.onrender.com`.
+   `https://ad-factory-pzgh.onrender.com`.
 2. Press `Cmd+Option+I` → **Application** → **Cookies** → the site.
 3. Copy the `session` cookie value.
 

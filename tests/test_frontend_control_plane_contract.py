@@ -265,6 +265,22 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("changed_by_display_name", versions)
         self.assertIn("changed_by_display_name", config)
 
+    def test_config_history_deletes_old_versions_and_personal_saves_overwrite(self) -> None:
+        config = _read("pages", "Config.tsx")
+        routes = (
+            ROOT / "dashboard" / "backend" / "services" / "config_routes.py"
+        ).read_text(encoding="utf-8")
+        user_config = (
+            ROOT / "dashboard" / "backend" / "services" / "user_config.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Delete older versions", config)
+        self.assertIn("prune-old-versions", config)
+        self.assertIn('method: "DELETE"', config)
+        self.assertIn("Save version", config)
+        self.assertIn("create_version and owner_type == \"org\"", user_config)
+        self.assertIn("def delete_config_version", routes)
+        self.assertIn("def prune_old_config_versions", routes)
+
     def test_studio_init_does_not_block_on_local_assets_and_pages_show_skeletons(self) -> None:
         studio = _read("pages", "Studio.tsx")
         config = _read("pages", "Config.tsx")

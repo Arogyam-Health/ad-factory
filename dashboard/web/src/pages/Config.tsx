@@ -176,6 +176,13 @@ export function ConfigPage() {
       clearCache("/api/defaults");
       setFiles(drafts);
       setStatus("All files saved.");
+      if (meta?.config_id && meta.owner_type === "org") {
+        const data = await fetchJSON<{ versions?: ConfigVersion[] }>(
+          `/api/config/${meta.config_id}/versions`,
+          { noCache: true },
+        );
+        setVersions(data.versions || []);
+      }
     } catch (err) {
       const message = String(err);
       setStatus(message.includes("409") ? "Someone else saved this plate. Reload and try again." : message);
@@ -223,9 +230,40 @@ export function ConfigPage() {
     }
   }
 
+  async function deleteVersion(versionId: string) {
+    if (!meta?.config_id) return;
+    if (!window.confirm("Delete this snapshot? The live plate stays as it is.")) return;
+    try {
+      await fetchJSON(`/api/config/${meta.config_id}/versions/${encodeURIComponent(versionId)}`, {
+        method: "DELETE",
+      });
+      setStatus("Snapshot deleted.");
+      const data = await fetchJSON<{ versions?: ConfigVersion[] }>(`/api/config/${meta.config_id}/versions`, { noCache: true });
+      setVersions(data.versions || []);
+    } catch (err) {
+      setStatus(String(err));
+    }
+  }
+
+  async function deleteOlderVersions() {
+    if (!meta?.config_id) return;
+    if (!window.confirm("Delete every snapshot except the newest? The live plate stays as it is.")) return;
+    try {
+      await fetchJSON(`/api/config/${meta.config_id}/prune-old-versions`, { method: "POST" });
+      setStatus("Older snapshots deleted.");
+      const data = await fetchJSON<{ versions?: ConfigVersion[] }>(`/api/config/${meta.config_id}/versions`, { noCache: true });
+      setVersions(data.versions || []);
+    } catch (err) {
+      setStatus(String(err));
+    }
+  }
+
   async function rollback(versionId: string) {
     if (!meta?.config_id) return;
-    if (!window.confirm("Rollback config to this version? A snapshot of the current state will be saved automatically.")) return;
+    const warning = meta.owner_type === "org"
+      ? "Rollback config to this version? A snapshot of the current state will be saved automatically."
+      : "Rollback config to this version? The live plate will be overwritten.";
+    if (!window.confirm(warning)) return;
     try {
       await fetchJSON(`/api/config/${meta.config_id}/rollback/${versionId}`, {
         method: "POST",
@@ -329,38 +367,57 @@ export function ConfigPage() {
       <Tile span="wide" kicker="History" title="Version snapshots">
         {!user.authenticated ? (
           <p className="hint">Generic files have no personal history. Sign in to snapshot and roll back your plate.</p>
-        ) : !versions.length ? (
-          <p className="hint">No version history yet. Save a snapshot after you edit.</p>
         ) : (
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Changed by</th>
-                  <th>Keys</th>
-                  <th>Reason</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {versions.map((version) => (
-                  <tr key={version.version_id}>
-                    <td>{version.created_at ? new Date(version.created_at * 1000).toLocaleString() : "—"}</td>
-                    <td>{version.changed_by_display_name || version.changed_by_email || "—"}</td>
-                    <td>{(version.changed_keys || []).map((key) => KEY_LABELS[key] || key).join(", ") || "—"}</td>
-                    <td>{version.change_reason || "—"}</td>
-                    <td>
-                      <Button variant="ghost" onClick={() => void openVersion(version.version_id)}>View</Button>
-                      {meta?.can_rollback ? (
-                        <Button variant="ghost" onClick={() => void rollback(version.version_id)}>Rollback</Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <p className="hint" style={{ marginBottom: 12 }}>
+              {meta?.owner_type === "org"
+                ? "Shared org files snapshot automatically on each save."
+                : "Saving files overwrites the live plate. Click Save version when you want a snapshot."}
+            </p>
+            {versions.length > 1 && meta?.can_rollback ? (
+              <div className="action-row" style={{ marginBottom: 12 }}>
+                <Button variant="ghost" onClick={() => void deleteOlderVersions()}>
+                  Delete older versions
+                </Button>
+              </div>
+            ) : null}
+            {!versions.length ? (
+              <p className="hint">No version history yet.</p>
+            ) : (
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Changed by</th>
+                      <th>Keys</th>
+                      <th>Reason</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {versions.map((version) => (
+                      <tr key={version.version_id}>
+                        <td>{version.created_at ? new Date(version.created_at * 1000).toLocaleString() : "—"}</td>
+                        <td>{version.changed_by_display_name || version.changed_by_email || "—"}</td>
+                        <td>{(version.changed_keys || []).map((key) => KEY_LABELS[key] || key).join(", ") || "—"}</td>
+                        <td>{version.change_reason || "—"}</td>
+                        <td>
+                          <Button variant="ghost" onClick={() => void openVersion(version.version_id)}>View</Button>
+                          {meta?.can_rollback ? (
+                            <>
+                              <Button variant="ghost" onClick={() => void rollback(version.version_id)}>Rollback</Button>
+                              <Button variant="danger" onClick={() => void deleteVersion(version.version_id)}>Delete</Button>
+                            </>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </Tile>
       {versionOpen ? (

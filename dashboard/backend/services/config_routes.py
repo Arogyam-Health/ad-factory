@@ -18,6 +18,8 @@ from dashboard.backend.services.config_permissions import (
 from dashboard.backend.services.config_version_service import (
     get_config_versions as _get_config_versions,
     get_config_version as _get_config_version,
+    delete_config_version as _delete_config_version,
+    delete_old_config_versions as _delete_old_config_versions,
     rollback_config_to_version as _rollback_config,
     copy_config as _copy_config,
     create_config_version_before_update,
@@ -107,6 +109,54 @@ def get_config_version_detail(
     )
 
     return version
+
+
+@router.delete("/api/config/{config_id}/versions/{version_id}")
+def delete_config_version(
+    config_id: str,
+    version_id: str,
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict:
+    user_id = user["user_id"]
+    user_email = user.get("email", "")
+    doc = _require_config_access(config_id, user_id)
+    if not can_rollback_config(user_id, doc, doc.get("owner_id")):
+        raise HTTPException(status_code=403, detail="You do not have permission to delete versions")
+    if not _delete_config_version(config_id, version_id):
+        raise HTTPException(status_code=404, detail="Version not found")
+    write_audit_event(
+        event_type="config_version_deleted",
+        actor_user_id=user_id,
+        actor_email=user_email,
+        target_type="config_version",
+        target_id=version_id,
+        org_id=doc.get("owner_id") if doc.get("owner_type") == "org" else None,
+        metadata={"config_id": config_id, "version_id": version_id},
+    )
+    return {"status": "deleted", "version_id": version_id}
+
+
+@router.post("/api/config/{config_id}/prune-old-versions")
+def prune_old_config_versions(
+    config_id: str,
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict:
+    user_id = user["user_id"]
+    user_email = user.get("email", "")
+    doc = _require_config_access(config_id, user_id)
+    if not can_rollback_config(user_id, doc, doc.get("owner_id")):
+        raise HTTPException(status_code=403, detail="You do not have permission to delete versions")
+    result = _delete_old_config_versions(config_id)
+    write_audit_event(
+        event_type="config_versions_pruned",
+        actor_user_id=user_id,
+        actor_email=user_email,
+        target_type="config",
+        target_id=config_id,
+        org_id=doc.get("owner_id") if doc.get("owner_type") == "org" else None,
+        metadata={"config_id": config_id, **result},
+    )
+    return {"status": "pruned", **result}
 
 
 @router.post("/api/config/{config_id}/rollback/{version_id}")

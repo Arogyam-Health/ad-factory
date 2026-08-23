@@ -332,7 +332,7 @@ def create_or_update_config(
             return _extract_flat_from_new_schema(existing)
         return get_generic_config()
 
-    if existing and create_version:
+    if existing and create_version and owner_type == "org":
         from dashboard.backend.services.config_version_service import create_config_version_before_update
         create_config_version_before_update(
             config_doc=existing,

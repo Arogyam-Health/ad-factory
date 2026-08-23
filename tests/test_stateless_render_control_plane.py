@@ -111,6 +111,8 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
             ("GET", "/api/config/effective?org_id=org_1"),
             ("GET", "/api/config/cfg_1/versions"),
             ("POST", "/api/config/cfg_1/save-version"),
+            ("DELETE", "/api/config/cfg_1/versions/ver_1"),
+            ("POST", "/api/config/cfg_1/prune-old-versions"),
             ("POST", "/api/config/cfg_1/rollback/ver_1"),
             ("GET", "/api/user/config"),
             ("PUT", "/api/user/config"),

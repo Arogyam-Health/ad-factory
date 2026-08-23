@@ -107,6 +107,11 @@ class BrowserDiscoveryTests(unittest.TestCase):
             os.environ.pop("AGENT_API_BASE", None)
             os.environ.pop("CHROME_PATH", None)
             args = parse_args([])
+        self.assertEqual(args.api_base, "https://ad-factory-pzgh.onrender.com")
+        with patch.dict(os.environ, {"AGENT_API_BASE": "https://ad-factory-3rn5.onrender.com"}, clear=False):
+            args = parse_args([])
+        self.assertEqual(args.api_base, "https://ad-factory-pzgh.onrender.com")
+        args = parse_args(["--api-base", "https://ad-factory-3rn5.onrender.com"])
         self.assertEqual(args.api_base, "https://ad-factory-3rn5.onrender.com")
         self.assertEqual(args.browser, "chrome")
         args = parse_args(["--chrome-path", "/opt/custom/chrome"])

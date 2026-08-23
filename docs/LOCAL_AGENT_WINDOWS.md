@@ -6,7 +6,7 @@ The website stays on Render. This Windows PC only runs the **local agent**,
 Pairing uses `127.0.0.1`, so open the dashboard in a browser **on this same
 PC**. You do not need WSL.
 
-Default production URL: `https://ad-factory-3rn5.onrender.com`
+Default production URL: `https://ad-factory-pzgh.onrender.com`
 
 ## PowerShell execution policy
 
@@ -116,7 +116,7 @@ If Chrome is installed somewhere else, put that full `chrome.exe` path in
 ## 4. Copy the dashboard session cookie
 
 1. On this PC, open Chrome and sign in to
-   `https://ad-factory-3rn5.onrender.com`.
+   `https://ad-factory-pzgh.onrender.com`.
 2. Press `F12` → **Application** → **Cookies** → the site.
 3. Copy the `session` cookie value.
 

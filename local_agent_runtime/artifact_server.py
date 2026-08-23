@@ -22,6 +22,7 @@ class ArtifactServerConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     allowed_origins: tuple[str, ...] = (
+        "https://ad-factory-pzgh.onrender.com",
         "https://ad-factory-3rn5.onrender.com",
         "http://127.0.0.1:4090",
         "http://localhost:4090",
