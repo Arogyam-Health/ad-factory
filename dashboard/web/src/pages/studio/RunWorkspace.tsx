@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import { exactOnImageCopyLines, replaceExactOnImageCopy } from "@/lib/prompt-copy.js";
+import { displayRunStatus } from "@/lib/run-status";
 import type { Run } from "@/lib/types";
 import { Button } from "@/components/Button";
+import { OutputGallery, type OutputRow } from "@/pages/studio/OutputGallery";
 
 type PromptRow = {
   prompt_id?: string;
@@ -15,19 +17,6 @@ type PromptRow = {
   status?: string;
   text?: string;
   version?: number;
-  resource_version?: number;
-};
-
-type OutputRow = {
-  output_id?: string;
-  resource_id?: string;
-  artifact_id?: string;
-  aspect_ratio?: string;
-  filename?: string;
-  display_name?: string;
-  url?: string;
-  version?: number;
-  current_version?: number;
   resource_version?: number;
 };
 
@@ -51,6 +40,8 @@ export function RunWorkspace({
   run,
   deviceId,
   agentId,
+  paired,
+  onPair,
   onClose,
   onStatus,
   onRefresh,
@@ -58,6 +49,8 @@ export function RunWorkspace({
   run: Run;
   deviceId: string;
   agentId: string;
+  paired: boolean;
+  onPair: () => Promise<{ ok: boolean; deviceId: string; agentId: string }>;
   onClose: () => void;
   onStatus: (value: string) => void;
   onRefresh: () => Promise<void>;
@@ -67,13 +60,12 @@ export function RunWorkspace({
   const [outputs, setOutputs] = useState<OutputRow[]>([]);
   const [engine, setEngine] = useState("chatgpt");
   const [busy, setBusy] = useState("");
-  const [comment, setComment] = useState("");
-  const [picked, setPicked] = useState("");
   const [editingId, setEditingId] = useState("");
   const [copyLines, setCopyLines] = useState<CopyLine[]>([]);
   const [copySource, setCopySource] = useState("");
   const [copyVersion, setCopyVersion] = useState(0);
   const [copyError, setCopyError] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,10 +123,18 @@ export function RunWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [runId, deviceId, run.device_id, busy]);
+  }, [runId, deviceId, run.device_id, busy, reloadToken]);
 
   async function queueImages(mode: "45" | "both" | "916") {
     if (!runId) return;
+    let liveDevice = deviceId || run.device_id || "";
+    let liveAgent = agentId;
+    if (!paired) {
+      const live = await onPair();
+      if (!live.ok) return;
+      liveDevice = live.deviceId || liveDevice;
+      liveAgent = live.agentId || liveAgent;
+    }
     setBusy(mode);
     try {
       const queued = await fetchJSON<{ job_id?: string }>(`/api/runs/${encodeURIComponent(runId)}/image-generation`, {
@@ -144,39 +144,13 @@ export function RunWorkspace({
           operation_id: `${runId}-images-${mode}-${Date.now()}`,
           engine,
           mode,
-          agent_id: agentId,
-          device_id: deviceId || run.device_id || "",
+          agent_id: liveAgent,
+          device_id: liveDevice,
         }),
       });
       invalidateRuns();
       onStatus(`Queued ${mode === "both" ? "4:5 + 9:16" : mode === "916" ? "9:16" : "4:5"} for ${run.display_batch || runId}. Job ${queued.job_id || ""}.`);
       await onRefresh();
-    } catch (err) {
-      onStatus(String(err));
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function revisePicked() {
-    const outputId = picked;
-    if (!outputId || !comment.trim()) {
-      onStatus("Select an image and write a revision comment.");
-      return;
-    }
-    const localDevice = deviceId || run.device_id || "";
-    if (!localDevice) {
-      onStatus("Pair this dashboard with the local agent before revising.");
-      return;
-    }
-    setBusy("revision");
-    try {
-      await localDataPlane.outputAction(outputId, "revisions", localDevice, {
-        comment: comment.trim(),
-        engine,
-      });
-      onStatus(`Revision queued for ${run.display_batch || runId}.`);
-      setComment("");
     } catch (err) {
       onStatus(String(err));
     } finally {
@@ -193,12 +167,19 @@ export function RunWorkspace({
       return;
     }
     let text = prompt.text || "";
-    if (!text && id && localDevice) {
-      text = await localDataPlane.promptContent(id, localDevice, prompt.resource_version || prompt.version).catch(() => "");
+    if (!text) {
+      let device = deviceId || run.device_id || "";
+      if (!paired || !device) {
+        const live = await onPair();
+        if (live.ok) device = live.deviceId || device;
+      }
+      if (id && device) {
+        text = await localDataPlane.promptContent(id, device, prompt.resource_version || prompt.version).catch(() => "");
+      }
     }
     const lines = exactOnImageCopyLines(text);
     if (!text) {
-      setCopyError("Pair the local agent to load this prompt’s on-image copy.");
+      setCopyError("Pair the local agent to load this prompt’s on-image copy. Allow local network access if Chrome asks.");
       setCopyLines([]);
       setCopySource("");
     } else if (!lines.length) {
@@ -243,14 +224,14 @@ export function RunWorkspace({
   const imageHint = outputs.length
     ? ""
     : (run.image_count || 0) > 0
-      ? `${run.image_count} images are recorded on this run, but this tab cannot read the local files yet. Restart the local agent with --api-base http://127.0.0.1:4090 if it is talking to another dashboard.`
+      ? `${run.image_count} images are on this machine. Click Pair local agent and allow local network access if Chrome asks.`
       : "No generated images yet. Use Generate 4:5 after this tab is paired with the local agent.";
 
   return (
     <section className="run-workspace">
       <div className="action-row" style={{ marginBottom: 12 }}>
         <strong>{run.display_batch || runId}</strong>
-        <span className="hint">{run.status || "unknown"} · {run.prompt_count ?? prompts.length} prompts · {shownCount} images</span>
+        <span className="hint">{displayRunStatus(run)} · {run.prompt_count ?? prompts.length} prompts · {shownCount} images</span>
         <Button variant="ghost" onClick={onClose}>Close run</Button>
       </div>
       <label className="hint">
@@ -318,37 +299,20 @@ export function RunWorkspace({
         </div>
       ) : null}
       {outputs.length ? (
-        <div className="output-grid">
-          {outputs.map((item, index) => {
-            const id = item.output_id || item.resource_id || item.artifact_id || String(index);
-            return (
-              <button
-                key={id}
-                type="button"
-                className={`output-card${picked === id ? " active" : ""}`}
-                onClick={() => setPicked(id)}
-              >
-                {item.url ? <img src={item.url} alt={item.display_name || item.filename || id} /> : <span>{item.aspect_ratio || item.display_name || "image"}</span>}
-              </button>
-            );
-          })}
-        </div>
+        <OutputGallery
+          outputs={outputs}
+          deviceId={deviceId || run.device_id || ""}
+          defaultEngine={engine}
+          onStatus={onStatus}
+          onChange={() => {
+            invalidateRuns();
+            void onRefresh();
+            setReloadToken((value) => value + 1);
+          }}
+        />
       ) : (
         <p className="hint">{imageHint}</p>
       )}
-      <label className="hint" style={{ marginTop: 14 }}>
-        Revision comment
-        <textarea
-          className="cfg-textarea"
-          rows={3}
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder={picked ? "Describe the change for the selected image" : "Select an image, then describe the revision"}
-        />
-      </label>
-      <Button disabled={Boolean(busy) || !picked} onClick={() => void revisePicked()}>
-        {busy === "revision" ? "Queuing…" : "Generate revision"}
-      </Button>
     </section>
   );
 }

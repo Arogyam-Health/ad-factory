@@ -49,6 +49,44 @@ _RUN_PROJECTION = {
 }
 
 
+def public_run_status(run: dict[str, Any]) -> str:
+    raw = str(run.get("status") or "unknown")
+    if raw in {"deleted", "deleting", "purge_failed", "failed", "canceled"}:
+        return raw
+    image_gen = run.get("image_generation")
+    copy_gen = run.get("copy_generation")
+    image_status = str(image_gen.get("status") or "") if isinstance(image_gen, dict) else ""
+    copy_delivery = (
+        str(copy_gen.get("delivery_status") or "") if isinstance(copy_gen, dict) else ""
+    )
+    copy_status = str(copy_gen.get("status") or "") if isinstance(copy_gen, dict) else ""
+    try:
+        image_count = int(run.get("image_count") or 0)
+    except (TypeError, ValueError):
+        image_count = 0
+    if image_status == "failed":
+        return "failed"
+    if image_status == "running":
+        return "generating"
+    if image_status == "completed" or (
+        image_count > 0 and raw in {"queued", "running", "generating"}
+    ):
+        return "completed"
+    if raw == "copy_completed" or copy_delivery == "delivered":
+        return "copy_completed"
+    if copy_status in {"running", "copy_queued"} or raw == "copy_queued":
+        return "copying"
+    return raw
+
+
+def _present_run(run: dict[str, Any] | None) -> dict[str, Any] | None:
+    if run is None:
+        return None
+    presented = dict(run)
+    presented["status"] = public_run_status(presented)
+    return presented
+
+
 def _user_id(request: Request) -> str:
     user = getattr(request.state, "user", None)
     user_id = str((user or {}).get("user_id") or "")
@@ -137,7 +175,7 @@ def list_runs(request: Request) -> dict[str, Any]:
         .sort("created_at", -1)
         .limit(200)
     )
-    return {"runs": rows, "total": len(rows)}
+    return {"runs": [_present_run(row) for row in rows], "total": len(rows)}
 
 
 @router.get("/api/runs/{run_id}")
@@ -148,7 +186,7 @@ def get_run(run_id: str, request: Request) -> dict[str, Any]:
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return row
+    return _present_run(row)
 
 
 @router.get("/api/runs/{run_id}/partial")

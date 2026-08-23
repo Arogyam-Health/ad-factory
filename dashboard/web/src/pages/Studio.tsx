@@ -11,6 +11,9 @@ import { FileViewer } from "@/components/FileViewer";
 import { FileField } from "@/components/FileField";
 import { ReferenceCompose, ReferenceDesk, ReferenceFlow } from "@/pages/studio/ReferencePanel";
 import { RunWorkspace } from "@/pages/studio/RunWorkspace";
+import { BatchSelect } from "@/pages/studio/BatchSelect";
+import { LazyAsset } from "@/pages/studio/LazyAsset";
+import { displayRunStatus } from "@/lib/run-status";
 
 const FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"] as const;
 const LANGUAGES = ["ALL", "EN", "HI", "HINGLISH"] as const;
@@ -24,6 +27,15 @@ function triggerDownload(blob: Blob, filename: string) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function pairingStatus(err?: unknown) {
+  const host = window.location.hostname;
+  const onPublicSite = host.endsWith(".onrender.com") || (host !== "localhost" && host !== "127.0.0.1");
+  if (onPublicSite) {
+    return "This tab cannot read local files yet. Click Pair local agent and allow local network access if Chrome asks.";
+  }
+  return err ? String(err) : "Start the local agent on this machine.";
 }
 
 async function queueRunImages(
@@ -48,8 +60,13 @@ async function queueRunImages(
 
 export function StudioPage() {
   const { user, ready } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [studio, setStudio] = useState<StudioPayload | null>(peekCache<StudioPayload>("/api/public/studio") ?? null);
+  const [loading, setLoading] = useState(() => !(
+    peekCache<StudioPayload>("/api/defaults")
+    || peekCache<StudioPayload>("/api/public/studio")
+  ));
+  const [studio, setStudio] = useState<StudioPayload | null>(
+    peekCache<StudioPayload>("/api/defaults") ?? peekCache<StudioPayload>("/api/public/studio") ?? null,
+  );
   const [personas, setPersonas] = useState<Persona[]>(studio?.personas || []);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [formats, setFormats] = useState<Set<string>>(new Set(["HERO"]));
@@ -63,7 +80,7 @@ export function StudioPage() {
   const [busy, setBusy] = useState(false);
   const [deviceId, setDeviceId] = useState("");
   const [agentId, setAgentId] = useState("");
-  const [assets, setAssets] = useState<{ resource_id: string; url?: string; filename?: string }[]>([]);
+  const [assets, setAssets] = useState<{ resource_id: string; url?: string; filename?: string; version?: number }[]>([]);
   const [assetBusy, setAssetBusy] = useState(false);
   const [hypType, setHypType] = useState("none");
   const [hypVariant, setHypVariant] = useState("");
@@ -202,6 +219,41 @@ export function StudioPage() {
         ? `/api/config/persona-summary?org_id=${encodeURIComponent(orgId)}`
         : "/api/config/persona-summary";
       const runUrl = `/api/runs?flow=${flow}`;
+      const effectiveUrl = orgId !== "personal"
+        ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
+        : "/api/config/effective";
+
+      function applyPersonas(defaults: StudioPayload | null, personaRows?: Persona[]) {
+        const nextPersonas = (personaRows || defaults?.personas || [])
+          .map((p) => ({ number: Number(p.number), name: String(p.name || `Persona ${p.number}`) }))
+          .filter((p) => p.number);
+        if (nextPersonas.length) setPersonas(nextPersonas);
+        if (defaults) {
+          setStudio((prev) => ({
+            ...defaults,
+            config: prev?.config || defaults.config,
+            personas: nextPersonas.length ? nextPersonas : defaults.personas,
+          }));
+          if (defaults.batch_size) setBatchSize(defaults.batch_size);
+        }
+        return nextPersonas;
+      }
+
+      const cachedDefaults = peekCache<StudioPayload>("/api/defaults") || peekCache<StudioPayload>("/api/public/studio");
+      const cachedPersonas = peekCache<{ personas?: Persona[] }>(personaUrl);
+      const cachedRuns = peekCache<{ runs?: Run[] }>(runUrl);
+      const cachedEffective = peekCache<EffectiveConfig>(effectiveUrl);
+      if (cachedDefaults || cachedPersonas?.personas?.length) {
+        applyPersonas(cachedDefaults || null, cachedPersonas?.personas);
+        setLoading(false);
+      }
+      if (cachedRuns?.runs) setRuns(cachedRuns.runs);
+      if (cachedEffective) {
+        setConfigMeta(cachedEffective);
+        if (cachedEffective.config) {
+          setStudio((prev) => (prev ? { ...prev, config: cachedEffective.config } : prev));
+        }
+      }
 
       if (user.authenticated && user.user_id) {
         void (async () => {
@@ -227,13 +279,7 @@ export function StudioPage() {
                 setAgentId(next.agent?.agent_id || "");
                 setPaired(true);
                 const items = await localDataPlane.listAssets({ kind: "product_image", deviceId: id });
-                const withUrls = await Promise.all(
-                  items.slice(0, 12).map(async (item) => ({
-                    ...item,
-                    url: await localDataPlane.assetObjectUrl(item.resource_id, id, item.version).catch(() => ""),
-                  })),
-                );
-                if (!cancelled) setAssets(withUrls);
+                if (!cancelled) setAssets(items.slice(0, 12));
                 return;
               } catch (err) {
                 lastError = err;
@@ -241,16 +287,12 @@ export function StudioPage() {
             }
             if (!cancelled) {
               setPaired(false);
-              setStatus(
-                lastError
-                  ? "Local agent is on this machine but not paired to this dashboard. Restart it with --api-base http://127.0.0.1:4090 if it is talking to Render."
-                  : "Start the local agent on this machine.",
-              );
+              setStatus(pairingStatus(lastError));
             }
-          } catch {
+          } catch (err) {
             if (!cancelled) {
               setPaired(false);
-              setStatus("Start the local agent on this machine, then refresh.");
+              setStatus(pairingStatus(err));
             }
           }
         })();
@@ -262,29 +304,29 @@ export function StudioPage() {
         });
       }
 
-      const cachedRuns = peekCache<{ runs?: Run[] }>(runUrl);
-      if (cachedRuns?.runs) setRuns(cachedRuns.runs);
-
       try {
         if (user.authenticated) {
-          const [defaults, personasData, runData, effective] = await Promise.all([
+          const [defaults, personasData, runData] = await Promise.all([
             fetchJSON<StudioPayload>("/api/defaults"),
             fetchJSON<{ personas?: Persona[] }>(personaUrl).catch(() => ({ personas: [] })),
             fetchJSON<{ runs?: Run[] }>(runUrl),
-            fetchJSON<EffectiveConfig>(
-              orgId !== "personal" ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}` : "/api/config/effective",
-            ).catch(() => ({ config: {} } as EffectiveConfig)),
           ]);
           if (cancelled) return;
-          const nextPersonas = (personasData.personas || defaults.personas || [])
-            .map((p) => ({ number: Number(p.number), name: String(p.name || `Persona ${p.number}`) }))
-            .filter((p) => p.number);
-          setPersonas(nextPersonas);
-          setStudio({ ...defaults, config: effective.config || defaults.config, personas: nextPersonas });
-          setConfigMeta(effective);
+          applyPersonas(defaults, personasData.personas);
           setRuns(runData.runs || []);
           setStatus((prev) => (prev.startsWith("Error: 401") ? "Plate is idle." : prev));
-          if (defaults.batch_size) setBatchSize(defaults.batch_size);
+          setLoading(false);
+          void fetchJSON<EffectiveConfig>(effectiveUrl)
+            .catch(() => ({ config: {} } as EffectiveConfig))
+            .then((effective) => {
+              if (cancelled) return;
+              setConfigMeta(effective);
+              setStudio((prev) => (
+                prev
+                  ? { ...prev, config: effective.config || prev.config }
+                  : { ...defaults, config: effective.config || defaults.config }
+              ));
+            });
         } else {
           const data = await fetchJSON<StudioPayload>("/api/public/studio");
           if (cancelled) return;
@@ -434,17 +476,43 @@ export function StudioPage() {
     setActiveRunId(id);
   }
 
-  function toggleSelectBatches() {
-    const ids = pageRuns.map((run) => run.run_id || "").filter(Boolean);
-    setPickedRuns((prev) => {
-      const allOn = ids.every((id) => prev.has(id));
-      const next = new Set(prev);
-      for (const id of ids) {
-        if (allOn) next.delete(id);
-        else next.add(id);
+  async function pairLocalAgent() {
+    if (!user.authenticated || !user.user_id) {
+      setStatus("Sign in before pairing the local agent.");
+      return { ok: false, deviceId: "", agentId: "" };
+    }
+    setStatus("Pairing this tab with the local agent…");
+    try {
+      const info = await localDataPlane.discover();
+      const liveId = info.device_id || "";
+      if (liveId) setDeviceId(liveId);
+      const owners = [
+        ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
+        { ownerType: "user" as const, ownerId: user.user_id },
+      ];
+      let lastError: unknown;
+      for (const owner of owners) {
+        try {
+          const next = await localDataPlane.ensurePaired({ ...owner, deviceId: liveId });
+          const id = next.info.device_id || liveId;
+          const nextAgent = next.agent?.agent_id || "";
+          setDeviceId(id);
+          setAgentId(nextAgent);
+          setPaired(true);
+          setStatus(`Paired ${id.slice(0, 8)}. Local files are available in this tab.`);
+          return { ok: true, deviceId: id, agentId: nextAgent };
+        } catch (err) {
+          lastError = err;
+        }
       }
-      return next;
-    });
+      setPaired(false);
+      setStatus(pairingStatus(lastError));
+      return { ok: false, deviceId: "", agentId: "" };
+    } catch (err) {
+      setPaired(false);
+      setStatus(pairingStatus(err));
+      return { ok: false, deviceId: "", agentId: "" };
+    }
   }
 
   async function generateSelected(mode: "45" | "both") {
@@ -453,10 +521,14 @@ export function StudioPage() {
       setStatus("Select batches first.");
       return;
     }
+    const live = paired
+      ? { ok: true, deviceId, agentId }
+      : await pairLocalAgent();
+    if (!live.ok) return;
     setBatchBusy(mode);
     try {
       for (const id of ids) {
-        await queueRunImages(id, mode, "chatgpt", agentId, deviceId);
+        await queueRunImages(id, mode, "chatgpt", live.agentId, live.deviceId);
       }
       invalidateRuns();
       const label = mode === "both" ? "4:5 + 9:16" : "4:5";
@@ -476,15 +548,15 @@ export function StudioPage() {
       setStatus("Select batches first.");
       return;
     }
-    if (!paired || !deviceId) {
-      setStatus("Pair this dashboard with the local agent before downloading batches.");
-      return;
-    }
+    const live = paired && deviceId
+      ? { ok: true, deviceId, agentId }
+      : await pairLocalAgent();
+    if (!live.ok || !live.deviceId) return;
     setBatchBusy("download");
     try {
       for (const id of ids) {
         const run = runs.find((item) => item.run_id === id);
-        const blob = await localDataPlane.downloadRun(id, deviceId);
+        const blob = await localDataPlane.downloadRun(id, live.deviceId);
         triggerDownload(blob, `${run?.display_batch || id}.zip`);
       }
       setStatus(`Downloaded ${ids.length} batch${ids.length === 1 ? "" : "es"}.`);
@@ -670,13 +742,7 @@ export function StudioPage() {
                   try {
                     await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
                     const items = await localDataPlane.listAssets({ kind: "product_image", deviceId });
-                    const withUrls = await Promise.all(
-                      items.slice(0, 12).map(async (item) => ({
-                        ...item,
-                        url: await localDataPlane.assetObjectUrl(item.resource_id, deviceId, item.version).catch(() => ""),
-                      })),
-                    );
-                    setAssets(withUrls);
+                    setAssets(items.slice(0, 12));
                     setStatus(`Stored ${files.length} image${files.length === 1 ? "" : "s"} on this device.`);
                   } catch (err) {
                     setStatus(String(err));
@@ -689,7 +755,13 @@ export function StudioPage() {
               {assets.length ? (
                 <div className="asset-strip" style={{ marginBottom: 16 }}>
                   {assets.map((item) => (
-                    <img key={item.resource_id} src={item.url} alt={item.filename || "Input image"} />
+                    <LazyAsset
+                      key={item.resource_id}
+                      resourceId={item.resource_id}
+                      deviceId={deviceId}
+                      version={item.version}
+                      alt={item.filename || "Input image"}
+                    />
                   ))}
                 </div>
               ) : assetBusy ? (
@@ -746,7 +818,10 @@ export function StudioPage() {
 
       <Tile span="wide" kicker="04 · Dry proofs" title="Recent runs">
         <div className="action-row" style={{ marginBottom: 12 }}>
-          <Button variant="ghost" onClick={toggleSelectBatches}>Select batches</Button>
+          <BatchSelect runs={runs} picked={pickedRuns} onChange={setPickedRuns} />
+          <Button variant="ghost" disabled={!user.authenticated} onClick={() => void pairLocalAgent()}>
+            {paired ? "Paired" : "Pair local agent"}
+          </Button>
           <Button disabled={Boolean(batchBusy) || !pickedRuns.size} onClick={() => void generateSelected("45")}>
             {batchBusy === "45" ? "Queuing…" : "Generate 4:5"}
           </Button>
@@ -841,7 +916,7 @@ export function StudioPage() {
                   />
                 </label>
                 <strong className="run-open">{run.display_batch || run.run_id}</strong>
-                <span>{run.status || "unknown"}</span>
+                <span>{displayRunStatus(run)}</span>
                 <span>{run.prompt_count ?? 0} prompts</span>
                 <span>{run.image_count ?? 0} images</span>
               </article>
@@ -871,6 +946,8 @@ export function StudioPage() {
               run={openRun}
               deviceId={deviceId}
               agentId={agentId}
+              paired={paired}
+              onPair={pairLocalAgent}
               onClose={() => setOpenRunId("")}
               onStatus={setStatus}
               onRefresh={async () => {

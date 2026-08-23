@@ -215,6 +215,18 @@ class LocalDataPlane:
     def _origin(self, handler: Any) -> str:
         return str(handler.headers.get("Origin") or "")
 
+    def _origin_allowed(self, origin: str) -> bool:
+        if origin in self.service.config.allowed_origins:
+            return True
+        parsed = urllib.parse.urlsplit(origin)
+        host = parsed.hostname or ""
+        return (
+            parsed.scheme == "https"
+            and host.endswith(".onrender.com")
+            and not parsed.username
+            and not parsed.password
+        )
+
     def _validate_request_boundary(self, handler: Any) -> None:
         host = str(handler.headers.get("Host") or "")
         try:
@@ -230,12 +242,12 @@ class LocalDataPlane:
         if port is not None and not (1 <= port <= 65535):
             raise APIError(421, "host_forbidden", "Local API requires a loopback Host")
         origin = self._origin(handler)
-        if origin == "null" or (origin and origin not in self.service.config.allowed_origins):
+        if origin == "null" or (origin and not self._origin_allowed(origin)):
             raise APIError(403, "origin_forbidden", "Origin is not allowed")
 
     def _cors(self, handler: Any) -> None:
         origin = self._origin(handler)
-        if origin in self.service.config.allowed_origins:
+        if self._origin_allowed(origin):
             handler.send_header("Access-Control-Allow-Origin", origin)
             handler.send_header("Vary", "Origin")
         handler.send_header(
@@ -254,6 +266,11 @@ class LocalDataPlane:
             == "true"
         ):
             handler.send_header("Access-Control-Allow-Private-Network", "true")
+        requested_space = str(
+            handler.headers.get("Access-Control-Request-Target-Address-Space") or ""
+        ).strip().lower()
+        if requested_space:
+            handler.send_header("Access-Control-Allow-Target-Address-Space", "loopback")
         handler.send_header("Cache-Control", "no-store")
 
     def _json(

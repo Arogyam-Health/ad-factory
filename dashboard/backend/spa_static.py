@@ -22,7 +22,10 @@ def mount_react_spa(app: FastAPI, root: Path) -> None:
             return FileResponse(
                 index,
                 media_type="text/html",
-                headers={"Cache-Control": "no-cache"},
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Permissions-Policy": "local-network-access=(self)",
+                },
             )
         raise HTTPException(status_code=404, detail="Not found")
 

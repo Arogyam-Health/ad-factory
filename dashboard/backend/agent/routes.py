@@ -844,9 +844,15 @@ def record_local_generation_projection(
         updates["image_count"] = int(projection.get("completed_count") or 0)
         if "prompt_count" in projection:
             updates["prompt_count"] = int(projection.get("prompt_count") or 0)
+        job_status = str(projection.get("status") or "")
+        if job_status == "completed":
+            updates["status"] = "completed"
+        elif job_status == "failed":
+            updates["status"] = "failed"
+        elif job_status == "running":
+            updates["status"] = "generating"
         if projection.get("flow_type") == "reference":
             updates["flow_type"] = "reference"
-            updates["status"] = projection["status"]
     else:
         updates["prompt_count"] = int(projection.get("prompt_count") or 0)
     from dashboard.backend.control_plane_policy import validate_metadata_document

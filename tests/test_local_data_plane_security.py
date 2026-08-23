@@ -95,6 +95,18 @@ class LocalDataPlaneSecurityTests(unittest.TestCase):
             self.request("GET", "/v1/info", headers={"Host": "example.com"})
         self.assertEqual(caught.exception.code, 421)
 
+    def test_other_https_onrender_origins_can_discover_the_local_plane(self) -> None:
+        with self.request(
+            "GET",
+            "/v1/info",
+            origin="https://ad-factory-pzgh.onrender.com",
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(
+                response.headers["Access-Control-Allow-Origin"],
+                "https://ad-factory-pzgh.onrender.com",
+            )
+
     def test_private_network_preflight_is_exact_and_has_required_headers(self) -> None:
         with self.request(
             "OPTIONS",

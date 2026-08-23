@@ -1,4 +1,12 @@
 const LOCAL_API_ORIGIN = "http://127.0.0.1:8765";
+
+function localFetch(url, options = {}) {
+  return fetch(url, {
+    cache: "no-store",
+    targetAddressSpace: "loopback",
+    ...options,
+  });
+}
 const SESSION_PREFIX = "ad_factory_local_session:";
 const ACTIVE_OWNER_PREFIX = "ad_factory_local_owner:";
 const PAIRING_WAIT_MS = 600_000;
@@ -199,9 +207,8 @@ export class LocalDataPlaneClient {
   }
 
   async discover() {
-    return readJson(await fetch(`${this.baseUrl}/v1/info`, {
+    return readJson(await localFetch(`${this.baseUrl}/v1/info`, {
       method: "GET",
-      cache: "no-store",
     }));
   }
 
@@ -234,7 +241,7 @@ export class LocalDataPlaneClient {
     );
     if (!agent) {
       throw new Error(
-        "This dashboard has no pairing record for this machine. Restart the local agent with --api-base http://127.0.0.1:4090 if it is registered to another site.",
+        "This dashboard has no pairing record for this machine. Restart the local agent with --api-base pointing at this site.",
       );
     }
     return agent;
@@ -243,7 +250,7 @@ export class LocalDataPlaneClient {
   async pair({ agentId, ownerType = "user", ownerId, scopes = DEFAULT_SCOPES }) {
     if (!agentId || !ownerId) throw new Error("Agent and owner are required");
     const info = await this.discover();
-    const challenge = await readJson(await fetch(
+    const challenge = await readJson(await localFetch(
       `${this.baseUrl}/v1/pairing/challenges`,
       {
         method: "POST",
@@ -271,7 +278,7 @@ export class LocalDataPlaneClient {
     );
     while (Date.now() < deadline) {
       try {
-        const session = await readJson(await fetch(
+        const session = await readJson(await localFetch(
           `${this.baseUrl}/v1/pairing/sessions`,
           {
             method: "POST",
@@ -386,7 +393,7 @@ export class LocalDataPlaneClient {
     const send = (accessToken) => {
       const headers = new Headers(options.headers || {});
       headers.set("Authorization", `Bearer ${accessToken}`);
-      return fetch(`${this.baseUrl}${path}`, { ...options, headers });
+      return localFetch(`${this.baseUrl}${path}`, { ...options, headers });
     };
     let response = await send(session.access_token);
     if (response.status !== 401) return response;

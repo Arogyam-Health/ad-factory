@@ -192,10 +192,12 @@ console.log(JSON.stringify(simplified));
         self.assertIn("item.agent_id === preferredAgentId", client)
         self.assertIn("_isOnlineAgent", client)
         self.assertIn("this.session(info.device_id, owner)", client)
-        self.assertIn("--api-base http://127.0.0.1:4090", client)
+        self.assertIn("targetAddressSpace: \"loopback\"", client)
+        self.assertIn("--api-base pointing at this site", client)
         self.assertNotIn("The selected run belongs to a different local agent", client)
         self.assertIn("ensurePaired({", studio)
         self.assertIn("localDataPlane.discover()", studio)
+        self.assertIn("Pair local agent", studio)
 
     def test_prompt_copy_parser_only_returns_exact_on_image_copy(self) -> None:
         script = """
@@ -285,7 +287,8 @@ console.log(replaceExactOnImageCopy(original, [
         self.assertNotIn("refreshLocalArtifactManifest", studio)
         self.assertNotIn("LOCAL_ARTIFACT_CACHE_KEY", studio)
         self.assertIn("CAS_CACHE_NAME", plane)
-        self.assertIn("assetObjectUrl", studio)
+        self.assertIn("LazyAsset", studio)
+        self.assertIn("displayRunStatus", studio)
 
 
 if __name__ == "__main__":

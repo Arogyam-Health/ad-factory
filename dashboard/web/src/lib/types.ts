@@ -34,6 +34,8 @@ export type Run = {
   flow?: string;
   device_id?: string;
   agent_id?: string;
+  copy_generation?: { status?: string; delivery_status?: string };
+  image_generation?: { status?: string };
 };
 
 export type ProviderSafe = {
