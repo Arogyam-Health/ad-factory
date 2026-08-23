@@ -10,6 +10,7 @@ import httpx
 DEFAULT_OPENCODE_API_URL = os.getenv(
     "OPENCODE_API_URL", "http://127.0.0.1:4090"
 )
+DEFAULT_OPENCODE_MODEL = "opencode/big-pickle"
 
 PREFERRED_FREE_OPENCODE_MODELS = (
     "opencode/mimo-v2.5-free",
@@ -65,6 +66,23 @@ def list_opencode_models(
     ]
 
 
+def with_default_opencode_model(models: list[str], saved: str = "") -> list[str]:
+    ordered: list[str] = []
+    for model in (DEFAULT_OPENCODE_MODEL, saved, *models):
+        name = str(model or "").strip()
+        if name and name not in ordered:
+            ordered.append(name)
+    return ordered
+
+
+def choose_saved_or_default(models: list[str], saved: str = "") -> str:
+    if saved and saved in models:
+        return saved
+    if DEFAULT_OPENCODE_MODEL in models:
+        return DEFAULT_OPENCODE_MODEL
+    return choose_openai_gpt52(models)
+
+
 def choose_openai_gpt52(models: list[str]) -> str:
     if not models:
         return ""
@@ -100,7 +118,7 @@ def sanitize_dashboard_model(selected: str, models: list[str]) -> str:
 
 
 def build_opencode_catalog() -> dict[str, Any]:
-    models = list_opencode_models()
+    models = with_default_opencode_model(list_opencode_models())
     grouped: dict[str, list[str]] = {}
     for model in models:
         provider = model.split("/", 1)[0]
@@ -111,5 +129,5 @@ def build_opencode_catalog() -> dict[str, Any]:
         "api_url": DEFAULT_OPENCODE_API_URL,
         "providers": sorted(grouped),
         "models_by_provider": grouped,
-        "default_model": choose_openai_gpt52(models),
+        "default_model": choose_saved_or_default(models),
     }

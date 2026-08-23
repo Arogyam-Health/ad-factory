@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchJSON, peekCache, clearCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { asConfigText, CONFIG_KEYS, JSON_KEYS, KEY_LABELS, studioOrgKey } from "@/lib/config-keys";
+import { asConfigText, CONFIG_KEYS, JSON_KEYS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
 import type { ConfigSource, ConfigVersion, EffectiveConfig, StudioPayload } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
@@ -28,7 +28,7 @@ export function ConfigPage() {
   const [files, setFiles] = useState<Record<string, string>>(emptyFiles);
   const [drafts, setDrafts] = useState<Record<string, string>>(emptyFiles);
   const [status, setStatus] = useState("");
-  const [source, setSource] = useState(orgFromQuery || "personal");
+  const [source, setSource] = useState(() => orgFromQuery || readStudioOrg());
   const [sources, setSources] = useState<ConfigSource[]>([]);
   const [meta, setMeta] = useState<EffectiveConfig | null>(null);
   const [versions, setVersions] = useState<ConfigVersion[]>([]);
@@ -52,6 +52,14 @@ export function ConfigPage() {
   useEffect(() => {
     if (orgFromQuery && orgFromQuery !== source) setSource(orgFromQuery);
   }, [orgFromQuery, source]);
+
+  useEffect(() => {
+    if (!ready || orgFromQuery) return;
+    setSource((current) => {
+      const stored = readStudioOrg(user.user_id);
+      return stored !== current ? stored : current;
+    });
+  }, [ready, user.user_id, orgFromQuery]);
 
   useEffect(() => {
     if (!ready) return;
@@ -130,7 +138,7 @@ export function ConfigPage() {
 
   function switchSource(next: string) {
     setSource(next);
-    if (user.user_id) localStorage.setItem(studioOrgKey(user.user_id), next);
+    writeStudioOrg(user.user_id, next);
     const nextParams = new URLSearchParams(params);
     if (next === "personal") nextParams.delete("org_id");
     else nextParams.set("org_id", next);

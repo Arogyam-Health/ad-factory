@@ -1,11 +1,12 @@
 export class LocalDataPlaneClient {
+  discover(): Promise<{ device_id?: string }>;
   ensurePaired(opts: {
     ownerType?: string;
     ownerId: string;
     deviceId?: string;
     agentId?: string;
     scopes?: string[];
-  }): Promise<{ info: { device_id?: string }; agent: unknown; session: unknown }>;
+  }): Promise<{ info: { device_id?: string }; agent: { agent_id?: string }; session: unknown }>;
   allocateLocalRun(opts: {
     ownerType?: string;
     ownerId: string;
@@ -25,7 +26,13 @@ export class LocalDataPlaneClient {
     content: string,
     opts?: { deviceId?: string; operationId?: string; runId?: string; role?: string; expectedVersion?: number },
   ): Promise<{ resource_id: string; version?: number }>;
-  listOutputs(...args: unknown[]): Promise<unknown>;
+  listOutputs(runId: string, deviceId?: string): Promise<{ output_id?: string; resource_id?: string; version?: number; current_version?: number; filename?: string; display_name?: string; aspect_ratio?: string }[]>;
+  listPrompts(runId: string, deviceId?: string): Promise<{ prompt_id?: string; version?: number; resource_version?: number; format?: string; persona?: string; persona_name?: string; display_name?: string; language?: string; status?: string }[]>;
+  promptContent(promptId: string, deviceId?: string, version?: number): Promise<string>;
+  putPrompt(promptId: string, runId: string, content: string, expectedVersion: number, deviceId?: string): Promise<{ version?: number }>;
+  outputObjectUrl(outputId: string, deviceId?: string, version?: number): Promise<string>;
+  outputAction(outputId: string, action: string, deviceId?: string, payload?: Record<string, unknown>): Promise<unknown>;
+  downloadRun(runId: string, deviceId?: string, opts?: { includeRaw?: boolean }): Promise<Blob>;
   deleteRun?(runId: string, deviceId?: string): Promise<unknown>;
   clearSessions(): void;
 }

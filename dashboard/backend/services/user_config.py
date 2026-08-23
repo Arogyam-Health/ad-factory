@@ -165,9 +165,9 @@ def get_generic_config() -> dict[str, Any]:
             }
         )
     except Exception:
-        return _empty_config()
+        return _repository_generic_config()
     if not doc:
-        return _empty_config()
+        return _repository_generic_config()
     return _extract_flat_from_new_schema(doc)
 
 

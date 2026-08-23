@@ -322,16 +322,18 @@ PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config", "/api/invites/", "/a
 async def auth_middleware(request: Request, call_next) -> Response:
     from dashboard.backend.control_plane_policy import is_render_content_route
 
-    if app_settings.is_production:
-        path = request.url.path
-        if path.startswith("/api/") and not path.startswith(PUBLIC_API_PREFIXES):
-            if is_agent_runtime_path(path) and request.headers.get("Authorization", "").startswith("Bearer "):
-                return await call_next(request)
-            session_token = request.cookies.get("session")
-            user = await run_in_threadpool(get_current_user_from_cookie, session_token)
-            if user is None:
-                return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    path = request.url.path
+    is_agent_bearer = is_agent_runtime_path(path) and request.headers.get(
+        "Authorization", ""
+    ).startswith("Bearer ")
+    if path.startswith("/api/") and not path.startswith(PUBLIC_API_PREFIXES) and not is_agent_bearer:
+        user = await run_in_threadpool(
+            get_current_user_from_cookie, request.cookies.get("session")
+        )
+        if user is not None:
             request.state.user = user
+        elif app_settings.is_production:
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
     if is_render_content_route(request.method, request.url.path):
         return JSONResponse(
             {

@@ -10,8 +10,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.services.opencode_catalog import (
     build_opencode_catalog,
-    choose_openai_gpt52,
+    choose_saved_or_default,
     list_opencode_models,
+    with_default_opencode_model,
 )
 from dashboard.backend.services.provider_config import (
     delete_provider_config,
@@ -131,19 +132,14 @@ def user_opencode_catalog(
         if saved_model and "/" not in saved_model
         else saved_model
     )
-    if not models and normalized_saved_model:
-        models = [normalized_saved_model]
+    models = with_default_opencode_model(models, normalized_saved_model)
     grouped: dict[str, list[str]] = {}
     for model in models:
         provider = model.split("/", 1)[0]
         grouped.setdefault(provider, []).append(model)
     for provider in grouped:
         grouped[provider] = sorted(set(grouped[provider]))
-    default_model = (
-        normalized_saved_model
-        if normalized_saved_model in models
-        else choose_openai_gpt52(models)
-    )
+    default_model = choose_saved_or_default(models, normalized_saved_model)
     return {
         "api_url": api_url,
         "providers": sorted(grouped),

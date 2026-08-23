@@ -53,6 +53,15 @@ def _user_id(request: Request) -> str:
     user = getattr(request.state, "user", None)
     user_id = str((user or {}).get("user_id") or "")
     if not user_id:
+        from dashboard.backend.auth.service import get_current_user_from_cookie
+
+        cookies = getattr(request, "cookies", None) or {}
+        session = cookies.get("session") if hasattr(cookies, "get") else None
+        cookie_user = get_current_user_from_cookie(session)
+        user_id = str((cookie_user or {}).get("user_id") or "")
+        if cookie_user is not None:
+            request.state.user = cookie_user
+    if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user_id
 

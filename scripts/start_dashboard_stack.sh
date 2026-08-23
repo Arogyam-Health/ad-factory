@@ -47,6 +47,11 @@ start_dashboard() {
     source "$ROOT_DIR/.env"
     set +a
   fi
+  if [[ -f "$ROOT_DIR/.env.dashboard" ]]; then
+    set -a
+    source "$ROOT_DIR/.env.dashboard"
+    set +a
+  fi
   if [[ -z "${OPENCODE_API_KEY:-}" ]]; then
     echo "WARNING: OPENCODE_API_KEY not set. Set it in .env or export it."
   fi

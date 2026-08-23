@@ -217,21 +217,25 @@ export class LocalDataPlaneClient {
       cache: "no-store",
     });
     const agents = await readJson(response);
-    const candidates = Array.isArray(agents)
-      ? agents.filter((item) => item.device_id === deviceId && item.supports_pairing)
-      : [];
-    const online = candidates.filter((item) => this._isOnlineAgent(item));
+    const list = Array.isArray(agents) ? agents : [];
+    const byDevice = list.filter((item) => item.device_id === deviceId);
+    const pairingCapable = byDevice.filter((item) => item.supports_pairing);
+    const pool = pairingCapable.length ? pairingCapable : byDevice;
+    const online = pool.filter((item) => this._isOnlineAgent(item));
+    const ranked = (online.length ? online : pool).sort(
+      (a, b) => Number(b.last_heartbeat_at || 0) - Number(a.last_heartbeat_at || 0),
+    );
     const agent = (
       (preferredAgentId
-        ? online.find((item) => item.agent_id === preferredAgentId)
+        ? ranked.find((item) => item.agent_id === preferredAgentId)
         : null)
-      || online.sort(
-        (a, b) => Number(b.last_heartbeat_at || 0) - Number(a.last_heartbeat_at || 0),
-      )[0]
+      || ranked[0]
       || null
     );
     if (!agent) {
-      throw new Error("Your paired local device is offline. Start the local agent and try again.");
+      throw new Error(
+        "This dashboard has no pairing record for this machine. Restart the local agent with --api-base http://127.0.0.1:4090 if it is registered to another site.",
+      );
     }
     return agent;
   }
@@ -347,22 +351,24 @@ export class LocalDataPlaneClient {
   }) {
     const info = await this.discover();
     this._liveDeviceId = info.device_id || "";
-    // This localhost can only serve its own device. After agent re-registration
-    // Mongo may still hold a stale run.device_id; rematch to the live device.
-    const preferredAgentId = !deviceId || deviceId === info.device_id ? agentId : "";
-    const agent = await this.registeredAgent(info.device_id, preferredAgentId);
     const owner = ownerKeyOf(ownerType, ownerId);
     const current = this.session(info.device_id, owner);
-    if (
-      current?.agent_id === agent.agent_id
-      && current.owner_type === ownerType
-      && current.owner_id === ownerId
-      && scopes.every((scope) => current.scopes?.includes(scope))
-    ) {
+    if (current?.access_token && scopes.every((scope) => current.scopes?.includes(scope))) {
       storageSet(`${ACTIVE_OWNER_PREFIX}${info.device_id}`, owner);
       this._pairedOwner = owner;
+      let agent = { agent_id: current.agent_id };
+      try {
+        const preferred = !deviceId || deviceId === info.device_id
+          ? (agentId || current.agent_id || "")
+          : "";
+        agent = await this.registeredAgent(info.device_id, preferred);
+      } catch {
+        /* Live device already answered /v1/info; keep the stored session. */
+      }
       return { info, agent, session: current };
     }
+    const preferredAgentId = !deviceId || deviceId === info.device_id ? agentId : "";
+    const agent = await this.registeredAgent(info.device_id, preferredAgentId);
     const session = await this.pair({
       agentId: agent.agent_id,
       ownerType,

@@ -1,5 +1,6 @@
 import { fetchJSON } from "@/lib/api";
 import type { AuthUser } from "@/lib/auth";
+import { readStudioOrg } from "@/lib/config-keys";
 
 const GUEST_URLS = ["/api/public/studio", "/api/auth/status"];
 
@@ -13,6 +14,7 @@ const AUTH_URLS = [
   "/api/orgs/me",
   "/api/llm-traces",
   "/api/user/provider-config",
+  "/api/user/provider-config/opencode/catalog",
 ];
 
 const ADMIN_URLS = [
@@ -57,7 +59,7 @@ const ROUTE_PREFETCH: Record<string, { guest: string[]; auth: string[]; admin?: 
 function orgScopedUrls(user: AuthUser, path: string): string[] {
   if (!user.authenticated || !user.user_id) return [];
   if (path !== "/" && path !== "/config") return [];
-  const orgId = localStorage.getItem(`adFactoryStudioOrg:${user.user_id}`) || "";
+  const orgId = readStudioOrg(user.user_id);
   if (!orgId || orgId === "personal") return [];
   return [
     `/api/config/effective?org_id=${encodeURIComponent(orgId)}`,

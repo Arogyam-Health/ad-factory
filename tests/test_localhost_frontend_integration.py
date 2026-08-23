@@ -191,8 +191,11 @@ console.log(JSON.stringify(simplified));
         self.assertIn("registeredAgent(deviceId, preferredAgentId", client)
         self.assertIn("item.agent_id === preferredAgentId", client)
         self.assertIn("_isOnlineAgent", client)
+        self.assertIn("this.session(info.device_id, owner)", client)
+        self.assertIn("--api-base http://127.0.0.1:4090", client)
         self.assertNotIn("The selected run belongs to a different local agent", client)
         self.assertIn("ensurePaired({", studio)
+        self.assertIn("localDataPlane.discover()", studio)
 
     def test_prompt_copy_parser_only_returns_exact_on_image_copy(self) -> None:
         script = """

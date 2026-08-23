@@ -302,7 +302,7 @@ def queue_structured_image_generation(
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
     from dashboard.backend.db.client import get_sync_db
-    from dashboard.backend.db.collections import COLL_RUNS
+    from dashboard.backend.db.collections import COLL_AGENTS, COLL_RUNS
 
     db = get_sync_db()
     run = db[COLL_RUNS].find_one(
@@ -319,14 +319,39 @@ def queue_structured_image_generation(
             "flow_type": 1,
         },
     )
-    if (
-        not run
-        or run.get("flow_type") == "reference"
-        or not run.get("agent_id")
-        or not run.get("device_id")
-    ):
+    if not run or run.get("flow_type") == "reference":
         raise HTTPException(
             status_code=409, detail="Run has no authoritative local device"
+        )
+    if not run.get("agent_id") or not run.get("device_id"):
+        wanted_agent = str(payload.get("agent_id") or "")
+        wanted_device = str(payload.get("device_id") or "")
+        match = None
+        if wanted_agent and wanted_device:
+            agent = db[COLL_AGENTS].find_one(
+                {
+                    "agent_id": wanted_agent,
+                    "user_id": str(user["user_id"]),
+                    "is_active": True,
+                }
+            )
+            if agent and str(agent.get("device_id") or "") == wanted_device:
+                match = agent
+        if match is None:
+            raise HTTPException(
+                status_code=409, detail="Run has no authoritative local device"
+            )
+        run["agent_id"] = str(match["agent_id"])
+        run["device_id"] = str(match["device_id"])
+        db[COLL_RUNS].update_one(
+            {"run_id": run_id, "user_id": str(user["user_id"])},
+            {
+                "$set": {
+                    "agent_id": run["agent_id"],
+                    "device_id": run["device_id"],
+                    "updated_at": time.time(),
+                }
+            },
         )
     operation_id = str(payload.get("operation_id") or "")
     engine = str(payload.get("engine") or "").lower()

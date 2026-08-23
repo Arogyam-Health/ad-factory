@@ -33,6 +33,23 @@ export type Run = {
   created_at?: number;
   flow?: string;
   device_id?: string;
+  agent_id?: string;
+};
+
+export type ProviderSafe = {
+  provider?: string;
+  config?: {
+    has_secret?: boolean;
+    key_fingerprint?: string;
+    api_url?: string;
+    default_model?: string;
+  };
+};
+
+export type OpencodeCatalog = {
+  api_url?: string;
+  default_model?: string;
+  models_by_provider?: Record<string, string[]>;
 };
 
 export type Org = {

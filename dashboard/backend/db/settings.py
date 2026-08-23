@@ -6,6 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from dashboard.backend.pipeline.clock import load_env_file
+from dashboard.backend.pipeline.paths import ENV_PATH
+
+# Settings is built at import time. Load .env.dashboard first so a raw
+# `uvicorn dashboard.backend.app:app` still gets Atlas / OAuth values.
+load_env_file(ENV_PATH)
+
 
 DEPLOYMENT_DEV = "development"
 DEPLOYMENT_PROD = "production"

@@ -72,7 +72,7 @@ async function networkFetch<T>(url: string, fetchInit: RequestInit, key: string,
 
 export async function fetchJSON<T = unknown>(url: string, init: FetchInit = {}): Promise<T> {
   const { noCache, ...fetchInit } = init;
-  const bypassCache = noCache || fetchInit.cache === "no-store";
+  const bypassCache = noCache || fetchInit.cache === "no-store" || url.includes("/api/auth/");
   const key = cacheKey(url, init);
   const method = String(fetchInit.method || "GET").toUpperCase();
   const cacheable = method === "GET" && !bypassCache;

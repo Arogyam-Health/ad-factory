@@ -23,6 +23,8 @@ class ArtifactServerConfig:
     port: int = 8765
     allowed_origins: tuple[str, ...] = (
         "https://ad-factory-3rn5.onrender.com",
+        "http://127.0.0.1:4090",
+        "http://localhost:4090",
     )
     max_upload_bytes: int = 25 * 1024 * 1024
     max_request_bytes: int = 100 * 1024 * 1024

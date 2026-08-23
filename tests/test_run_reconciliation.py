@@ -499,6 +499,52 @@ class RunReconciliationTests(unittest.TestCase):
         self.assertEqual(query["user_id"], "user-1")
         self.assertNotIn("flow_type", query)
 
+    def test_user_id_falls_back_to_session_cookie(self) -> None:
+        from dashboard.backend.routes.runs import _user_id
+
+        request = SimpleNamespace(state=SimpleNamespace(), cookies={"session": "tok"})
+        with patch(
+            "dashboard.backend.auth.service.get_current_user_from_cookie",
+            return_value={"user_id": "user-9"},
+        ):
+            self.assertEqual(_user_id(request), "user-9")
+            self.assertEqual(request.state.user["user_id"], "user-9")
+
+    def test_list_runs_http_attaches_cookie_user(self) -> None:
+        from fastapi.testclient import TestClient
+
+        from dashboard.backend import app as app_module
+
+        runs = MagicMock()
+        runs.find.return_value.sort.return_value.limit.return_value = []
+        db = MagicMock()
+        db.__getitem__.return_value = runs
+        with patch.object(
+            app_module,
+            "get_current_user_from_cookie",
+            return_value={"user_id": "user-1", "is_active": True},
+        ), patch("dashboard.backend.routes.runs.get_sync_db", return_value=db):
+            response = TestClient(app_module.app).get(
+                "/api/runs",
+                cookies={"session": "fake-session"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["runs"], [])
+
+    def test_user_id_without_state_or_cookie_is_401(self) -> None:
+        from fastapi import HTTPException
+
+        from dashboard.backend.routes.runs import _user_id
+
+        request = SimpleNamespace(state=SimpleNamespace(), cookies={})
+        with patch(
+            "dashboard.backend.auth.service.get_current_user_from_cookie",
+            return_value=None,
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                _user_id(request)
+        self.assertEqual(raised.exception.status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

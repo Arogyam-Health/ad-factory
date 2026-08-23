@@ -473,6 +473,49 @@ class StructuredLocalFlowTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, serialized)
 
+    def test_dashboard_binds_paired_device_when_run_has_none(self) -> None:
+        from dashboard.backend.agent.routes import queue_structured_image_generation
+        from tests.test_agent_metadata_jobs import _DB
+
+        db = _DB()
+        device_id = "dev_" + "f" * 32
+        db["agents"].insert_one(
+            {
+                "agent_id": "agent-bind",
+                "user_id": "user-bind",
+                "device_id": device_id,
+                "is_active": True,
+            }
+        )
+        db["runs"].insert_one(
+            {
+                "run_id": "run-bind",
+                "user_id": "user-bind",
+                "owner_type": "user",
+                "owner_id": "user-bind",
+                "agent_id": "",
+                "device_id": "",
+                "flow_type": "structured",
+            }
+        )
+        with (
+            patch("dashboard.backend.db.client.get_sync_db", return_value=db),
+            patch("dashboard.backend.agent.service.get_sync_db", return_value=db),
+        ):
+            result = queue_structured_image_generation(
+                "run-bind",
+                {
+                    "operation_id": "bind-images",
+                    "engine": "chatgpt",
+                    "mode": "45",
+                    "agent_id": "agent-bind",
+                    "device_id": device_id,
+                },
+                {"user_id": "user-bind"},
+            )
+        self.assertEqual(result["device_id"], device_id)
+        self.assertEqual(db["runs"].docs[0]["device_id"], device_id)
+
     def test_all_language_mode_writes_named_en_hi_hinglish_prompt_files(self) -> None:
         from local_agent_runtime.structured_copy import DeterministicFakeProvider, StructuredCopyExecutor
 

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { fetchJSON } from "@/lib/api";
+import { clearCache, fetchJSON } from "@/lib/api";
 import { warmupCache } from "@/lib/prefetch";
 import { clearLocalPairingSessions } from "@/lib/local-data-plane.js";
 
@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     warmupCache(emptyUser);
-    fetchJSON<Partial<AuthUser>>("/api/auth/status")
+    fetchJSON<Partial<AuthUser>>("/api/auth/status", { noCache: true })
       .then((data) => {
         if (cancelled) return;
         const next: AuthUser = {
@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
           /* session already gone */
         }
+        clearCache();
         window.location.reload();
       },
     }),

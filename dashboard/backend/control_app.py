@@ -37,21 +37,19 @@ app.add_middleware(
 @app.middleware("http")
 async def control_plane_boundary(request: Request, call_next) -> Response:
     path = str(request.scope.get("path") or request.url.path or "").split("?", 1)[0]
-    if settings.is_production and path.startswith("/api/") and not path.startswith(
-        PUBLIC_API_PREFIXES
-    ):
-        if not (
-            is_agent_runtime_path(path)
-            and request.headers.get("Authorization", "").startswith("Bearer ")
-        ):
-            user = await run_in_threadpool(
-                get_current_user_from_cookie, request.cookies.get("session")
-            )
-            if user is None:
-                return JSONResponse(
-                    {"detail": "Not authenticated"}, status_code=401
-                )
+    is_agent_bearer = is_agent_runtime_path(path) and request.headers.get(
+        "Authorization", ""
+    ).startswith("Bearer ")
+    if path.startswith("/api/") and not path.startswith(PUBLIC_API_PREFIXES) and not is_agent_bearer:
+        user = await run_in_threadpool(
+            get_current_user_from_cookie, request.cookies.get("session")
+        )
+        if user is not None:
             request.state.user = user
+        elif settings.is_production:
+            return JSONResponse(
+                {"detail": "Not authenticated"}, status_code=401
+            )
     if is_render_content_route(request.method, path):
         return JSONResponse(
             {

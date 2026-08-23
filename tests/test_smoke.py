@@ -103,6 +103,14 @@ def test_auth_middleware() -> int:
     resp = client.get("/api/auth/status")
     failed += ok(resp.status_code == 200, "GET /api/auth/status without session returns 200 (public)")
 
+    resp = client.post("/api/auth/logout")
+    failed += ok(resp.status_code == 200, "POST /api/auth/logout returns 200")
+    set_cookie = resp.headers.get("set-cookie", "")
+    failed += ok(
+        "session=" in set_cookie.lower() and "max-age=0" in set_cookie.lower(),
+        "logout clears the session cookie",
+    )
+
     return failed
 
 

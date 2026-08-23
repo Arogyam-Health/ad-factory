@@ -2,22 +2,35 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchJSON, peekCache, clearCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Org } from "@/lib/types";
+import type { Org, ProviderSafe } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
 import { SkeletonLines } from "@/components/Skeleton";
-
-type Provider = { provider?: string; config?: { has_secret?: boolean; key_fingerprint?: string; api_url?: string; default_model?: string } };
 
 export function ProfilePage() {
   const { user, ready } = useAuth();
   const [loading, setLoading] = useState(true);
   const [orgs, setOrgs] = useState<Org[]>([]);
-  const [providers, setProviders] = useState<Provider[]>([]);
+  const [providers, setProviders] = useState<ProviderSafe[]>([]);
   const [googleKey, setGoogleKey] = useState("");
   const [opencodeUrl, setOpencodeUrl] = useState("");
   const [opencodeKey, setOpencodeKey] = useState("");
   const [status, setStatus] = useState("");
+
+  function applyProviders(next: ProviderSafe[]) {
+    setProviders(next);
+    const opencode = next.find((item) => item.provider === "opencode");
+    if (opencode?.config?.api_url) setOpencodeUrl(opencode.config.api_url);
+  }
+
+  const opencode = providers.find((item) => item.provider === "opencode");
+  const google = providers.find((item) => item.provider === "google_gemini");
+  const opencodeHint = opencode?.config?.has_secret
+    ? `Saved key · ${opencode.config.key_fingerprint || "on this account"}`
+    : "OpenCode API key";
+  const googleHint = google?.config?.has_secret
+    ? `Saved key · ${google.config.key_fingerprint || "on this account"}`
+    : "Google API key";
 
   useEffect(() => {
     if (!ready) return;
@@ -26,18 +39,18 @@ export function ProfilePage() {
       return;
     }
     const cachedOrgs = peekCache<{ orgs?: Org[] }>("/api/orgs/me");
-    const cachedProviders = peekCache<Provider[]>("/api/user/provider-config");
+    const cachedProviders = peekCache<ProviderSafe[]>("/api/user/provider-config");
     if (cachedOrgs || cachedProviders) {
       setOrgs(cachedOrgs?.orgs || []);
-      setProviders(Array.isArray(cachedProviders) ? cachedProviders : []);
+      applyProviders(Array.isArray(cachedProviders) ? cachedProviders : []);
       setLoading(false);
     }
     Promise.all([
       fetchJSON<{ orgs?: Org[] }>("/api/orgs/me").catch(() => ({ orgs: [] })),
-      fetchJSON<Provider[]>("/api/user/provider-config").catch(() => []),
+      fetchJSON<ProviderSafe[]>("/api/user/provider-config", { noCache: true }).catch(() => []),
     ]).then(([orgData, providerData]) => {
       setOrgs(orgData.orgs || []);
-      setProviders(Array.isArray(providerData) ? providerData : []);
+      applyProviders(Array.isArray(providerData) ? providerData : []);
     }).finally(() => setLoading(false));
   }, [ready, user.authenticated]);
 
@@ -93,7 +106,7 @@ export function ProfilePage() {
               ))}
             </div>
             <div className="action-row">
-              <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder="Google API key" autoComplete="off" />
+              <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder={googleHint} autoComplete="off" />
               <Button
                 variant="primary"
                 onClick={async () => {
@@ -106,6 +119,7 @@ export function ProfilePage() {
                     });
                     setGoogleKey("");
                     clearCache("/api/user/provider-config");
+                    applyProviders(await fetchJSON<ProviderSafe[]>("/api/user/provider-config", { noCache: true }));
                     setStatus("Google key saved.");
                   } catch (err) {
                     setStatus(String(err));
@@ -116,8 +130,8 @@ export function ProfilePage() {
               </Button>
             </div>
             <div className="action-row" style={{ marginTop: 10 }}>
-              <input className="field" value={opencodeUrl} onChange={(e) => setOpencodeUrl(e.target.value)} placeholder="OpenCode API URL" />
-              <input className="field" type="password" value={opencodeKey} onChange={(e) => setOpencodeKey(e.target.value)} placeholder="OpenCode API key" autoComplete="off" />
+              <input className="field" value={opencodeUrl} onChange={(e) => setOpencodeUrl(e.target.value)} placeholder="https://opencode.ai/zen/v1" />
+              <input className="field" type="password" value={opencodeKey} onChange={(e) => setOpencodeKey(e.target.value)} placeholder={opencodeHint} autoComplete="off" />
               <Button
                 onClick={async () => {
                   try {
@@ -125,12 +139,14 @@ export function ProfilePage() {
                       method: "PUT",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
-                        ...(opencodeUrl.trim() ? { api_url: opencodeUrl.trim() } : {}),
+                        api_url: opencodeUrl.trim() || "https://opencode.ai/zen/v1",
                         ...(opencodeKey.trim() ? { api_key: opencodeKey.trim() } : {}),
+                        default_model: opencode?.config?.default_model || "opencode/big-pickle",
                       }),
                     });
                     setOpencodeKey("");
                     clearCache("/api/user/provider-config");
+                    applyProviders(await fetchJSON<ProviderSafe[]>("/api/user/provider-config", { noCache: true }));
                     setStatus("OpenCode settings saved.");
                   } catch (err) {
                     setStatus(String(err));

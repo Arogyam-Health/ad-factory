@@ -216,7 +216,7 @@ class MongoProviderConfigTests(unittest.TestCase):
         self.assertEqual(catalog["providers"], ["opencode"])
         self.assertEqual(
             catalog["models_by_provider"]["opencode"],
-            ["opencode/model-a", "opencode/model-b"],
+            ["opencode/big-pickle", "opencode/model-a", "opencode/model-b"],
         )
         self.assertEqual(catalog["default_model"], "opencode/model-b")
         self.assertNotIn("catalog-secret", repr(catalog))
@@ -239,7 +239,8 @@ class MongoProviderConfigTests(unittest.TestCase):
             / "render_copy_jobs.py"
         ).read_text(encoding="utf-8")
         self.assertIn("get_materialized_provider_config", render_jobs)
-        self.assertNotIn("/api/opencode/catalog", studio)
+        self.assertNotIn('"/api/opencode/catalog"', studio)
+        self.assertIn("/api/user/provider-config/opencode/catalog", studio)
         self.assertIn("/api/user/provider-config", profile)
         self.assertNotIn("localDataPlane.listProviderConfigs", profile)
 

@@ -63,6 +63,23 @@ export function studioOrgKey(userId: string) {
   return `adFactoryStudioOrg:${userId}`;
 }
 
+export const LAST_STUDIO_ORG_KEY = "adFactoryStudioOrg";
+
+export function readStudioOrg(userId?: string) {
+  if (typeof localStorage === "undefined") return "personal";
+  if (userId) {
+    const scoped = localStorage.getItem(studioOrgKey(userId));
+    if (scoped) return scoped;
+  }
+  return localStorage.getItem(LAST_STUDIO_ORG_KEY) || "personal";
+}
+
+export function writeStudioOrg(userId: string, orgId: string) {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(LAST_STUDIO_ORG_KEY, orgId);
+  if (userId) localStorage.setItem(studioOrgKey(userId), orgId);
+}
+
 export type ConfigSaveTarget = {
   canEdit?: boolean;
   version?: number;

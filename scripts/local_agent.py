@@ -58,6 +58,22 @@ AGENT_SESSION_COOKIE: str = ""
 AGENT_CDP_URL = os.getenv("AGENT_CDP_URL", "http://127.0.0.1:9222")
 AGENT_ARTIFACT_PORT = int(os.getenv("AGENT_ARTIFACT_PORT", "8765"))
 AGENT_ARTIFACT_BASE_URL = f"http://127.0.0.1:{AGENT_ARTIFACT_PORT}"
+LOCAL_DASHBOARD_ORIGINS = (
+    "http://127.0.0.1:4090",
+    "http://localhost:4090",
+)
+
+
+def _browser_allowed_origins(api_base: str) -> tuple[str, ...]:
+    parsed = urllib.parse.urlparse(api_base)
+    control = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    origins: list[str] = []
+    if control:
+        origins.append(control)
+    for extra in LOCAL_DASHBOARD_ORIGINS:
+        if extra not in origins:
+            origins.append(extra)
+    return tuple(origins)
 SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
 ROOT = Path(__file__).resolve().parent.parent
 AGENT_PATHS = AgentPaths(resolve_data_root())
@@ -1574,8 +1590,7 @@ def run_supervisor(args: argparse.Namespace) -> None:
     except LockHeldError as exc:
         raise SystemExit(str(exc)) from exc
 
-    origin = urllib.parse.urlparse(AGENT_API_BASE)
-    allowed_origins = (f"{origin.scheme}://{origin.netloc}",)
+    allowed_origins = _browser_allowed_origins(AGENT_API_BASE)
     context = multiprocessing.get_context("spawn")
     artifact_process = context.Process(
         target=run_artifact_server,

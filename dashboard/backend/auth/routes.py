@@ -5,7 +5,7 @@ import urllib.parse
 from typing import Any, Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from dashboard.backend.admin.admin_auth import bootstrap_super_admin
 from dashboard.backend.db.client import get_sync_db
@@ -42,6 +42,15 @@ def _post_login_redirect(return_to: str) -> str:
     target = sanitize_return_to(return_to)
     origin = settings.frontend_origin.rstrip("/")
     return f"{origin}{target}" if target else settings.frontend_origin
+
+
+def _session_cookie_kwargs() -> dict[str, Any]:
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": settings.is_production,
+        "path": "/",
+    }
 
 
 @router.get("/api/auth/me")
@@ -112,9 +121,8 @@ def auth_google_callback(code: str = Query(...), state: str = Query("")):
     response.set_cookie(
         key="session",
         value=session_token,
-        httponly=True,
-        samesite="lax",
         max_age=settings.session_expire_minutes * 60,
+        **_session_cookie_kwargs(),
     )
     return response
 
@@ -123,7 +131,14 @@ def auth_google_callback(code: str = Query(...), state: str = Query("")):
 def auth_logout(session: Optional[str] = Cookie(None)):
     if session:
         delete_session(session)
-    response = {"status": "ok"}
+    response = JSONResponse({"status": "ok"})
+    response.delete_cookie(
+        "session",
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=settings.is_production,
+    )
     return response
 
 
