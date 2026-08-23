@@ -36,9 +36,7 @@ def ensure_project_venv(root: Path) -> None:
         return
     if Path(sys.executable).resolve() == python.resolve():
         return
-    raise SystemExit(
-        subprocess.call([str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
-    )
+    raise SystemExit(_run_subprocess([str(python), str(Path(__file__).resolve()), *sys.argv[1:]]))
 
 
 def agent_command(
@@ -126,8 +124,35 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  Data:    {data_dir}")
     print(f"  Browser: {args.browser}")
     print(f"  Chrome:  {chrome_path or 'auto-detect (set --chrome-path or CHROME_PATH to override)'}")
-    return subprocess.call(command, env=env)
+    return _run_subprocess(command, env=env)
+
+
+def _run_subprocess(command: list[str], env: dict[str, str] | None = None) -> int:
+    process = subprocess.Popen(command, env=env)
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        try:
+            process.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        except KeyboardInterrupt:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except (subprocess.TimeoutExpired, KeyboardInterrupt):
+                process.kill()
+                process.wait()
+        return 130
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        raise SystemExit(130)

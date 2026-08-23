@@ -11,6 +11,7 @@ from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import (
     COLL_AGENT_JOBS,
     COLL_AGENTS,
+    COLL_FILE_MAP,
     COLL_IMAGES,
     COLL_LLM_TRACES,
     COLL_PROMPT_DELIVERIES,
@@ -19,7 +20,7 @@ from dashboard.backend.db.collections import (
     COLL_RUN_COUNTERS,
     COLL_RUNS,
 )
-from dashboard.backend.services.run_storage import rewind_run_counter
+from dashboard.backend.services.run_storage import purge_run_metadata
 
 router = APIRouter()
 
@@ -421,34 +422,8 @@ def reconcile_local_runs(
     return {"removed": len(stale_ids), "run_ids": stale_ids}
 
 
-def purge_run_metadata(db: Any, *, user_id: str, run_id: str) -> None:
-    """Drop every metadata document Render holds for a single run."""
-    scope = {"run_id": run_id, "user_id": user_id}
-    run = db[COLL_RUNS].find_one(
-        scope, {"_id": 0, "owner_type": 1, "owner_id": 1, "user_id": 1, "flow_type": 1}
-    )
-    db[COLL_PROMPT_DELIVERIES].delete_many(scope)
-    db[COLL_RENDER_COPY_JOBS].delete_many(scope)
-    db[COLL_PROMPTS].delete_many(scope)
-    db[COLL_IMAGES].delete_many(scope)
-    db[COLL_AGENT_JOBS].delete_many(scope)
-    db[COLL_LLM_TRACES].delete_many(scope)
-    db[COLL_RUNS].delete_one(scope)
-    if run:
-        rewind_run_counter(
-            str(run.get("owner_type") or "user"),
-            str(run.get("user_id") or user_id),
-            str(run.get("flow_type") or "structured"),
-            db=db,
-        )
-
-
 def delete_run_for_user(db: Any, *, user_id: str, run_id: str) -> dict[str, Any]:
-    """Queue a local purge for device-bound runs; hard-delete everything else.
-
-    A run with no authoritative device has no local content to reclaim, so it
-    would otherwise be undeletable from the dashboard.
-    """
+    """Hard-delete control-plane run data. Device-bound runs also get a local purge job."""
     run = db[COLL_RUNS].find_one(
         {"run_id": run_id, "user_id": user_id},
         {
@@ -457,56 +432,32 @@ def delete_run_for_user(db: Any, *, user_id: str, run_id: str) -> dict[str, Any]
             "device_id": 1,
             "owner_type": 1,
             "owner_id": 1,
-            "copy_job_id": 1,
-            "deletion_tombstone": 1,
-            "status": 1,
         },
     )
-    if not run or not run.get("agent_id") or not run.get("device_id"):
-        purge_run_metadata(db, user_id=user_id, run_id=run_id)
-        return {"status": "deleted", "run_id": run_id}
-    tombstone = run.get("deletion_tombstone") or {}
-    operation_id = str(tombstone.get("operation_id") or "")
-    if str(run.get("status") or "") == "purge_failed":
-        operation_id = "purge_" + uuid.uuid4().hex
-    else:
-        operation_id = operation_id or "purge_" + uuid.uuid4().hex
-    now = time.time()
-    db[COLL_RUNS].update_one(
-        {"run_id": run_id, "user_id": user_id},
-        {
-            "$set": {
-                "status": "deleting",
-                "deletion_tombstone": {
-                    "operation_id": operation_id,
-                    "device_id": run["device_id"],
-                    "created_at": now,
-                    "acknowledged_at": None,
-                },
-                "updated_at": now,
-            },
-            "$unset": {"run_number": ""},
-        },
-    )
-    job = create_job(
-        agent_id=str(run["agent_id"]),
-        device_id=str(run["device_id"]),
-        user_id=user_id,
-        owner_type=str(run.get("owner_type") or "user"),
-        owner_id=str(run.get("owner_id") or user_id),
-        run_id=run_id,
-        job_type="purge_run",
-        command="purge_run",
-        parameters={},
-        client_operation_id=operation_id,
-        allow_inactive_agent=True,
-    )
-    return {
-        "status": "deleting",
-        "run_id": run_id,
-        "tombstone_operation_id": operation_id,
-        "purge_job_id": job["job_id"],
-    }
+    agent_id = str((run or {}).get("agent_id") or "")
+    device_id = str((run or {}).get("device_id") or "")
+    purge_run_metadata(db, user_id=user_id, run_id=run_id)
+    result: dict[str, Any] = {"status": "deleted", "run_id": run_id}
+    if not agent_id or not device_id:
+        return result
+    try:
+        job = create_job(
+            agent_id=agent_id,
+            device_id=device_id,
+            user_id=user_id,
+            owner_type=str((run or {}).get("owner_type") or "user"),
+            owner_id=str((run or {}).get("owner_id") or user_id),
+            run_id=run_id,
+            job_type="purge_run",
+            command="purge_run",
+            parameters={},
+            client_operation_id="purge_" + uuid.uuid4().hex,
+            allow_inactive_agent=True,
+        )
+    except ValueError:
+        return result
+    result["purge_job_id"] = job["job_id"]
+    return result
 
 
 @router.delete("/api/runs/{run_id}")
@@ -564,6 +515,7 @@ def purge_all_user_runs(
     copy_jobs = db[COLL_RENDER_COPY_JOBS].delete_many(scope).deleted_count
     jobs = db[COLL_AGENT_JOBS].delete_many(scope).deleted_count
     traces = db[COLL_LLM_TRACES].delete_many(scope).deleted_count
+    files = db[COLL_FILE_MAP].delete_many(scope).deleted_count
     runs = db[COLL_RUNS].delete_many(scope).deleted_count
     counters = db[COLL_RUN_COUNTERS].delete_many({"owner_id": user_id}).deleted_count
     return {
@@ -575,6 +527,7 @@ def purge_all_user_runs(
         "render_copy_jobs": copy_jobs,
         "agent_jobs": jobs,
         "llm_traces": traces,
+        "file_map": files,
         "run_counters": counters,
     }
 

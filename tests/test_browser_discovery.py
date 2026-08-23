@@ -111,6 +111,35 @@ class BrowserDiscoveryTests(unittest.TestCase):
         self.assertEqual(args.browser, "chrome")
         args = parse_args(["--chrome-path", "/opt/custom/chrome"])
         self.assertEqual(args.chrome_path, "/opt/custom/chrome")
+        starter = (Path(__file__).resolve().parents[1] / "scripts" / "start_local_agent.py").read_text(encoding="utf-8")
+        self.assertIn("except KeyboardInterrupt", starter)
+        self.assertIn("subprocess.Popen", starter)
+        self.assertIn("process.wait(timeout=20)", starter)
+        self.assertIn("return 130", starter)
+        agent = (Path(__file__).resolve().parents[1] / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        self.assertIn("-signal.SIGINT", agent)
+        self.assertIn("-signal.SIGTERM", agent)
+
+        from scripts.start_local_agent import _run_subprocess
+
+        class _FakeProcess:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def wait(self, timeout: float | None = None) -> int:
+                self.calls += 1
+                if self.calls == 1:
+                    raise KeyboardInterrupt
+                return 0
+
+            def terminate(self) -> None:
+                return None
+
+            def kill(self) -> None:
+                return None
+
+        with patch("scripts.start_local_agent.subprocess.Popen", return_value=_FakeProcess()):
+            self.assertEqual(_run_subprocess(["python", "-c", "pass"]), 130)
 
     def test_local_agent_zip_keeps_repo_relative_paths(self) -> None:
         import zipfile

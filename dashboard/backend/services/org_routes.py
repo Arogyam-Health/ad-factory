@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.db.client import get_sync_db
-from dashboard.backend.db.collections import COLL_ORGS, COLL_ORG_MEMBERS, COLL_ORG_INVITES, COLL_USER_CONFIGS, COLL_USERS
+from dashboard.backend.db.collections import COLL_ORGS, COLL_ORG_MEMBERS, COLL_ORG_INVITES, COLL_USERS
 from dashboard.backend.services.org_helper import (
     get_user_default_org,
     get_user_org_membership,
@@ -28,6 +28,7 @@ from dashboard.backend.services.org_helper import (
     can_user_edit_org_config,
     require_org_member,
     require_org_role,
+    purge_org_owned_documents,
 )
 from dashboard.backend.services.user_config import (
     create_or_update_config,
@@ -338,7 +339,7 @@ def delete_org(
     org_id: str,
     user: dict[str, Any] = Depends(require_user_dependency),
 ) -> dict[str, Any]:
-    """Soft-delete an organization (owner only). Deactivates org, removes memberships and invites."""
+    """Delete an organization (owner only) and every Mongo document that belongs to it."""
     user_id = user["user_id"]
     email = user.get("email", "")
 
@@ -348,31 +349,7 @@ def delete_org(
         raise HTTPException(status_code=403, detail="Only the organization owner can delete it")
 
     db = get_sync_db()
-    now = time.time()
-
-    # Soft-delete org
-    db[COLL_ORGS].update_one(
-        {"org_id": org_id},
-        {"$set": {"is_active": False, "updated_at": now, "deleted_by_user_id": user_id}},
-    )
-
-    # Remove all memberships
-    db[COLL_ORG_MEMBERS].update_many(
-        {"org_id": org_id, "status": "active"},
-        {"$set": {"status": "removed", "removed_at": now}},
-    )
-
-    # Remove all pending invites
-    db[COLL_ORG_INVITES].update_many(
-        {"org_id": org_id, "status": "pending"},
-        {"$set": {"status": "revoked", "revoked_at": now}},
-    )
-
-    # Deactivate org config
-    db[COLL_USER_CONFIGS].update_many(
-        {"owner_type": "org", "owner_id": org_id, "is_active": True},
-        {"$set": {"is_active": False, "updated_at": now}},
-    )
+    purge_org_owned_documents(db, org_id)
 
     write_audit_event(
         event_type="org_deleted",
@@ -380,8 +357,8 @@ def delete_org(
         actor_email=email,
         target_type="org",
         target_id=org_id,
-        org_id=org_id,
-        metadata={"name": org.get("name", "")},
+        org_id=None,
+        metadata={"name": org.get("name", ""), "deleted_org_id": org_id},
     )
 
     return {"ok": True, "message": "Organization deleted"}

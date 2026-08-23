@@ -1617,7 +1617,7 @@ def run_supervisor(args: argparse.Namespace) -> None:
             worker_process.join(timeout=1)
             if not artifact_process.is_alive():
                 raise RuntimeError("Artifact service exited unexpectedly")
-        if worker_process.exitcode not in {0, None}:
+        if worker_process.exitcode not in {0, None, -signal.SIGINT, -signal.SIGTERM}:
             raise RuntimeError(f"Automation worker exited with code {worker_process.exitcode}")
     except KeyboardInterrupt:
         print("\n[agent] Stopping local agent...", flush=True)
@@ -1706,4 +1706,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        raise SystemExit(0)

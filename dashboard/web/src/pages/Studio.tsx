@@ -265,46 +265,16 @@ export function StudioPage() {
       }
 
       if (user.authenticated && user.user_id) {
-        void (async () => {
-          try {
-            const info = await localDataPlane.discover();
-            if (cancelled) return;
-            const liveId = info.device_id || "";
-            if (liveId) setDeviceId(liveId);
-            const owners = [
-              ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
-              { ownerType: "user" as const, ownerId: user.user_id },
-            ];
-            let lastError: unknown;
-            for (const owner of owners) {
-              try {
-                const next = await localDataPlane.ensurePaired({
-                  ...owner,
-                  deviceId: liveId,
-                });
-                if (cancelled) return;
-                const id = next.info.device_id || liveId;
-                setDeviceId(id);
-                setAgentId(next.agent?.agent_id || "");
-                setPaired(true);
-                const items = await localDataPlane.listAssets({ kind: "product_image", deviceId: id });
-                if (!cancelled) setAssets(items.slice(0, 12));
-                return;
-              } catch (err) {
-                lastError = err;
-              }
-            }
-            if (!cancelled) {
-              setPaired(false);
-              setStatus(pairingStatus(lastError));
-            }
-          } catch (err) {
-            if (!cancelled) {
-              setPaired(false);
-              setStatus(pairingStatus(err));
-            }
-          }
-        })();
+        const owners = [
+          ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
+          { ownerType: "user" as const, ownerId: user.user_id },
+        ];
+        const restored = localDataPlane.restoreStoredSession(owners);
+        if (restored) {
+          setDeviceId(restored.deviceId);
+          setAgentId(restored.agentId);
+          setPaired(true);
+        }
         fetchJSON<{ sources?: ConfigSource[] }>("/api/config/sources")
           .then((data) => { if (!cancelled) setSources(data.sources || []); })
           .catch(() => undefined);
@@ -708,28 +678,35 @@ export function StudioPage() {
                   <option value="google">Google Gemini</option>
                 </select>
               </label>
-              {provider === "opencode" ? (
-                <>
-                  <input className="field" value={opencodeUrl} onChange={(e) => setOpencodeUrl(e.target.value)} placeholder="https://opencode.ai/zen/v1" />
-                  <input className="field" type="password" value={opencodeKey} onChange={(e) => setOpencodeKey(e.target.value)} placeholder={keyHint} autoComplete="off" />
-                </>
-              ) : (
-                <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder={googleHint} autoComplete="off" />
-              )}
-              <label className="hint">
-                Model
-                <select className="field" value={models.includes(model) ? model : DEFAULT_OPENCODE_MODEL} onChange={(e) => setModel(e.target.value)}>
-                  {models.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="action-row" style={{ marginBottom: 12 }}>
-                <Button disabled={savingKey || !user.authenticated} onClick={() => void saveProviderKeys()}>
+              <form
+                className="action-row"
+                style={{ marginBottom: 12 }}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveProviderKeys();
+                }}
+              >
+                {provider === "opencode" ? (
+                  <>
+                    <input className="field" value={opencodeUrl} onChange={(e) => setOpencodeUrl(e.target.value)} placeholder="https://opencode.ai/zen/v1" />
+                    <input className="field" type="password" value={opencodeKey} onChange={(e) => setOpencodeKey(e.target.value)} placeholder={keyHint} autoComplete="off" />
+                  </>
+                ) : (
+                  <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder={googleHint} autoComplete="off" />
+                )}
+                <label className="hint">
+                  Model
+                  <select className="field" value={models.includes(model) ? model : DEFAULT_OPENCODE_MODEL} onChange={(e) => setModel(e.target.value)}>
+                    {models.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <Button type="submit" disabled={savingKey || !user.authenticated}>
                   {savingKey ? "Saving…" : "Save API key"}
                 </Button>
                 <span className="hint">{keySaved || googleSaved ? "Saved key stays on this account. Type a new one only to replace it." : "Save before running a plate."}</span>
-              </div>
+              </form>
               <label className="hint">
                 Ad multiplier
                 <input className="field" type="number" min={1} max={20} value={multiplier} onChange={(e) => setMultiplier(Number(e.target.value) || 1)} />

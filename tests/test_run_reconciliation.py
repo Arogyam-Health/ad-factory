@@ -235,6 +235,7 @@ class RunReconciliationTests(unittest.TestCase):
 
         from dashboard.backend.db.collections import (
             COLL_AGENT_JOBS,
+            COLL_FILE_MAP,
             COLL_IMAGES,
             COLL_LLM_TRACES,
             COLL_PROMPT_DELIVERIES,
@@ -250,6 +251,7 @@ class RunReconciliationTests(unittest.TestCase):
             name: MagicMock()
             for name in (
                 COLL_AGENT_JOBS,
+                COLL_FILE_MAP,
                 COLL_IMAGES,
                 COLL_LLM_TRACES,
                 COLL_PROMPT_DELIVERIES,
@@ -274,6 +276,8 @@ class RunReconciliationTests(unittest.TestCase):
         for name, collection in collections.items():
             if name == COLL_RUN_COUNTERS:
                 collection.delete_many.assert_called_once_with({"owner_id": "user-1"})
+            elif name == COLL_FILE_MAP:
+                collection.delete_many.assert_called_once_with({"user_id": "user-1"})
             else:
                 collection.delete_many.assert_called_once_with({"user_id": "user-1"})
         self.assertEqual(result["status"], "purged")
@@ -284,6 +288,7 @@ class RunReconciliationTests(unittest.TestCase):
     def _delete_collections() -> tuple[MagicMock, dict[str, MagicMock]]:
         from dashboard.backend.db.collections import (
             COLL_AGENT_JOBS,
+            COLL_FILE_MAP,
             COLL_IMAGES,
             COLL_LLM_TRACES,
             COLL_PROMPT_DELIVERIES,
@@ -298,6 +303,7 @@ class RunReconciliationTests(unittest.TestCase):
             name: MagicMock()
             for name in (
                 COLL_AGENT_JOBS,
+                COLL_FILE_MAP,
                 COLL_IMAGES,
                 COLL_LLM_TRACES,
                 COLL_PROMPT_DELIVERIES,
@@ -313,6 +319,7 @@ class RunReconciliationTests(unittest.TestCase):
 
     def test_run_without_local_device_is_hard_deleted_instead_of_409(self) -> None:
         from dashboard.backend.db.collections import (
+            COLL_FILE_MAP,
             COLL_IMAGES,
             COLL_LLM_TRACES,
             COLL_PROMPTS,
@@ -332,11 +339,12 @@ class RunReconciliationTests(unittest.TestCase):
         scope = {"run_id": "run-orphan", "user_id": "user-1"}
         self.assertEqual(result, {"status": "deleted", "run_id": "run-orphan"})
         collections[COLL_RUNS].delete_one.assert_called_once_with(scope)
+        collections[COLL_FILE_MAP].delete_many.assert_called_once_with({"run_id": "run-orphan"})
         for name in (COLL_PROMPTS, COLL_IMAGES, COLL_LLM_TRACES):
             collections[name].delete_many.assert_called_once_with(scope)
 
     def test_device_bound_run_still_queues_a_local_purge_job(self) -> None:
-        from dashboard.backend.db.collections import COLL_RUNS
+        from dashboard.backend.db.collections import COLL_FILE_MAP, COLL_RUNS
         from dashboard.backend.routes.runs import delete_run
 
         db, collections = self._delete_collections()
@@ -358,10 +366,11 @@ class RunReconciliationTests(unittest.TestCase):
         ):
             result = delete_run("run-bound", self.request())
 
-        self.assertEqual(result["status"], "deleting")
+        self.assertEqual(result["status"], "deleted")
         self.assertEqual(result["purge_job_id"], "job-1")
         self.assertEqual(create_job.call_args.kwargs["job_type"], "purge_run")
-        collections[COLL_RUNS].delete_one.assert_not_called()
+        collections[COLL_RUNS].delete_one.assert_called_once()
+        collections[COLL_FILE_MAP].delete_many.assert_called_once_with({"run_id": "run-bound"})
 
     def test_bulk_delete_is_user_scoped_and_deduplicates_run_ids(self) -> None:
         from fastapi import HTTPException

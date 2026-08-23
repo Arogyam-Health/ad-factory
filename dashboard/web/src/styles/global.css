@@ -945,6 +945,10 @@ p {
   gap: 10px;
 }
 
+form.action-row {
+  margin: 0;
+}
+
 .toolbar-field {
   display: inline-flex;
   align-items: center;

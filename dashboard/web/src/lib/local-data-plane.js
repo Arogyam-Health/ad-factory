@@ -317,6 +317,34 @@ export class LocalDataPlaneClient {
     return storageGet(`${ACTIVE_OWNER_PREFIX}${deviceId}`) || "";
   }
 
+  restoreStoredSession(preferredOwners = []) {
+    const owners = preferredOwners
+      .map((item) => ownerKeyOf(item.ownerType || item.owner_type, item.ownerId || item.owner_id))
+      .filter(Boolean);
+    try {
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        if (!store) continue;
+        for (let index = 0; index < store.length; index += 1) {
+          const key = store.key(index);
+          if (!key?.startsWith(SESSION_PREFIX)) continue;
+          const rest = key.slice(SESSION_PREFIX.length);
+          const split = rest.indexOf(":");
+          if (split < 1) continue;
+          const deviceId = rest.slice(0, split);
+          const owner = rest.slice(split + 1);
+          if (owners.length && !owners.includes(owner)) continue;
+          const session = this.session(deviceId, owner);
+          if (!session?.access_token) continue;
+          this._pairedOwner = owner;
+          return { deviceId, agentId: session.agent_id || "", session };
+        }
+      }
+    } catch {
+      /* ignore quota / private-mode failures */
+    }
+    return null;
+  }
+
   session(deviceId, ownerKey = "") {
     const owner = ownerKey || this._pairedOwner || this.activeOwnerKey(deviceId);
     if (!owner) return null;

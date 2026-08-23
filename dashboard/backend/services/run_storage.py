@@ -6,7 +6,16 @@ from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.control_plane_policy import validate_metadata_document
-from dashboard.backend.db.collections import COLL_RUNS, COLL_PROMPTS, COLL_IMAGES
+from dashboard.backend.db.collections import (
+    COLL_AGENT_JOBS,
+    COLL_FILE_MAP,
+    COLL_IMAGES,
+    COLL_LLM_TRACES,
+    COLL_PROMPT_DELIVERIES,
+    COLL_PROMPTS,
+    COLL_RENDER_COPY_JOBS,
+    COLL_RUNS,
+)
 
 REFERENCE_FLOW_TYPES = frozenset({"reference", "reference_image"})
 _DEAD_RUN_STATUSES = frozenset({"deleted", "deleting", "purge_failed"})
@@ -226,21 +235,31 @@ def list_runs(user_id: str, limit: int = 50, skip: int = 0) -> list[dict[str, An
     )
 
 
-def delete_run(user_id: str, run_id: str) -> None:
-    db = get_sync_db()
+def purge_run_metadata(db: Any, *, user_id: str, run_id: str) -> None:
+    """Drop every control-plane document for one run. Local bytes are separate."""
+    scope = {"run_id": run_id, "user_id": user_id}
     run = db[COLL_RUNS].find_one(
-        {"user_id": user_id, "run_id": run_id},
-        {"_id": 0, "owner_type": 1, "owner_id": 1, "flow_type": 1},
+        scope, {"_id": 0, "owner_type": 1, "owner_id": 1, "user_id": 1, "flow_type": 1}
     )
-    db[COLL_RUNS].delete_one({"user_id": user_id, "run_id": run_id})
-    db[COLL_PROMPTS].delete_many({"user_id": user_id, "run_id": run_id})
-    db[COLL_IMAGES].delete_many({"user_id": user_id, "run_id": run_id})
+    db[COLL_PROMPT_DELIVERIES].delete_many(scope)
+    db[COLL_RENDER_COPY_JOBS].delete_many(scope)
+    db[COLL_PROMPTS].delete_many(scope)
+    db[COLL_IMAGES].delete_many(scope)
+    db[COLL_AGENT_JOBS].delete_many(scope)
+    db[COLL_LLM_TRACES].delete_many(scope)
+    db[COLL_FILE_MAP].delete_many({"run_id": run_id})
+    db[COLL_RUNS].delete_one(scope)
     if run:
         rewind_run_counter(
             str(run.get("owner_type") or "user"),
             str(run.get("user_id") or user_id),
             str(run.get("flow_type") or "structured"),
+            db=db,
         )
+
+
+def delete_run(user_id: str, run_id: str) -> None:
+    purge_run_metadata(get_sync_db(), user_id=user_id, run_id=run_id)
 
 
 def save_prompt(user_id: str, run_id: str, prompt_data: dict[str, Any]) -> dict[str, Any]:

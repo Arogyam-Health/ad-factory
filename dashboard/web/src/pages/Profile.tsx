@@ -105,57 +105,61 @@ export function ProfilePage() {
                 </article>
               ))}
             </div>
-            <div className="action-row">
+            <form
+              className="action-row"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (!googleKey.trim()) return;
+                try {
+                  await fetchJSON("/api/user/provider-config/google_gemini", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ api_key: googleKey.trim() }),
+                  });
+                  setGoogleKey("");
+                  clearCache("/api/user/provider-config");
+                  applyProviders(await fetchJSON<ProviderSafe[]>("/api/user/provider-config", { noCache: true }));
+                  setStatus("Google key saved.");
+                } catch (err) {
+                  setStatus(String(err));
+                }
+              }}
+            >
               <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder={googleHint} autoComplete="off" />
-              <Button
-                variant="primary"
-                onClick={async () => {
-                  if (!googleKey.trim()) return;
-                  try {
-                    await fetchJSON("/api/user/provider-config/google_gemini", {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ api_key: googleKey.trim() }),
-                    });
-                    setGoogleKey("");
-                    clearCache("/api/user/provider-config");
-                    applyProviders(await fetchJSON<ProviderSafe[]>("/api/user/provider-config", { noCache: true }));
-                    setStatus("Google key saved.");
-                  } catch (err) {
-                    setStatus(String(err));
-                  }
-                }}
-              >
+              <Button type="submit" variant="primary">
                 Save Google key
               </Button>
-            </div>
-            <div className="action-row" style={{ marginTop: 10 }}>
+            </form>
+            <form
+              className="action-row"
+              style={{ marginTop: 10 }}
+              onSubmit={async (event) => {
+                event.preventDefault();
+                try {
+                  await fetchJSON("/api/user/provider-config/opencode", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      api_url: opencodeUrl.trim() || "https://opencode.ai/zen/v1",
+                      ...(opencodeKey.trim() ? { api_key: opencodeKey.trim() } : {}),
+                      default_model: opencode?.config?.default_model || "opencode/big-pickle",
+                    }),
+                  });
+                  setOpencodeKey("");
+                  clearCache("/api/user/provider-config");
+                  applyProviders(await fetchJSON<ProviderSafe[]>("/api/user/provider-config", { noCache: true }));
+                  setStatus("OpenCode settings saved.");
+                } catch (err) {
+                  setStatus(String(err));
+                }
+              }}
+            >
               <input className="field" value={opencodeUrl} onChange={(e) => setOpencodeUrl(e.target.value)} placeholder="https://opencode.ai/zen/v1" />
               <input className="field" type="password" value={opencodeKey} onChange={(e) => setOpencodeKey(e.target.value)} placeholder={opencodeHint} autoComplete="off" />
-              <Button
-                onClick={async () => {
-                  try {
-                    await fetchJSON("/api/user/provider-config/opencode", {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        api_url: opencodeUrl.trim() || "https://opencode.ai/zen/v1",
-                        ...(opencodeKey.trim() ? { api_key: opencodeKey.trim() } : {}),
-                        default_model: opencode?.config?.default_model || "opencode/big-pickle",
-                      }),
-                    });
-                    setOpencodeKey("");
-                    clearCache("/api/user/provider-config");
-                    applyProviders(await fetchJSON<ProviderSafe[]>("/api/user/provider-config", { noCache: true }));
-                    setStatus("OpenCode settings saved.");
-                  } catch (err) {
-                    setStatus(String(err));
-                  }
-                }}
-              >
+              <Button type="submit">
                 Save OpenCode
               </Button>
-            </div>
+            </form>
             <p className="hint" style={{ marginTop: 10 }}>{status}</p>
           </>
         )}

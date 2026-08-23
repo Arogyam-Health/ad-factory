@@ -777,7 +777,7 @@ def create_job(
                 "device_id": resolved_device,
             }
         )
-        if run is None:
+        if run is None and not (job_type == "purge_run" and allow_inactive_agent):
             raise ValueError("Run is not authorized for this agent device")
     if owner_type == "user":
         if resolved_owner_id != user_id:
@@ -1137,33 +1137,12 @@ def complete_job(
             {"_id": 0, "job_type": 1, "run_id": 1, "client_operation_id": 1, "user_id": 1},
         )
         if job and job.get("job_type") == "purge_run":
-            run_id = str(job.get("run_id") or "")
-            user_scope = {"run_id": run_id, "user_id": str(job.get("user_id") or "")}
-            from dashboard.backend.db.collections import (
-                COLL_IMAGES,
-                COLL_LLM_TRACES,
-                COLL_PROMPT_DELIVERIES,
-                COLL_PROMPTS,
-                COLL_RENDER_COPY_JOBS,
-            )
+            from dashboard.backend.services.run_storage import purge_run_metadata
 
-            db[COLL_PROMPTS].delete_many(user_scope)
-            db[COLL_IMAGES].delete_many(user_scope)
-            db[COLL_PROMPT_DELIVERIES].delete_many(user_scope)
-            db[COLL_RENDER_COPY_JOBS].delete_many(user_scope)
-            db[COLL_LLM_TRACES].delete_many(user_scope)
-            db[COLL_RUNS].update_one(
-                {
-                    "run_id": run_id,
-                    "deletion_tombstone.operation_id": job.get("client_operation_id"),
-                },
-                {
-                    "$set": {
-                        "status": "deleted",
-                        "deletion_tombstone.acknowledged_at": time.time(),
-                        "updated_at": time.time(),
-                    }
-                },
+            purge_run_metadata(
+                db,
+                user_id=str(job.get("user_id") or ""),
+                run_id=str(job.get("run_id") or ""),
             )
     return completed
 

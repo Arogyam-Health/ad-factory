@@ -6,11 +6,22 @@ from typing import Any, Optional
 
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import (
-    COLL_ORGS,
-    COLL_ORG_MEMBERS,
-    COLL_ORG_INVITES,
+    COLL_AGENT_JOBS,
     COLL_AUDIT_LOGS,
     COLL_CONFIG_VERSIONS,
+    COLL_FILE_MAP,
+    COLL_IMAGES,
+    COLL_LLM_TRACES,
+    COLL_LOCAL_CONFIG_REFERENCES,
+    COLL_ORG_INVITES,
+    COLL_ORG_MEMBERS,
+    COLL_ORGS,
+    COLL_PROMPT_DELIVERIES,
+    COLL_PROMPTS,
+    COLL_RENDER_COPY_JOBS,
+    COLL_RUN_COUNTERS,
+    COLL_RUNS,
+    COLL_USER_CONFIGS,
 )
 from fastapi import HTTPException
 
@@ -312,6 +323,85 @@ def require_org_role(user_id: str, org_id: str, allowed_roles: tuple[str, ...]) 
         )
     return membership
 
+
+def _collection(db: Any, name: str) -> Any | None:
+    if isinstance(db, dict):
+        return db.get(name)
+    return db[name]
+
+
+def _delete_many(db: Any, name: str, query: dict[str, Any]) -> int:
+    coll = _collection(db, name)
+    if coll is None:
+        return 0
+    return int(getattr(coll.delete_many(query), "deleted_count", 0) or 0)
+
+
+def _delete_one(db: Any, name: str, query: dict[str, Any]) -> int:
+    coll = _collection(db, name)
+    if coll is None:
+        return 0
+    return int(getattr(coll.delete_one(query), "deleted_count", 0) or 0)
+
+
+def _org_run_ids(db: Any, org_id: str) -> list[str]:
+    coll = _collection(db, COLL_RUNS)
+    if coll is None:
+        return []
+    try:
+        cursor = coll.find(
+            {"$or": [{"owner_id": org_id}, {"org_id": org_id}]},
+            {"run_id": 1},
+        )
+    except Exception:
+        return []
+    run_ids: list[str] = []
+    for doc in cursor or []:
+        if isinstance(doc, dict) and doc.get("run_id"):
+            run_ids.append(str(doc["run_id"]))
+    return run_ids
+
+
+def purge_org_owned_documents(db: Any, org_id: str) -> dict[str, int]:
+    """Hard-delete every Mongo document that belongs to this organization."""
+    run_ids = _org_run_ids(db, org_id)
+    run_q = {"run_id": {"$in": run_ids}} if run_ids else None
+    owner_q = {"owner_id": org_id}
+    org_q = {"org_id": org_id}
+    report = {
+        "configs": _delete_many(db, COLL_USER_CONFIGS, {"owner_type": "org", "owner_id": org_id}),
+        "versions": _delete_many(
+            db,
+            COLL_CONFIG_VERSIONS,
+            {"$or": [{"owner_type": "org", "owner_id": org_id}, org_q]},
+        ),
+        "local_refs": _delete_many(db, COLL_LOCAL_CONFIG_REFERENCES, owner_q),
+        "members": _delete_many(db, COLL_ORG_MEMBERS, org_q),
+        "invites": _delete_many(db, COLL_ORG_INVITES, org_q),
+        "audit_logs": _delete_many(db, COLL_AUDIT_LOGS, org_q),
+        "run_counters": _delete_many(db, COLL_RUN_COUNTERS, owner_q),
+        "llm_traces": _delete_many(db, COLL_LLM_TRACES, org_q),
+        "agent_jobs": _delete_many(db, COLL_AGENT_JOBS, owner_q),
+        "render_copy_jobs": _delete_many(db, COLL_RENDER_COPY_JOBS, owner_q),
+        "prompts": 0,
+        "images": 0,
+        "file_map": 0,
+        "prompt_deliveries": 0,
+        "runs": 0,
+        "orgs": 0,
+    }
+    if run_q:
+        report["prompts"] = _delete_many(db, COLL_PROMPTS, run_q)
+        report["images"] = _delete_many(db, COLL_IMAGES, run_q)
+        report["file_map"] = _delete_many(db, COLL_FILE_MAP, run_q)
+        report["prompt_deliveries"] = _delete_many(db, COLL_PROMPT_DELIVERIES, run_q)
+        report["agent_jobs"] += _delete_many(db, COLL_AGENT_JOBS, run_q)
+        report["render_copy_jobs"] += _delete_many(db, COLL_RENDER_COPY_JOBS, run_q)
+        report["llm_traces"] += _delete_many(db, COLL_LLM_TRACES, run_q)
+        report["runs"] = _delete_many(db, COLL_RUNS, run_q)
+    report["orgs"] = _delete_one(db, COLL_ORGS, org_q)
+    return report
+
 # ───────────────────────────────────────────────────────────────────────────────────────────────
 # PUBLIC API EXPORTS
 # ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -327,6 +417,7 @@ __all__ = [
     "public_org_domain",
     "public_org_dict",
     "assign_personal_org_domains",
+    "purge_org_owned_documents",
     "get_org_by_id",
     "get_org_by_domain",
     "get_user_org_membership",

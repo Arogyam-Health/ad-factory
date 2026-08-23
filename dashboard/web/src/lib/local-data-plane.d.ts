@@ -1,5 +1,8 @@
 export class LocalDataPlaneClient {
   discover(): Promise<{ device_id?: string }>;
+  restoreStoredSession(preferredOwners?: { ownerType?: string; owner_type?: string; ownerId?: string; owner_id?: string }[]):
+    | { deviceId: string; agentId: string; session: unknown }
+    | null;
   ensurePaired(opts: {
     ownerType?: string;
     ownerId: string;

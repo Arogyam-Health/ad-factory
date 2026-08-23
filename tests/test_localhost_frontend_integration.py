@@ -197,6 +197,8 @@ console.log(JSON.stringify(simplified));
         self.assertNotIn("The selected run belongs to a different local agent", client)
         self.assertIn("ensurePaired({", studio)
         self.assertIn("localDataPlane.discover()", studio)
+        self.assertIn("restoreStoredSession", studio)
+        self.assertIn("restoreStoredSession(preferredOwners", client)
         self.assertIn("Pair local agent", studio)
 
     def test_prompt_copy_parser_only_returns_exact_on_image_copy(self) -> None:

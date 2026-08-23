@@ -36,7 +36,7 @@ from dashboard.backend.db.collections import (
     COLL_AGENT_JOBS,
     COLL_LOCAL_CONFIG_REFERENCES,
 )
-from dashboard.backend.services.org_helper import write_audit_event
+from dashboard.backend.services.org_helper import purge_org_owned_documents, write_audit_event
 
 router = APIRouter()
 
@@ -403,11 +403,7 @@ def admin_disable_org(
     org = db[COLL_ORGS].find_one({"org_id": org_id})
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    now = time.time()
-    db[COLL_ORGS].update_one(
-        {"org_id": org_id},
-        {"$set": {"is_active": False, "updated_at": now}},
-    )
+    purge_org_owned_documents(db, org_id)
     return {"status": "disabled", "org_id": org_id}
 
 

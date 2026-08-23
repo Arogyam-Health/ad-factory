@@ -1610,6 +1610,11 @@ def test_local_agent_responsiveness_contract() -> int:
         "creating an org copies the creator's full config",
     )
     failed += ok(
+        "purge_org_owned_documents" in org_routes
+        and "Deactivate org config" not in org_routes,
+        "deleting an org hard-deletes its Mongo configs",
+    )
+    failed += ok(
         "/api/config/effective" in studio_tsx
         and "reference_starting_prompt" in reference_tsx,
         "reference workspace hydrates from Mongo config on the selected plate",
