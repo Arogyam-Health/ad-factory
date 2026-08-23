@@ -2,6 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
+import { prefetchRoute } from "@/lib/prefetch";
 import { Button } from "@/components/Button";
 import { AgentStatus } from "@/components/AgentStatus";
 import { GuestBanner } from "@/components/GuestBanner";
@@ -39,13 +40,27 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
         <nav className="nav" aria-label="Main">
           {LINKS.map((link) => (
-            <NavLink key={link.to} to={link.to} end={link.to === "/"} className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.to === "/"}
+              className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+              onMouseEnter={() => prefetchRoute(link.to, user)}
+              onFocus={() => prefetchRoute(link.to, user)}
+              onTouchStart={() => prefetchRoute(link.to, user)}
+            >
               <span>{link.label}</span>
               <span className="nav-index">{link.index}</span>
             </NavLink>
           ))}
           {user.is_super_admin ? (
-            <NavLink to="/admin" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <NavLink
+              to="/admin"
+              className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+              onMouseEnter={() => prefetchRoute("/admin", user)}
+              onFocus={() => prefetchRoute("/admin", user)}
+              onTouchStart={() => prefetchRoute("/admin", user)}
+            >
               <span>Admin</span>
               <span className="nav-index">06</span>
             </NavLink>
@@ -61,8 +76,12 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
         <div className="topbar-actions">
           <AgentStatus />
-          <Button variant="ghost" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme === "dark" ? "Moon" : "Sun"}
+          <Button
+            variant="ghost"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light" : "Switch to dark"}
+          >
+            {theme === "dark" ? "light" : "dark"}
           </Button>
           {ready && user.authenticated ? (
             <>
