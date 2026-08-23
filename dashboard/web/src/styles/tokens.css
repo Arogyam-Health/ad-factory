@@ -5,6 +5,7 @@
   --surface-1: #0e0c0a;
   --surface-2: #161310;
   --surface-3: #1f1b16;
+  --plate: #221c16;
   --ink: #efe8dc;
   --ink-muted: #9a9184;
   --ink-faint: #6b645a;
@@ -44,11 +45,12 @@
 }
 
 [data-theme="light"] {
-  --canvas: #f3eee4;
-  --surface-0: #efe8dc;
-  --surface-1: #fffaf2;
-  --surface-2: #f7f0e4;
-  --surface-3: #ebe3d4;
+  --canvas: #e8dfd0;
+  --surface-0: #ddd3c2;
+  --surface-1: #efe6d6;
+  --surface-2: #e4d8c6;
+  --surface-3: #d4c8b4;
+  --plate: #dccfb8;
   --ink: #1a1814;
   --ink-muted: #6b6458;
   --ink-faint: #8a8376;

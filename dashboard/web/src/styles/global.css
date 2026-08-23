@@ -31,8 +31,14 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 40;
-  opacity: 0.055;
+  opacity: 0.07;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+body[data-theme="light"]::before,
+html[data-theme="light"] body::before {
+  opacity: 0.16;
+  mix-blend-mode: multiply;
 }
 
 a {
@@ -50,6 +56,8 @@ textarea {
 
 button {
   cursor: pointer;
+  background: transparent;
+  border: 0;
 }
 
 :focus-visible {
@@ -118,9 +126,11 @@ p {
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
+  border: 1px solid var(--rule);
   border-radius: var(--radius);
+  background: var(--plate);
   color: var(--ink-muted);
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
 .nav-link:hover {
@@ -130,7 +140,8 @@ p {
 
 .nav-link.active {
   color: var(--ink);
-  background: var(--surface-2);
+  background: var(--gold-dim);
+  border-color: var(--gold);
   box-shadow: inset 2px 0 0 var(--gold);
 }
 
@@ -558,9 +569,137 @@ select.field {
   margin-top: 6px;
   margin-bottom: 10px;
   padding: 8px 12px;
-  background: var(--surface-0);
+  background: var(--plate);
   border: 1px solid var(--rule);
   color: var(--ink);
+  border-radius: var(--radius);
+}
+
+select.field,
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-color: var(--plate);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%23c4a574' stroke-width='1.4' d='M1.5 1.5L6 6l4.5-4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+  cursor: pointer;
+}
+
+[data-theme="light"] select.field,
+[data-theme="light"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%238a6a32' stroke-width='1.4' d='M1.5 1.5L6 6l4.5-4.5'/%3E%3C/svg%3E");
+}
+
+select.field:hover,
+select:hover {
+  border-color: var(--gold);
+}
+
+select.field:focus,
+select:focus,
+.field:focus,
+.cfg-textarea:focus {
+  border-color: var(--gold);
+}
+
+select.field option,
+select option {
+  background: var(--surface-1);
+  color: var(--ink);
+}
+
+.file-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+
+.file-field-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.file-field-trigger {
+  background: var(--plate);
+  border-color: var(--rule-strong);
+  cursor: pointer;
+}
+
+.file-field-trigger:hover {
+  border-color: var(--gold);
+}
+
+.file-field.is-disabled {
+  opacity: 0.5;
+}
+
+.file-field.is-disabled .file-field-trigger {
+  pointer-events: none;
+}
+
+.file-field-hint {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+.toggle-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+  border: 1px solid var(--rule-strong);
+  background: var(--plate);
+  border-radius: 2px;
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+}
+
+.toggle-row input[type="checkbox"]::after {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border: 1.6px solid var(--gold-ink);
+  border-top: 0;
+  border-right: 0;
+  transform: rotate(-50deg) scale(0);
+  opacity: 0;
+}
+
+.toggle-row input[type="checkbox"]:checked {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.toggle-row input[type="checkbox"]:checked::after {
+  transform: rotate(-50deg) scale(1);
+  opacity: 1;
+}
+
+input[type="number"].field {
+  -moz-appearance: textfield;
+}
+
+input[type="number"].field::-webkit-outer-spin-button,
+input[type="number"].field::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .field-narrow {
