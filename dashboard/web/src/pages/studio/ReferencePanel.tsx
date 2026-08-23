@@ -343,8 +343,16 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
     },
     async cancelReference() {
       try {
-        await fetchJSON(`/api/agents/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
-        props.setStatus(`Cancel requested for ${runId}.`);
+        if (runId) {
+          await fetchJSON(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+        } else if (jobId) {
+          await fetchJSON(`/api/agents/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+        } else {
+          props.setStatus("No active reference run to cancel.");
+          return;
+        }
+        invalidateRuns();
+        props.setStatus(`Cancel requested for ${runId || jobId}.`);
       } catch (err) {
         props.setStatus(String(err));
       }
@@ -575,8 +583,8 @@ export function ReferenceDesk() {
         <Button variant="primary" disabled={ctx.busy || !ctx.authenticated} onClick={() => void ctx.startReference()}>
           {ctx.busy ? "Queuing…" : "Run reference flow"}
         </Button>
-        <Button variant="ghost" disabled={!ctx.jobId} onClick={() => void ctx.cancelReference()}>
-          Cancel
+        <Button variant="ghost" disabled={!ctx.runId && !ctx.jobId} onClick={() => void ctx.cancelReference()}>
+          Cancel run
         </Button>
       </div>
       {ctx.viewer ? (

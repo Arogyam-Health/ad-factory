@@ -160,6 +160,21 @@ export function RunWorkspace({
     }
   }
 
+  async function cancelRun() {
+    if (!runId) return;
+    setBusy("cancel");
+    try {
+      await fetchJSON(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+      invalidateRuns();
+      onStatus(`Cancel requested for ${run.display_batch || runId}.`);
+      await onRefresh();
+    } catch (err) {
+      onStatus(String(err));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function openCopyEditor(prompt: PromptRow) {
     const id = prompt.prompt_id || "";
     const localDevice = deviceId || run.device_id || "";
@@ -254,6 +269,9 @@ export function RunWorkspace({
         </Button>
         <Button disabled={Boolean(busy)} onClick={() => void queueImages("916")}>
           {busy === "916" ? "Queuing…" : "Generate 9:16"}
+        </Button>
+        <Button variant="ghost" disabled={busy === "cancel"} onClick={() => void cancelRun()}>
+          {busy === "cancel" ? "Cancelling…" : "Cancel run"}
         </Button>
       </div>
       <p className="hint" style={{ marginBottom: 10 }}>

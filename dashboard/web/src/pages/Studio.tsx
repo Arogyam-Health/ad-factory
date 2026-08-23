@@ -14,6 +14,7 @@ import { RunWorkspace } from "@/pages/studio/RunWorkspace";
 import { BatchSelect } from "@/pages/studio/BatchSelect";
 import { LazyAsset } from "@/pages/studio/LazyAsset";
 import { displayRunStatus } from "@/lib/run-status";
+import { DownloadKindDialog } from "@/components/DownloadKindDialog";
 
 const FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"] as const;
 const LANGUAGES = ["ALL", "EN", "HI", "HINGLISH"] as const;
@@ -112,11 +113,18 @@ export function StudioPage() {
   const [paired, setPaired] = useState(false);
   const [deskTick, setDeskTick] = useState(0);
   const [batchBusy, setBatchBusy] = useState("");
+  const [imageEngine, setImageEngine] = useState(() => (
+    localStorage.getItem("adFactoryImageEngine") === "gemini" ? "gemini" : "chatgpt"
+  ));
+  const [downloadPrompt, setDownloadPrompt] = useState(false);
   const newestRunRef = useRef("");
 
   useEffect(() => {
     localStorage.setItem("adFactoryFlowMode", flow);
   }, [flow]);
+  useEffect(() => {
+    localStorage.setItem("adFactoryImageEngine", imageEngine);
+  }, [imageEngine]);
 
   useEffect(() => {
     if (!ready) return;
@@ -529,7 +537,7 @@ export function StudioPage() {
     setBatchBusy(mode);
     try {
       for (const id of ids) {
-        await queueRunImages(id, mode, "chatgpt", live.agentId, live.deviceId);
+        await queueRunImages(id, mode, imageEngine, live.agentId, live.deviceId);
       }
       invalidateRuns();
       const label = mode === "both" ? "4:5 + 9:16" : "4:5";
@@ -543,7 +551,7 @@ export function StudioPage() {
     }
   }
 
-  async function downloadSelected() {
+  async function downloadSelected(includeRaw: boolean) {
     const ids = [...pickedRuns];
     if (!ids.length) {
       setStatus("Select batches first.");
@@ -557,11 +565,37 @@ export function StudioPage() {
     try {
       for (const id of ids) {
         const run = runs.find((item) => item.run_id === id);
-        const blob = await localDataPlane.downloadRun(id, live.deviceId);
+        const blob = await localDataPlane.downloadRun(id, live.deviceId, { includeRaw });
         triggerDownload(blob, `${run?.display_batch || id}.zip`);
       }
       setDeskTick((value) => value + 1);
-      setStatus(`Downloaded ${ids.length} batch${ids.length === 1 ? "" : "es"}.`);
+      setStatus(`Downloaded ${ids.length} batch${ids.length === 1 ? "" : "es"} (${includeRaw ? "cropped + raw" : "cropped only"}).`);
+    } catch (err) {
+      setStatus(String(err));
+    } finally {
+      setBatchBusy("");
+    }
+  }
+
+  async function cancelSelected() {
+    const ids = [...pickedRuns];
+    if (!ids.length && activeRunId) ids.push(activeRunId);
+    if (!ids.length) {
+      setStatus("Select a run to cancel.");
+      return;
+    }
+    setBatchBusy("cancel");
+    try {
+      let canceled = 0;
+      for (const id of ids) {
+        await fetchJSON(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+        canceled += 1;
+      }
+      invalidateRuns();
+      setStatus(`Cancel requested for ${canceled} run${canceled === 1 ? "" : "s"}.`);
+      const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
+      setRuns(data.runs || []);
+      setDeskTick((value) => value + 1);
     } catch (err) {
       setStatus(String(err));
     } finally {
@@ -824,13 +858,40 @@ export function StudioPage() {
           <Button variant="ghost" disabled={!user.authenticated} onClick={() => void pairLocalAgent()}>
             {paired ? "Paired" : "Pair local agent"}
           </Button>
+          <label className="hint">
+            Image engine
+            <select
+              className="field"
+              value={imageEngine}
+              onChange={(e) => setImageEngine(e.target.value === "gemini" ? "gemini" : "chatgpt")}
+            >
+              <option value="chatgpt">ChatGPT</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </label>
           <Button disabled={Boolean(batchBusy) || !pickedRuns.size} onClick={() => void generateSelected("45")}>
             {batchBusy === "45" ? "Queuing…" : "Generate 4:5"}
           </Button>
           <Button disabled={Boolean(batchBusy) || !pickedRuns.size} onClick={() => void generateSelected("both")}>
             {batchBusy === "both" ? "Queuing…" : "Generate 4:5 + 9:16"}
           </Button>
-          <Button disabled={Boolean(batchBusy) || !pickedRuns.size} onClick={() => void downloadSelected()}>
+          <Button
+            variant="ghost"
+            disabled={Boolean(batchBusy) || (!pickedRuns.size && !activeRunId)}
+            onClick={() => void cancelSelected()}
+          >
+            {batchBusy === "cancel" ? "Cancelling…" : "Cancel run"}
+          </Button>
+          <Button
+            disabled={Boolean(batchBusy) || !pickedRuns.size}
+            onClick={() => {
+              if (!pickedRuns.size) {
+                setStatus("Select batches first.");
+                return;
+              }
+              setDownloadPrompt(true);
+            }}
+          >
             {batchBusy === "download" ? "Downloading…" : "Download batches"}
           </Button>
           <Button variant="ghost" onClick={async () => {
@@ -975,6 +1036,16 @@ export function StudioPage() {
           orgId={configOrgId}
           onClose={() => setViewer("")}
           onSaved={applySavedFile}
+        />
+      ) : null}
+      {downloadPrompt ? (
+        <DownloadKindDialog
+          title={`Download ${pickedRuns.size} batch${pickedRuns.size === 1 ? "" : "es"}`}
+          onClose={() => setDownloadPrompt(false)}
+          onChoose={(includeRaw) => {
+            setDownloadPrompt(false);
+            void downloadSelected(includeRaw);
+          }}
         />
       ) : null}
     </Bento>

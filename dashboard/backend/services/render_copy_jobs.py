@@ -1082,7 +1082,7 @@ def cancel_render_copy_run(run_id: str, user_id: str) -> dict[str, Any] | None:
         {
             "run_id": run_id,
             "user_id": user_id,
-            "status": {"$in": ["queued", "running"]},
+            "status": {"$in": ["queued", "running", "copy_queued"]},
         },
         {"_id": 0, "copy_job_id": 1},
         sort=[("created_at", -1)],

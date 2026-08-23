@@ -582,6 +582,8 @@ def purge_all_user_runs(
 @router.post("/api/runs/{run_id}/cancel")
 def cancel_run(run_id: str, request: Request) -> dict[str, Any]:
     user_id = _user_id(request)
+    from dashboard.backend.services.render_copy_jobs import cancel_render_copy_run
+
     job = get_sync_db()[COLL_AGENT_JOBS].find_one(
         {
             "run_id": run_id,
@@ -591,17 +593,29 @@ def cancel_run(run_id: str, request: Request) -> dict[str, Any]:
         {"_id": 0, "job_id": 1},
         sort=[("created_at", -1)],
     )
-    if job is None:
-        from dashboard.backend.services.render_copy_jobs import (
-            cancel_render_copy_run,
+    canceled_job = cancel_user_job(user_id, str(job["job_id"])) if job else None
+    canceled_copy = cancel_render_copy_run(run_id, user_id)
+    if canceled_job is None and canceled_copy is None:
+        raise HTTPException(status_code=404, detail="Active run job not found")
+    if canceled_job is not None:
+        get_sync_db()[COLL_RUNS].update_one(
+            {"run_id": run_id, "user_id": user_id},
+            {
+                "$set": {
+                    "status": "canceled",
+                    "image_generation.status": "canceled",
+                    "updated_at": time.time(),
+                }
+            },
         )
-
-        canceled_copy = cancel_render_copy_run(run_id, user_id)
-        if canceled_copy is None:
-            raise HTTPException(status_code=404, detail="Active run job not found")
-        return canceled_copy
-    canceled = cancel_user_job(user_id, str(job["job_id"]))
-    return {"status": str((canceled or {}).get("status") or ""), "run_id": run_id}
+    return {
+        "status": str(
+            (canceled_job or canceled_copy or {}).get("status") or "canceled"
+        ),
+        "run_id": run_id,
+        "job": canceled_job is not None,
+        "copy": canceled_copy is not None,
+    }
 
 
 def _local_only(run_id: str) -> None:

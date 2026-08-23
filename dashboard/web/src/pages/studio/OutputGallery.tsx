@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import { Button } from "@/components/Button";
+import { DownloadKindDialog } from "@/components/DownloadKindDialog";
 
 export type OutputRow = {
   output_id?: string;
@@ -75,6 +76,7 @@ export function OutputGallery({
   const [busyId, setBusyId] = useState("");
   const [lightbox, setLightbox] = useState<OutputRow | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
+  const [downloadItem, setDownloadItem] = useState<OutputRow | null>(null);
 
   const counts = useMemo(() => {
     let ar45 = 0;
@@ -104,7 +106,7 @@ export function OutputGallery({
     if (url) setLightbox({ ...item, url });
   }
 
-  async function downloadImage(item: OutputRow) {
+  async function downloadImage(item: OutputRow, includeRaw: boolean) {
     const id = outputKey(item);
     if (!id || !deviceId) {
       onStatus("Pair the local agent before downloading an image.");
@@ -116,8 +118,7 @@ export function OutputGallery({
         ? await fetch(item.url).then((response) => response.blob())
         : await fetch(await localDataPlane.outputObjectUrl(id, deviceId, item.current_version || item.version)).then((response) => response.blob());
       triggerDownload(blob, name);
-      const wantRaw = window.confirm("Also download the original GPT file (raw)?\n\nOK = cropped + raw\nCancel = cropped only");
-      if (wantRaw) {
+      if (includeRaw) {
         const raw = await localDataPlane.outputRawBlob(id, deviceId);
         const stem = name.replace(/\.[^.]+$/, "");
         const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : ".png";
@@ -248,7 +249,7 @@ export function OutputGallery({
                 )}
                 <div className="image-card-actions">
                   <button type="button" title="Open" onClick={() => void openImage(item)}>Open</button>
-                  <button type="button" title="Download" onClick={() => void downloadImage(item)}>↓</button>
+                  <button type="button" title="Download" onClick={() => setDownloadItem(item)}>↓</button>
                   <button type="button" title="Delete this image" disabled={busy} onClick={() => void deleteImage(item)}>✕</button>
                 </div>
               </div>
@@ -281,12 +282,23 @@ export function OutputGallery({
           );
         })}
       </div>
+      {downloadItem ? (
+        <DownloadKindDialog
+          title={`Download ${downloadName(downloadItem)}`}
+          onClose={() => setDownloadItem(null)}
+          onChoose={(includeRaw) => {
+            const item = downloadItem;
+            setDownloadItem(null);
+            void downloadImage(item, includeRaw);
+          }}
+        />
+      ) : null}
       {lightbox?.url ? (
         <div className="image-lightbox" onClick={() => setLightbox(null)} role="presentation">
           <div className="image-lightbox-card" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
             <div className="action-row">
               <strong>{lightbox.display_name || lightbox.filename || "Image"}</strong>
-              <Button variant="ghost" onClick={() => void downloadImage(lightbox)}>Download</Button>
+              <Button variant="ghost" onClick={() => setDownloadItem(lightbox)}>Download</Button>
               <Button variant="ghost" onClick={() => setLightbox(null)}>Close</Button>
             </div>
             <img src={lightbox.url} alt={lightbox.display_name || lightbox.filename || "Generated image"} />
