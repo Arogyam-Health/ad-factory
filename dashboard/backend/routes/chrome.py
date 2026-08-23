@@ -1,7 +1,7 @@
 from typing import Any
 from fastapi import APIRouter, HTTPException
 
-from dashboard.backend.app import api_kill_chrome, api_launch_visible_browser, api_stop_generation
+from dashboard.backend.pipeline.chrome_ops import api_kill_chrome, api_launch_visible_browser, api_stop_generation
 from dashboard.backend.db.settings import settings
 
 router = APIRouter()

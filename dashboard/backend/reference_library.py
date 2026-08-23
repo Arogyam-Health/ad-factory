@@ -11,16 +11,9 @@ from typing import Any
 
 from fastapi import HTTPException, UploadFile
 
-from dashboard.backend.app import (
-    GENERATED_IMAGES_ROOT,
-    ROOT,
-    RUNS_ROOT,
-    STORAGE_ROOT,
-    ensure_dirs,
-    make_run_id,
-    now_iso,
-    store_uploaded_input_images,
-)
+from dashboard.backend.pipeline.clock import ensure_dirs, make_run_id, now_iso
+from dashboard.backend.pipeline.input_assets import store_uploaded_input_images
+from dashboard.backend.pipeline.paths import GENERATED_IMAGES_ROOT, ROOT, RUNS_ROOT, STORAGE_ROOT
 import dashboard.backend.reference_flow as _reference_flow
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}

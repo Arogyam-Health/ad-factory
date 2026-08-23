@@ -14,16 +14,10 @@ from fastapi import HTTPException, UploadFile
 
 from dashboard.backend import reference_flow as flow
 from dashboard.backend import reference_workspace as base
-from dashboard.backend.app import (
-    ROOT,
-    RUNS_ROOT,
-    cancel_event_for_run,
-    ensure_dirs,
-    make_run_id,
-    now_iso,
-    scan_image_files_for_batch,
-    scan_prompt_files_for_batch,
-)
+from dashboard.backend.pipeline.clock import ensure_dirs, make_run_id, now_iso
+from dashboard.backend.pipeline.images import scan_image_files_for_batch, scan_prompt_files_for_batch
+from dashboard.backend.pipeline.paths import ROOT, RUNS_ROOT
+from dashboard.backend.pipeline.run_control import cancel_event_for_run
 from dashboard.backend.reference_library import (
     _copy_persistent_references,
     _reserve_reference_batch_name,

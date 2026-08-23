@@ -7,14 +7,8 @@ import time
 import uuid
 from pathlib import Path
 
-from dashboard.backend.app import (
-    GENERATED_IMAGES_ROOT,
-    INPUT_IMAGES_DIR,
-    ROOT,
-    RUNTIME_ROOT,
-    dashboard_subprocess_env,
-    wsl_chrome_cdp_url,
-)
+from dashboard.backend.pipeline.browser_env import dashboard_subprocess_env, wsl_chrome_cdp_url
+from dashboard.backend.pipeline.paths import GENERATED_IMAGES_ROOT, INPUT_IMAGES_DIR, ROOT, RUNTIME_ROOT
 
 
 def run_chatgpt_generation_watchdog(

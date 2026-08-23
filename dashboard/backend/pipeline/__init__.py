@@ -1,5 +1,5 @@
-"""Local data-plane pipeline helpers extracted from app.py.
+"""Local data-plane pipeline helpers.
 
-Public names stay re-exported from dashboard.backend.app so existing
-imports (`from dashboard.backend.app import X`) keep working.
+`dashboard.backend.app` is the uvicorn factory and re-exports these names so
+`from dashboard.backend.app import X` stays valid.
 """

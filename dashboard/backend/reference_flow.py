@@ -12,27 +12,25 @@ from typing import Any
 
 from fastapi import HTTPException, UploadFile
 
-from dashboard.backend.app import (
+from dashboard.backend.pipeline.clock import ensure_dirs, make_run_id, now_iso
+from dashboard.backend.pipeline.copy_text import persona_slug
+from dashboard.backend.pipeline.generation import (
+    run_916_conversion_from_45_for_batch,
+    run_chatgpt_generation,
+    run_gemini_generation,
+)
+from dashboard.backend.pipeline.images import scan_image_files_for_batch, scan_prompt_files_for_batch
+from dashboard.backend.pipeline.input_assets import store_uploaded_input_images
+from dashboard.backend.pipeline.paths import (
     DEFAULT_PRODUCT_MASTER,
     GENERATED_IMAGES_ROOT,
     INPUT_IMAGES_DIR,
     PERSONA_SEEDS_PATH,
     ROOT,
     RUNS_ROOT,
-    cancel_event_for_run,
-    ensure_dirs,
-    enrich_manifest_for_dashboard,
-    load_manifest_for_run,
-    make_run_id,
-    now_iso,
-    persona_slug,
-    run_916_conversion_from_45_for_batch,
-    run_chatgpt_generation,
-    run_gemini_generation,
-    scan_image_files_for_batch,
-    scan_prompt_files_for_batch,
-    store_uploaded_input_images,
 )
+from dashboard.backend.pipeline.run_control import cancel_event_for_run
+from dashboard.backend.pipeline.runs_db import enrich_manifest_for_dashboard, load_manifest_for_run
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 _BATCH_LOCK = threading.Lock()
