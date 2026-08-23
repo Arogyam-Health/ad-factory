@@ -253,14 +253,14 @@ export function RunWorkspace({
         <span className="hint">{displayRunStatus(run)} · {run.prompt_count ?? prompts.length} prompts · {shownCount} images</span>
         <Button variant="ghost" onClick={onClose}>Close run</Button>
       </div>
-      <label className="hint">
-        Image engine
-        <select className="field" value={engine} onChange={(e) => setEngine(e.target.value)}>
-          <option value="chatgpt">ChatGPT</option>
-          <option value="gemini">Gemini</option>
-        </select>
-      </label>
       <div className="action-row" style={{ marginBottom: 16 }}>
+        <label className="toolbar-field">
+          <span>Image engine</span>
+          <select className="field" value={engine} onChange={(e) => setEngine(e.target.value)}>
+            <option value="chatgpt">ChatGPT</option>
+            <option value="gemini">Gemini</option>
+          </select>
+        </label>
         <Button variant="primary" disabled={Boolean(busy)} onClick={() => void queueImages("45")}>
           {busy === "45" ? "Queuing…" : "Generate 4:5"}
         </Button>

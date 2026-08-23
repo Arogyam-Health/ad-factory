@@ -568,18 +568,18 @@ export function ReferenceDesk() {
           {ctx.canEditFiles ? "Edit 9:16 conversion" : "9:16 conversion"}
         </Button>
       </div>
-      <label className="hint">
-        Image engine
-        <select className="field" value={ctx.engine} onChange={(e) => ctx.setEngine(e.target.value)}>
-          <option value="chatgpt">ChatGPT</option>
-          <option value="gemini">Gemini</option>
-        </select>
-      </label>
-      <label className="toggle-row">
-        <input type="checkbox" checked={ctx.make916} onChange={(e) => ctx.setMake916(e.target.checked)} />
-        Create 9:16 after 4:5
-      </label>
       <div className="action-row">
+        <label className="toolbar-field">
+          <span>Image engine</span>
+          <select className="field" value={ctx.engine} onChange={(e) => ctx.setEngine(e.target.value)}>
+            <option value="chatgpt">ChatGPT</option>
+            <option value="gemini">Gemini</option>
+          </select>
+        </label>
+        <label className="toggle-row">
+          <input type="checkbox" checked={ctx.make916} onChange={(e) => ctx.setMake916(e.target.checked)} />
+          Create 9:16 after 4:5
+        </label>
         <Button variant="primary" disabled={ctx.busy || !ctx.authenticated} onClick={() => void ctx.startReference()}>
           {ctx.busy ? "Queuing…" : "Run reference flow"}
         </Button>

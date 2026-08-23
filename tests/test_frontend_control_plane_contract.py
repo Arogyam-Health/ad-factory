@@ -192,6 +192,8 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("Cropped + raw", _read("components", "DownloadKindDialog.tsx"))
         self.assertIn("DownloadKindDialog", gallery)
         self.assertIn("adFactoryImageEngine", studio)
+        self.assertIn("toolbar-field", studio)
+        self.assertIn(".toolbar-field", _read("styles", "global.css"))
         self.assertNotIn('queueRunImages(id, mode, "chatgpt"', studio)
         self.assertIn("Cancel run", studio)
         self.assertIn("Cancel run", workspace)

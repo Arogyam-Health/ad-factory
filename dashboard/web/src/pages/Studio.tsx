@@ -858,8 +858,8 @@ export function StudioPage() {
           <Button variant="ghost" disabled={!user.authenticated} onClick={() => void pairLocalAgent()}>
             {paired ? "Paired" : "Pair local agent"}
           </Button>
-          <label className="hint">
-            Image engine
+          <label className="toolbar-field">
+            <span>Image engine</span>
             <select
               className="field"
               value={imageEngine}
