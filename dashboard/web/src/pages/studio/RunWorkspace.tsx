@@ -41,6 +41,7 @@ export function RunWorkspace({
   deviceId,
   agentId,
   paired,
+  refreshToken = 0,
   onPair,
   onClose,
   onStatus,
@@ -50,6 +51,7 @@ export function RunWorkspace({
   deviceId: string;
   agentId: string;
   paired: boolean;
+  refreshToken?: number;
   onPair: () => Promise<{ ok: boolean; deviceId: string; agentId: string }>;
   onClose: () => void;
   onStatus: (value: string) => void;
@@ -78,7 +80,7 @@ export function RunWorkspace({
       let nextPrompts = metaPrompts.prompts || [];
       let nextOutputs = metaImages.images || [];
       const localDevice = deviceId || run.device_id || "";
-      if (localDevice) {
+      if (localDevice && paired) {
         try {
           const [localPrompts, localOutputs] = await Promise.all([
             localDataPlane.listPrompts(runId, localDevice).catch(() => []),
@@ -123,7 +125,7 @@ export function RunWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [runId, deviceId, run.device_id, busy, reloadToken]);
+  }, [runId, deviceId, run.device_id, paired, busy, reloadToken, refreshToken]);
 
   async function queueImages(mode: "45" | "both" | "916") {
     if (!runId) return;
@@ -224,7 +226,9 @@ export function RunWorkspace({
   const imageHint = outputs.length
     ? ""
     : (run.image_count || 0) > 0
-      ? `${run.image_count} images are on this machine. Click Pair local agent and allow local network access if Chrome asks.`
+      ? paired
+        ? `${run.image_count} images are on this machine. Click Show local images if the desk is empty.`
+        : `${run.image_count} images are on this machine. Click Pair local agent and allow local network access if Chrome asks.`
       : "No generated images yet. Use Generate 4:5 after this tab is paired with the local agent.";
 
   return (
@@ -311,7 +315,20 @@ export function RunWorkspace({
           }}
         />
       ) : (
-        <p className="hint">{imageHint}</p>
+        <div className="action-row">
+          <p className="hint">{imageHint}</p>
+          {(run.image_count || 0) > 0 ? (
+            paired ? (
+              <Button variant="ghost" onClick={() => setReloadToken((value) => value + 1)}>
+                Show local images
+              </Button>
+            ) : (
+              <Button variant="ghost" onClick={() => void onPair()}>
+                Pair local agent
+              </Button>
+            )
+          ) : null}
+        </div>
       )}
     </section>
   );

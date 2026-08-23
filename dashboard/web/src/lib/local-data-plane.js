@@ -318,8 +318,9 @@ export class LocalDataPlaneClient {
   }
 
   session(deviceId, ownerKey = "") {
-    const owner = ownerKey || this._pairedOwner || "";
+    const owner = ownerKey || this._pairedOwner || this.activeOwnerKey(deviceId);
     if (!owner) return null;
+    if (!this._pairedOwner) this._pairedOwner = owner;
     const storageKey = `${SESSION_PREFIX}${deviceId}:${owner}`;
     const raw = storageGet(storageKey);
     if (!raw) return null;

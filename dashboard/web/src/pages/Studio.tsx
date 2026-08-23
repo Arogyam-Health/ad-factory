@@ -110,6 +110,7 @@ export function StudioPage() {
   const [openRunId, setOpenRunId] = useState("");
   const [runPage, setRunPage] = useState(0);
   const [paired, setPaired] = useState(false);
+  const [deskTick, setDeskTick] = useState(0);
   const [batchBusy, setBatchBusy] = useState("");
   const newestRunRef = useRef("");
 
@@ -559,6 +560,7 @@ export function StudioPage() {
         const blob = await localDataPlane.downloadRun(id, live.deviceId);
         triggerDownload(blob, `${run?.display_batch || id}.zip`);
       }
+      setDeskTick((value) => value + 1);
       setStatus(`Downloaded ${ids.length} batch${ids.length === 1 ? "" : "es"}.`);
     } catch (err) {
       setStatus(String(err));
@@ -834,6 +836,7 @@ export function StudioPage() {
           <Button variant="ghost" onClick={async () => {
             const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
             setRuns(data.runs || []);
+            setDeskTick((value) => value + 1);
           }}>Refresh</Button>
           <Button
             variant="ghost"
@@ -947,6 +950,7 @@ export function StudioPage() {
               deviceId={deviceId}
               agentId={agentId}
               paired={paired}
+              refreshToken={deskTick}
               onPair={pairLocalAgent}
               onClose={() => setOpenRunId("")}
               onStatus={setStatus}

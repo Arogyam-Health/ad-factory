@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
 import { asConfigText } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
@@ -61,6 +61,98 @@ function useReference() {
   const ctx = useContext(ReferenceCtx);
   if (!ctx) throw new Error("Reference pane must sit inside ReferenceFlow");
   return ctx;
+}
+
+function SwipeLibrary({
+  label,
+  className = "",
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [canPrev, setCanPrev] = useState(false);
+  const [canNext, setCanNext] = useState(false);
+  const itemCount = Array.isArray(children) ? children.length : 0;
+
+  function updateNav() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setCanPrev(el.scrollLeft > 2);
+    setCanNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  }
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    updateNav();
+    el.addEventListener("scroll", updateNav, { passive: true });
+    const observer = new ResizeObserver(updateNav);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateNav);
+      observer.disconnect();
+    };
+  }, [itemCount]);
+
+  function scrollByDir(dir: -1 | 1) {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const card = el.querySelector<HTMLElement>(".reference-slide");
+    const delta = (card?.getBoundingClientRect().width || 240) + 12;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollBy({ left: dir * delta, behavior: reduced ? "auto" : "smooth" });
+  }
+
+  function onWheel(event: WheelEvent<HTMLDivElement>) {
+    const el = event.currentTarget;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    const max = el.scrollWidth - el.clientWidth;
+    if (max <= 0) return;
+    const next = el.scrollLeft + event.deltaY;
+    if ((next <= 0 && el.scrollLeft <= 0) || (next >= max && el.scrollLeft >= max)) return;
+    el.scrollLeft += event.deltaY;
+    event.preventDefault();
+  }
+
+  return (
+    <div className={`reference-rail${className ? ` ${className}` : ""}`}>
+      <div
+        ref={scrollerRef}
+        className="reference-library"
+        tabIndex={0}
+        role="region"
+        aria-label={label}
+        onWheel={onWheel}
+      >
+        {children}
+      </div>
+      {canPrev || canNext ? (
+        <div className="reference-rail-nav">
+          <button
+            type="button"
+            className="reference-rail-btn"
+            aria-label={`Previous ${label}`}
+            disabled={!canPrev}
+            onClick={() => scrollByDir(-1)}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="reference-rail-btn"
+            aria-label={`Next ${label}`}
+            disabled={!canNext}
+            onClick={() => scrollByDir(1)}
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function ReferenceFlow({ children, ...props }: ReferenceProps & { children: ReactNode }) {
@@ -325,7 +417,7 @@ export function ReferenceDesk() {
         }}
       />
       <p className="hint">{ctx.refs.length} stored · {ctx.pickedRefs.size} selected</p>
-      <div className="reference-library">
+      <SwipeLibrary label="Reference images">
         {ctx.refs.map((item, index) => (
           <article
             key={item.resource_id}
@@ -389,7 +481,7 @@ export function ReferenceDesk() {
             </div>
           </article>
         ))}
-      </div>
+      </SwipeLibrary>
       <label className="hint" style={{ display: "block", marginTop: 12 }}>Product assets</label>
       <FileField
         id="referenceProductFiles"
@@ -404,7 +496,7 @@ export function ReferenceDesk() {
         }}
       />
       <p className="hint">{ctx.products.length} stored · {ctx.pickedProducts.size} selected</p>
-      <div className="reference-library product-library">
+      <SwipeLibrary label="Product assets" className="product-library">
         {ctx.products.map((item, index) => (
           <article
             key={item.resource_id}
@@ -453,7 +545,7 @@ export function ReferenceDesk() {
             </div>
           </article>
         ))}
-      </div>
+      </SwipeLibrary>
       <div className="action-row" style={{ margin: "14px 0" }}>
         <Button variant="ghost" onClick={() => ctx.setViewer("persona_seeds")}>
           {ctx.canEditFiles ? "Edit persona seed" : "View persona seed"}
