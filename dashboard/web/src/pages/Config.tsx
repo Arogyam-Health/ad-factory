@@ -398,25 +398,27 @@ export function ConfigPage() {
         <aside className="config-files">
           <p className="tile-kicker">Files</p>
           <h2>On this plate</h2>
-          {loading ? <SkeletonLines lines={10} /> : (
-            <div className="nav">
-              {CONFIG_SECTIONS.map((section) => (
-                <div key={section.id} className="nav-group">
-                  <p className={`nav-section${section.id === "business" ? " nav-section-business" : ""}`}>{section.title}</p>
-                  {section.keys.map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`nav-link${active === key ? " active" : ""}`}
-                      onClick={() => setActive(key)}
-                    >
-                      <span>{KEY_LABELS[key]}</span>
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="config-files-list">
+            {loading ? <SkeletonLines lines={10} /> : (
+              <div className="nav">
+                {CONFIG_SECTIONS.map((section) => (
+                  <div key={section.id} className="nav-group">
+                    <p className={`nav-section${section.id === "business" ? " nav-section-business" : ""}`}>{section.title}</p>
+                    {section.keys.map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`nav-link${active === key ? " active" : ""}`}
+                        onClick={() => setActive(key)}
+                      >
+                        <span>{KEY_LABELS[key]}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </aside>
         <section className="config-editor">
           <div className="config-editor-head">

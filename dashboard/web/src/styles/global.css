@@ -508,9 +508,17 @@ p {
   text-align: left;
 }
 
+.persona-board {
+  max-height: min(520px, calc(100vh - 280px));
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  background: var(--surface-0);
+}
+
 .persona-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
 }
 
@@ -518,9 +526,9 @@ p {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
-  min-height: 88px;
-  padding: 12px;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
   border: 1px solid var(--rule);
   background: var(--surface-2);
   text-align: left;
@@ -531,6 +539,31 @@ p {
 .persona-card.active {
   border-color: var(--gold);
   background: var(--gold-dim);
+}
+
+.persona-card-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.persona-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+}
+
+.chip-mini {
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
 }
 
 .persona-num {
@@ -1146,11 +1179,12 @@ input[type="number"].field::-webkit-inner-spin-button {
 }
 
 .cfg-textarea {
-  min-height: 280px;
+  min-height: 0;
+  height: 100%;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.5;
-  resize: vertical;
+  resize: none;
 }
 
 .toggle-row {
@@ -1238,6 +1272,22 @@ input[type="number"].field::-webkit-inner-spin-button {
 
 .modal-box-wide {
   width: min(1080px, 100%);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-box-wide .modal-body {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(88vh - 150px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-box-wide .cfg-editor {
+  flex: 1;
+  min-height: 0;
 }
 
 .modal-header,
@@ -1376,13 +1426,32 @@ input[type="number"].field::-webkit-inner-spin-button {
 .cfg-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.cfg-editor-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.cfg-editor-scroll-text {
+  overflow: hidden;
+  display: flex;
+}
+
+.cfg-editor-scroll-text .cfg-textarea {
+  flex: 1;
+  width: 100%;
 }
 
 .config-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: calc(100vh - var(--header) - 48px);
 }
 
 .config-toolbar {
@@ -1411,7 +1480,9 @@ input[type="number"].field::-webkit-inner-spin-button {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  height: calc(100vh - var(--header) - 168px);
+  min-height: 360px;
 }
 
 .config-files,
@@ -1422,10 +1493,18 @@ input[type="number"].field::-webkit-inner-spin-button {
   padding: 16px 18px;
 }
 
-.config-files {
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 160px);
+.config-files,
+.config-editor {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.config-files-list {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -1441,11 +1520,13 @@ input[type="number"].field::-webkit-inner-spin-button {
 }
 
 .config-editor-head {
+  flex-shrink: 0;
   margin-bottom: 14px;
 }
 
 .form-mode-switch {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 0;
   border: 1px solid var(--rule);
   background: var(--surface-0);
@@ -1582,11 +1663,15 @@ input[type="number"].field::-webkit-inner-spin-button {
 @media (max-width: 980px) {
   .config-desk {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
   .config-files {
-    position: static;
-    max-height: none;
+    height: 240px;
+  }
+
+  .config-editor {
+    height: min(70vh, 640px);
   }
 
   .form-row,

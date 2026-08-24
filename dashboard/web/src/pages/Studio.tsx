@@ -86,6 +86,7 @@ export function StudioPage() {
   const [personas, setPersonas] = useState<Persona[]>(studio?.personas || []);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [formats, setFormats] = useState<Set<string>>(new Set(["HERO"]));
+  const [personaFormats, setPersonaFormats] = useState<Record<number, string[]>>({});
   const [patterns, setPatterns] = useState<Record<string, string>>({});
   const [language, setLanguage] = useState("EN");
   const [flow, setFlow] = useState<"structured" | "reference">(
@@ -406,6 +407,10 @@ export function StudioPage() {
     }
   }, [studio?.hypothesis?.variables, hypType, hypVariant]);
 
+  function formatsForPersona(n: number) {
+    return personaFormats[n] ?? formatList;
+  }
+
   function togglePersona(n: number) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -420,7 +425,27 @@ export function StudioPage() {
       const next = new Set(prev);
       if (next.has(fmt)) next.delete(fmt);
       else if (next.size < 8) next.add(fmt);
+      setPersonaFormats((current) => {
+        const updated: Record<number, string[]> = {};
+        const ids = personas.length ? personas.map((persona) => persona.number) : Object.keys(current).map(Number);
+        for (const number of new Set([...ids, ...Object.keys(current).map(Number)])) {
+          const existing = new Set(current[number] ?? [...prev]);
+          if (next.has(fmt)) existing.add(fmt);
+          else existing.delete(fmt);
+          updated[number] = [...existing];
+        }
+        return updated;
+      });
       return next;
+    });
+  }
+
+  function togglePersonaFormat(n: number, fmt: string) {
+    setPersonaFormats((current) => {
+      const existing = new Set(current[n] ?? formatList);
+      if (existing.has(fmt)) existing.delete(fmt);
+      else if (existing.size < 8) existing.add(fmt);
+      return { ...current, [n]: [...existing] };
     });
   }
 
@@ -429,15 +454,22 @@ export function StudioPage() {
       setStatus("Sign in before sending a plate.");
       return;
     }
-    if (!selectedCount || !formatList.length) {
+    const formatsByPersona: Record<string, string[]> = {};
+    const usedFormats = new Set<string>();
+    for (const n of selected) {
+      const list = formatsForPersona(n);
+      if (!list.length) continue;
+      formatsByPersona[String(n)] = list;
+      for (const fmt of list) usedFormats.add(fmt);
+    }
+    const globalForRequest = formatList.length ? formatList : [...usedFormats];
+    if (!selectedCount || !globalForRequest.length) {
       setStatus("Pick at least one persona and one format.");
       return;
     }
     setBusy(true);
     setStatus("Allocating copy plate…");
     try {
-      const formatsByPersona: Record<string, string[]> = {};
-      for (const n of selected) formatsByPersona[String(n)] = formatList;
       const providerName = provider === "google" ? "google_gemini" : "opencode";
       const pendingSecret = providerName === "google_gemini" ? googleKey.trim() : opencodeKey.trim();
       await fetchJSON(`/api/user/provider-config/${providerName}`, {
@@ -466,7 +498,7 @@ export function StudioPage() {
           operation_id: `${envelope.run_id}-structured-copy`,
           settings: {
             selected_personas: [...selected],
-            global_formats: formatList,
+            global_formats: globalForRequest,
             formats_by_persona: formatsByPersona,
             multiplier,
             batch_size: batchSize,
@@ -677,7 +709,8 @@ export function StudioPage() {
                 </button>
               ))}
             </div>
-            <p className="tile-kicker">Formats on selected personas</p>
+            <p className="tile-kicker">Global formats</p>
+            <p className="hint" style={{ marginBottom: 8 }}>Applies to every persona card. Click a format on a card to change only that persona.</p>
             <div className="chips" style={{ marginBottom: 18 }}>
               {formatOptions.map((fmt) => (
                 <button key={fmt.id} type="button" className={`chip${formats.has(fmt.id) ? " active" : ""}`} onClick={() => toggleFormat(fmt.id)}>
@@ -702,19 +735,40 @@ export function StudioPage() {
               </div>
             ) : null}
             {loading ? <SkeletonGridLite /> : (
-              <div className="persona-grid">
-                {personas.map((persona) => (
-                  <button
-                    key={persona.number}
-                    type="button"
-                    className={`persona-card${selected.has(persona.number) ? " active" : ""}`}
-                    onClick={() => togglePersona(persona.number)}
-                  >
-                    <span className="persona-num">P{String(persona.number).padStart(2, "0")}</span>
-                    <span>{persona.name}</span>
-                  </button>
-                ))}
-                {!personas.length ? <p className="hint">No personas on this plate yet.</p> : null}
+              <div className="persona-board">
+                <div className="persona-grid">
+                  {personas.map((persona) => {
+                    const personaFormatSet = new Set(formatsForPersona(persona.number));
+                    return (
+                      <div
+                        key={persona.number}
+                        className={`persona-card${selected.has(persona.number) ? " active" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="persona-card-head"
+                          onClick={() => togglePersona(persona.number)}
+                        >
+                          <span className="persona-num">P{String(persona.number).padStart(2, "0")}</span>
+                          <span>{persona.name}</span>
+                        </button>
+                        <div className="persona-formats">
+                          {formatOptions.map((fmt) => (
+                            <button
+                              key={fmt.id}
+                              type="button"
+                              className={`chip chip-mini${personaFormatSet.has(fmt.id) ? " active" : ""}`}
+                              onClick={() => togglePersonaFormat(persona.number, fmt.id)}
+                            >
+                              {fmt.label || fmt.id}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!personas.length ? <p className="hint">No personas on this plate yet.</p> : null}
+                </div>
               </div>
             )}
           </>
@@ -726,7 +780,7 @@ export function StudioPage() {
           {loading ? <SkeletonLines lines={5} /> : (
             <>
               <p className="hint">
-                {selectedCount} persona{selectedCount === 1 ? "" : "s"} · {formatList.join(" / ") || "no formats"} · {language}
+                {selectedCount} persona{selectedCount === 1 ? "" : "s"} · {[...new Set([...selected].flatMap((n) => formatsForPersona(n)))].join(" / ") || "no formats"} · {language}
               </p>
               <p className="hint" style={{ margin: "14px 0 18px" }}>
                 {paired ? `Paired ${deviceId.slice(0, 8)} · ` : deviceId ? `Agent ${deviceId.slice(0, 8)} reachable · ` : ""}{status}
