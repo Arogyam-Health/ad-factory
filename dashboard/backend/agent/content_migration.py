@@ -47,6 +47,7 @@ _CONFIG_KEYS = frozenset(
         "ad_support_shapes",
         "ad_guardrails",
         "copy_starting_prompt",
+        "visual_archetype_llm_prompt",
         "copy_prompt_templates",
         "persona_seeds",
         "concept",

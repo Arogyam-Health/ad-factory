@@ -35,11 +35,13 @@ from dashboard.backend.services.provider_relay import (
     ProviderRelayError,
     provider_relay,
 )
+from dashboard.backend.services.copy_system import copy_task
 from dashboard.backend.services.render_structured_copy import (
     ProviderCallError,
     generate_structured_prompt_bundle,
     provider_generate_callable,
 )
+from dashboard.backend.services.copy_system import is_format_id, normalize_format_id
 from dashboard.backend.services.user_config import resolve_effective_config
 
 
@@ -154,8 +156,8 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
     if (
         not isinstance(formats, list)
         or not formats
-        or len(formats) > 5
-        or any(str(value).upper() not in {"HERO", "BA", "TEST", "FEAT", "UGC"} for value in formats)
+        or len(formats) > 8
+        or any(not is_format_id(value) for value in formats)
     ):
         raise ValueError("Structured copy formats are invalid")
     provider = str(raw.get("provider") or "").lower()
@@ -167,7 +169,7 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
     if not model or len(model) > 256:
         raise ValueError("Structured copy model is invalid")
     language_mode = str(raw.get("language_mode") or "EN").upper()
-    if language_mode not in {"EN", "HI", "HINGLISH", "ALL", "BOTH"}:
+    if not language_mode or len(language_mode) > 16 or not language_mode.replace("_", "").isalnum():
         raise ValueError("Structured copy language mode is invalid")
     multiplier = int(raw.get("multiplier") or 1)
     if multiplier < 1 or multiplier > 20:
@@ -182,12 +184,8 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
         if (
             not str(persona_key).isdigit()
             or not isinstance(persona_formats, list)
-            or len(persona_formats) > 5
-            or any(
-                str(value).upper()
-                not in {"HERO", "BA", "TEST", "FEAT", "UGC"}
-                for value in persona_formats
-            )
+            or len(persona_formats) > 8
+            or any(not is_format_id(value) for value in persona_formats)
         ):
             raise ValueError("Per-persona formats are invalid")
     batch_size = int(raw.get("batch_size") or 10)
@@ -215,13 +213,13 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
     archetypes = raw.get("visual_archetypes_by_format")
     if archetypes is None:
         archetypes = {}
-    if not isinstance(archetypes, dict) or len(archetypes) > 5:
+    if not isinstance(archetypes, dict) or len(archetypes) > 8:
         raise ValueError("Visual archetypes by format are invalid")
     visual_archetypes_by_format = {}
     for fmt, archetype_id in archetypes.items():
-        normalized = str(fmt).upper()
-        if normalized not in {"HERO", "BA", "TEST", "FEAT", "UGC"}:
+        if not is_format_id(fmt):
             raise ValueError("Visual archetypes by format are invalid")
+        normalized = normalize_format_id(fmt)
         ident = str(archetype_id or "").strip()
         if len(ident) > 80:
             raise ValueError("Visual archetypes by format are invalid")
@@ -229,9 +227,9 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
             visual_archetypes_by_format[normalized] = ident
     return {
         "selected_personas": personas,
-        "global_formats": [str(value).upper() for value in formats],
+        "global_formats": [normalize_format_id(value) for value in formats],
         "formats_by_persona": {
-            str(key): [str(value).upper() for value in values]
+            str(key): [normalize_format_id(value) for value in values]
             for key, values in formats_by_persona.items()
         },
         "multiplier": multiplier,
@@ -792,7 +790,7 @@ def _ensure_run_trace(
                 "error_code": error_code,
                 "error_detail": error_detail,
                 "request": {
-                    "task": "Generate structured advertising copy as JSON",
+                    "task": copy_task(None),
                     "planned_ad_count": max(0, prompt_count),
                     "languages": [],
                     "request_sha256": request_sha256[:64],
@@ -836,7 +834,7 @@ def _record_job_failure_trace(
                 "error_code": error_code,
                 "error_detail": error_detail,
                 "request": {
-                    "task": "Generate structured advertising copy as JSON",
+                    "task": copy_task(None),
                     "planned_ad_count": 0,
                     "languages": [],
                     "request_sha256": "",
@@ -881,7 +879,7 @@ def _record_provider_failure_trace(
                 "error_code": exc.code,
                 "error_detail": exc.error_detail,
                 "request": {
-                    "task": "Generate structured advertising copy as JSON",
+                    "task": copy_task(None),
                     "planned_ad_count": 0,
                     "languages": [],
                     "request_sha256": "",

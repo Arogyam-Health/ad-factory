@@ -264,6 +264,19 @@ class RenderStructuredPipelineTests(unittest.TestCase):
             settings["visual_archetypes_by_format"],
             {"HERO": "hero_center_stage"},
         )
+        story = validate_copy_settings(
+            {
+                "selected_personas": [3],
+                "global_formats": ["STORY"],
+                "formats_by_persona": {"3": ["STORY"]},
+                "visual_archetypes_by_format": {"STORY": "story_default"},
+                "multiplier": 1,
+                "language_mode": "EN",
+                "provider": "opencode",
+                "model": "opencode/big-pickle",
+            }
+        )
+        self.assertEqual(story["global_formats"], ["STORY"])
         with self.assertRaises(ValueError):
             validate_copy_settings(
                 {

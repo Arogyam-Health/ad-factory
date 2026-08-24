@@ -18,28 +18,40 @@ from typing import Any, Callable
 import requests
 
 from dashboard.backend.services.copy_system import (
+    OPTIONAL_COPY_FIELDS,
     compact,
+    copy_repair_task,
+    copy_task,
+    extra_persona_language_keys,
     format_layer,
     format_output_fields,
     guardrails,
     hypothesis_layer,
+    language_layers,
+    language_persona_map,
+    normalize_format_id,
+    persona_fallbacks,
+    persona_source_map,
+    pick_persona_field,
+    resolve_language_ids,
 )
 from dashboard.backend.services.llm_trace import MAX_TRACE_TEXT
 from dashboard.backend.services.user_config import resolve_selected_concept
-from dashboard.backend.services.visual_archetypes import bundled_visual_archetypes
+from dashboard.backend.services.visual_archetypes import (
+    FORMATS,
+    LLM_DECIDE_ID,
+    _archetype_groups,
+    bundled_visual_archetypes,
+    format_ids_from_formats,
+    llm_decide_archetype,
+    pick_random_archetype,
+)
 from scripts import generate_ads
 
 
 GenerateCallable = Callable[[dict[str, Any], bool], dict[str, Any]]
 TraceCallback = Callable[[dict[str, Any]], None]
 ProviderTransport = Callable[[dict[str, Any]], dict[str, Any]]
-_LANGUAGES = {
-    "EN": ("EN",),
-    "HI": ("HI",),
-    "HINGLISH": ("HINGLISH",),
-    "ALL": ("EN", "HI", "HINGLISH"),
-    "BOTH": ("EN", "HI", "HINGLISH"),
-}
 
 
 class ProviderCallError(RuntimeError):
@@ -119,34 +131,36 @@ def _persona_map(effective_config: dict[str, Any]) -> dict[int, dict[str, Any]]:
     }
 
 
-def _persona(number: int, source: dict[str, Any]) -> dict[str, Any]:
-    name = str(source.get("persona_name") or source.get("name") or f"Persona {number}")
-    pain = str(source.get("core_pattern") or source.get("pain_en") or "").strip()
-    desire = str(source.get("relevant_ok_kit_role") or source.get("desire_en") or "").strip()
-    friction = str(source.get("why_it_failed") or source.get("friction_en") or "").strip()
-    proof = str(source.get("guardrail") or source.get("proof_needed_en") or "").strip()
-    tone = str(source.get("tone_cue_en") or source.get("tone") or "").strip()
+def _persona(
+    number: int,
+    source: dict[str, Any],
+    effective_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    aliases = persona_source_map(effective_config)
+    fallbacks = persona_fallbacks(effective_config, "EN")
+    name = pick_persona_field(source, aliases.get("name") or ["persona_name", "name"])
     payload = {
         "number": number,
-        "name": name,
-        "pain_en": pain or "The current routine is difficult to sustain.",
-        "desire_en": desire or "A practical routine that fits daily life.",
-        "friction_en": friction or "Past approaches felt difficult to maintain.",
-        "proof_needed_en": proof or "Use verified product facts only.",
-        "tone_cue_en": tone or "Practical, empathetic, and confidence-building.",
+        "name": name or f"Persona {number}",
+        "pain_en": pick_persona_field(source, aliases.get("pain_en") or ["pain_en"])
+        or fallbacks.get("pain_en")
+        or "",
+        "desire_en": pick_persona_field(source, aliases.get("desire_en") or ["desire_en"])
+        or fallbacks.get("desire_en")
+        or "",
+        "friction_en": pick_persona_field(source, aliases.get("friction_en") or ["friction_en"])
+        or fallbacks.get("friction_en")
+        or "",
+        "proof_needed_en": pick_persona_field(
+            source, aliases.get("proof_needed_en") or ["proof_needed_en"]
+        )
+        or fallbacks.get("proof_needed_en")
+        or "",
+        "tone_cue_en": pick_persona_field(source, aliases.get("tone_cue_en") or ["tone_cue_en"])
+        or fallbacks.get("tone_cue_en")
+        or "",
     }
-    for key in (
-        "pain_hi",
-        "desire_hi",
-        "friction_hi",
-        "proof_needed_hi",
-        "tone_cue_hi",
-        "pain_hinglish",
-        "desire_hinglish",
-        "friction_hinglish",
-        "proof_needed_hinglish",
-        "tone_cue_hinglish",
-    ):
+    for key in extra_persona_language_keys(effective_config):
         value = str(source.get(key) or "").strip()
         if value:
             payload[key] = value
@@ -156,44 +170,14 @@ def _persona(number: int, source: dict[str, Any]) -> dict[str, Any]:
 def _persona_for_llm(
     persona: dict[str, Any],
     languages: tuple[str, ...],
+    effective_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "number": persona.get("number"),
         "name": persona.get("name"),
     }
-    if "EN" in languages:
-        mapping = {
-            "pain": "pain_en",
-            "desire": "desire_en",
-            "friction": "friction_en",
-            "proof_needed": "proof_needed_en",
-            "tone_cue": "tone_cue_en",
-        }
-        for dest, source in mapping.items():
-            value = str(persona.get(source) or "").strip()
-            if value:
-                payload[dest] = value
-    if "HI" in languages:
-        mapping = {
-            "pain_hi": "pain_hi",
-            "desire_hi": "desire_hi",
-            "friction_hi": "friction_hi",
-            "proof_needed_hi": "proof_needed_hi",
-            "tone_cue_hi": "tone_cue_hi",
-        }
-        for dest, source in mapping.items():
-            value = str(persona.get(source) or "").strip()
-            if value:
-                payload[dest] = value
-    if "HINGLISH" in languages:
-        mapping = {
-            "pain_hinglish": "pain_hinglish",
-            "desire_hinglish": "desire_hinglish",
-            "friction_hinglish": "friction_hinglish",
-            "proof_needed_hinglish": "proof_needed_hinglish",
-            "tone_cue_hinglish": "tone_cue_hinglish",
-        }
-        for dest, source in mapping.items():
+    for lang in languages:
+        for dest, source in language_persona_map(effective_config, lang).items():
             value = str(persona.get(source) or "").strip()
             if value:
                 payload[dest] = value
@@ -211,13 +195,22 @@ def _hypothesis_from_settings(settings: dict[str, Any]) -> dict[str, Any]:
 
 def _archetype_catalog(effective_config: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     templates = _json_config(effective_config.get("copy_prompt_templates"), {})
-    raw = templates.get("visual_archetypes") if isinstance(templates, dict) else None
-    if not isinstance(raw, dict) or not any(raw.get(fmt) for fmt in ("HERO", "BA", "TEST", "FEAT", "UGC")):
-        raw = bundled_visual_archetypes()
+    wanted = format_ids_from_formats(effective_config.get("ad_formats"))
+    groups = _archetype_groups(
+        templates.get("visual_archetypes") if isinstance(templates, dict) else None
+    )
+    if not any(groups.get(fmt) for fmt in (wanted or FORMATS)):
+        groups = _archetype_groups(bundled_visual_archetypes())
+    keys = list(wanted)
+    for ident in groups:
+        if ident not in keys:
+            keys.append(ident)
+    if not keys:
+        keys = list(FORMATS)
     catalog: dict[str, list[dict[str, Any]]] = {}
-    for fmt in ("HERO", "BA", "TEST", "FEAT", "UGC"):
-        items = raw.get(fmt) if isinstance(raw, dict) else None
-        catalog[fmt] = [item for item in (items if isinstance(items, list) else []) if isinstance(item, dict)]
+    for fmt in keys:
+        items = groups.get(fmt) or []
+        catalog[fmt] = [item for item in items if isinstance(item, dict)]
     return catalog
 
 
@@ -225,8 +218,14 @@ def _resolve_archetype(
     fmt: str,
     archetype_id: str,
     catalog: dict[str, list[dict[str, Any]]],
+    *,
+    seed: int = 1,
+    used_ids: set[str] | None = None,
+    llm_prompt: str = "",
 ) -> dict[str, Any]:
     wanted = str(archetype_id or "").strip()
+    if wanted == LLM_DECIDE_ID:
+        return llm_decide_archetype(llm_prompt)
     for item in catalog.get(fmt) or []:
         if str(item.get("id") or "").strip() == wanted:
             return item
@@ -236,8 +235,9 @@ def _resolve_archetype(
         except RuntimeError:
             pass
     items = catalog.get(fmt) or []
-    if items:
-        return items[0]
+    picked = pick_random_archetype(items, seed=seed, used_ids=used_ids)
+    if picked:
+        return picked
     return generate_ads.default_visual_archetype(fmt)
 
 
@@ -346,9 +346,7 @@ def _planned_ads(
         formats = per_persona.get(str(number))
         formats = formats if isinstance(formats, list) and formats else global_formats
         for fmt in formats:
-            normalized_format = str(fmt or "").upper()
-            if normalized_format not in {"HERO", "BA", "TEST", "FEAT", "UGC"}:
-                raise ValueError("Unsupported ad format")
+            normalized_format = normalize_format_id(fmt)
             forced_archetype = str(archetype_map.get(normalized_format) or "").strip()
             background_group_key = (
                 normalized_format
@@ -360,7 +358,11 @@ def _planned_ads(
                     "format": normalized_format,
                     "creative_index": creative_index,
                     "creative_total": multiplier,
-                    "persona": _persona(number, personas.get(number, {})),
+                    "persona": _persona(
+                        number,
+                        personas.get(number, {}),
+                        effective_config,
+                    ),
                     "background_group_key": background_group_key,
                     "share_background_across_personas": share_background,
                 }
@@ -388,6 +390,7 @@ def _planned_ads(
 def _normalized_language_block(
     candidate: dict[str, Any],
     language: str,
+    extra_fields: tuple[str, ...] | list[str] = (),
 ) -> dict[str, Any]:
     copy = (
         candidate.get("copy")
@@ -418,7 +421,9 @@ def _normalized_language_block(
         if language == "EN"
         else [direct_copy, alias, nested]
     )
-    allowed = (
+    allowed: list[str] = []
+    seen: set[str] = set()
+    for key in (
         "headline",
         "cta",
         "subheadline",
@@ -427,7 +432,12 @@ def _normalized_language_block(
         "trust_line",
         "attribution",
         "bullets",
-    )
+        *extra_fields,
+    ):
+        ident = str(key or "").strip()
+        if ident and ident not in seen:
+            seen.add(ident)
+            allowed.append(ident)
     block: dict[str, Any] = {}
     for source in sources:
         for key in allowed:
@@ -456,7 +466,7 @@ def _pattern_for_llm(
     catalog: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any] | None:
     wanted = str(archetype_id or "").strip()
-    if not wanted:
+    if not wanted or wanted == LLM_DECIDE_ID:
         return None
     for item in catalog.get(fmt) or []:
         if str(item.get("id") or "").strip() == wanted:
@@ -481,6 +491,7 @@ def _llm_planned_ad(
         "persona": _persona_for_llm(
             plan.get("persona") if isinstance(plan.get("persona"), dict) else {},
             languages,
+            effective_config,
         ),
     }
     hypothesis = plan.get("hypothesis") if isinstance(plan.get("hypothesis"), dict) else {}
@@ -535,6 +546,7 @@ def _normalize_copy(
     response: dict[str, Any],
     planned: list[dict[str, Any]],
     languages: tuple[str, ...],
+    effective_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     candidates = response.get("ads") if isinstance(response.get("ads"), list) else []
     ads = []
@@ -551,6 +563,10 @@ def _normalize_copy(
                 language: _normalized_language_block(
                     candidate,
                     language,
+                    extra_fields=format_output_fields(
+                        effective_config,
+                        _ad_format_id(plan),
+                    ),
                 )
                 for language in languages
             },
@@ -567,7 +583,7 @@ def _validation_error(
     languages: tuple[str, ...],
     effective_config: dict[str, Any] | None = None,
 ) -> str | None:
-    optional = {"trust_line"}
+    optional = OPTIONAL_COPY_FIELDS
     for ad in copy_batch.get("ads", []):
         fmt = _ad_format_id(ad)
         fields = format_output_fields(effective_config, fmt)
@@ -596,15 +612,19 @@ def _validation_error(
     return None
 
 
-def _background(raw: dict[str, Any]) -> dict[str, Any]:
+def _background(
+    raw: dict[str, Any],
+    templates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    T = templates if isinstance(templates, dict) and templates else generate_ads.PROMPT_ASSEMBLER_TEMPLATES
+    configured = T.get("background_field_defaults") if isinstance(T.get("background_field_defaults"), dict) else {}
     defaults = {
-        "base": "a clean product arrangement",
-        "surface": ["neutral studio surface"],
-        "environment": ["minimal studio"],
-        "lighting": ["soft daylight"],
-        "mood": ["calm confidence"],
-        "camera": ["eye-level product shot"],
-        "color_tone": ["balanced brand colors"],
+        **generate_ads.DEFAULT_BACKGROUND_FIELDS,
+        **{
+            key: value
+            for key, value in configured.items()
+            if value not in (None, "", [])
+        },
     }
     return {
         **defaults,
@@ -689,8 +709,9 @@ def _trace_request_metadata(request: dict[str, Any]) -> dict[str, Any]:
         "task": str(request.get("task") or ""),
         "planned_ad_count": len(planned) if isinstance(planned, list) else 0,
         "languages": [
-            str(value)
+            str(value.get("id") if isinstance(value, dict) else value)
             for value in (languages if isinstance(languages, list) else [])
+            if str(value.get("id") if isinstance(value, dict) else value).strip()
         ],
         "request_sha256": _sha256_json(request),
     }
@@ -742,15 +763,16 @@ def generate_structured_prompt_bundle(
         visual_locks,
         share_across_personas=share_background,
     )
-    languages = _LANGUAGES.get(
-        str(settings.get("language_mode") or "EN").upper(),
-        ("EN",),
+    languages = resolve_language_ids(
+        effective_config,
+        settings.get("language_mode") or "EN",
     )
     product_document = str(effective_config.get("product_master_doc") or "").strip()
     if not product_document:
         raise ValueError("Product Master Doc is empty")
     starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
     catalog = _archetype_catalog(effective_config)
+    llm_prompt = str(effective_config.get("visual_archetype_llm_prompt") or "").strip()
     has_hypothesis = any(
         isinstance(item.get("hypothesis"), dict)
         and str(item.get("hypothesis", {}).get("type") or "") not in {"", "none"}
@@ -758,7 +780,7 @@ def generate_structured_prompt_bundle(
     )
     request = compact(
         {
-            "task": "Generate structured advertising copy as JSON",
+            "task": copy_task(effective_config),
             "starting_prompt": starting_prompt,
             "product_document": product_document,
             "planned_ads": [
@@ -770,7 +792,7 @@ def generate_structured_prompt_bundle(
                 )
                 for item in planned
             ],
-            "languages": list(languages),
+            "languages": language_layers(effective_config, languages),
             "guardrails": guardrails(
                 effective_config,
                 hypothesis=has_hypothesis,
@@ -783,14 +805,14 @@ def generate_structured_prompt_bundle(
         }
     )
     response = generate(request, False)
-    copy_batch = _normalize_copy(response, planned, languages)
+    copy_batch = _normalize_copy(response, planned, languages, effective_config)
     error = _validation_error(copy_batch, languages, effective_config)
     repair_count = 0
     if error:
         repair_count = 1
         response = generate(
             {
-                "task": "Repair structured copy validation errors and return JSON only",
+                "task": copy_repair_task(effective_config),
                 "validation_error": error,
                 "required_output_schema": request["output_schema"],
                 "original_request": request,
@@ -798,7 +820,7 @@ def generate_structured_prompt_bundle(
             },
             True,
         )
-        copy_batch = _normalize_copy(response, planned, languages)
+        copy_batch = _normalize_copy(response, planned, languages, effective_config)
         error = _validation_error(copy_batch, languages, effective_config)
     if error:
         raise ProviderCallError(
@@ -816,13 +838,24 @@ def generate_structured_prompt_bundle(
     ) or None
     background_cache: dict[str, tuple[dict[str, Any], int]] = {}
     prompts: list[dict[str, Any]] = []
+    used_archetypes: dict[str, set[str]] = {}
     for ad_index, ad in enumerate(copy_batch["ads"], start=1):
         fmt = str(ad["format"]).upper()
         persona = ad["persona"]
         persona_no = int(persona["number"])
         archetype_id = str(ad.get("visual_archetype") or "").strip()
-        archetype = _resolve_archetype(fmt, archetype_id, catalog)
+        used_ids = used_archetypes.setdefault(fmt, set())
+        archetype = _resolve_archetype(
+            fmt,
+            archetype_id,
+            catalog,
+            seed=int(run_number) + ad_index * 17 + persona_no * 13,
+            used_ids=used_ids,
+            llm_prompt=llm_prompt,
+        )
         archetype_id = str(archetype.get("id") or archetype_id)
+        if archetype_id and archetype_id != LLM_DECIDE_ID:
+            used_ids.add(archetype_id)
         lock = _lookup_background_lock(
             background_locks,
             fmt,
@@ -839,13 +872,15 @@ def generate_structured_prompt_bundle(
             slot_id = str(lock.get("background_slot") or "").strip()
             try:
                 selected_background = _background(
-                    generate_ads.get_background_by_id(backgrounds, fmt, slot_id)
+                    generate_ads.get_background_by_id(backgrounds, fmt, slot_id),
+                    templates,
                 ) if slot_id else _background(
                     _pick_background_slot(
                         backgrounds,
                         fmt,
                         int(run_number) + ad_index - 1,
-                    )
+                    ),
+                    templates,
                 )
             except RuntimeError:
                 selected_background = _background(
@@ -853,7 +888,8 @@ def generate_structured_prompt_bundle(
                         backgrounds,
                         fmt,
                         int(run_number) + ad_index - 1,
-                    )
+                    ),
+                    templates,
                 )
             seed = lock.get("background_seed")
             background_seed = (
@@ -872,7 +908,8 @@ def generate_structured_prompt_bundle(
                     backgrounds,
                     fmt,
                     int(run_number) + ad_index - 1,
-                )
+                ),
+                templates,
             )
             background_seed = random.Random(
                 int(run_number) + ad_index * 101
@@ -882,6 +919,7 @@ def generate_structured_prompt_bundle(
             selected_background,
             background_seed,
             "4:5",
+            templates,
         )
         angle = str(ad.get("concept_angle") or "").strip()
         if not angle:
@@ -894,6 +932,7 @@ def generate_structured_prompt_bundle(
                 fmt,
                 language,
                 ad["copy"][language],
+                templates,
             )
             text = generate_ads.render_prompt(
                 fmt,

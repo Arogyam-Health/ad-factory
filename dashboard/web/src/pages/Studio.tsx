@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { fetchJSON, peekCache, invalidateRuns, clearCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { asConfigText, catalogConcepts, CONFIG_KEYS, KEY_HINTS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
+import { asConfigText, catalogConcepts, catalogLanguageModes, CONFIG_SECTIONS, KEY_HINTS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
-import type { ConfigSource, EffectiveConfig, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
+import type { ConfigSource, EffectiveConfig, FormatOption, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
 import { Skeleton, SkeletonLines } from "@/components/Skeleton";
@@ -16,8 +17,22 @@ import { LazyAsset } from "@/pages/studio/LazyAsset";
 import { displayRunStatus } from "@/lib/run-status";
 import { DownloadKindDialog } from "@/components/DownloadKindDialog";
 
-const FORMATS = ["HERO", "BA", "TEST", "FEAT", "UGC"] as const;
-const LANGUAGES = ["ALL", "EN", "HI", "HINGLISH"] as const;
+const FALLBACK_FORMATS: FormatOption[] = [
+  { id: "HERO", label: "HERO" },
+  { id: "BA", label: "BA" },
+  { id: "TEST", label: "TEST" },
+  { id: "FEAT", label: "FEAT" },
+  { id: "UGC", label: "UGC" },
+];
+
+function catalogFormats(studio: StudioPayload | null): FormatOption[] {
+  const items = (studio?.formats || []).map((item) => (
+    typeof item === "string"
+      ? { id: item, label: item }
+      : { id: String(item.id || "").toUpperCase(), label: item.label || item.id }
+  )).filter((item) => item.id);
+  return items.length ? items : FALLBACK_FORMATS;
+}
 const DEFAULT_OPENCODE_MODEL = "opencode/big-pickle";
 const RUNS_PER_PAGE = 5;
 
@@ -104,6 +119,7 @@ export function StudioPage() {
   const [copyJobId, setCopyJobId] = useState("");
   const [activeRunId, setActiveRunId] = useState("");
   const [viewer, setViewer] = useState("");
+  const [plateTick, setPlateTick] = useState(0);
   const [configMeta, setConfigMeta] = useState<EffectiveConfig | null>(null);
   const [orgId, setOrgId] = useState(() => readStudioOrg());
   const [sources, setSources] = useState<ConfigSource[]>([]);
@@ -334,14 +350,36 @@ export function StudioPage() {
     return () => {
       cancelled = true;
     };
-  }, [ready, flow, user.authenticated, user.user_id, orgId]);
+  }, [ready, flow, user.authenticated, user.user_id, orgId, plateTick]);
 
   const selectedCount = selected.size;
   const openRun = runs.find((run) => run.run_id === openRunId) || null;
   const runPages = Math.max(1, Math.ceil(runs.length / RUNS_PER_PAGE));
   const safeRunPage = Math.min(runPage, runPages - 1);
   const pageRuns = runs.slice(safeRunPage * RUNS_PER_PAGE, safeRunPage * RUNS_PER_PAGE + RUNS_PER_PAGE);
-  const formatList = useMemo(() => FORMATS.filter((fmt) => formats.has(fmt)), [formats]);
+  const formatOptions = useMemo(() => catalogFormats(studio), [studio]);
+  const languageModes = useMemo(() => catalogLanguageModes(studio), [studio]);
+  const formatList = useMemo(
+    () => formatOptions.filter((item) => formats.has(item.id)).map((item) => item.id),
+    [formatOptions, formats],
+  );
+
+  useEffect(() => {
+    const ids = new Set(formatOptions.map((item) => item.id));
+    setFormats((prev) => {
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      if (!next.size && formatOptions[0]) next.add(formatOptions[0].id);
+      if (next.size === prev.size && [...next].every((id) => prev.has(id))) return prev;
+      return next;
+    });
+  }, [formatOptions]);
+
+  useEffect(() => {
+    const ids = new Set(languageModes.map((item) => item.id));
+    if (ids.size && !ids.has(language)) {
+      setLanguage(languageModes[0]?.id || "EN");
+    }
+  }, [languageModes, language]);
 
   useEffect(() => {
     const newest = runs[0]?.run_id || "";
@@ -381,7 +419,7 @@ export function StudioPage() {
     setFormats((prev) => {
       const next = new Set(prev);
       if (next.has(fmt)) next.delete(fmt);
-      else next.add(fmt);
+      else if (next.size < 8) next.add(fmt);
       return next;
     });
   }
@@ -467,10 +505,25 @@ export function StudioPage() {
     ? (configMeta.org?.org_id || (orgId !== "personal" ? orgId : ""))
     : "";
 
-  function applySavedFile(key: string, text: string) {
-    setStudio((prev) => (prev ? { ...prev, config: { ...prev.config, [key]: text } } : prev));
+  function applySavedFile(key: string, text: string, result?: { notice?: string; config?: Record<string, unknown> }) {
+    setStudio((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          [key]: text,
+          ...(result?.notice && typeof result?.config?.copy_prompt_templates === "string"
+            ? { copy_prompt_templates: result.config.copy_prompt_templates }
+            : {}),
+        },
+      };
+    });
     setConfigMeta((prev) => (prev ? { ...prev, version: (prev.version ?? 0) + 1 } : prev));
-    setStatus(`${KEY_LABELS[key] || key} saved.`);
+    setStatus(result?.notice || `${KEY_LABELS[key] || key} saved.`);
+    if (key === "ad_formats" || key === "ad_languages" || key === "copy_prompt_templates") {
+      setPlateTick((value) => value + 1);
+    }
   }
 
   function openRunRow(run: Run) {
@@ -618,17 +671,17 @@ export function StudioPage() {
           <>
             <p className="tile-kicker">Language</p>
             <div className="chips" style={{ marginBottom: 18 }}>
-              {LANGUAGES.map((mode) => (
-                <button key={mode} type="button" className={`chip${language === mode ? " active" : ""}`} onClick={() => setLanguage(mode)}>
-                  {mode}
+              {languageModes.map((mode) => (
+                <button key={mode.id} type="button" className={`chip${language === mode.id ? " active" : ""}`} onClick={() => setLanguage(mode.id)}>
+                  {mode.label || mode.id}
                 </button>
               ))}
             </div>
             <p className="tile-kicker">Formats on selected personas</p>
             <div className="chips" style={{ marginBottom: 18 }}>
-              {FORMATS.map((fmt) => (
-                <button key={fmt} type="button" className={`chip${formats.has(fmt) ? " active" : ""}`} onClick={() => toggleFormat(fmt)}>
-                  {fmt}
+              {formatOptions.map((fmt) => (
+                <button key={fmt.id} type="button" className={`chip${formats.has(fmt.id) ? " active" : ""}`} onClick={() => toggleFormat(fmt.id)}>
+                  {fmt.label || fmt.id}
                 </button>
               ))}
             </div>
@@ -639,6 +692,7 @@ export function StudioPage() {
                     {fmt} pattern
                     <select className="field" value={patterns[fmt] || ""} onChange={(e) => setPatterns((prev) => ({ ...prev, [fmt]: e.target.value }))}>
                       <option value="">Auto rotate</option>
+                      <option value="llm_decide">Leave it to the image model</option>
                       {(studio?.format_patterns?.[fmt] || []).map((item) => (
                         <option key={item.id} value={item.id}>{item.label || item.id}</option>
                       ))}
@@ -843,18 +897,51 @@ export function StudioPage() {
         </Tile>
       )}
 
-      <Tile span="wide" kicker="03 · Copy desk" title="Config files on this plate">
+      <Tile span="wide" kicker="03 · Copy desk" title="Plate files">
         {orgSources.length ? (
           <OrgConfigChips orgId={orgId} sources={orgSources} onSelect={selectOrg} />
         ) : null}
         <p className="hint" style={{ marginBottom: 12 }}>
           {canEditFiles
-            ? "Open a file to edit it. Save writes to the selected Mongo config, same as the Config desk."
-            : "Open a file to read it. Sign in to edit your own plate."}
+            ? "Open a file to edit it. Save writes to the selected Mongo config, same as the Config desk. "
+            : "Open a file to read it. Sign in to edit your own plate. "}
+          <Link to="/guide">Operator guide</Link>
         </p>
         <div className="file-card-grid">
-          {CONFIG_KEYS.map((key) => (
+          {CONFIG_SECTIONS[0].keys.map((key) => (
             <button key={key} type="button" className="file-card" onClick={() => setViewer(key)}>
+              <strong>{KEY_LABELS[key]}</strong>
+              <span>{KEY_HINTS[key]}</span>
+              <em>{asConfigText(studio?.config?.[key]).slice(0, 72) || "empty"}</em>
+            </button>
+          ))}
+        </div>
+      </Tile>
+
+      <Tile span="wide" kicker="03 · Hypothesis" title="Hypothesis styles">
+        <p className="hint" style={{ marginBottom: 12 }}>
+          These files feed the Hypothesis and Style menus. They are not mixed with plate files.
+        </p>
+        <div className="file-card-grid">
+          {CONFIG_SECTIONS[1].keys.map((key) => (
+            <button key={key} type="button" className="file-card" onClick={() => setViewer(key)}>
+              <strong>{KEY_LABELS[key]}</strong>
+              <span>{KEY_HINTS[key]}</span>
+              <em>{asConfigText(studio?.config?.[key]).slice(0, 72) || "empty"}</em>
+            </button>
+          ))}
+        </div>
+      </Tile>
+
+      <Tile span="wide" className="tile-business" kicker="03 · Business" title="Business rules">
+        <p className="hint" style={{ marginBottom: 12 }}>
+          This brand&apos;s lock. A new business edits these first. Image proof bar and headline bans
+          live in Prompt Assembler Templates (`proof_bar_text`, `headline_bans`). Persona seed field
+          names are mapped in Ad Languages (`_persona_source_map`).
+        </p>
+        <div className="file-card-grid">
+          {CONFIG_SECTIONS[2].keys.map((key) => (
+            <button key={key} type="button" className="file-card file-card-business" onClick={() => setViewer(key)}>
               <strong>{KEY_LABELS[key]}</strong>
               <span>{KEY_HINTS[key]}</span>
               <em>{asConfigText(studio?.config?.[key]).slice(0, 72) || "empty"}</em>

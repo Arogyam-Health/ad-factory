@@ -6,10 +6,14 @@ import unittest
 from dashboard.backend.services.copy_system import (
     COPY_SYSTEM_KEYS,
     HYPOTHESIS_FILES,
+    copy_repair_task,
+    copy_task,
+    format_catalog,
     format_layer,
     format_output_fields,
     hypothesis_catalog,
     hypothesis_layer,
+    persona_source_map,
 )
 from dashboard.backend.services.render_structured_copy import (
     generate_structured_prompt_bundle,
@@ -121,6 +125,7 @@ class CopySystemLoaderTests(unittest.TestCase):
             COPY_SYSTEM_KEYS,
             [
                 "ad_formats",
+                "ad_languages",
                 "ad_hooks",
                 "ad_angles",
                 "ad_frameworks",
@@ -153,6 +158,23 @@ class CopySystemLoaderTests(unittest.TestCase):
         empty = format_layer({"ad_formats": "{}"}, "HERO")
         self.assertEqual(empty, {"id": "HERO"})
         self.assertNotIn("description", empty)
+        self.assertEqual(format_output_fields({"ad_formats": "{}"}, "HERO"), ["headline", "cta"])
+
+    def test_format_catalog_includes_custom_ids(self) -> None:
+        catalog = format_catalog(
+            {
+                "ad_formats": json.dumps(
+                    {
+                        "HERO": {"label": "Hero"},
+                        "STORY": {"label": "Story"},
+                    }
+                )
+            }
+        )
+        self.assertEqual(
+            catalog,
+            [{"id": "HERO", "label": "Hero"}, {"id": "STORY", "label": "Story"}],
+        )
 
     def test_hypothesis_none_is_omitted(self) -> None:
         self.assertIsNone(hypothesis_layer({}, "none", ""))
@@ -166,6 +188,36 @@ class CopySystemLoaderTests(unittest.TestCase):
 
 
 class CopySystemRequestTests(unittest.TestCase):
+    def test_language_layers_send_config_rules(self) -> None:
+        request, result = _compile(formats=["HERO"])
+        self.assertEqual(result["status"], "completed")
+        languages = request["languages"]
+        self.assertEqual(languages[0]["id"], "EN")
+        self.assertEqual(languages[0]["label"], "English")
+        self.assertTrue(
+            any("fully English" in line for line in languages[0]["rules"])
+        )
+        self.assertFalse(
+            any("image" in line.lower() for line in languages[0]["rules"])
+        )
+
+        custom, custom_result = _compile(
+            formats=["HERO"],
+            extra_config={
+                "ad_languages": json.dumps(
+                    {
+                        "_modes": {"EN": {"label": "EN", "languages": ["EN"]}},
+                        "EN": {
+                            "label": "English",
+                            "rules": ["Keep EN copy under six words."],
+                        },
+                    }
+                )
+            },
+        )
+        self.assertEqual(custom_result["status"], "completed")
+        self.assertEqual(custom["languages"][0]["rules"], ["Keep EN copy under six words."])
+
     def test_hero_and_ba_payloads_differ_by_description_and_skeleton(self) -> None:
         request, result = _compile(formats=["HERO", "BA"])
         self.assertEqual(result["status"], "completed")
@@ -286,6 +338,155 @@ class CopySystemRequestTests(unittest.TestCase):
         self.assertIn("fails", hypothesis["definition"].lower())
         self.assertEqual(result["prompts"][0]["concept_angle"], "contrast")
 
+    def test_auto_rotate_does_not_default_to_first_catalog_pattern(self) -> None:
+        request, result = _compile(
+            formats=["HERO"],
+            extra_config={
+                "copy_prompt_templates": json.dumps(
+                    {
+                        "visual_archetypes": {
+                            "HERO": [
+                                {"id": "hero_first", "label": "First", "layout_lines": ["- first"]},
+                                {"id": "hero_second", "label": "Second", "layout_lines": ["- second"]},
+                                {"id": "hero_third", "label": "Third", "layout_lines": ["- third"]},
+                                {"id": "hero_fourth", "label": "Fourth", "layout_lines": ["- fourth"]},
+                            ]
+                        }
+                    }
+                )
+            },
+        )
+        self.assertNotIn("format_pattern", request["planned_ads"][0])
+        picked = {prompt["visual_archetype"] for prompt in result["prompts"]}
+        self.assertTrue(picked <= {"hero_first", "hero_second", "hero_third", "hero_fourth"})
+
+    def test_llm_decide_uses_visual_archetype_prompt_and_skips_copy_pattern(self) -> None:
+        request, result = _compile(
+            formats=["HERO"],
+            settings={"visual_archetypes_by_format": {"HERO": "llm_decide"}},
+            extra_config={
+                "visual_archetype_llm_prompt": "Choose any clean product-led crop.",
+            },
+        )
+        self.assertNotIn("format_pattern", request["planned_ads"][0])
+        self.assertEqual(result["prompts"][0]["visual_archetype"], "llm_decide")
+        self.assertIn("Choose any clean product-led crop.", result["prompts"][0]["text"])
+
+    def test_custom_output_fields_are_required_and_extras_ignored(self) -> None:
+        calls: list[tuple[dict, bool]] = []
+
+        def generate(request: dict, repair: bool = False) -> dict:
+            calls.append((request, repair))
+            if repair:
+                return {
+                    "ads": [
+                        {
+                            "copy": {
+                                "EN": {
+                                    "headline": "Keep the note short",
+                                    "note": "One practical next step",
+                                    "cta": "Learn more",
+                                    "support_line": "ignored extra",
+                                }
+                            }
+                        }
+                    ]
+                }
+            return {
+                "ads": [
+                    {
+                        "copy": {
+                            "EN": {
+                                "headline": "Keep the note short",
+                                "cta": "Learn more",
+                                "support_line": "ignored extra",
+                            }
+                        }
+                    }
+                ]
+            }
+
+        result = generate_structured_prompt_bundle(
+            run_id="run-custom-fields",
+            run_number=1,
+            settings={
+                "selected_personas": [3],
+                "global_formats": ["NOTE"],
+                "formats_by_persona": {},
+                "multiplier": 1,
+                "language_mode": "EN",
+            },
+            effective_config={
+                "product_master_doc": "Verified product facts.",
+                "persona_seeds": _seeds(),
+                "background_variant": _background("NOTE"),
+                "prompt_assembler_templates": "{}",
+                "ad_formats": json.dumps(
+                    {
+                        "NOTE": {
+                            "label": "Note",
+                            "output_fields": ["headline", "note", "cta"],
+                        }
+                    }
+                ),
+            },
+            provider_name="opencode",
+            provider_model="opencode/big-pickle",
+            generate=generate,
+        )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual([repair for _, repair in calls], [False, True])
+        schema = calls[0][0]["output_schema"]["ads"][0]["copy"]["EN"]
+        self.assertEqual(schema, {"headline": "string", "note": "string", "cta": "string"})
+        self.assertEqual(calls[0][0]["planned_ads"][0]["format"]["id"], "NOTE")
+
+        def never_note(request: dict, repair: bool = False) -> dict:
+            return {
+                "ads": [
+                    {
+                        "copy": {
+                            "EN": {
+                                "headline": "Keep the note short",
+                                "cta": "Learn more",
+                                "support_line": "ignored extra",
+                            }
+                        }
+                    }
+                ]
+            }
+
+        with self.assertRaises(Exception) as raised:
+            generate_structured_prompt_bundle(
+                run_id="run-custom-fields-fail",
+                run_number=1,
+                settings={
+                    "selected_personas": [3],
+                    "global_formats": ["NOTE"],
+                    "formats_by_persona": {},
+                    "multiplier": 1,
+                    "language_mode": "EN",
+                },
+                effective_config={
+                    "product_master_doc": "Verified product facts.",
+                    "persona_seeds": _seeds(),
+                    "background_variant": _background("NOTE"),
+                    "prompt_assembler_templates": "{}",
+                    "ad_formats": json.dumps(
+                        {
+                            "NOTE": {
+                                "label": "Note",
+                                "output_fields": ["headline", "note", "cta"],
+                            }
+                        }
+                    ),
+                },
+                provider_name="opencode",
+                provider_model="opencode/big-pickle",
+                generate=never_note,
+            )
+        self.assertEqual(raised.exception.code, "provider_invalid_output")
+        self.assertIn("note_missing", raised.exception.error_detail)
+
     def test_copy_starting_prompt_is_sent_when_non_empty(self) -> None:
         request, result = _compile(
             formats=["HERO"],
@@ -295,6 +496,30 @@ class CopySystemRequestTests(unittest.TestCase):
         self.assertEqual(request["starting_prompt"], "Prefer short headlines.")
         bare, _ = _compile(formats=["HERO"])
         self.assertNotIn("starting_prompt", bare)
+
+    def test_copy_task_and_persona_aliases_come_from_config(self) -> None:
+        self.assertEqual(copy_task({}), "Generate structured advertising copy as JSON")
+        self.assertEqual(
+            copy_repair_task({}),
+            "Repair structured copy validation errors and return JSON only",
+        )
+        aliases = persona_source_map({})
+        self.assertIn("relevant_ok_kit_role", aliases["desire_en"])
+        request, result = _compile(
+            formats=["HERO"],
+            extra_config={
+                "ad_guardrails": json.dumps(
+                    {
+                        "task": "Write structured advertising copy as JSON",
+                        "repair_task": "Fix structured copy validation errors and return JSON only",
+                        "always": ["Use only supplied product facts."],
+                    }
+                )
+            },
+        )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(request["task"], "Write structured advertising copy as JSON")
+        self.assertNotIn("image", json.dumps(request).lower())
 
 
 if __name__ == "__main__":

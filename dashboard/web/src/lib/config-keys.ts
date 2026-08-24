@@ -1,4 +1,5 @@
 import { fetchJSON, invalidateDefaults } from "@/lib/api";
+import type { LanguageMode, StudioPayload } from "@/lib/types";
 
 export const CONFIG_KEYS = [
   "product_master_doc",
@@ -7,6 +8,7 @@ export const CONFIG_KEYS = [
   "persona_seeds",
   "concept",
   "ad_formats",
+  "ad_languages",
   "ad_hooks",
   "ad_angles",
   "ad_frameworks",
@@ -20,6 +22,7 @@ export const CONFIG_KEYS = [
   "ad_support_shapes",
   "ad_guardrails",
   "copy_starting_prompt",
+  "visual_archetype_llm_prompt",
   "background_variant",
   "prompt_assembler_templates",
   "conversion_916_prompt",
@@ -29,11 +32,56 @@ export const CONFIG_KEYS = [
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
+export const HYPOTHESIS_CONFIG_KEYS = [
+  "ad_hooks",
+  "ad_angles",
+  "ad_frameworks",
+  "ad_proof",
+  "ad_objections",
+  "ad_value_props",
+  "ad_awareness",
+  "ad_emotions",
+  "ad_specificity",
+  "ad_feature_focus",
+  "ad_support_shapes",
+] as const;
+
+const HYPOTHESIS_KEY_SET = new Set<string>(HYPOTHESIS_CONFIG_KEYS);
+
+export const BUSINESS_CONFIG_KEYS = [
+  "product_master_doc",
+  "persona_seeds",
+  "starting_prompt",
+  "reference_starting_prompt",
+  "reference_product_master_doc",
+] as const;
+
+const BUSINESS_KEY_SET = new Set<string>(BUSINESS_CONFIG_KEYS);
+
+export const CONFIG_SECTIONS = [
+  {
+    id: "plate",
+    title: "Plate files",
+    keys: CONFIG_KEYS.filter((key) => !HYPOTHESIS_KEY_SET.has(key) && !BUSINESS_KEY_SET.has(key)),
+  },
+  {
+    id: "hypothesis",
+    title: "Hypothesis styles",
+    keys: CONFIG_KEYS.filter((key) => HYPOTHESIS_KEY_SET.has(key)),
+  },
+  {
+    id: "business",
+    title: "Business rules",
+    keys: CONFIG_KEYS.filter((key) => BUSINESS_KEY_SET.has(key)),
+  },
+] as const;
+
 export const JSON_KEYS = new Set<string>([
   "copy_prompt_templates",
   "persona_seeds",
   "concept",
   "ad_formats",
+  "ad_languages",
   "ad_hooks",
   "ad_angles",
   "ad_frameworks",
@@ -57,6 +105,7 @@ export const KEY_LABELS: Record<string, string> = {
   persona_seeds: "Persona Seeds",
   concept: "Concept",
   ad_formats: "Ad Formats",
+  ad_languages: "Ad Languages",
   ad_hooks: "Hook Structures",
   ad_angles: "Concept Angles",
   ad_frameworks: "Copy Frameworks",
@@ -70,6 +119,7 @@ export const KEY_LABELS: Record<string, string> = {
   ad_support_shapes: "Support Shapes",
   ad_guardrails: "Copy Guardrails",
   copy_starting_prompt: "Copy Starting Prompt",
+  visual_archetype_llm_prompt: "Leave Pattern To Image Model",
   background_variant: "Background Variant",
   prompt_assembler_templates: "Prompt Assembler Templates",
   conversion_916_prompt: "9:16 Conversion Prompt",
@@ -78,12 +128,13 @@ export const KEY_LABELS: Record<string, string> = {
 };
 
 export const KEY_HINTS: Record<string, string> = {
-  product_master_doc: "Product info, claims, ingredients, use-cases",
-  starting_prompt: "Image-generation starter prepended to ChatGPT/local image prompts",
+  product_master_doc: "This brand's product truth, claims, ingredients, use-cases",
+  starting_prompt: "This brand's image-generation starter prepended to ChatGPT/local image prompts",
   copy_prompt_templates: "Visual archetypes for image prompts. Live copy reads the Ad * files.",
-  persona_seeds: "Personas with tags, guardrails, headline anchors",
+  persona_seeds: "This brand's personas with tags, guardrails, headline anchors",
   concept: "Creative-format catalog for Studio and Reference",
   ad_formats: "Format descriptions and copy skeletons sent to the copy LLM",
+  ad_languages: "Language chips, writing rules, and this brand's persona seed field map",
   ad_hooks: "Hook Structure hypothesis styles",
   ad_angles: "Concept Angle hypothesis styles",
   ad_frameworks: "Copy Framework hypothesis styles",
@@ -95,14 +146,35 @@ export const KEY_HINTS: Record<string, string> = {
   ad_specificity: "Specificity Level hypothesis styles",
   ad_feature_focus: "Feature Focus hypothesis styles",
   ad_support_shapes: "Support Shape hypothesis styles",
-  ad_guardrails: "Always-on safety lines and no-hypothesis instruction",
+  ad_guardrails: "Always-on safety lines, copy-LLM task lines, and no-hypothesis instruction",
   copy_starting_prompt: "Always sent to the copy LLM when non-empty",
+  visual_archetype_llm_prompt: "Used when a format pattern is Leave it to the image model",
   background_variant: "Background visual variants catalog",
-  prompt_assembler_templates: "Image prompt assembly blocks",
+  prompt_assembler_templates: "Image prompt assembly. Includes this brand's proof_bar_text and headline_bans.",
   conversion_916_prompt: "Converts 4:5 creatives to 9:16",
-  reference_starting_prompt: "Reference flow only — separate starting prompt",
-  reference_product_master_doc: "Reference flow only — separate product doc",
+  reference_starting_prompt: "This brand's Reference-flow starting prompt",
+  reference_product_master_doc: "This brand's Reference-flow product doc",
 };
+
+export const FALLBACK_LANGUAGE_MODES: LanguageMode[] = [
+  { id: "ALL", label: "ALL", languages: ["EN", "HI", "HINGLISH"] },
+  { id: "EN", label: "EN", languages: ["EN"] },
+  { id: "HI", label: "HI", languages: ["HI"] },
+  { id: "HINGLISH", label: "HINGLISH", languages: ["HINGLISH"] },
+];
+
+export function catalogLanguageModes(studio?: StudioPayload | null): LanguageMode[] {
+  const items = (studio?.language_modes || []).map((item) => (
+    typeof item === "string"
+      ? { id: item, label: item, languages: item === "ALL" ? ["EN", "HI", "HINGLISH"] : [item] }
+      : {
+        id: String(item.id || "").toUpperCase(),
+        label: item.label || item.id,
+        languages: item.languages?.length ? item.languages : [String(item.id || "").toUpperCase()],
+      }
+  )).filter((item) => item.id);
+  return items.length ? items : FALLBACK_LANGUAGE_MODES;
+}
 
 export function asConfigText(value: unknown): string {
   if (value == null) return "";
@@ -204,7 +276,7 @@ export async function saveConfigFile(key: string, text: string, target: ConfigSa
   const path = target.ownerType === "org" && target.orgId
     ? `/api/orgs/${encodeURIComponent(target.orgId)}/config`
     : "/api/user/config";
-  const result = await fetchJSON<{ status?: string; config?: Record<string, unknown> }>(path, {
+  const result = await fetchJSON<{ status?: string; notice?: string; config?: Record<string, unknown> }>(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

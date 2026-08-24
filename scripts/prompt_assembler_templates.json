@@ -1,4 +1,150 @@
 {
+  "_description": "Image-prompt assembly. proof_bar_text and headline_bans are this brand's lock. Other keys are system layout.",
+  "_business_keys": ["proof_bar_text", "headline_bans"],
+  "proof_bar_text": "70,000+ Users | 3-5 kg loss with 1 Kit | 100% Ayurvedic",
+  "headline_bans": [
+    "\\b(ok\\s*liquid|ok\\s*tablet|ok\\s*powder|okp)\\b",
+    "\\b(am|pm)\\b|\\b4\\s*-?\\s*hour\\b|\\bno\\s*solid\\b|\\bempty\\s*stomach\\b"
+  ],
+  "language_labels": {
+    "EN": "English",
+    "HI": "Hindi",
+    "HINGLISH": "Hinglish"
+  },
+  "prompt_shell": {
+    "product_lock_header": "PRODUCT LOCK BLOCK",
+    "proof_bar_header": "PROOF BAR BLOCK",
+    "output_spec_header": "OUTPUT SPEC",
+    "layout_header": "FORMAT LAYOUT INSTRUCTIONS",
+    "persona_header": "PERSONA INPUT BLOCK",
+    "concept_header": "CONCEPT INPUT BLOCK",
+    "exact_copy_header": "EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING",
+    "negative_header": "NEGATIVE CONSTRAINTS",
+    "quality_header": "QUALITY BAR - verify before accepting output",
+    "visual_header": "VISUAL DIRECTION BLOCK",
+    "typography_header": "TYPOGRAPHY SHARPNESS BLOCK",
+    "create_ad_line": "Create the ad in {language}.",
+    "exact_copy_footer": "Render every character exactly as written. No paraphrasing, no punctuation changes, no autocorrection.",
+    "proof_bar_copy_line": "- Proof bar: {proof_bar_text}",
+    "proof_bar_once_line": "- Proof bar is present exactly once, fully readable, horizontally centered, and does not enter the bottom restricted band.",
+    "concept_path_note": "- Concept path is strategy only; do not render these labels on-image.",
+    "style_generic": "{fmt} (custom format layout).",
+    "persona_lines": [
+      "- Persona: {persona_name} (Persona {persona_number})",
+      "- Pain: {pain}",
+      "- Desire: {desire}",
+      "- Friction: {friction}",
+      "- Proof needed: {proof}",
+      "- Tone cue: {tone}",
+      "- Concept angle: {concept_angle}"
+    ],
+    "copy_labels": {
+      "headline": "- Headline: {value}",
+      "support_line": "- Support line: {value}",
+      "cta": "- CTA: {value}",
+      "context_line": "- Context line: {value}",
+      "trust_line": "- Trust line: {value}",
+      "attribution": "- Attribution: {value}",
+      "bullet": "- Bullet {index}: {value}",
+      "left_situation": "- Left situation {index}: {value}",
+      "right_shift": "- Right shift {index}: {value}"
+    },
+    "concept_name_line": "- Concept: {concept_label}",
+    "concept_description_line": "- Description: {concept_description}"
+  },
+  "persona_prompt_fields": {
+    "EN": {
+      "required": true,
+      "pain": ["pain_en"],
+      "desire": ["desire_en"],
+      "friction": ["friction_en"],
+      "proof": ["proof_needed_en"],
+      "tone": ["tone_cue_en"]
+    },
+    "HI": {
+      "required": true,
+      "pain": ["pain_hi"],
+      "desire": ["desire_hi"],
+      "friction": ["friction_hi"],
+      "proof": ["proof_needed_hi"],
+      "tone": ["tone_cue_hi"]
+    },
+    "HINGLISH": {
+      "required": false,
+      "pain": ["pain_hinglish", "pain_hi"],
+      "desire": ["desire_hinglish", "desire_hi"],
+      "friction": ["friction_hinglish", "friction_hi"],
+      "proof": ["proof_needed_hinglish", "proof_needed_hi"],
+      "tone": ["tone_cue_hinglish", "tone_cue_hi"]
+    }
+  },
+  "background_field_defaults": {
+    "base": "a clean product arrangement",
+    "surface": ["neutral studio surface"],
+    "environment": ["minimal studio"],
+    "lighting": ["soft daylight"],
+    "mood": ["calm confidence"],
+    "camera": ["eye-level product shot"],
+    "color_tone": ["balanced brand colors"]
+  },
+  "background_sentence": {
+    "composition": ["balanced feed composition inside the central safe field"],
+    "layout_intent": ["preserve a stable center-of-interest corridor with consistent margin protection on every side"],
+    "cta_safe_space": ["maintain subtle low-contrast space near the lower edge to protect feed overlay readability"],
+    "crop_safety": ["maintain protected margin buffers so alternate crops do not clip meaningful scene structure"],
+    "text_overlay_treatment": ["if a text readability panel is used, keep it in the upper text zone only as a soft vertical fade (high opacity near top, fading to transparent before the product cluster), never behind or below products"],
+    "edge_tone_control": ["keep all frame edges tonally neutral with no orange, amber, or sepia cast; no border glow and no vignette halo"],
+    "format_9_16": "designed for 9:16 vertical placement with key subject content constrained to the 14-65 percent safe band, positioned slightly above center, and with the lower 35 percent kept visually quiet for overlays; avoid edge glow frames and tinted border gradients",
+    "format_4_5": "designed for 4:5 feed framing with key content held inside the central safe field, centered to slightly above center, while top 10 percent, bottom 15 percent, and side edge zones remain low-priority; avoid edge glow frames and tinted border gradients",
+    "template": "{base} on a {surface}, with {environment}, lit by {lighting}, conveying {mood}; {camera}, {composition}, {layout_intent}, {cta_safe_space}, {crop_safety}, {text_overlay_treatment}, {edge_tone_control}, {color_tone}, {format_clause}, clean premium studio ad photography, ultra-detailed, flawless commercial finish."
+  },
+  "default_visual_archetype": {
+    "id": "default_{fmt_lower}",
+    "label": "Default {fmt} layout",
+    "layout_lines": [
+      "- Use a clean {fmt} composition with one obvious focal hierarchy.",
+      "- Keep product labels readable and fully inside the safe-zone.",
+      "- Place headline, support copy, CTA, and proof bar with clear separation."
+    ],
+    "direction_lines": [
+      "- Selected visual archetype fallback: default_{fmt_lower} - {label}"
+    ]
+  },
+  "default_copy": {
+    "EN": {
+      "headline": "A simpler daily wellness routine",
+      "support_line": "Designed to fit into your day with clear, guided steps.",
+      "trust_line": "Trusted by thousands of wellness-focused customers.",
+      "cta": "See how it works",
+      "test_headline": "Real routines, real trust"
+    },
+    "HI": {
+      "headline": "रोज की वेलनेस के लिए आसान रूटीन",
+      "support_line": "आपके दिन में आसानी से फिट होने वाले साफ, गाइडेड स्टेप्स।",
+      "trust_line": "हजारों वेलनेस-केंद्रित ग्राहकों का भरोसा।",
+      "cta": "जानें कैसे काम करता है",
+      "test_headline": "असली रूटीन, असली भरोसा"
+    },
+    "HINGLISH": {
+      "headline": "Daily wellness ke liye simple routine",
+      "support_line": "Aapke day mein fit hone wale clear, guided steps.",
+      "trust_line": "Thousands of wellness-focused customers ka trust.",
+      "cta": "Dekhein kaise work karta hai",
+      "test_headline": "Real routine, real trust"
+    }
+  },
+  "default_bullets": {
+    "BA": {
+      "EN": ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"],
+      "HI": ["पहले: शुरुआत साफ नहीं थी", "पहले: रूटीन फॉलो करना मुश्किल था", "बाद में: रोज के स्टेप्स साफ हुए", "बाद में: जारी रखने का भरोसा बढ़ा"],
+      "HINGLISH": ["Before: start clear nahi tha", "Before: routine follow karna hard tha", "After: daily steps clearer hue", "After: continue karne ka confidence badha"]
+    },
+    "default": {
+      "EN": ["Clear daily steps", "Premium, guided routine"],
+      "HI": ["साफ रोजाना स्टेप्स", "प्रीमियम, गाइडेड रूटीन"],
+      "HINGLISH": ["Clear daily steps", "Premium guided routine"]
+    }
+  },
   "product_lock_block": [
     "- Use the uploaded product packshot images as absolute visual truth.",
     "- Use provided product references as exact appearance truth for pack shape, label, and color.",
@@ -10,7 +156,7 @@
   "proof_bar_block": [
     "PROOF BAR / TRUST STRIP",
     "- Add one proof bar near the lower safe field, below the product cluster but fully above the bottom restricted band.",
-    "- Exact proof bar text: [YOUR PROOF TEXT, e.g. 10,000+ Users | 95% Satisfaction | 100% Natural]",
+    "- Exact proof bar text: {proof_bar_text}",
     "- Render every character exactly as written. Do not change spacing, numbers, hyphens, plus sign, vertical bars, casing, or wording.",
     "- The proof bar must be horizontally centered.",
     "- Place it inside the central safe field only.",

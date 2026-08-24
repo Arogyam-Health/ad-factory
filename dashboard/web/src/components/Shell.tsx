@@ -10,14 +10,16 @@ import { GuestBanner } from "@/components/GuestBanner";
 const LINKS = [
   { to: "/", label: "Studio", index: "01" },
   { to: "/config", label: "Config", index: "02" },
-  { to: "/organizations", label: "Teams", index: "03" },
-  { to: "/traces", label: "Traces", index: "04" },
-  { to: "/profile", label: "Profile", index: "05" },
+  { to: "/guide", label: "Guide", index: "03" },
+  { to: "/organizations", label: "Teams", index: "04" },
+  { to: "/traces", label: "Traces", index: "05" },
+  { to: "/profile", label: "Profile", index: "06" },
 ];
 
 const TITLES: Record<string, { eyebrow: string; title: string }> = {
   "/": { eyebrow: "Plate", title: "Generation studio" },
   "/config": { eyebrow: "Copy desk", title: "Config files" },
+  "/guide": { eyebrow: "Copy desk", title: "Operator guide" },
   "/organizations": { eyebrow: "Floor", title: "Teams" },
   "/traces": { eyebrow: "Proof", title: "LLM traces" },
   "/profile": { eyebrow: "Press pass", title: "Profile" },
@@ -62,7 +64,7 @@ export function Shell({ children }: { children: ReactNode }) {
               onTouchStart={() => prefetchRoute("/admin", user)}
             >
               <span>Admin</span>
-              <span className="nav-index">06</span>
+              <span className="nav-index">07</span>
             </NavLink>
           ) : null}
         </nav>

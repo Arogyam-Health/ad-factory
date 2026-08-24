@@ -9,8 +9,8 @@ if [[ ! -d "$ROOT_DIR/dashboard/backend" ]]; then
   exit 1
 fi
 
-echo "[1/3] Creating local storage dirs"
-mkdir -p "$ROOT_DIR/dashboard_storage/runs"
+echo "[1/3] Creating local stack dirs"
+mkdir -p "$ROOT_DIR/.local-stack/pids" "$ROOT_DIR/.local-stack/logs"
 
 echo "[2/3] Ensuring Python dependencies"
 if [[ ! -d "$VENV_DIR" ]]; then

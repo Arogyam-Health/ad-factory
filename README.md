@@ -120,12 +120,10 @@ python scripts/generate_ads.py --copy-file copy.json --dry-run
 
 See `docs/HANDOVER.md` for the full pipeline reference, validation gates, and what-not-to-do list.
 
-## Gitignored (not in the repo — regenerated locally)
+## Gitignored (not in the repo)
 
 - `.venv/` — Python virtualenv
-- `output/`, `generated_images/` — generated prompts and images
-- `dashboard_storage/` — dashboard run manifests
-- `runtime/` — generation logs, queues, prompt caches
+- `.local-stack/` — local dashboard pids and logs
 - `.sixth/`, `.commandcode/` — local tool caches
 
 ---

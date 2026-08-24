@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PID_DIR="$ROOT_DIR/dashboard_storage/pids"
+PID_DIR="$ROOT_DIR/.local-stack/pids"
 DASHBOARD_PORTS=(4090 5555)
 
 stop_dashboard_fallbacks() {

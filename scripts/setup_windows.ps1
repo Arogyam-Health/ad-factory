@@ -33,7 +33,7 @@ $ErrorActionPreference = "Stop"
 $RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $VenvDir = Join-Path $RootDir ".venv"
 $ScriptsDir = Join-Path $VenvDir "Scripts"
-$StorageDir = Join-Path $RootDir "dashboard_storage"
+$StorageDir = Join-Path $RootDir ".local-stack"
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
@@ -265,11 +265,11 @@ if ($OpenCodeAvailable) {
 Write-Host ""
 Write-Host "[7/7] Creating storage directories" -ForegroundColor Yellow
 
-foreach ($sub in @("pids", "logs", "runs")) {
+foreach ($sub in @("pids", "logs")) {
     $dir = Join-Path $StorageDir $sub
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        Write-Host "  Created $sub/" -ForegroundColor Gray
+        Write-Host "  Created .local-stack/$sub/" -ForegroundColor Gray
     }
 }
 
@@ -279,23 +279,6 @@ foreach ($sub in @("docs", "images")) {
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         Write-Host "  Created input/$sub/" -ForegroundColor Gray
-    }
-}
-
-$RuntimeDir = Join-Path $RootDir "runtime"
-foreach ($sub in @("opencode_queue", "gemini_selected_prompts", "chatgpt_selected_prompts", "conversion_916_prompts", "generation_logs")) {
-    $dir = Join-Path $RuntimeDir $sub
-    if (-not (Test-Path $dir)) {
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        Write-Host "  Created runtime/$sub/" -ForegroundColor Gray
-    }
-}
-
-foreach ($sub in @("output", "generated_images")) {
-    $dir = Join-Path $RootDir $sub
-    if (-not (Test-Path $dir)) {
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        Write-Host "  Created $sub/" -ForegroundColor Gray
     }
 }
 

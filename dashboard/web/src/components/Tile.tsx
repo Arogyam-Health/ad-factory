@@ -8,12 +8,13 @@ type Props = {
   span?: Span;
   kicker?: string;
   title?: string;
+  className?: string;
   children: ReactNode;
 };
 
-export function Tile({ span = "wide", kicker, title, children }: Props) {
+export function Tile({ span = "wide", kicker, title, className, children }: Props) {
   return (
-    <motion.section className={`tile tile-${span}`} variants={fadeUp}>
+    <motion.section className={`tile tile-${span}${className ? ` ${className}` : ""}`} variants={fadeUp}>
       <span className="tile-mark" aria-hidden="true" />
       {kicker ? <p className="tile-kicker">{kicker}</p> : null}
       {title ? <h2>{title}</h2> : null}

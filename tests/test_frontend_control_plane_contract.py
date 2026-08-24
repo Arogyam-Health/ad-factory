@@ -150,6 +150,40 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn('type="submit"', profile)
         self.assertIn("saveConfigFile", _read("lib", "config-keys.ts"))
         self.assertIn("Save file", _read("components", "FileViewer.tsx"))
+        self.assertIn("result.notice", _read("components", "FileViewer.tsx"))
+
+    def test_guide_page_and_flexible_formats_are_wired(self) -> None:
+        app = _read("App.tsx")
+        shell = _read("components", "Shell.tsx")
+        studio = _read("pages", "Studio.tsx")
+        config = _read("pages", "Config.tsx")
+        guide = _read("pages", "Guide.tsx")
+        defaults = (
+            ROOT / "dashboard" / "backend" / "routes" / "defaults.py"
+        ).read_text(encoding="utf-8")
+        user_routes = (
+            ROOT / "dashboard" / "backend" / "services" / "user_config_routes.py"
+        ).read_text(encoding="utf-8")
+        org_routes = (
+            ROOT / "dashboard" / "backend" / "services" / "org_routes.py"
+        ).read_text(encoding="utf-8")
+        doc = (ROOT / "docs" / "OPERATOR_PLATE_GUIDE.md").read_text(encoding="utf-8")
+        self.assertIn('path="/guide"', app)
+        self.assertIn('to: "/guide"', shell)
+        self.assertIn("Guide", shell)
+        self.assertIn('to="/guide"', studio)
+        self.assertIn("catalogFormats", studio)
+        self.assertIn("studio?.formats", studio)
+        self.assertIn('to="/guide"', config)
+        self.assertIn("result.notice", config)
+        self.assertIn("/api/guide", guide)
+        self.assertIn('"/api/guide"', defaults)
+        self.assertIn("format_catalog", defaults)
+        self.assertIn('"notice": notice', user_routes)
+        self.assertIn("apply_format_archetype_sync", user_routes)
+        self.assertIn("apply_format_archetype_sync", org_routes)
+        self.assertIn("output_fields", doc)
+        self.assertIn("visual archetypes", doc.lower())
 
     def test_studio_org_and_copy_pipeline_persist_across_reload(self) -> None:
         studio = _read("pages", "Studio.tsx")
@@ -164,12 +198,26 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("/api/defaults?org_id=", studio)
         self.assertIn('kicker="03 · Copy desk"', studio)
         self.assertIn("<OrgConfigChips", studio.split('kicker="03 · Copy desk"')[1])
+        self.assertIn('kicker="03 · Hypothesis"', studio)
+        self.assertIn('kicker="03 · Business"', studio)
+        self.assertIn("tile-business", studio)
+        self.assertIn("CONFIG_SECTIONS", config)
+        self.assertIn("Hypothesis styles", config)
+        self.assertIn("Business rules", config)
+        self.assertIn("BUSINESS_CONFIG_KEYS", config)
         self.assertIn("adFactoryStudioOrg:${userId}", config)
         self.assertIn("LAST_STUDIO_ORG_KEY", config)
         self.assertIn("ad_formats", config)
+        self.assertIn("ad_languages", config)
+        self.assertIn("catalogLanguageModes", config)
+        self.assertIn("catalogLanguageModes", studio)
         self.assertIn("ad_guardrails", config)
         self.assertIn("ad_support_shapes", config)
         self.assertIn("copy_starting_prompt", config)
+        self.assertIn("visual_archetype_llm_prompt", config)
+        self.assertIn("Auto rotate", studio)
+        self.assertIn("Leave it to the image model", studio)
+        self.assertIn('value="llm_decide"', studio)
         self.assertIn('{ noCache: true }', auth)
         self.assertIn('url.includes("/api/auth/")', api)
         self.assertIn('url.includes("/api/invites/")', api)
@@ -249,9 +297,11 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             "concept",
             "copy_prompt_templates",
             "ad_formats",
+            "ad_languages",
             "ad_guardrails",
             "ad_support_shapes",
             "copy_starting_prompt",
+            "visual_archetype_llm_prompt",
         ):
             with self.subTest(needle=needle):
                 self.assertIn(needle, readme)

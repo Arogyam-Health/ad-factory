@@ -11,7 +11,7 @@ type Props = {
   version?: number;
   ownerType?: string;
   orgId?: string;
-  onSaved?: (key: string, text: string) => void;
+  onSaved?: (key: string, text: string, result?: { notice?: string; config?: Record<string, unknown> }) => void;
 };
 
 export function FileViewer({
@@ -41,14 +41,14 @@ export function FileViewer({
     setSaving(true);
     setStatus("Saving…");
     try {
-      await saveConfigFile(configKey, draft, {
+      const result = await saveConfigFile(configKey, draft, {
         canEdit,
         version,
         ownerType,
         orgId,
       });
-      setStatus("Saved to this plate.");
-      onSaved?.(configKey, draft);
+      setStatus(result.notice || "Saved to this plate.");
+      onSaved?.(configKey, draft, result);
     } catch (err) {
       const message = String(err);
       setStatus(message.includes("409") ? "Someone else saved this plate. Reload and try again." : message);

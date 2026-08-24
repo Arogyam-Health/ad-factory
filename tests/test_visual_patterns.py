@@ -61,6 +61,13 @@ class VisualPatternTests(unittest.TestCase):
             patterns["HERO"], [{"id": "custom_hero", "label": "Custom hero"}]
         )
 
+    def test_guide_endpoint_returns_operator_markdown(self) -> None:
+        from dashboard.backend.routes.defaults import operator_guide
+
+        payload = operator_guide()
+        self.assertIn("output_fields", payload["markdown"])
+        self.assertIn("visual archetypes", payload["markdown"].lower())
+
     def test_defaults_endpoint_returns_selectable_patterns_per_format(self) -> None:
         from dashboard.backend.routes.defaults import dashboard_defaults
         from dashboard.backend.services.visual_archetypes import FORMATS
@@ -71,7 +78,13 @@ class VisualPatternTests(unittest.TestCase):
         ):
             payload = dashboard_defaults(user={"user_id": "usr_test"})
 
-        self.assertEqual(payload["formats"], list(FORMATS))
+        self.assertEqual([item["id"] for item in payload["formats"]], list(FORMATS))
+        self.assertEqual(
+            [item["id"] for item in payload["language_modes"]],
+            ["ALL", "EN", "HI", "HINGLISH"],
+        )
+        for item in payload["formats"]:
+            self.assertTrue(item["id"] and item["label"])
         for fmt in FORMATS:
             entries = payload["format_patterns"][fmt]
             self.assertTrue(entries, fmt)
@@ -103,6 +116,112 @@ class VisualPatternTests(unittest.TestCase):
         hook_options = payload["hypothesis"]["variables"]["hook_structure"]["options"]
         self.assertEqual(hook_options, [{"id": "question_led", "label": "Org Question"}])
 
+    def test_retired_copy_prompt_blocks_are_stripped_on_generic_only(self) -> None:
+        from dashboard.backend.services.user_config import (
+            validate_config_files,
+        )
+        from dashboard.backend.services.visual_archetypes import (
+            sanitize_copy_prompt_templates_text,
+        )
+
+        raw = json.dumps(
+            {
+                "format": "v1",
+                "system_prompt_base_rules": ["dead"],
+                "cta_variants": {"EN": {"HERO": ["Start Today"]}},
+                "visual_archetypes": {
+                    "HERO": [{"id": "hero_center_stage", "label": "Centered"}]
+                },
+            }
+        )
+        cleaned = json.loads(sanitize_copy_prompt_templates_text(raw))
+        self.assertIn("visual_archetypes", cleaned)
+        self.assertNotIn("system_prompt_base_rules", cleaned)
+        self.assertNotIn("cta_variants", cleaned)
+        saved = validate_config_files({"copy_prompt_templates": raw})
+        self.assertIn("system_prompt_base_rules", saved["copy_prompt_templates"])
+
+    def test_sync_adds_and_removes_visual_archetype_keys(self) -> None:
+        from dashboard.backend.services.visual_archetypes import sync_visual_archetypes
+
+        synced, added, removed = sync_visual_archetypes(
+            json.dumps(
+                {
+                    "visual_archetypes": {
+                        "HERO": [{"id": "hero_center_stage", "label": "Centered"}]
+                    }
+                }
+            ),
+            json.dumps({"HERO": {"label": "Hero"}, "STORY": {"label": "Story"}}),
+        )
+        parsed = json.loads(synced)
+        self.assertEqual(added, ["STORY"])
+        self.assertEqual(removed, [])
+        self.assertEqual(parsed["visual_archetypes"]["STORY"][0]["id"], "story_default")
+        dropped, added_again, removed_again = sync_visual_archetypes(
+            synced,
+            json.dumps({"STORY": {"label": "Story"}}),
+        )
+        self.assertEqual(added_again, [])
+        self.assertEqual(removed_again, ["HERO"])
+        self.assertNotIn("HERO", json.loads(dropped)["visual_archetypes"])
+
+    def test_apply_format_sync_notice_uses_same_owner_templates(self) -> None:
+        from dashboard.backend.services.user_config import apply_format_archetype_sync
+
+        with (
+            patch(
+                "dashboard.backend.services.user_config.get_config_doc",
+                return_value=None,
+            ),
+            patch(
+                "dashboard.backend.services.user_config.get_generic_config",
+                return_value={
+                    "copy_prompt_templates": json.dumps(
+                        {
+                            "visual_archetypes": {
+                                "HERO": [{"id": "hero_center_stage", "label": "Centered"}]
+                            }
+                        }
+                    )
+                },
+            ),
+        ):
+            files, notice = apply_format_archetype_sync(
+                "user",
+                "usr_test",
+                {
+                    "ad_formats": json.dumps(
+                        {"HERO": {"label": "Hero"}, "STORY": {"label": "Story"}}
+                    )
+                },
+            )
+        self.assertIn("Added default visual archetypes for STORY", notice)
+        self.assertIn("story_default", files["copy_prompt_templates"])
+
+    def test_auto_rotate_picks_random_not_first(self) -> None:
+        from dashboard.backend.services.visual_archetypes import (
+            pick_random_archetype,
+        )
+
+        items = [{"id": f"p{i}", "label": str(i)} for i in range(4)]
+        first = pick_random_archetype(items, seed=1)
+        later = pick_random_archetype(items, seed=99)
+        self.assertIn(first["id"], {item["id"] for item in items})
+        self.assertIn(later["id"], {item["id"] for item in items})
+        unused = pick_random_archetype(items, seed=1, used_ids={"p0", "p1", "p2"})
+        self.assertEqual(unused["id"], "p3")
+
+    def test_llm_decide_uses_editable_prompt(self) -> None:
+        from dashboard.backend.services.visual_archetypes import (
+            LLM_DECIDE_ID,
+            llm_decide_archetype,
+        )
+
+        archetype = llm_decide_archetype("Invent a split layout for this format.")
+        self.assertEqual(archetype["id"], LLM_DECIDE_ID)
+        self.assertIn("Invent a split layout", " ".join(archetype["layout_lines"]))
+
     def test_generation_reads_the_same_restored_archetype_file(self) -> None:
         templates = json.loads(
             (ROOT / "dashboard/backend/copy_prompt_templates.json").read_text(
@@ -110,6 +229,8 @@ class VisualPatternTests(unittest.TestCase):
             )
         )
         self.assertIn("visual_archetypes", templates)
+        self.assertNotIn("system_prompt_base_rules", templates)
+        self.assertNotIn("cta_variants", templates)
 
         from scripts.generate_ads import FORMAT_VISUAL_ARCHETYPES
 

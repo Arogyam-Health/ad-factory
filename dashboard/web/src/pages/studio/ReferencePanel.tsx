@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
-import { asConfigText, catalogConcepts } from "@/lib/config-keys";
+import { asConfigText, catalogConcepts, catalogLanguageModes } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { Persona, Run, StudioPayload } from "@/lib/types";
 import { Button } from "@/components/Button";
@@ -56,7 +56,6 @@ type ReferenceApi = ReferenceProps & {
   cancelReference: () => Promise<void>;
 };
 
-const LANGUAGES = ["ALL", "EN", "HI", "HINGLISH"];
 const ReferenceCtx = createContext<ReferenceApi | null>(null);
 
 function useReference() {
@@ -170,7 +169,8 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
   const [jobId, setJobId] = useState("");
   const [runId, setRunId] = useState("");
 
-  const jobCount = props.selected.size * Math.max(pickedRefs.size, 0) * (props.language === "ALL" ? 3 : 1);
+  const languageCount = catalogLanguageModes(props.studio).find((item) => item.id === props.language)?.languages?.length || 1;
+  const jobCount = props.selected.size * Math.max(pickedRefs.size, 0) * languageCount;
 
   useEffect(() => {
     if (!props.deviceId) return;
@@ -421,9 +421,9 @@ export function ReferenceCompose() {
   return (
     <>
       <div className="chips" style={{ marginBottom: 12 }}>
-        {LANGUAGES.map((mode) => (
-          <button key={mode} type="button" className={`chip${language === mode ? " active" : ""}`} onClick={() => setLanguage(mode)}>
-            {mode}
+        {catalogLanguageModes(studio).map((mode) => (
+          <button key={mode.id} type="button" className={`chip${language === mode.id ? " active" : ""}`} onClick={() => setLanguage(mode.id)}>
+            {mode.label || mode.id}
           </button>
         ))}
       </div>

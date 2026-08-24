@@ -31,6 +31,7 @@ from dashboard.backend.services.org_helper import (
     purge_org_owned_documents,
 )
 from dashboard.backend.services.user_config import (
+    apply_format_archetype_sync,
     create_or_update_config,
     resolve_effective_config,
     get_generic_config,
@@ -424,6 +425,7 @@ def update_org_config(
 
     try:
         config = validate_config_files(extract_config_files(payload))
+        config, notice = apply_format_archetype_sync("org", org_id, config)
         result = create_or_update_config(
             owner_type="org",
             owner_id=org_id,
@@ -482,4 +484,5 @@ def update_org_config(
         "can_view_versions": permissions.get("can_manage_org", False) or can_edit,
         "can_rollback": can_edit,
         "can_copy": can_edit and permissions.get("can_manage_org", False) is not False,
+        "notice": notice,
     }

@@ -13,27 +13,13 @@ __pycache__/
 *.pyd
 .Python
 
-# Generated / runtime output (content ignored, .gitkeep files tracked to preserve dirs)
-output/*
-!output/.gitkeep
-
-generated_images/*
-!generated_images/.gitkeep
-
-runtime/*
-!runtime/.gitkeep
-runtime/*/*
-!runtime/*/.gitkeep
-
-dashboard_storage/*
-!dashboard_storage/.gitkeep
-dashboard_storage/*/*
-!dashboard_storage/*/.gitkeep
-
-trash/*
-!trash/.gitkeep
-trash/*/*
-!trash/*/.gitkeep
+# Leftover local content dirs (not used by Render + Mongo + local agent)
+output/
+generated_images/
+runtime/
+dashboard_storage/
+trash/
+.local-stack/
 
 # Tool directories
 .sixth/

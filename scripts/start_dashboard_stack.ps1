@@ -13,10 +13,9 @@ $ErrorActionPreference = "Stop"
 
 $RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $VenvDir = Join-Path $RootDir ".venv"
-$StorageDir = Join-Path $RootDir "dashboard_storage"
+$StorageDir = Join-Path $RootDir ".local-stack"
 $PidDir = Join-Path $StorageDir "pids"
 $LogDir = Join-Path $StorageDir "logs"
-$RunsDir = Join-Path $StorageDir "runs"
 
 $OpenCodeHost = "127.0.0.1"
 $OpenCodePort = "4090"
@@ -63,7 +62,7 @@ $env:OPENCODE_SERVER_PASSWORD = $OpenCodePassword
 # ============================================================
 # Create directories
 # ============================================================
-New-Item -ItemType Directory -Force -Path $PidDir, $LogDir, $RunsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $PidDir, $LogDir | Out-Null
 
 # ============================================================
 # Helper: Check if a PID is running

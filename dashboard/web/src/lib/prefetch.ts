@@ -37,6 +37,10 @@ const ROUTE_PREFETCH: Record<string, { guest: string[]; auth: string[]; admin?: 
     guest: ["/api/public/studio"],
     auth: ["/api/public/studio", "/api/config/effective", "/api/config/sources"],
   },
+  "/guide": {
+    guest: ["/api/guide"],
+    auth: ["/api/guide"],
+  },
   "/organizations": {
     guest: [],
     auth: ["/api/orgs/me"],

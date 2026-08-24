@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import unittest
 from unittest.mock import patch
 
@@ -58,8 +59,9 @@ class MongoDashboardConfigTests(unittest.TestCase):
             / "render_structured_copy.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("CONFIG_KEYS", studio)
-        self.assertIn("product_master_doc", (ROOT / "dashboard/web/src/lib/config-keys.ts").read_text(encoding="utf-8"))
+        self.assertIn("CONFIG_SECTIONS", studio)
+        self.assertIn("product_master_doc", keys)
+        self.assertIn("Business rules", keys)
         self.assertIn("saveConfigFile", (ROOT / "dashboard/web/src/lib/config-keys.ts").read_text(encoding="utf-8"))
         self.assertNotIn("resolveProductDocumentText", studio)
         self.assertIn('effective_config.get("product_master_doc")', render_copy)
@@ -136,6 +138,50 @@ class MongoDashboardConfigTests(unittest.TestCase):
             [{"owner_type": "system", "owner_id": "generic", "is_active": True}],
         )
         self.assertEqual(config["starting_prompt"], "mongo:starting_prompt")
+
+    def test_generic_strips_dead_copy_templates_without_changing_org_extract(self) -> None:
+        from dashboard.backend.services.user_config import (
+            _extract_flat_from_new_schema,
+            get_generic_config,
+        )
+
+        dirty = json.dumps(
+            {
+                "system_prompt_base_rules": ["dead"],
+                "visual_archetypes": {"HERO": [{"id": "hero_center_stage", "label": "Centered"}]},
+            }
+        )
+        db = _DB(
+            {
+                "owner_type": "system",
+                "owner_id": "generic",
+                "is_active": True,
+                "files": {
+                    "copy_prompt_templates": {
+                        "content": dirty,
+                        "content_type": "application/json",
+                    }
+                },
+            }
+        )
+        with patch(
+            "dashboard.backend.services.user_config.get_sync_db", return_value=db
+        ):
+            config = get_generic_config()
+        self.assertNotIn("system_prompt_base_rules", config["copy_prompt_templates"])
+        self.assertIn("visual_archetypes", config["copy_prompt_templates"])
+
+        org = _extract_flat_from_new_schema(
+            {
+                "files": {
+                    "copy_prompt_templates": {
+                        "content": dirty,
+                        "content_type": "application/json",
+                    }
+                }
+            }
+        )
+        self.assertIn("system_prompt_base_rules", org["copy_prompt_templates"])
 
     def test_reference_flow_prompts_are_separate_config_files(self) -> None:
         from dashboard.backend.services.user_config import (

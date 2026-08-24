@@ -11,7 +11,7 @@
 $ErrorActionPreference = "SilentlyContinue"
 
 $RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$PidDir = Join-Path $RootDir "dashboard_storage\pids"
+$PidDir = Join-Path $RootDir ".local-stack\pids"
 
 function Stop-FromPidFile($PidFile, $Name) {
     if (-not (Test-Path $PidFile)) {

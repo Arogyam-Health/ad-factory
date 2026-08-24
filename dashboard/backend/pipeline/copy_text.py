@@ -326,10 +326,16 @@ COPY_PROMPTS = _load_copy_prompts()
 
 
 def _resolve_copy_prompts() -> dict[str, Any]:
+    from dashboard.backend.services.visual_archetypes import (
+        sanitize_copy_prompt_templates_text,
+    )
+
     user_templates_raw = _resolve_user_config("copy_prompt_templates")
     if user_templates_raw:
         try:
-            parsed = json.loads(user_templates_raw) if isinstance(user_templates_raw, str) else user_templates_raw
+            parsed = json.loads(
+                sanitize_copy_prompt_templates_text(user_templates_raw)
+            )
             if isinstance(parsed, dict) and parsed:
                 return parsed
         except (json.JSONDecodeError, TypeError):

@@ -86,20 +86,12 @@ fi
 # ============================================================
 # [4/6] Preparing storage folders
 # ============================================================
-echo "[4/6] Preparing storage folders"
+echo "[4/6] Preparing local stack and input folders"
 mkdir -p \
-  "$ROOT_DIR/dashboard_storage/pids" \
-  "$ROOT_DIR/dashboard_storage/logs" \
-  "$ROOT_DIR/dashboard_storage/runs" \
+  "$ROOT_DIR/.local-stack/pids" \
+  "$ROOT_DIR/.local-stack/logs" \
   "$ROOT_DIR/input/docs" \
-  "$ROOT_DIR/input/images" \
-  "$ROOT_DIR/runtime/opencode_queue" \
-  "$ROOT_DIR/runtime/gemini_selected_prompts" \
-  "$ROOT_DIR/runtime/chatgpt_selected_prompts" \
-  "$ROOT_DIR/runtime/conversion_916_prompts" \
-  "$ROOT_DIR/runtime/generation_logs" \
-  "$ROOT_DIR/output" \
-  "$ROOT_DIR/generated_images"
+  "$ROOT_DIR/input/images"
 
 # ============================================================
 # [5/6] Writing .env.dashboard (if missing)

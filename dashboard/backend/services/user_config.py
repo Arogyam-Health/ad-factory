@@ -10,6 +10,10 @@ from pymongo.errors import DuplicateKeyError
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_USER_CONFIGS
 from dashboard.backend.services.copy_system import COPY_SYSTEM_KEYS, bundled_copy_system_text
+from dashboard.backend.services.visual_archetypes import (
+    DEFAULT_VISUAL_ARCHETYPE_LLM_PROMPT,
+    sanitize_copy_prompt_templates_text,
+)
 
 
 class ConfigVersionConflict(ValueError):
@@ -54,6 +58,7 @@ CONFIG_KEYS = [
     "concept",
     *COPY_SYSTEM_KEYS,
     "copy_starting_prompt",
+    "visual_archetype_llm_prompt",
     "background_variant",
     "prompt_assembler_templates",
     "conversion_916_prompt",
@@ -78,6 +83,7 @@ _CONTENT_TYPES = {
     "concept": "application/json",
     **{key: "application/json" for key in COPY_SYSTEM_KEYS},
     "copy_starting_prompt": "text/plain",
+    "visual_archetype_llm_prompt": "text/plain",
     "background_variant": "application/json",
     "prompt_assembler_templates": "application/json",
     "conversion_916_prompt": "text/plain",
@@ -94,6 +100,7 @@ _EMPTY_BY_KEY = {
     "concept": "{}",
     **{key: "{}" for key in COPY_SYSTEM_KEYS},
     "copy_starting_prompt": "",
+    "visual_archetype_llm_prompt": "",
     "background_variant": "{}",
     "prompt_assembler_templates": "{}",
     "conversion_916_prompt": "",
@@ -138,6 +145,7 @@ def _repository_generic_config() -> dict[str, str]:
         "concept": _read(concept_path) or "{}",
         **bundled_copy_system_text(),
         "copy_starting_prompt": "",
+        "visual_archetype_llm_prompt": DEFAULT_VISUAL_ARCHETYPE_LLM_PROMPT,
         "background_variant": _read(background_variant_path) or "{}",
         "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
         "conversion_916_prompt": _read(conversion_916_path),
@@ -217,7 +225,11 @@ def get_generic_config() -> dict[str, Any]:
         return _repository_generic_config()
     if not doc:
         return _repository_generic_config()
-    return _extract_flat_from_new_schema(doc)
+    config = _extract_flat_from_new_schema(doc)
+    config["copy_prompt_templates"] = sanitize_copy_prompt_templates_text(
+        config.get("copy_prompt_templates") or ""
+    )
+    return config
 
 
 _RETIRED_CONFIG_KEYS = frozenset({"copy_architecture"})
@@ -251,6 +263,43 @@ def validate_config_files(files: dict[str, Any]) -> dict[str, str]:
     return validated
 
 
+def apply_format_archetype_sync(
+    owner_type: str,
+    owner_id: str,
+    files: dict[str, str],
+) -> tuple[dict[str, str], str]:
+    """Stub or drop visual archetypes when personal/org `ad_formats` changes."""
+    if "ad_formats" not in files:
+        return files, ""
+    from dashboard.backend.services.visual_archetypes import sync_visual_archetypes
+
+    current: dict[str, str] = {}
+    doc = get_config_doc(owner_type, owner_id)
+    if doc:
+        current = _extract_flat_from_new_schema(doc)
+    if "copy_prompt_templates" in files:
+        templates = files["copy_prompt_templates"]
+    else:
+        templates = current.get("copy_prompt_templates") or ""
+        if not str(templates).strip() or str(templates).strip() in {"{}", "[]"}:
+            templates = get_generic_config().get("copy_prompt_templates") or "{}"
+    synced, added, removed = sync_visual_archetypes(templates, files["ad_formats"])
+    if not added and not removed:
+        return files, ""
+    next_files = dict(files)
+    next_files["copy_prompt_templates"] = synced
+    parts: list[str] = []
+    if added:
+        parts.append(
+            "Added default visual archetypes for "
+            + ", ".join(added)
+            + ". Edit Copy Prompt Templates and make them meaningful."
+        )
+    if removed:
+        parts.append("Removed visual archetypes for " + ", ".join(removed) + ".")
+    return next_files, " ".join(parts)
+
+
 def ensure_generic_config() -> None:
     """Seed bundled defaults into MongoDB once; subsequent reads are DB-only."""
     existing = get_config_doc(GENERIC_CONFIG_OWNER_TYPE, GENERIC_CONFIG_OWNER_ID)
@@ -261,6 +310,18 @@ def ensure_generic_config() -> None:
         missing = {
             key: value for key, value in defaults.items() if key not in stored
         }
+        stored_templates = existing.get("files", {}).get("copy_prompt_templates")
+        stored_templates_text = (
+            stored_templates.get("content")
+            if isinstance(stored_templates, dict)
+            else stored_templates
+        )
+        sanitized_templates = sanitize_copy_prompt_templates_text(
+            stored_templates_text or ""
+        )
+        if stored_templates_text and sanitized_templates != stored_templates_text:
+            missing["copy_prompt_templates"] = sanitized_templates
+        _purge_retired_generic_files(existing)
         if not missing:
             return
         defaults = missing
@@ -276,6 +337,25 @@ def ensure_generic_config() -> None:
     )
     if not get_config_doc(GENERIC_CONFIG_OWNER_TYPE, GENERIC_CONFIG_OWNER_ID):
         raise RuntimeError("Global dashboard config could not be initialized")
+
+
+def _purge_retired_generic_files(existing: dict[str, Any]) -> None:
+    """Drop unused keys from the generic plate only. Never touch user or org docs."""
+    files = existing.get("files") if isinstance(existing.get("files"), dict) else {}
+    extra = [
+        key
+        for key in files
+        if key in _RETIRED_CONFIG_KEYS or key not in CONFIG_KEYS
+    ]
+    if not extra or existing.get("_id") is None:
+        return
+    try:
+        get_sync_db()[COLL_USER_CONFIGS].update_one(
+            {"_id": existing["_id"]},
+            {"$unset": {f"files.{key}": "" for key in extra}},
+        )
+    except Exception:
+        return
 
 
 # ── Core config service functions ────────────────────────────────────────────

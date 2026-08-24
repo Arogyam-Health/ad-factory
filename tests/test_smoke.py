@@ -618,10 +618,11 @@ def test_config_system() -> int:
     expected_keys = [
         "product_master_doc", "starting_prompt", "copy_prompt_templates",
         "persona_seeds", "concept",
-        "ad_formats", "ad_hooks", "ad_angles", "ad_frameworks", "ad_proof",
+        "ad_formats", "ad_languages", "ad_hooks", "ad_angles", "ad_frameworks", "ad_proof",
         "ad_objections", "ad_value_props", "ad_awareness", "ad_emotions",
         "ad_specificity", "ad_feature_focus", "ad_support_shapes", "ad_guardrails",
         "copy_starting_prompt",
+        "visual_archetype_llm_prompt",
         "background_variant",
         "prompt_assembler_templates", "conversion_916_prompt",
         "reference_starting_prompt", "reference_product_master_doc",
@@ -988,7 +989,10 @@ def test_org_system() -> int:
     failed += ok(extracted["product_master_doc"] == "org product doc", "extract_flat preserves product_master_doc")
     failed += ok(extracted["starting_prompt"] == "org starting prompt", "extract_flat preserves starting_prompt")
     failed += ok(
-        all(extracted[k] or k == "copy_starting_prompt" for k in extracted),
+        all(
+            extracted[k] or k in {"copy_starting_prompt", "visual_archetype_llm_prompt"}
+            for k in extracted
+        ),
         "No unexpected blank values in extracted org config",
     )
 

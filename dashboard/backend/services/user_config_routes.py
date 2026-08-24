@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.services.user_config import (
+    apply_format_archetype_sync,
     delete_user_config,
     get_user_config,
     has_custom_config,
@@ -36,6 +37,7 @@ def save_config(
 ) -> dict[str, Any]:
     try:
         config = validate_config_files(extract_config_files(payload))
+        config, notice = apply_format_archetype_sync("user", user["user_id"], config)
         updated = set_user_config(
             user["user_id"],
             config,
@@ -54,7 +56,7 @@ def save_config(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to save config") from exc
-    return {"status": "ok", "config": updated}
+    return {"status": "ok", "config": updated, "notice": notice}
 
 
 @router.delete("/api/user/config")

@@ -79,20 +79,217 @@ FORMAT_VISUAL_ARCHETYPES = _load_visual_archetypes()
 PROMPT_ASSEMBLER_DIR = Path(__file__).resolve().parent
 PROMPT_ASSEMBLER_TEMPLATES = json.loads((PROMPT_ASSEMBLER_DIR / "prompt_assembler_templates.json").read_text(encoding="utf-8"))
 
+DEFAULT_PROOF_BAR_TEXT = "70,000+ Users | 3-5 kg loss with 1 Kit | 100% Ayurvedic"
+DEFAULT_HEADLINE_BANS = [
+    r"\b(ok\s*liquid|ok\s*tablet|ok\s*powder|okp)\b",
+    r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b",
+]
+DEFAULT_PROMPT_SHELL = {
+    "product_lock_header": "PRODUCT LOCK BLOCK",
+    "proof_bar_header": "PROOF BAR BLOCK",
+    "output_spec_header": "OUTPUT SPEC",
+    "layout_header": "FORMAT LAYOUT INSTRUCTIONS",
+    "persona_header": "PERSONA INPUT BLOCK",
+    "concept_header": "CONCEPT INPUT BLOCK",
+    "exact_copy_header": "EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING",
+    "negative_header": "NEGATIVE CONSTRAINTS",
+    "quality_header": "QUALITY BAR - verify before accepting output",
+    "visual_header": "VISUAL DIRECTION BLOCK",
+    "typography_header": "TYPOGRAPHY SHARPNESS BLOCK",
+    "create_ad_line": "Create the ad in {language}.",
+    "exact_copy_footer": "Render every character exactly as written. No paraphrasing, no punctuation changes, no autocorrection.",
+    "proof_bar_copy_line": "- Proof bar: {proof_bar_text}",
+    "proof_bar_once_line": "- Proof bar is present exactly once, fully readable, horizontally centered, and does not enter the bottom restricted band.",
+    "concept_path_note": "- Concept path is strategy only; do not render these labels on-image.",
+    "style_generic": "{fmt} (custom format layout).",
+    "persona_lines": [
+        "- Persona: {persona_name} (Persona {persona_number})",
+        "- Pain: {pain}",
+        "- Desire: {desire}",
+        "- Friction: {friction}",
+        "- Proof needed: {proof}",
+        "- Tone cue: {tone}",
+        "- Concept angle: {concept_angle}",
+    ],
+    "copy_labels": {
+        "headline": "- Headline: {value}",
+        "support_line": "- Support line: {value}",
+        "cta": "- CTA: {value}",
+        "context_line": "- Context line: {value}",
+        "trust_line": "- Trust line: {value}",
+        "attribution": "- Attribution: {value}",
+        "bullet": "- Bullet {index}: {value}",
+        "left_situation": "- Left situation {index}: {value}",
+        "right_shift": "- Right shift {index}: {value}",
+    },
+    "concept_name_line": "- Concept: {concept_label}",
+    "concept_description_line": "- Description: {concept_description}",
+}
+DEFAULT_COPY = {
+    "EN": {
+        "headline": "A simpler daily wellness routine",
+        "support_line": "Designed to fit into your day with clear, guided steps.",
+        "trust_line": "Trusted by thousands of wellness-focused customers.",
+        "cta": "See how it works",
+        "test_headline": "Real routines, real trust",
+    },
+    "HI": {
+        "headline": "रोज की वेलनेस के लिए आसान रूटीन",
+        "support_line": "आपके दिन में आसानी से फिट होने वाले साफ, गाइडेड स्टेप्स।",
+        "trust_line": "हजारों वेलनेस-केंद्रित ग्राहकों का भरोसा।",
+        "cta": "जानें कैसे काम करता है",
+        "test_headline": "असली रूटीन, असली भरोसा",
+    },
+    "HINGLISH": {
+        "headline": "Daily wellness ke liye simple routine",
+        "support_line": "Aapke day mein fit hone wale clear, guided steps.",
+        "trust_line": "Thousands of wellness-focused customers ka trust.",
+        "cta": "Dekhein kaise work karta hai",
+        "test_headline": "Real routine, real trust",
+    },
+}
+DEFAULT_BULLETS = {
+    "BA": {
+        "EN": ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"],
+        "HI": ["पहले: शुरुआत साफ नहीं थी", "पहले: रूटीन फॉलो करना मुश्किल था", "बाद में: रोज के स्टेप्स साफ हुए", "बाद में: जारी रखने का भरोसा बढ़ा"],
+        "HINGLISH": ["Before: start clear nahi tha", "Before: routine follow karna hard tha", "After: daily steps clearer hue", "After: continue karne ka confidence badha"],
+    },
+    "default": {
+        "EN": ["Clear daily steps", "Premium, guided routine"],
+        "HI": ["साफ रोजाना स्टेप्स", "प्रीमियम, गाइडेड रूटीन"],
+        "HINGLISH": ["Clear daily steps", "Premium guided routine"],
+    },
+}
+DEFAULT_PERSONA_PROMPT_FIELDS = {
+    "EN": {
+        "required": True,
+        "pain": ["pain_en"],
+        "desire": ["desire_en"],
+        "friction": ["friction_en"],
+        "proof": ["proof_needed_en"],
+        "tone": ["tone_cue_en"],
+    },
+    "HI": {
+        "required": True,
+        "pain": ["pain_hi"],
+        "desire": ["desire_hi"],
+        "friction": ["friction_hi"],
+        "proof": ["proof_needed_hi"],
+        "tone": ["tone_cue_hi"],
+    },
+    "HINGLISH": {
+        "required": False,
+        "pain": ["pain_hinglish", "pain_hi"],
+        "desire": ["desire_hinglish", "desire_hi"],
+        "friction": ["friction_hinglish", "friction_hi"],
+        "proof": ["proof_needed_hinglish", "proof_needed_hi"],
+        "tone": ["tone_cue_hinglish", "tone_cue_hi"],
+    },
+}
+DEFAULT_BACKGROUND_FIELDS = {
+    "base": "a clean product arrangement",
+    "surface": ["neutral studio surface"],
+    "environment": ["minimal studio"],
+    "lighting": ["soft daylight"],
+    "mood": ["calm confidence"],
+    "camera": ["eye-level product shot"],
+    "color_tone": ["balanced brand colors"],
+}
+DEFAULT_BACKGROUND_SENTENCE = {
+    "composition": ["balanced feed composition inside the central safe field"],
+    "layout_intent": ["preserve a stable center-of-interest corridor with consistent margin protection on every side"],
+    "cta_safe_space": ["maintain subtle low-contrast space near the lower edge to protect feed overlay readability"],
+    "crop_safety": ["maintain protected margin buffers so alternate crops do not clip meaningful scene structure"],
+    "text_overlay_treatment": [
+        "if a text readability panel is used, keep it in the upper text zone only as a soft vertical fade (high opacity near top, fading to transparent before the product cluster), never behind or below products"
+    ],
+    "edge_tone_control": [
+        "keep all frame edges tonally neutral with no orange, amber, or sepia cast; no border glow and no vignette halo"
+    ],
+    "format_9_16": "designed for 9:16 vertical placement with key subject content constrained to the 14-65 percent safe band, positioned slightly above center, and with the lower 35 percent kept visually quiet for overlays; avoid edge glow frames and tinted border gradients",
+    "format_4_5": "designed for 4:5 feed framing with key content held inside the central safe field, centered to slightly above center, while top 10 percent, bottom 15 percent, and side edge zones remain low-priority; avoid edge glow frames and tinted border gradients",
+    "template": (
+        "{base} on a {surface}, with {environment}, lit by {lighting}, conveying {mood}; "
+        "{camera}, {composition}, {layout_intent}, {cta_safe_space}, {crop_safety}, {text_overlay_treatment}, {edge_tone_control}, {color_tone}, "
+        "{format_clause}, clean premium studio ad photography, ultra-detailed, flawless commercial finish."
+    ),
+}
 
-def default_visual_archetype(fmt: str) -> dict[str, Any]:
-    label = f"Default {fmt} layout"
-    return {
-        "id": f"default_{fmt.lower()}",
-        "label": label,
-        "layout_lines": [
-            f"- Use a clean {fmt} composition with one obvious focal hierarchy.",
+
+def assembler_dict(templates: dict[str, Any] | None = None) -> dict[str, Any]:
+    return templates if isinstance(templates, dict) and templates else PROMPT_ASSEMBLER_TEMPLATES
+
+
+def _fill(template: str, **kwargs: Any) -> str:
+    text = str(template)
+    for key, value in kwargs.items():
+        text = text.replace("{" + key + "}", str(value))
+    return text
+
+
+def _pick_first(source: dict[str, Any], keys: list[str]) -> str:
+    for key in keys:
+        value = str(source.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def prompt_shell(templates: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw = assembler_dict(templates).get("prompt_shell")
+    raw = raw if isinstance(raw, dict) else {}
+    merged = dict(DEFAULT_PROMPT_SHELL)
+    for key, value in raw.items():
+        if value not in (None, "", [], {}):
+            merged[key] = value
+    labels = DEFAULT_PROMPT_SHELL["copy_labels"]
+    extra_labels = raw.get("copy_labels") if isinstance(raw.get("copy_labels"), dict) else {}
+    merged["copy_labels"] = {**labels, **{k: v for k, v in extra_labels.items() if v not in (None, "")}}
+    return merged
+
+
+def proof_bar_text(templates: dict[str, Any] | None = None) -> str:
+    text = str(assembler_dict(templates).get("proof_bar_text") or "").strip()
+    return text or DEFAULT_PROOF_BAR_TEXT
+
+
+def headline_ban_patterns(templates: dict[str, Any] | None = None) -> list[str]:
+    raw = assembler_dict(templates).get("headline_bans")
+    if isinstance(raw, list) and raw:
+        return [str(item) for item in raw if str(item).strip()]
+    return list(DEFAULT_HEADLINE_BANS)
+
+
+def language_label(lang: str, templates: dict[str, Any] | None = None) -> str:
+    labels = assembler_dict(templates).get("language_labels")
+    labels = labels if isinstance(labels, dict) else {}
+    return str(labels.get(lang) or LANGUAGE_LABELS.get(lang) or lang)
+
+
+def default_visual_archetype(fmt: str, templates: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw = assembler_dict(templates).get("default_visual_archetype")
+    raw = raw if isinstance(raw, dict) else {}
+    fmt_lower = fmt.lower()
+    label = _fill(str(raw.get("label") or "Default {fmt} layout"), fmt=fmt, fmt_lower=fmt_lower)
+    layout = [
+        _fill(str(line), fmt=fmt, fmt_lower=fmt_lower, label=label)
+        for line in (raw.get("layout_lines") or [
+            "- Use a clean {fmt} composition with one obvious focal hierarchy.",
             "- Keep product labels readable and fully inside the safe-zone.",
             "- Place headline, support copy, CTA, and proof bar with clear separation.",
-        ],
-        "direction_lines": [
-            f"- Selected visual archetype fallback: default_{fmt.lower()} - {label}",
-        ],
+        ])
+    ]
+    direction = [
+        _fill(str(line), fmt=fmt, fmt_lower=fmt_lower, label=label)
+        for line in (raw.get("direction_lines") or [
+            "- Selected visual archetype fallback: default_{fmt_lower} - {label}",
+        ])
+    ]
+    return {
+        "id": _fill(str(raw.get("id") or "default_{fmt_lower}"), fmt=fmt, fmt_lower=fmt_lower, label=label),
+        "label": label,
+        "layout_lines": layout,
+        "direction_lines": direction,
     }
 
 @dataclass(frozen=True)
@@ -154,6 +351,8 @@ def pick_background_slot(
     variants: list[dict[str, Any]] = backgrounds.get("variants", [])
     pool = [v for v in variants if fmt in (v.get("formats") or [])]
     if not pool:
+        pool = [v for v in variants if isinstance(v, dict)]
+    if not pool:
         raise RuntimeError(f"No background variants found for format {fmt}")
     rng = random.Random(seed)
     chosen = rng.choice(pool)
@@ -181,8 +380,37 @@ def get_background_by_id(backgrounds: dict[str, Any], fmt: str, bg_id: str) -> d
     raise RuntimeError(f"Background id not found: {wanted}")
 
 
-def build_seeded_background_sentence(bg: dict[str, Any], seed: int, aspect_ratio: str) -> str:
+def _choice_pool(
+    bg: dict[str, Any],
+    key: str,
+    fallback: list[str],
+) -> list[str]:
+    raw = bg.get(key)
+    if isinstance(raw, list) and raw:
+        return [str(item) for item in raw if str(item).strip()]
+    if isinstance(raw, str) and raw.strip():
+        return [raw.strip()]
+    return list(fallback)
+
+
+def build_seeded_background_sentence(
+    bg: dict[str, Any],
+    seed: int,
+    aspect_ratio: str,
+    templates: dict[str, Any] | None = None,
+) -> str:
     rng = random.Random(seed)
+    sentence = assembler_dict(templates).get("background_sentence")
+    sentence = sentence if isinstance(sentence, dict) else {}
+    fallback = DEFAULT_BACKGROUND_SENTENCE
+
+    def pool(key: str) -> list[str]:
+        configured = sentence.get(key)
+        default = fallback.get(key) or []
+        default_list = default if isinstance(default, list) else [str(default)]
+        configured_list = configured if isinstance(configured, list) and configured else default_list
+        return _choice_pool(bg, key, [str(item) for item in configured_list])
+
     base = bg["base"]
     lighting = rng.choice(bg["lighting"])
     surface = rng.choice(bg["surface"])
@@ -190,36 +418,33 @@ def build_seeded_background_sentence(bg: dict[str, Any], seed: int, aspect_ratio
     mood = rng.choice(bg["mood"])
     camera = rng.choice(bg["camera"])
     color_tone = rng.choice(bg["color_tone"])
-    composition = rng.choice(bg.get("composition") or ["balanced feed composition inside the central safe field"])
-    layout_intent = rng.choice(bg.get("layout_intent") or ["preserve a stable center-of-interest corridor with consistent margin protection on every side"])
-    cta_safe_space = rng.choice(bg.get("cta_safe_space") or ["maintain subtle low-contrast space near the lower edge to protect feed overlay readability"])
-    crop_safety = rng.choice(bg.get("crop_safety") or ["maintain protected margin buffers so alternate crops do not clip meaningful scene structure"])
-    text_overlay_treatment = rng.choice(
-        bg.get("text_overlay_treatment")
-        or [
-            "if a text readability panel is used, keep it in the upper text zone only as a soft vertical fade (high opacity near top, fading to transparent before the product cluster), never behind or below products"
-        ]
-    )
-    edge_tone_control = rng.choice(
-        bg.get("edge_tone_control")
-        or [
-            "keep all frame edges tonally neutral with no orange, amber, or sepia cast; no border glow and no vignette halo"
-        ]
-    )
-
+    composition = rng.choice(pool("composition"))
+    layout_intent = rng.choice(pool("layout_intent"))
+    cta_safe_space = rng.choice(pool("cta_safe_space"))
+    crop_safety = rng.choice(pool("crop_safety"))
+    text_overlay_treatment = rng.choice(pool("text_overlay_treatment"))
+    edge_tone_control = rng.choice(pool("edge_tone_control"))
     if aspect_ratio == "9:16":
-        format_clause = (
-            "designed for 9:16 vertical placement with key subject content constrained to the 14-65 percent safe band, positioned slightly above center, and with the lower 35 percent kept visually quiet for overlays; avoid edge glow frames and tinted border gradients"
-        )
+        format_clause = str(sentence.get("format_9_16") or fallback["format_9_16"])
     else:
-        format_clause = (
-            "designed for 4:5 feed framing with key content held inside the central safe field, centered to slightly above center, while top 10 percent, bottom 15 percent, and side edge zones remain low-priority; avoid edge glow frames and tinted border gradients"
-        )
-
-    return (
-        f"{base} on a {surface}, with {environment}, lit by {lighting}, conveying {mood}; "
-        f"{camera}, {composition}, {layout_intent}, {cta_safe_space}, {crop_safety}, {text_overlay_treatment}, {edge_tone_control}, {color_tone}, "
-        f"{format_clause}, clean premium studio ad photography, ultra-detailed, flawless commercial finish."
+        format_clause = str(sentence.get("format_4_5") or fallback["format_4_5"])
+    template = str(sentence.get("template") or fallback["template"])
+    return _fill(
+        template,
+        base=base,
+        surface=surface,
+        environment=environment,
+        lighting=lighting,
+        mood=mood,
+        camera=camera,
+        composition=composition,
+        layout_intent=layout_intent,
+        cta_safe_space=cta_safe_space,
+        crop_safety=crop_safety,
+        text_overlay_treatment=text_overlay_treatment,
+        edge_tone_control=edge_tone_control,
+        color_tone=color_tone,
+        format_clause=format_clause,
     )
 
 
@@ -235,57 +460,50 @@ def optional_str(obj: dict[str, Any], key: str) -> str:
     return val.strip() if isinstance(val, str) and val.strip() else ""
 
 
-def default_copy_text(fmt: str, lang: str, field: str) -> str:
-    defaults = {
-        "EN": {
-            "headline": "A simpler daily wellness routine",
-            "support_line": "Designed to fit into your day with clear, guided steps.",
-            "trust_line": "Trusted by thousands of wellness-focused customers.",
-            "cta": "See how it works",
-        },
-        "HI": {
-            "headline": "रोज की वेलनेस के लिए आसान रूटीन",
-            "support_line": "आपके दिन में आसानी से फिट होने वाले साफ, गाइडेड स्टेप्स।",
-            "trust_line": "हजारों वेलनेस-केंद्रित ग्राहकों का भरोसा।",
-            "cta": "जानें कैसे काम करता है",
-        },
-        "HINGLISH": {
-            "headline": "Daily wellness ke liye simple routine",
-            "support_line": "Aapke day mein fit hone wale clear, guided steps.",
-            "trust_line": "Thousands of wellness-focused customers ka trust.",
-            "cta": "Dekhein kaise work karta hai",
-        },
-    }
-    text = defaults.get(lang, defaults["EN"]).get(field, "")
+def default_copy_text(
+    fmt: str,
+    lang: str,
+    field: str,
+    templates: dict[str, Any] | None = None,
+) -> str:
+    raw = assembler_dict(templates).get("default_copy")
+    raw = raw if isinstance(raw, dict) else {}
+    lang_block = raw.get(lang) if isinstance(raw.get(lang), dict) else {}
+    fallback = DEFAULT_COPY.get(lang) or DEFAULT_COPY["EN"]
     if fmt == "TEST" and field == "headline":
-        return {
-            "EN": "Real routines, real trust",
-            "HI": "असली रूटीन, असली भरोसा",
-            "HINGLISH": "Real routine, real trust",
-        }.get(lang, text)
-    return text
+        text = str(lang_block.get("test_headline") or fallback.get("test_headline") or "").strip()
+        if text:
+            return text
+    return str(lang_block.get(field) or fallback.get(field) or "").strip()
 
 
-def default_bullets(fmt: str, lang: str) -> list[str]:
-    if fmt == "BA":
-        return {
-            "EN": ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"],
-            "HI": ["पहले: शुरुआत साफ नहीं थी", "पहले: रूटीन फॉलो करना मुश्किल था", "बाद में: रोज के स्टेप्स साफ हुए", "बाद में: जारी रखने का भरोसा बढ़ा"],
-            "HINGLISH": ["Before: start clear nahi tha", "Before: routine follow karna hard tha", "After: daily steps clearer hue", "After: continue karne ka confidence badha"],
-        }.get(lang, ["Before: unsure where to start", "Before: routine felt hard to follow", "After: clearer daily steps", "After: more confidence to continue"])
-    return {
-        "EN": ["Clear daily steps", "Premium, guided routine"],
-        "HI": ["साफ रोजाना स्टेप्स", "प्रीमियम, गाइडेड रूटीन"],
-        "HINGLISH": ["Clear daily steps", "Premium guided routine"],
-    }.get(lang, ["Clear daily steps", "Premium, guided routine"])
+def default_bullets(fmt: str, lang: str, templates: dict[str, Any] | None = None) -> list[str]:
+    raw = assembler_dict(templates).get("default_bullets")
+    raw = raw if isinstance(raw, dict) else {}
+    group = raw.get(fmt) if isinstance(raw.get(fmt), dict) else raw.get("default")
+    group = group if isinstance(group, dict) else {}
+    fallback_group = DEFAULT_BULLETS.get(fmt) or DEFAULT_BULLETS["default"]
+    items = group.get(lang)
+    if isinstance(items, list) and items:
+        return [str(item) for item in items if str(item).strip()]
+    return list(fallback_group.get(lang) or fallback_group["EN"])
 
 
-def safe_headline(raw: dict[str, Any], fmt: str, lang: str, ctx: str) -> str:
-    headline = optional_str(raw, "headline") or default_copy_text(fmt, lang, "headline")
-    if re.search(r"\b(ok\s*liquid|ok\s*tablet|ok\s*powder|okp)\b", headline, flags=re.IGNORECASE):
-        return default_copy_text(fmt, lang, "headline")
-    if re.search(r"\b(am|pm)\b|\b4\s*-?\s*hour\b|\bno\s*solid\b|\bempty\s*stomach\b", headline, flags=re.IGNORECASE):
-        return default_copy_text(fmt, lang, "headline")
+def safe_headline(
+    raw: dict[str, Any],
+    fmt: str,
+    lang: str,
+    ctx: str,
+    templates: dict[str, Any] | None = None,
+) -> str:
+    headline = optional_str(raw, "headline") or default_copy_text(fmt, lang, "headline", templates)
+    for pattern in headline_ban_patterns(templates):
+        try:
+            matched = re.search(pattern, headline, flags=re.IGNORECASE)
+        except re.error:
+            matched = None
+        if matched:
+            return default_copy_text(fmt, lang, "headline", templates)
     if not headline:
         raise RuntimeError(f"Missing or empty string 'headline' in {ctx}")
     return headline
@@ -312,18 +530,18 @@ def resolve_concept_fields(ad: dict[str, Any], fmt: str, persona: dict[str, Any]
     return {"concept_angle": angle}
 
 
-def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
+def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any], templates: dict[str, Any] | None = None) -> CopyBlock:
     ctx = f"ads[].copy.{lang} for format={fmt}"
-    headline = safe_headline(raw, fmt, lang, ctx)
-    cta = optional_str(raw, "cta") or default_copy_text(fmt, lang, "cta")
+    headline = safe_headline(raw, fmt, lang, ctx, templates)
+    cta = optional_str(raw, "cta") or default_copy_text(fmt, lang, "cta", templates)
     sub_val = raw.get("subheadline") or raw.get("support_line")
     support_line = (sub_val or "").strip() if isinstance(sub_val, str) else ""
     if fmt in {"HERO", "UGC"} and not support_line:
-        support_line = default_copy_text(fmt, lang, "support_line")
+        support_line = default_copy_text(fmt, lang, "support_line", templates)
     context_line = optional_str(raw, "context_line")
     trust_line = optional_str(raw, "trust_line")
     if fmt == "TEST" and not trust_line:
-        trust_line = default_copy_text(fmt, lang, "trust_line")
+        trust_line = default_copy_text(fmt, lang, "trust_line", templates)
     attribution = optional_str(raw, "attribution")
     bullets_val = raw.get("bullets")
     bullets: list[str] | None = None
@@ -335,7 +553,7 @@ def parse_copy_block(fmt: str, lang: str, raw: dict[str, Any]) -> CopyBlock:
     if fmt in {"BA", "FEAT"}:
         min_bullets = 4 if fmt == "BA" else 2
         if not bullets or len(bullets) < min_bullets:
-            fallback_bullets = default_bullets(fmt, lang)
+            fallback_bullets = default_bullets(fmt, lang, templates)
             bullets = (bullets or []) + fallback_bullets[len(bullets or []):min_bullets]
         if bullets:
             bullets = bullets[: max(min_bullets, len(bullets))]
@@ -421,6 +639,49 @@ def pick_visual_archetype(
     return available_variants[rng.randrange(len(available_variants))]
 
 
+def persona_prompt_values(
+    persona: dict[str, Any],
+    lang: str,
+    templates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    fields = assembler_dict(templates).get("persona_prompt_fields")
+    fields = fields if isinstance(fields, dict) else {}
+    spec = fields.get(lang) if isinstance(fields.get(lang), dict) else None
+    suffix = str(lang or "").strip().lower()
+    if not isinstance(spec, dict):
+        spec = DEFAULT_PERSONA_PROMPT_FIELDS.get(lang) or {
+            "required": lang.upper() == "EN",
+            "pain": [f"pain_{suffix}"] if suffix else ["pain_en"],
+            "desire": [f"desire_{suffix}"] if suffix else ["desire_en"],
+            "friction": [f"friction_{suffix}"] if suffix else ["friction_en"],
+            "proof": [f"proof_needed_{suffix}"] if suffix else ["proof_needed_en"],
+            "tone": [f"tone_cue_{suffix}"] if suffix else ["tone_cue_en"],
+        }
+    required = bool(spec.get("required"))
+    ctx = "ads[].persona"
+    values = {
+        "persona_name": require_str(persona, "name", ctx),
+        "persona_number": require_int(persona, "number", ctx),
+    }
+    for logical in ("pain", "desire", "friction", "proof", "tone"):
+        keys = spec.get(logical)
+        if not isinstance(keys, list) or not keys:
+            fallback = (DEFAULT_PERSONA_PROMPT_FIELDS.get(lang) or {}).get(logical)
+            keys = list(fallback) if fallback else [f"{logical}_{suffix}"]
+        keys = [str(item).strip() for item in keys if str(item).strip()]
+        value = _pick_first(persona, keys)
+        if required and not value:
+            raise RuntimeError(f"Missing or empty string '{keys[0]}' in {ctx}")
+        values[logical] = value
+    return values
+
+
+def _copy_label(shell: dict[str, Any], key: str, value: str, **extra: Any) -> str:
+    labels = shell.get("copy_labels") if isinstance(shell.get("copy_labels"), dict) else {}
+    template = str(labels.get(key) or DEFAULT_PROMPT_SHELL["copy_labels"][key])
+    return _fill(template, value=value, **extra)
+
+
 def render_prompt(
     fmt: str,
     lang: str,
@@ -436,44 +697,17 @@ def render_prompt(
     templates: dict[str, Any] | None = None,
     creative_concept: dict[str, Any] | None = None,
 ) -> str:
-    if fmt == "HERO":
-        style = "HERO, polished enough for paid ad deployment."
-    elif fmt == "BA":
-        style = "BA (before/after journey without body-shaming visuals)."
-    elif fmt == "TEST":
-        style = "TEST (trust-first testimonial/review framing)."
-    elif fmt == "FEAT":
-        style = "FEAT (features and mechanism clarity)."
-    elif fmt == "UGC":
-        style = "UGC (creator-style authenticity, premium and clean)."
-    else:
-        raise RuntimeError(f"Unsupported format: {fmt}")
-
-    if lang == "EN":
-        persona_name = require_str(persona, "name", "ads[].persona")
-        pain = require_str(persona, "pain_en", "ads[].persona")
-        desire = require_str(persona, "desire_en", "ads[].persona")
-        friction = require_str(persona, "friction_en", "ads[].persona")
-        proof = require_str(persona, "proof_needed_en", "ads[].persona")
-        tone = require_str(persona, "tone_cue_en", "ads[].persona")
-    elif lang == "HINGLISH":
-        persona_name = require_str(persona, "name", "ads[].persona")
-        pain = str(persona.get("pain_hinglish") or persona.get("pain_hi") or "")
-        desire = str(persona.get("desire_hinglish") or persona.get("desire_hi") or "")
-        friction = str(persona.get("friction_hinglish") or persona.get("friction_hi") or "")
-        proof = str(persona.get("proof_needed_hinglish") or persona.get("proof_needed_hi") or "")
-        tone = str(persona.get("tone_cue_hinglish") or persona.get("tone_cue_hi") or "")
-    else:
-        persona_name = require_str(persona, "name", "ads[].persona")
-        pain = require_str(persona, "pain_hi", "ads[].persona")
-        desire = require_str(persona, "desire_hi", "ads[].persona")
-        friction = require_str(persona, "friction_hi", "ads[].persona")
-        proof = require_str(persona, "proof_needed_hi", "ads[].persona")
-        tone = require_str(persona, "tone_cue_hi", "ads[].persona")
-
-    persona_number = require_int(persona, "number", "ads[].persona")
-
-    T = templates if isinstance(templates, dict) else PROMPT_ASSEMBLER_TEMPLATES
+    T = assembler_dict(templates)
+    S = prompt_shell(T)
+    persona_values = persona_prompt_values(persona, lang, T)
+    persona_name = persona_values["persona_name"]
+    persona_number = persona_values["persona_number"]
+    pain = persona_values["pain"]
+    desire = persona_values["desire"]
+    friction = persona_values["friction"]
+    proof = persona_values["proof"]
+    tone = persona_values["tone"]
+    proof_text = proof_bar_text(T)
 
     layout_lines = list(visual_archetype.get("layout_lines") or [])
     archetype_direction_lines = [str(line) for line in (visual_archetype.get("direction_lines") or []) if isinstance(line, str) and line.strip()]
@@ -481,41 +715,57 @@ def render_prompt(
     copy_lines: list[str] = []
     if fmt == "HERO":
         copy_lines = [
-            f"- Headline: {copy.headline}",
-            f"- Support line: {copy.support_line}",
-            f"- CTA: {copy.cta}",
+            _copy_label(S, "headline", copy.headline),
+            _copy_label(S, "support_line", copy.support_line),
+            _copy_label(S, "cta", copy.cta),
         ]
     elif fmt == "UGC":
         copy_lines = [
-            f"- Headline: {copy.headline}",
-            f"- Support line: {copy.support_line}",
-            f"- CTA: {copy.cta}",
+            _copy_label(S, "headline", copy.headline),
+            _copy_label(S, "support_line", copy.support_line),
+            _copy_label(S, "cta", copy.cta),
         ]
         if copy.context_line:
-            copy_lines.insert(2, f"- Context line: {copy.context_line}")
+            copy_lines.insert(2, _copy_label(S, "context_line", copy.context_line))
     elif fmt == "BA":
         bullets = copy.bullets or []
         left_lines, right_lines = split_ba_contrast_lines(bullets)
-        copy_lines = [f"- Headline: {copy.headline}"]
+        copy_lines = [_copy_label(S, "headline", copy.headline)]
         for i, line in enumerate(left_lines, start=1):
-            copy_lines.append(f"- Left situation {i}: {line}")
+            copy_lines.append(_copy_label(S, "left_situation", line, index=i))
         for i, line in enumerate(right_lines, start=1):
-            copy_lines.append(f"- Right shift {i}: {line}")
-        copy_lines.append(f"- CTA: {copy.cta}")
+            copy_lines.append(_copy_label(S, "right_shift", line, index=i))
+        copy_lines.append(_copy_label(S, "cta", copy.cta))
     elif fmt == "FEAT":
         bullets = copy.bullets or []
-        copy_lines = [f"- Headline: {copy.headline}"]
+        copy_lines = [_copy_label(S, "headline", copy.headline)]
         for i, b in enumerate(bullets, start=1):
-            copy_lines.append(f"- Bullet {i}: {b}")
-        copy_lines.append(f"- CTA: {copy.cta}")
-    else:  # TEST
+            copy_lines.append(_copy_label(S, "bullet", b, index=i))
+        copy_lines.append(_copy_label(S, "cta", copy.cta))
+    elif fmt == "TEST":
         copy_lines = [
-            f"- Headline: {copy.headline}",
-            f"- Trust line: {copy.trust_line}",
-            f"- CTA: {copy.cta}",
+            _copy_label(S, "headline", copy.headline),
+            _copy_label(S, "trust_line", copy.trust_line),
+            _copy_label(S, "cta", copy.cta),
         ]
+    else:
+        copy_lines = []
+        if copy.headline:
+            copy_lines.append(_copy_label(S, "headline", copy.headline))
+        if copy.support_line:
+            copy_lines.append(_copy_label(S, "support_line", copy.support_line))
+        if copy.attribution:
+            copy_lines.append(_copy_label(S, "attribution", copy.attribution))
+        if copy.trust_line:
+            copy_lines.append(_copy_label(S, "trust_line", copy.trust_line))
+        if copy.context_line:
+            copy_lines.append(_copy_label(S, "context_line", copy.context_line))
+        for i, bullet in enumerate(copy.bullets or [], start=1):
+            copy_lines.append(_copy_label(S, "bullet", bullet, index=i))
+        if copy.cta:
+            copy_lines.append(_copy_label(S, "cta", copy.cta))
 
-    copy_lines.append(f"- Proof bar: 70,000+ Users | 3-5 kg loss with 1 Kit | 100% Ayurvedic")
+    copy_lines.append(_fill(str(S["proof_bar_copy_line"]), proof_bar_text=proof_text))
 
     lock = visual_lock if isinstance(visual_lock, dict) else {}
     subject_line = (lock.get("subject") or "").strip() if isinstance(lock.get("subject"), str) else ""
@@ -527,14 +777,16 @@ def render_prompt(
 
     lines: list[str] = []
     canvas_spec = "1080 x 1920" if aspect_ratio == "9:16" else "1080 x 1350"
-    lines.append("PRODUCT LOCK BLOCK")
+    lines.append(str(S["product_lock_header"]))
     lines.extend(T["product_lock_block"])
     lines.append("")
-    lines.append("PROOF BAR BLOCK")
-    lines.extend(T["proof_bar_block"])
+    lines.append(str(S["proof_bar_header"]))
+    for line in T["proof_bar_block"]:
+        lines.append(_fill(str(line), proof_bar_text=proof_text))
     lines.append("")
-    lines.append("OUTPUT SPEC")
-    style_description = T["style_descriptions"].get(fmt) or ""
+    lines.append(str(S["output_spec_header"]))
+    style_descriptions = T.get("style_descriptions") if isinstance(T.get("style_descriptions"), dict) else {}
+    style_description = style_descriptions.get(fmt) or _fill(str(S["style_generic"]), fmt=fmt)
     archetype_id = visual_archetype['id']
     archetype_label = visual_archetype['label']
     for line_tpl in T["output_spec_lines"]:
@@ -546,22 +798,23 @@ def render_prompt(
             archetype_label=archetype_label,
         ))
     lines.append("")
-    lines.append("FORMAT LAYOUT INSTRUCTIONS")
+    lines.append(str(S["layout_header"]))
     lines.extend(layout_lines)
     lines.append("")
-    lines.append("PERSONA INPUT BLOCK")
-    lines.extend(
-        [
-            f"- Persona: {persona_name} (Persona {persona_number})",
-            f"- Pain: {pain}",
-            f"- Desire: {desire}",
-            f"- Friction: {friction}",
-            f"- Proof needed: {proof}",
-            f"- Tone cue: {tone}",
-            f"- Concept angle: {concept['concept_angle']}",
-            "- Concept path is strategy only; do not render these labels on-image.",
-        ]
-    )
+    lines.append(str(S["persona_header"]))
+    for line in S["persona_lines"]:
+        lines.append(_fill(
+            str(line),
+            persona_name=persona_name,
+            persona_number=persona_number,
+            pain=pain,
+            desire=desire,
+            friction=friction,
+            proof=proof,
+            tone=tone,
+            concept_angle=concept["concept_angle"],
+        ))
+    lines.append(str(S["concept_path_note"]))
     if isinstance(creative_concept, dict):
         concept_label = str(
             creative_concept.get("label") or creative_concept.get("id") or ""
@@ -569,18 +822,18 @@ def render_prompt(
         concept_description = str(creative_concept.get("description") or "").strip()
         if concept_label or concept_description:
             lines.append("")
-            lines.append("CONCEPT INPUT BLOCK")
-            lines.append(f"- Concept: {concept_label}")
-            lines.append(f"- Description: {concept_description}")
+            lines.append(str(S["concept_header"]))
+            lines.append(_fill(str(S["concept_name_line"]), concept_label=concept_label))
+            lines.append(_fill(str(S["concept_description_line"]), concept_description=concept_description))
     lines.append("")
-    lines.append(f"Create the ad in {LANGUAGE_LABELS.get(lang, lang)}.")
+    lines.append(_fill(str(S["create_ad_line"]), language=language_label(lang, T)))
     lines.append("")
-    lines.append("EXACT ON-IMAGE COPY - DO NOT ALTER ANYTHING")
+    lines.append(str(S["exact_copy_header"]))
     lines.extend(copy_lines)
-    lines.append("Render every character exactly as written. No paraphrasing, no punctuation changes, no autocorrection.")
-    lines.append("- Proof bar is present exactly once, fully readable, horizontally centered, and does not enter the bottom restricted band.")
+    lines.append(str(S["exact_copy_footer"]))
+    lines.append(str(S["proof_bar_once_line"]))
     lines.append("")
-    lines.append("NEGATIVE CONSTRAINTS")
+    lines.append(str(S["negative_header"]))
     negative = list(T["negative_constraints"])
     if fmt == "UGC":
         negative[8:8] = T["ugc_extra_constraints"]
@@ -588,10 +841,10 @@ def render_prompt(
         negative.extend(T["ba_extra_constraint"])
     lines.extend(negative)
     lines.append("")
-    lines.append("QUALITY BAR - verify before accepting output")
+    lines.append(str(S["quality_header"]))
     lines.extend(T["quality_bar_lines"])
     lines.append("")
-    lines.append("VISUAL DIRECTION BLOCK")
+    lines.append(str(S["visual_header"]))
     bg_title = (bg.get("title") or "Catalog background").strip()
     lighting_line = (lock.get("lighting") or "").strip() if isinstance(lock.get("lighting"), str) and lock.get("lighting").strip() else T["lighting_default"]
     props_line = (lock.get("props") or "").strip() if isinstance(lock.get("props"), str) and lock.get("props").strip() else T["props_default"]
@@ -624,7 +877,7 @@ def render_prompt(
         if aspect_ratio == "9:16":
             lines.append(T["visual_match_lock_916"])
     lines.append("")
-    lines.append("TYPOGRAPHY SHARPNESS BLOCK")
+    lines.append(str(S["typography_header"]))
     lines.extend(T["typography_lines"])
     lines.append("")
     lines.extend(T["typography_extra_lines"])
@@ -819,8 +1072,8 @@ def main() -> int:
             raise RuntimeError(f"{ctx} must be an object")
 
         fmt = require_str(ad, "format", ctx).upper()
-        if fmt not in SUPPORTED_FORMATS:
-            raise RuntimeError(f"{ctx}.format must be one of {sorted(SUPPORTED_FORMATS)}")
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,15}", fmt):
+            raise RuntimeError(f"{ctx}.format must be a format id like HERO or STORY")
 
         aspect_ratio = (ad.get("aspect_ratio") or payload.get("default_aspect_ratio") or "4:5").strip()
         if aspect_ratio not in {"4:5", "9:16"}:

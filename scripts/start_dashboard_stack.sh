@@ -3,16 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
-PID_DIR="$ROOT_DIR/dashboard_storage/pids"
-LOG_DIR="$ROOT_DIR/dashboard_storage/logs"
-RUNS_DIR="$ROOT_DIR/dashboard_storage/runs"
+PID_DIR="$ROOT_DIR/.local-stack/pids"
+LOG_DIR="$ROOT_DIR/.local-stack/logs"
 
 DASHBOARD_HOST="127.0.0.1"
 DASHBOARD_PORT="4090"
 DASHBOARD_PID_FILE="$PID_DIR/dashboard.pid"
 DASHBOARD_LOG="$LOG_DIR/dashboard.log"
 
-mkdir -p "$PID_DIR" "$LOG_DIR" "$RUNS_DIR"
+mkdir -p "$PID_DIR" "$LOG_DIR"
 
 if [[ ! -d "$VENV_DIR" ]]; then
   python3 -m venv "$VENV_DIR"

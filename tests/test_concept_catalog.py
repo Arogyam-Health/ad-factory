@@ -4,7 +4,13 @@ import json
 import unittest
 from pathlib import Path
 
-from scripts.generate_ads import CopyBlock, default_visual_archetype, render_prompt
+from scripts.generate_ads import (
+    CopyBlock,
+    DEFAULT_PROOF_BAR_TEXT,
+    default_visual_archetype,
+    pick_background_slot,
+    render_prompt,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,6 +96,49 @@ class ConceptCatalogTests(unittest.TestCase):
             ],
         )
 
+    def test_render_prompt_accepts_unknown_format_id(self) -> None:
+        text = render_prompt(
+            "STORY",
+            "EN",
+            "4:5",
+            {
+                "number": 3,
+                "name": "Stress Snacker",
+                "pain_en": "Stress creates food urges.",
+                "desire_en": "A practical routine.",
+                "friction_en": "Old plans were difficult.",
+                "proof_needed_en": "Use verified product facts only.",
+                "tone_cue_en": "Practical and calm.",
+            },
+            CopyBlock(
+                headline="Stay consistent",
+                cta="Learn more",
+                support_line="A practical routine.",
+            ),
+            {"concept_angle": "desired_outcome"},
+            {"id": "bg_test", "title": "Studio"},
+            1,
+            "A quiet table in soft daylight.",
+            default_visual_archetype("STORY"),
+        )
+        self.assertIn("- Headline: Stay consistent", text)
+        self.assertIn("- Support line: A practical routine.", text)
+        self.assertIn("- CTA: Learn more", text)
+        slot = pick_background_slot(
+            {
+                "variants": [
+                    {
+                        "id": "hero_only",
+                        "formats": ["HERO"],
+                        "title": "Studio",
+                    }
+                ]
+            },
+            "STORY",
+            1,
+        )
+        self.assertEqual(slot["id"], "hero_only")
+
     def test_render_prompt_omits_concept_block_when_none(self) -> None:
         text = _hero_prompt()
         self.assertIn("PERSONA INPUT BLOCK", text)
@@ -108,6 +157,42 @@ class ConceptCatalogTests(unittest.TestCase):
         self.assertIn("CONCEPT INPUT BLOCK", text)
         self.assertIn("- Concept: IG Stories", text)
         self.assertIn("- Description: Casual story format.", text)
+
+    def test_render_prompt_uses_configured_proof_bar_text(self) -> None:
+        text = _hero_prompt()
+        self.assertIn(f"- Proof bar: {DEFAULT_PROOF_BAR_TEXT}", text)
+        self.assertIn(f"- Exact proof bar text: {DEFAULT_PROOF_BAR_TEXT}", text)
+        custom = render_prompt(
+            "HERO",
+            "EN",
+            "4:5",
+            {
+                "number": 3,
+                "name": "Stress Snacker",
+                "pain_en": "Stress creates food urges.",
+                "desire_en": "A practical routine.",
+                "friction_en": "Old plans were difficult.",
+                "proof_needed_en": "Use verified product facts only.",
+                "tone_cue_en": "Practical and calm.",
+            },
+            CopyBlock(
+                headline="Stay consistent",
+                cta="Learn more",
+                support_line="A practical routine.",
+            ),
+            {"concept_angle": "desired_outcome"},
+            {"id": "bg_test", "title": "Studio"},
+            1,
+            "A quiet table in soft daylight.",
+            default_visual_archetype("HERO"),
+            templates={
+                **json.loads((ROOT / "scripts" / "prompt_assembler_templates.json").read_text(encoding="utf-8")),
+                "proof_bar_text": "12,000+ Users | Exact brand lock",
+            },
+        )
+        self.assertIn("- Proof bar: 12,000+ Users | Exact brand lock", custom)
+        self.assertIn("- Exact proof bar text: 12,000+ Users | Exact brand lock", custom)
+        self.assertNotIn(DEFAULT_PROOF_BAR_TEXT, custom)
 
     def test_planner_and_bundle_attach_selected_concept(self) -> None:
         from dashboard.backend.services.render_structured_copy import (

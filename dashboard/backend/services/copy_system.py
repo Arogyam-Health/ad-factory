@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ COPY_SYSTEM_DIR = Path(__file__).resolve().parent.parent / "copy_system"
 
 COPY_SYSTEM_KEYS = [
     "ad_formats",
+    "ad_languages",
     "ad_hooks",
     "ad_angles",
     "ad_frameworks",
@@ -38,6 +40,61 @@ HYPOTHESIS_FILES = {
 }
 
 _BUNDLED: dict[str, dict[str, Any]] | None = None
+FORMAT_ID_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,15}$")
+FALLBACK_FORMAT_IDS = ["HERO", "BA", "TEST", "FEAT", "UGC"]
+FALLBACK_LANGUAGE_IDS = ["EN", "HI", "HINGLISH"]
+FALLBACK_LANGUAGE_MODES = {
+    "EN": ["EN"],
+    "HI": ["HI"],
+    "HINGLISH": ["HINGLISH"],
+    "ALL": ["EN", "HI", "HINGLISH"],
+    "BOTH": ["EN", "HI", "HINGLISH"],
+}
+FALLBACK_PERSONA_SOURCE_MAP = {
+    "name": ["persona_name", "name"],
+    "pain_en": ["core_pattern", "pain_en"],
+    "desire_en": ["relevant_ok_kit_role", "desire_en"],
+    "friction_en": ["why_it_failed", "friction_en"],
+    "proof_needed_en": ["guardrail", "proof_needed_en"],
+    "tone_cue_en": ["tone_cue_en", "tone"],
+}
+FALLBACK_PERSONA_EN = {
+    "pain_en": "The current routine is difficult to sustain.",
+    "desire_en": "A practical routine that fits daily life.",
+    "friction_en": "Past approaches felt difficult to maintain.",
+    "proof_needed_en": "Use verified product facts only.",
+    "tone_cue_en": "Practical, empathetic, and confidence-building.",
+}
+FALLBACK_COPY_TASK = "Generate structured advertising copy as JSON"
+FALLBACK_COPY_REPAIR_TASK = "Repair structured copy validation errors and return JSON only"
+FALLBACK_NO_HYPOTHESIS_LABEL = "No hypothesis test"
+FALLBACK_NO_HYPOTHESIS_CATALOG = (
+    "Generate the strongest natural ad. No persuasion variable is under test."
+)
+FALLBACK_PERSONA_MAPS = {
+    "EN": {
+        "pain": "pain_en",
+        "desire": "desire_en",
+        "friction": "friction_en",
+        "proof_needed": "proof_needed_en",
+        "tone_cue": "tone_cue_en",
+    },
+    "HI": {
+        "pain_hi": "pain_hi",
+        "desire_hi": "desire_hi",
+        "friction_hi": "friction_hi",
+        "proof_needed_hi": "proof_needed_hi",
+        "tone_cue_hi": "tone_cue_hi",
+    },
+    "HINGLISH": {
+        "pain_hinglish": "pain_hinglish",
+        "desire_hinglish": "desire_hinglish",
+        "friction_hinglish": "friction_hinglish",
+        "proof_needed_hinglish": "proof_needed_hinglish",
+        "tone_cue_hinglish": "tone_cue_hinglish",
+    },
+}
+OPTIONAL_COPY_FIELDS = frozenset({"trust_line"})
 
 
 def _text(value: Any) -> str:
@@ -119,9 +176,46 @@ def _styles(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return styles
 
 
+def is_format_id(value: Any) -> bool:
+    ident = str(value or "").strip().upper()
+    return bool(ident and FORMAT_ID_RE.match(ident))
+
+
+def normalize_format_id(value: Any) -> str:
+    ident = str(value or "").strip().upper()
+    if not FORMAT_ID_RE.match(ident):
+        raise ValueError("Unsupported ad format")
+    return ident
+
+
+def _format_entries(config: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    entries: dict[str, dict[str, Any]] = {}
+    for key, value in _file(config, "ad_formats").items():
+        if str(key).startswith("_") or not isinstance(value, dict):
+            continue
+        ident = str(key or "").strip().upper()
+        if FORMAT_ID_RE.match(ident):
+            entries[ident] = value
+    return entries
+
+
+def format_catalog(config: dict[str, Any] | None) -> list[dict[str, str]]:
+    items = []
+    for ident, entry in _format_entries(config).items():
+        items.append(
+            {
+                "id": ident,
+                "label": _text(entry.get("label")) or ident,
+            }
+        )
+    return items or [
+        {"id": ident, "label": ident} for ident in FALLBACK_FORMAT_IDS
+    ]
+
+
 def format_layer(config: dict[str, Any] | None, fmt: str) -> dict[str, Any]:
     ident = str(fmt or "").strip().upper()
-    entry = _file(config, "ad_formats").get(ident)
+    entry = _format_entries(config).get(ident)
     payload: dict[str, Any] = {"id": ident}
     if isinstance(entry, dict):
         description = _text(entry.get("description"))
@@ -143,18 +237,193 @@ def format_layer(config: dict[str, Any] | None, fmt: str) -> dict[str, Any]:
     return compact(payload) or {"id": ident}
 
 
+def _language_entries(config: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    entries: dict[str, dict[str, Any]] = {}
+    for key, value in _file(config, "ad_languages").items():
+        if str(key).startswith("_") or not isinstance(value, dict):
+            continue
+        ident = str(key or "").strip().upper()
+        if ident:
+            entries[ident] = value
+    return entries
+
+
+def _language_modes(config: dict[str, Any] | None) -> dict[str, list[str]]:
+    raw = _file(config, "ad_languages").get("_modes")
+    modes: dict[str, list[str]] = {}
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            ident = str(key or "").strip().upper()
+            langs = value.get("languages") if isinstance(value, dict) else value
+            if ident and isinstance(langs, list) and langs:
+                modes[ident] = [
+                    str(item).strip().upper()
+                    for item in langs
+                    if str(item).strip()
+                ]
+    return modes or dict(FALLBACK_LANGUAGE_MODES)
+
+
+def language_mode_catalog(config: dict[str, Any] | None) -> list[dict[str, Any]]:
+    raw = _file(config, "ad_languages").get("_modes")
+    items: list[dict[str, Any]] = []
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            ident = str(key or "").strip().upper()
+            if not ident or ident == "BOTH":
+                continue
+            entry = value if isinstance(value, dict) else {}
+            langs = [
+                str(item).strip().upper()
+                for item in (entry.get("languages") or [])
+                if str(item).strip()
+            ] or FALLBACK_LANGUAGE_MODES.get(ident, [ident])
+            items.append(
+                {
+                    "id": ident,
+                    "label": _text(entry.get("label")) or ident,
+                    "languages": langs,
+                }
+            )
+    return items or [
+        {
+            "id": ident,
+            "label": ident,
+            "languages": list(langs),
+        }
+        for ident, langs in FALLBACK_LANGUAGE_MODES.items()
+        if ident != "BOTH"
+    ]
+
+
+def is_language_mode(config: dict[str, Any] | None, value: Any) -> bool:
+    ident = str(value or "").strip().upper()
+    return bool(ident and ident in _language_modes(config))
+
+
+def resolve_language_ids(config: dict[str, Any] | None, mode: Any) -> tuple[str, ...]:
+    ident = str(mode or "EN").strip().upper() or "EN"
+    langs = _language_modes(config).get(ident) or FALLBACK_LANGUAGE_MODES.get(ident) or ["EN"]
+    return tuple(langs)
+
+
+def language_layers(
+    config: dict[str, Any] | None,
+    languages: tuple[str, ...] | list[str],
+) -> list[dict[str, Any]]:
+    entries = _language_entries(config)
+    layers: list[dict[str, Any]] = []
+    for lang in languages:
+        ident = str(lang or "").strip().upper()
+        if not ident:
+            continue
+        entry = entries.get(ident) or {}
+        rules = [
+            _text(item)
+            for item in (entry.get("rules") or [])
+            if _text(item)
+        ]
+        payload: dict[str, Any] = {"id": ident}
+        label = _text(entry.get("label"))
+        if label:
+            payload["label"] = label
+        if rules:
+            payload["rules"] = rules
+        layers.append(compact(payload) or {"id": ident})
+    return layers
+
+
+def copy_task(config: dict[str, Any] | None) -> str:
+    return _text(_file(config, "ad_guardrails").get("task")) or FALLBACK_COPY_TASK
+
+
+def copy_repair_task(config: dict[str, Any] | None) -> str:
+    return (
+        _text(_file(config, "ad_guardrails").get("repair_task"))
+        or FALLBACK_COPY_REPAIR_TASK
+    )
+
+
+def persona_source_map(config: dict[str, Any] | None) -> dict[str, list[str]]:
+    raw = _file(config, "ad_languages").get("_persona_source_map")
+    mapped: dict[str, list[str]] = {}
+    if isinstance(raw, dict):
+        for dest, sources in raw.items():
+            ident = str(dest or "").strip()
+            keys = sources if isinstance(sources, list) else [sources]
+            cleaned = [str(item).strip() for item in keys if str(item).strip()]
+            if ident and cleaned:
+                mapped[ident] = cleaned
+    return mapped or {key: list(value) for key, value in FALLBACK_PERSONA_SOURCE_MAP.items()}
+
+
+def persona_fallbacks(config: dict[str, Any] | None, lang: str = "EN") -> dict[str, str]:
+    ident = str(lang or "EN").strip().upper() or "EN"
+    entry = _language_entries(config).get(ident) or {}
+    raw = entry.get("persona_fallbacks")
+    if isinstance(raw, dict) and raw:
+        return {
+            str(key): _text(value)
+            for key, value in raw.items()
+            if str(key).strip() and _text(value)
+        }
+    if ident == "EN":
+        return dict(FALLBACK_PERSONA_EN)
+    return {}
+
+
+def extra_persona_language_keys(config: dict[str, Any] | None) -> list[str]:
+    keys: list[str] = []
+    seen = set(FALLBACK_PERSONA_EN)
+    seen.update({"name", "number"})
+    for entry in _language_entries(config).values():
+        raw = entry.get("persona_map") if isinstance(entry, dict) else {}
+        if not isinstance(raw, dict):
+            continue
+        for source in raw.values():
+            key = str(source).strip()
+            if key and key not in seen and key not in keys:
+                keys.append(key)
+    return keys or [
+        "pain_hi",
+        "desire_hi",
+        "friction_hi",
+        "proof_needed_hi",
+        "tone_cue_hi",
+        "pain_hinglish",
+        "desire_hinglish",
+        "friction_hinglish",
+        "proof_needed_hinglish",
+        "tone_cue_hinglish",
+    ]
+
+
+def pick_persona_field(source: dict[str, Any], keys: list[str]) -> str:
+    for key in keys:
+        value = _text(source.get(key))
+        if value:
+            return value
+    return ""
+
+
+def language_persona_map(config: dict[str, Any] | None, lang: str) -> dict[str, str]:
+    ident = str(lang or "").strip().upper()
+    entry = _language_entries(config).get(ident) or {}
+    raw = entry.get("persona_map")
+    if isinstance(raw, dict) and raw:
+        return {
+            str(dest): str(source)
+            for dest, source in raw.items()
+            if str(dest).strip() and str(source).strip()
+        }
+    return dict(FALLBACK_PERSONA_MAPS.get(ident) or {})
+
+
 def format_output_fields(config: dict[str, Any] | None, fmt: str) -> list[str]:
     layer = format_layer(config, fmt)
     fields = layer.get("output_fields")
     if isinstance(fields, list) and fields:
         return [str(item) for item in fields]
-    ident = str(fmt or "").upper()
-    if ident in {"HERO", "UGC"}:
-        return ["headline", "support_line", "cta"]
-    if ident == "TEST":
-        return ["headline", "attribution", "trust_line", "cta"]
-    if ident in {"BA", "FEAT"}:
-        return ["headline", "bullets", "cta"]
     return ["headline", "cta"]
 
 
@@ -173,10 +442,13 @@ def guardrails(config: dict[str, Any] | None, *, hypothesis: bool) -> list[str]:
 
 
 def hypothesis_catalog(config: dict[str, Any] | None) -> dict[str, Any]:
+    guard = _file(config, "ad_guardrails")
     variables: dict[str, Any] = {
         "none": {
-            "label": "No hypothesis test",
-            "description": "Generate the strongest natural ad. No persuasion variable is under test.",
+            "label": _text(guard.get("no_hypothesis_label")) or FALLBACK_NO_HYPOTHESIS_LABEL,
+            "description": (
+                _text(guard.get("no_hypothesis_catalog")) or FALLBACK_NO_HYPOTHESIS_CATALOG
+            ),
             "options": [],
         }
     }

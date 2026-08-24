@@ -1,22 +1,24 @@
 import json
 import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from dashboard.backend.auth.service import require_user_dependency
-from dashboard.backend.services.copy_system import hypothesis_catalog
+from dashboard.backend.services.copy_system import (
+    format_catalog,
+    hypothesis_catalog,
+    language_mode_catalog,
+)
 from dashboard.backend.services.user_config import (
     get_generic_config,
     parse_concept_catalog,
     resolve_effective_config,
     resolve_effective_config_for_user,
 )
-from dashboard.backend.services.visual_archetypes import (
-    FORMATS,
-    format_visual_archetypes,
-)
+from dashboard.backend.services.visual_archetypes import format_visual_archetypes
 
 router = APIRouter()
 
@@ -61,15 +63,20 @@ _PUBLIC_STUDIO_TTL = 20.0
 _public_studio_cache: dict[str, Any] = {"ts": 0.0, "data": None}
 
 
+_GUIDE_PATH = Path(__file__).resolve().parents[3] / "docs" / "OPERATOR_PLATE_GUIDE.md"
+
+
 def _studio_payload(config: dict[str, Any], *, source: str) -> dict[str, Any]:
     return {
         "source": source,
         "config": config,
         "personas": _persona_summaries(config),
-        "formats": list(FORMATS),
+        "formats": format_catalog(config),
         "format_patterns": format_visual_archetypes(
-            _parse_json(config.get("copy_prompt_templates"), {})
+            _parse_json(config.get("copy_prompt_templates"), {}),
+            _parse_json(config.get("ad_formats"), {}),
         ),
+        "language_modes": language_mode_catalog(config),
         "concepts": parse_concept_catalog(config.get("concept")),
         "hypothesis": {
             "variables": _hypothesis_variables(config),
@@ -81,6 +88,15 @@ def _studio_payload(config: dict[str, Any], *, source: str) -> dict[str, Any]:
         },
         "can_run": False,
     }
+
+
+@router.get("/api/guide")
+def operator_guide() -> dict[str, str]:
+    try:
+        markdown = _GUIDE_PATH.read_text(encoding="utf-8")
+    except OSError:
+        markdown = ""
+    return {"title": "Operator plate guide", "markdown": markdown}
 
 
 @router.get("/api/public/studio")
@@ -111,10 +127,12 @@ def dashboard_defaults(
     )
     return {
         "personas": _persona_summaries(config),
-        "formats": list(FORMATS),
+        "formats": format_catalog(config),
         "format_patterns": format_visual_archetypes(
-            _parse_json(config.get("copy_prompt_templates"), {})
+            _parse_json(config.get("copy_prompt_templates"), {}),
+            _parse_json(config.get("ad_formats"), {}),
         ),
+        "language_modes": language_mode_catalog(config),
         "concepts": parse_concept_catalog(config.get("concept")),
         "image_sources": [],
         "input_images": [],

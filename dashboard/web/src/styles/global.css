@@ -153,6 +153,37 @@ p {
   gap: 2px;
 }
 
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group + .nav-group {
+  margin-top: 14px;
+}
+
+.nav-section {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0 0 6px;
+}
+
+.nav-section-business {
+  color: var(--gold);
+}
+
+.tile-business {
+  border-color: color-mix(in srgb, var(--gold) 50%, var(--rule));
+}
+
+.file-card-business {
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--rule));
+}
+
 .nav-link {
   display: flex;
   align-items: center;
@@ -1276,6 +1307,66 @@ input[type="number"].field::-webkit-inner-spin-button {
 .stack {
   display: grid;
   gap: 10px;
+}
+
+.guide-page {
+  max-width: 760px;
+  color: var(--ink);
+}
+
+.guide-page h2,
+.guide-page h3,
+.guide-page h4 {
+  margin: 1.4em 0 0.5em;
+  letter-spacing: -0.02em;
+}
+
+.guide-page h2 {
+  font-size: 1.2rem;
+}
+
+.guide-page h3 {
+  font-size: 1.02rem;
+}
+
+.guide-page h4 {
+  font-size: 0.92rem;
+}
+
+.guide-page p,
+.guide-page li {
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+
+.guide-page p {
+  margin: 0 0 0.85em;
+}
+
+.guide-page ul {
+  margin: 0 0 1em 1.2em;
+}
+
+.guide-page li + li {
+  margin-top: 0.35em;
+}
+
+.guide-page code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+}
+
+.guide-page pre {
+  overflow: auto;
+  padding: 12px 14px;
+  margin: 0 0 1em;
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.guide-page a {
+  color: var(--gold);
 }
 
 @media (prefers-reduced-motion: reduce) {

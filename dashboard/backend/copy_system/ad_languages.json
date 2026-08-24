@@ -1,0 +1,87 @@
+{
+  "_description": "Language layer. Selected language objects are sent as the copy request languages list. Empty fields are omitted. Studio chips come from _modes. _persona_source_map is this brand's seed-field aliases.",
+  "_persona_source_map": {
+    "name": ["persona_name", "name"],
+    "pain_en": ["core_pattern", "pain_en"],
+    "desire_en": ["relevant_ok_kit_role", "desire_en"],
+    "friction_en": ["why_it_failed", "friction_en"],
+    "proof_needed_en": ["guardrail", "proof_needed_en"],
+    "tone_cue_en": ["tone_cue_en", "tone"]
+  },
+  "_modes": {
+    "ALL": {
+      "label": "ALL",
+      "languages": ["EN", "HI", "HINGLISH"]
+    },
+    "EN": {
+      "label": "EN",
+      "languages": ["EN"]
+    },
+    "HI": {
+      "label": "HI",
+      "languages": ["HI"]
+    },
+    "HINGLISH": {
+      "label": "HINGLISH",
+      "languages": ["HINGLISH"]
+    },
+    "BOTH": {
+      "label": "ALL",
+      "languages": ["EN", "HI", "HINGLISH"]
+    }
+  },
+  "EN": {
+    "label": "English",
+    "rules": [
+      "Write fully English ad copy. Do not use Hindi words or romanized Hindi (Hinglish).",
+      "Do not mix Devanagari into English lines.",
+      "Do not transliterate Hindi sentences into English letters."
+    ],
+    "persona_map": {
+      "pain": "pain_en",
+      "desire": "desire_en",
+      "friction": "friction_en",
+      "proof_needed": "proof_needed_en",
+      "tone_cue": "tone_cue_en"
+    },
+    "persona_fallbacks": {
+      "pain_en": "The current routine is difficult to sustain.",
+      "desire_en": "A practical routine that fits daily life.",
+      "friction_en": "Past approaches felt difficult to maintain.",
+      "proof_needed_en": "Use verified product facts only.",
+      "tone_cue_en": "Practical, empathetic, and confidence-building."
+    }
+  },
+  "HI": {
+    "label": "Hindi",
+    "rules": [
+      "Write fully Hindi in Devanagari script.",
+      "Do not write Hindi in Roman letters. That is Hinglish, not Hindi.",
+      "Do not mix Latin words into a Hindi line unless the product name requires the original spelling.",
+      "Keep the same meaning as the English version without translating word for word."
+    ],
+    "persona_map": {
+      "pain_hi": "pain_hi",
+      "desire_hi": "desire_hi",
+      "friction_hi": "friction_hi",
+      "proof_needed_hi": "proof_needed_hi",
+      "tone_cue_hi": "tone_cue_hi"
+    }
+  },
+  "HINGLISH": {
+    "label": "Hinglish",
+    "rules": [
+      "Write spoken Hindi in Roman letters, mixed naturally with English.",
+      "Do not use Devanagari.",
+      "Keep it conversational. Do not produce a word-for-word English translation written in Hindi words.",
+      "Do not make English-only copy and call it Hinglish."
+    ],
+    "persona_map": {
+      "pain_hinglish": "pain_hinglish",
+      "desire_hinglish": "desire_hinglish",
+      "friction_hinglish": "friction_hinglish",
+      "proof_needed_hinglish": "proof_needed_hinglish",
+      "tone_cue_hinglish": "tone_cue_hinglish"
+    }
+  }
+}

@@ -1,5 +1,9 @@
 export type Persona = { number: number; name: string };
 
+export type FormatOption = { id: string; label?: string };
+
+export type LanguageMode = { id: string; label?: string; languages?: string[] };
+
 export type FormatPattern = { id: string; label?: string };
 
 export type HypothesisOption = { id: string; label: string };
@@ -20,8 +24,9 @@ export type StudioPayload = {
   source?: string;
   config?: Record<string, unknown>;
   personas?: Persona[];
-  formats?: string[];
+  formats?: Array<string | FormatOption>;
   format_patterns?: Record<string, FormatPattern[]>;
+  language_modes?: Array<string | LanguageMode>;
   concepts?: ConceptOption[];
   hypothesis?: {
     variables?: Record<string, HypothesisVariable>;

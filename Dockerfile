@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements-dashboard.txt
 
 COPY . .
 COPY --from=web /web/dist /app/dashboard/web/dist
-RUN mkdir -p dashboard_storage runtime output generated_images input/images
+RUN mkdir -p input/images
 
 EXPOSE 4090
 

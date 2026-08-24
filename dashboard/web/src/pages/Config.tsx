@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { fetchJSON, peekCache, clearCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { asConfigText, CONFIG_KEYS, JSON_KEYS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
+import { asConfigText, CONFIG_KEYS, CONFIG_SECTIONS, JSON_KEYS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
 import type { ConfigSource, ConfigVersion, EffectiveConfig, StudioPayload } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
@@ -167,15 +167,20 @@ export function ConfigPage() {
       const path = meta?.owner_type === "org" && meta.org?.org_id
         ? `/api/orgs/${encodeURIComponent(meta.org.org_id)}/config`
         : "/api/user/config";
-      await fetchJSON(path, {
+      const result = await fetchJSON<{ notice?: string; config?: Record<string, unknown> }>(path, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config: drafts, expected_version: meta?.version }),
       });
       clearCache("/api/config/");
       clearCache("/api/defaults");
-      setFiles(drafts);
-      setStatus("All files saved.");
+      const next = { ...drafts };
+      if (result.notice && typeof result.config?.copy_prompt_templates === "string") {
+        next.copy_prompt_templates = result.config.copy_prompt_templates;
+      }
+      setFiles(next);
+      setDrafts(next);
+      setStatus(result.notice || "All files saved.");
       if (meta?.config_id && meta.owner_type === "org") {
         const data = await fetchJSON<{ versions?: ConfigVersion[] }>(
           `/api/config/${meta.config_id}/versions`,
@@ -317,20 +322,26 @@ export function ConfigPage() {
           </div>
         ) : null}
         <p className="hint" style={{ marginBottom: 12 }}>
-          Source {sourceLabel} · {guest ? "generic rules" : meta?.mode || "personal"} · {canEdit ? "editable" : "read only"}
+          Source {sourceLabel} · {guest ? "generic rules" : meta?.mode || "personal"} · {canEdit ? "editable" : "read only"}.{" "}
+          <Link to="/guide">Operator guide</Link>
         </p>
         {loading ? <SkeletonLines lines={10} /> : (
           <div className="nav">
-            {CONFIG_KEYS.map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={`nav-link${active === key ? " active" : ""}`}
-                onClick={() => setActive(key)}
-              >
-                <span>{KEY_LABELS[key]}</span>
-                <span className="nav-index">{JSON_KEYS.has(key) ? "JSON" : "TXT"}</span>
-              </button>
+            {CONFIG_SECTIONS.map((section) => (
+              <div key={section.id} className="nav-group">
+                <p className={`nav-section${section.id === "business" ? " nav-section-business" : ""}`}>{section.title}</p>
+                {section.keys.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`nav-link${active === key ? " active" : ""}`}
+                    onClick={() => setActive(key)}
+                  >
+                    <span>{KEY_LABELS[key]}</span>
+                    <span className="nav-index">{JSON_KEYS.has(key) ? "JSON" : "TXT"}</span>
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         )}
@@ -457,13 +468,18 @@ export function ConfigPage() {
       ) : null}
       {viewVersion ? (
         <Modal title={`Snapshot · ${viewVersion.label}`} onClose={() => setViewVersion(null)}>
-          <div className="chips" style={{ marginBottom: 12 }}>
-            {CONFIG_KEYS.map((key) => (
-              <button key={key} type="button" className={`chip${active === key ? " active" : ""}`} onClick={() => setActive(key)}>
-                {KEY_LABELS[key]}
-              </button>
-            ))}
-          </div>
+          {CONFIG_SECTIONS.map((section) => (
+            <div key={section.id} style={{ marginBottom: 12 }}>
+              <p className="tile-kicker">{section.title}</p>
+              <div className="chips">
+                {section.keys.map((key) => (
+                  <button key={key} type="button" className={`chip${active === key ? " active" : ""}`} onClick={() => setActive(key)}>
+                    {KEY_LABELS[key]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
           <textarea className="cfg-textarea" readOnly rows={16} value={viewVersion.files[active] || ""} />
         </Modal>
       ) : null}

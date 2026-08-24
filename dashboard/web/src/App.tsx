@@ -7,6 +7,7 @@ import { TracesPage } from "@/pages/Traces";
 import { ProfilePage } from "@/pages/Profile";
 import { AdminPage } from "@/pages/Admin";
 import { InvitePage } from "@/pages/Invite";
+import { GuidePage } from "@/pages/Guide";
 
 export function App() {
   return (
@@ -20,6 +21,8 @@ export function App() {
               <Route path="/" element={<StudioPage />} />
               <Route path="/config" element={<ConfigPage />} />
               <Route path="/config.html" element={<Navigate to="/config" replace />} />
+              <Route path="/guide" element={<GuidePage />} />
+              <Route path="/guide.html" element={<Navigate to="/guide" replace />} />
               <Route path="/organizations" element={<OrganizationsPage />} />
               <Route path="/organizations.html" element={<Navigate to="/organizations" replace />} />
               <Route path="/traces" element={<TracesPage />} />
