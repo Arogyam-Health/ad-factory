@@ -85,6 +85,8 @@ class BrowserDiscoveryTests(unittest.TestCase):
         self.assertIn("from local_agent_runtime.browser import resolve_browser_executable", agent)
         self.assertNotIn("def _browser_candidates", agent)
         self.assertIn("LOCAL_DASHBOARD_ORIGINS", agent)
+        self.assertIn("Saved agent token was rejected. Re-registering this device...", agent)
+        self.assertIn("Restart and paste a dashboard", agent)
         self.assertIn("http://127.0.0.1:4090", agent)
         self.assertIn("_browser_allowed_origins", agent)
         from scripts.start_local_agent import agent_command, parse_args

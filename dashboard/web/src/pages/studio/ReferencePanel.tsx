@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
-import { asConfigText } from "@/lib/config-keys";
+import { asConfigText, catalogConcepts } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { Persona, Run, StudioPayload } from "@/lib/types";
 import { Button } from "@/components/Button";
@@ -318,7 +318,7 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
             selected_concept: props.selectedConcept,
             ...(props.selectedConcept
               ? {
-                  creative_concept: props.studio?.concepts?.find((item) => item.id === props.selectedConcept) || null,
+                  creative_concept: catalogConcepts(props.studio).find((item) => item.id === props.selectedConcept) || null,
                 }
               : {}),
             product_document: { resource_id: productDocument.resource_id, version: productDocument.version },
@@ -384,6 +384,28 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
   return <ReferenceCtx.Provider value={value}>{children}</ReferenceCtx.Provider>;
 }
 
+function ConceptSelect({
+  value,
+  onChange,
+  studio,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  studio: StudioPayload | null;
+}) {
+  return (
+    <label className="hint" style={{ display: "block", marginBottom: 12 }}>
+      Concept
+      <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">None</option>
+        {catalogConcepts(studio).map((item) => (
+          <option key={item.id} value={item.id}>{item.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function ReferenceCompose() {
   const {
     language,
@@ -405,15 +427,7 @@ export function ReferenceCompose() {
           </button>
         ))}
       </div>
-      <label className="hint">
-        Concept
-        <select className="field" value={selectedConcept} onChange={(e) => setSelectedConcept(e.target.value)}>
-          <option value="">None</option>
-          {(studio?.concepts || []).map((item) => (
-            <option key={item.id} value={item.id}>{item.label}</option>
-          ))}
-        </select>
-      </label>
+      <ConceptSelect value={selectedConcept} onChange={setSelectedConcept} studio={studio} />
       <p className="hint" style={{ marginBottom: 12 }}>{jobCount} jobs · personas × selected references × language</p>
       <div className="persona-grid">
         {personas.map((persona) => (
@@ -595,6 +609,7 @@ export function ReferenceDesk() {
           {ctx.canEditFiles ? "Edit 9:16 conversion" : "9:16 conversion"}
         </Button>
       </div>
+      <ConceptSelect value={ctx.selectedConcept} onChange={ctx.setSelectedConcept} studio={ctx.studio} />
       <div className="action-row">
         <label className="toolbar-field">
           <span>Image engine</span>

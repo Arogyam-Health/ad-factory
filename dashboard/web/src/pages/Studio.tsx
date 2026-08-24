@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJSON, peekCache, invalidateRuns, clearCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { asConfigText, CONFIG_KEYS, KEY_HINTS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
+import { asConfigText, catalogConcepts, CONFIG_KEYS, KEY_HINTS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { ConfigSource, EffectiveConfig, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
@@ -682,7 +682,7 @@ export function StudioPage() {
                 Concept
                 <select className="field" value={selectedConcept} onChange={(e) => setSelectedConcept(e.target.value)}>
                   <option value="">None</option>
-                  {(studio?.concepts || []).map((item) => (
+                  {catalogConcepts(studio).map((item) => (
                     <option key={item.id} value={item.id}>{item.label}</option>
                   ))}
                 </select>

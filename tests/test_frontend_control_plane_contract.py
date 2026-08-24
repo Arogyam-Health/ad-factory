@@ -137,7 +137,10 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("language_mode: props.language", reference)
         self.assertIn("selected_concept: props.selectedConcept", reference)
         self.assertIn("creative_concept:", reference)
-        self.assertIn('<option value="">None</option>', reference)
+        self.assertIn("catalogConcepts", reference)
+        desk = reference[reference.index("export function ReferenceDesk"):]
+        self.assertIn("<ConceptSelect", desk)
+        self.assertIn("Run reference flow", desk)
         self.assertIn("personas × selected references × language", reference)
         self.assertIn("id=\"googleApiKey\"", studio)
         self.assertIn("<form", studio)

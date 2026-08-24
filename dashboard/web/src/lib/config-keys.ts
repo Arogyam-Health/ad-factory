@@ -63,6 +63,52 @@ export function asConfigText(value: unknown): string {
   }
 }
 
+export type ConceptCatalogItem = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export function catalogConcepts(studio: {
+  concepts?: { id?: string; label?: string; description?: string }[];
+  config?: Record<string, unknown>;
+} | null | undefined): ConceptCatalogItem[] {
+  const listed = studio?.concepts;
+  if (Array.isArray(listed) && listed.length) {
+    return listed
+      .map((item) => ({
+        id: String(item.id || "").trim(),
+        label: String(item.label || item.id || "").trim(),
+        description: String(item.description || ""),
+      }))
+      .filter((item) => item.id);
+  }
+  const raw = studio?.config?.concept;
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  return Object.entries(parsed as Record<string, unknown>).flatMap(([key, value]) => {
+    const id = String(key || "").trim();
+    if (!id) return [];
+    const description = typeof value === "string"
+      ? value
+      : value && typeof value === "object" && "description" in value
+        ? String((value as { description?: unknown }).description || "")
+        : "";
+    return [{
+      id,
+      label: id.split("/").pop()?.replace(/_/g, " ") || id,
+      description,
+    }];
+  });
+}
+
 export function studioOrgKey(userId: string) {
   return `adFactoryStudioOrg:${userId}`;
 }
