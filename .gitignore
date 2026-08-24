@@ -36,3 +36,7 @@ scripts/__pycache__/*
 node_modules/
 # Built SPA is tracked so Render's Python-only build can serve `/`.
 # Docker and `npm run build` refresh it.
+
+# Local editor and test caches
+.cursor/
+.pytest_cache/
