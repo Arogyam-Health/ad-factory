@@ -323,6 +323,8 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("ListPager", studio)
         self.assertIn("sortedRuns", studio)
         self.assertIn("runsPanelRef", studio)
+        self.assertIn("bento-wide", studio)
+        self.assertIn(".bento-wide", _read("styles", "global.css"))
         self.assertIn("TRACES_PER_PAGE = 5", _read("pages", "Traces.tsx"))
         self.assertIn("ListPager", _read("pages", "Traces.tsx"))
         self.assertIn("mergePromptRows", workspace)

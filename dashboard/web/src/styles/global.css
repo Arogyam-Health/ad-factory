@@ -341,8 +341,10 @@ p {
   grid-column: span 4;
 }
 
-.tile-wide {
+.tile-wide,
+.bento-wide {
   grid-column: span 12;
+  min-width: 0;
 }
 
 .tile-half {
@@ -583,7 +585,7 @@ p {
 
 .run-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  grid-template-columns: auto minmax(120px, 2fr) minmax(90px, 1fr) minmax(80px, 1fr) minmax(70px, 1fr);
   gap: 10px;
   align-items: center;
   padding: 12px;
@@ -591,6 +593,13 @@ p {
   background: var(--surface-0);
   font-size: 0.85rem;
   cursor: pointer;
+}
+
+.run-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run-row:hover {

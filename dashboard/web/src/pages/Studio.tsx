@@ -1270,7 +1270,7 @@ export function StudioPage() {
         </div>
       </Tile>
 
-      <div ref={runsPanelRef}>
+      <div ref={runsPanelRef} className="bento-wide">
       <Tile span="wide" kicker="04 · Dry proofs" title="Recent runs">
         <div className="action-row" style={{ marginBottom: 12 }}>
           <BatchSelect runs={sortedRuns} picked={pickedRuns} onChange={setPickedRuns} />
