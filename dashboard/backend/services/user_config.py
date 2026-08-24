@@ -52,8 +52,8 @@ CONFIG_KEYS = [
     "copy_prompt_templates",
     "persona_seeds",
     "concept",
-    "copy_architecture",
     *COPY_SYSTEM_KEYS,
+    "copy_starting_prompt",
     "background_variant",
     "prompt_assembler_templates",
     "conversion_916_prompt",
@@ -76,8 +76,8 @@ _CONTENT_TYPES = {
     "copy_prompt_templates": "application/json",
     "persona_seeds": "application/json",
     "concept": "application/json",
-    "copy_architecture": "application/json",
     **{key: "application/json" for key in COPY_SYSTEM_KEYS},
+    "copy_starting_prompt": "text/plain",
     "background_variant": "application/json",
     "prompt_assembler_templates": "application/json",
     "conversion_916_prompt": "text/plain",
@@ -92,8 +92,8 @@ _EMPTY_BY_KEY = {
     "copy_prompt_templates": "{}",
     "persona_seeds": "[]",
     "concept": "{}",
-    "copy_architecture": "{}",
     **{key: "{}" for key in COPY_SYSTEM_KEYS},
+    "copy_starting_prompt": "",
     "background_variant": "{}",
     "prompt_assembler_templates": "{}",
     "conversion_916_prompt": "",
@@ -119,7 +119,6 @@ def _repository_generic_config() -> dict[str, str]:
     copy_templates_path = root / "dashboard" / "backend" / "copy_prompt_templates.json"
     persona_seeds_path = root / "persona_seeds.json"
     concept_path = root / "concept.json"
-    copy_arch_path = root / "dashboard" / "backend" / "copy_architecture.json"
     background_variant_path = root / "background_variant.json"
     prompt_assembler_path = root / "scripts" / "prompt_assembler_templates.json"
     conversion_916_path = root / "input" / "prompt_916_from_45.txt"
@@ -137,8 +136,8 @@ def _repository_generic_config() -> dict[str, str]:
         "copy_prompt_templates": _read(copy_templates_path) or "{}",
         "persona_seeds": _read(persona_seeds_path) or "[]",
         "concept": _read(concept_path) or "{}",
-        "copy_architecture": _read(copy_arch_path) or "{}",
         **bundled_copy_system_text(),
+        "copy_starting_prompt": "",
         "background_variant": _read(background_variant_path) or "{}",
         "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
         "conversion_916_prompt": _read(conversion_916_path),
@@ -221,10 +220,18 @@ def get_generic_config() -> dict[str, Any]:
     return _extract_flat_from_new_schema(doc)
 
 
+_RETIRED_CONFIG_KEYS = frozenset({"copy_architecture"})
+
+
 def validate_config_files(files: dict[str, Any]) -> dict[str, str]:
     """Accept only the known bounded text configuration files."""
     if not isinstance(files, dict):
         raise ValueError("Config must be an object")
+    files = {
+        key: value
+        for key, value in files.items()
+        if key not in _RETIRED_CONFIG_KEYS
+    }
     unknown = set(files) - set(CONFIG_KEYS)
     if unknown:
         raise ValueError("Config contains unsupported file keys")

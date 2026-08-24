@@ -3,8 +3,8 @@ from __future__ import annotations
 """Live structured-copy assembler.
 
 Copy-LLM layers come from dashboard/backend/copy_system/ via copy_system.py.
-copy_architecture.json is not read here. copy_prompt_templates.json is read
-only for visual_archetypes after copy exists.
+copy_prompt_templates.json is read only for visual_archetypes after copy exists.
+copy_starting_prompt is sent as starting_prompt when non-empty.
 """
 
 import hashlib
@@ -749,6 +749,7 @@ def generate_structured_prompt_bundle(
     product_document = str(effective_config.get("product_master_doc") or "").strip()
     if not product_document:
         raise ValueError("Product Master Doc is empty")
+    starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
     catalog = _archetype_catalog(effective_config)
     has_hypothesis = any(
         isinstance(item.get("hypothesis"), dict)
@@ -758,6 +759,7 @@ def generate_structured_prompt_bundle(
     request = compact(
         {
             "task": "Generate structured advertising copy as JSON",
+            "starting_prompt": starting_prompt,
             "product_document": product_document,
             "planned_ads": [
                 _llm_planned_ad(
@@ -881,7 +883,11 @@ def generate_structured_prompt_bundle(
             background_seed,
             "4:5",
         )
-        angle = str(ad.get("concept_angle") or "").strip() or "none"
+        angle = str(ad.get("concept_angle") or "").strip()
+        if not angle:
+            hyp = ad.get("hypothesis") if isinstance(ad.get("hypothesis"), dict) else {}
+            angle = str(hyp.get("variant") or "").strip()
+        angle = angle or "none"
         concept = {"concept_angle": angle}
         for language in languages:
             block = generate_ads.parse_copy_block(

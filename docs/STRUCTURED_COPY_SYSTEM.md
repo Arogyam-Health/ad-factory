@@ -2,7 +2,7 @@
 
 This is the operator guide for the live Structured copy request. Edit the split JSON files, save them in Studio or Config, and the next run sends those layers to the copy LLM. Empty fields are omitted. Generation still runs.
 
-The live assembler is `dashboard/backend/services/render_structured_copy.py`. It reads `dashboard/backend/copy_system/` through `dashboard/backend/services/copy_system.py`. It does **not** read `copy_architecture.json`. `copy_prompt_templates.json` is used only for `visual_archetypes` after copy exists.
+The live assembler is `dashboard/backend/services/render_structured_copy.py`. It reads `dashboard/backend/copy_system/` through `dashboard/backend/services/copy_system.py`. `copy_prompt_templates.json` is used only for `visual_archetypes` after copy exists. `copy_starting_prompt` is sent as `starting_prompt` when non-empty.
 
 ## Request shape
 
@@ -11,6 +11,7 @@ One copy call looks like this. Optional objects appear only when they have conte
 ```json
 {
   "task": "Generate structured advertising copy as JSON",
+  "starting_prompt": "<copy_starting_prompt if non-empty>",
   "product_document": "<product master doc if non-empty>",
   "languages": ["EN"],
   "guardrails": ["...only non-empty lines..."],
@@ -64,12 +65,13 @@ Format ids stay `HERO`, `BA`, `TEST`, `FEAT`, `UGC`.
 | `copy_system/ad_emotions.json` | `ad_emotions` | `hypothesis` when type is Emotional Driver |
 | `copy_system/ad_specificity.json` | `ad_specificity` | `hypothesis` when type is Specificity Level |
 | `copy_system/ad_feature_focus.json` | `ad_feature_focus` | `hypothesis` when type is Feature Focus |
+| `copy_system/ad_support_shapes.json` | `ad_support_shapes` | `hypothesis` when type is Support Shape |
 | `copy_system/ad_guardrails.json` | `ad_guardrails` | top-level `guardrails` |
+| copy starting prompt | `copy_starting_prompt` | top-level `starting_prompt` when non-empty |
 | product master doc | `product_master_doc` | `product_document` |
 | concept catalog | `concept` | `planned_ads[].creative_concept` |
 | persona seeds | `persona_seeds` | `planned_ads[].persona` |
 | copy prompt templates | `copy_prompt_templates` | not sent to the copy LLM; `visual_archetypes` only, after copy |
-| copy architecture | `copy_architecture` | unused on the live path |
 
 `ad_guardrails.always` is always attached (non-empty lines only). `ad_guardrails.no_hypothesis` is attached only when Hypothesis is None.
 
@@ -107,9 +109,11 @@ What they lock:
 - HERO vs BA payloads differ by description, skeleton, and output fields
 - Hypothesis None has no `concept_angle` and no `hypothesis`
 - `pain_point` includes definition text
+- Support Shape / contrast includes definition text
 - empty `ad_hooks.question_led` still generates
 - `creative_concept` appears once, on the planned ad
 - TEST uses attribution and its no-fabricate description
+- `copy_starting_prompt` is sent only when non-empty
 
 ## Studio checklist
 

@@ -19,6 +19,7 @@ COPY_SYSTEM_KEYS = [
     "ad_emotions",
     "ad_specificity",
     "ad_feature_focus",
+    "ad_support_shapes",
     "ad_guardrails",
 ]
 
@@ -33,6 +34,7 @@ HYPOTHESIS_FILES = {
     "emotional_driver": "ad_emotions",
     "specificity_level": "ad_specificity",
     "feature_focus": "ad_feature_focus",
+    "support_shape": "ad_support_shapes",
 }
 
 _BUNDLED: dict[str, dict[str, Any]] | None = None

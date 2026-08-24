@@ -168,6 +168,8 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("LAST_STUDIO_ORG_KEY", config)
         self.assertIn("ad_formats", config)
         self.assertIn("ad_guardrails", config)
+        self.assertIn("ad_support_shapes", config)
+        self.assertIn("copy_starting_prompt", config)
         self.assertIn('{ noCache: true }', auth)
         self.assertIn('url.includes("/api/auth/")', api)
         self.assertIn('url.includes("/api/invites/")', api)
@@ -238,7 +240,6 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         readme = (ROOT / "DASHBOARD_EDITABLE_FIELDS.md").read_text(encoding="utf-8")
         for needle in (
             "visual_archetypes",
-            "headline_architectures",
             "reference_starting_prompt",
             "reference_product_master_doc",
             "Copy to Org",
@@ -247,9 +248,10 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             "persona_seeds",
             "concept",
             "copy_prompt_templates",
-            "copy_architecture",
             "ad_formats",
             "ad_guardrails",
+            "ad_support_shapes",
+            "copy_starting_prompt",
         ):
             with self.subTest(needle=needle):
                 self.assertIn(needle, readme)

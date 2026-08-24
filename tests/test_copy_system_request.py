@@ -131,6 +131,7 @@ class CopySystemLoaderTests(unittest.TestCase):
                 "ad_emotions",
                 "ad_specificity",
                 "ad_feature_focus",
+                "ad_support_shapes",
                 "ad_guardrails",
             ],
         )
@@ -270,6 +271,30 @@ class CopySystemRequestTests(unittest.TestCase):
         self.assertIn("attribution", schema)
         self.assertNotIn("support_line", schema)
         self.assertNotIn("bullets", schema)
+
+    def test_support_shape_includes_definition(self) -> None:
+        request, result = _compile(
+            formats=["HERO"],
+            settings={
+                "hypothesis": {"type": "support_shape", "variant": "contrast"}
+            },
+        )
+        self.assertEqual(result["status"], "completed")
+        hypothesis = request["planned_ads"][0]["hypothesis"]
+        self.assertEqual(hypothesis["type"], "support_shape")
+        self.assertEqual(hypothesis["style"], "contrast")
+        self.assertIn("fails", hypothesis["definition"].lower())
+        self.assertEqual(result["prompts"][0]["concept_angle"], "contrast")
+
+    def test_copy_starting_prompt_is_sent_when_non_empty(self) -> None:
+        request, result = _compile(
+            formats=["HERO"],
+            extra_config={"copy_starting_prompt": "Prefer short headlines."},
+        )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(request["starting_prompt"], "Prefer short headlines.")
+        bare, _ = _compile(formats=["HERO"])
+        self.assertNotIn("starting_prompt", bare)
 
 
 if __name__ == "__main__":

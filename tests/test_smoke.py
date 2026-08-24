@@ -617,10 +617,11 @@ def test_config_system() -> int:
     # 1. CONFIG_KEYS has exactly the supported keys
     expected_keys = [
         "product_master_doc", "starting_prompt", "copy_prompt_templates",
-        "persona_seeds", "concept", "copy_architecture",
+        "persona_seeds", "concept",
         "ad_formats", "ad_hooks", "ad_angles", "ad_frameworks", "ad_proof",
         "ad_objections", "ad_value_props", "ad_awareness", "ad_emotions",
-        "ad_specificity", "ad_feature_focus", "ad_guardrails",
+        "ad_specificity", "ad_feature_focus", "ad_support_shapes", "ad_guardrails",
+        "copy_starting_prompt",
         "background_variant",
         "prompt_assembler_templates", "conversion_916_prompt",
         "reference_starting_prompt", "reference_product_master_doc",
@@ -655,9 +656,9 @@ def test_config_system() -> int:
         failed += ok(len(result) == 8, "set_user_config returns all 8 keys (merged)")
 
         # 6. Missing custom keys fallback to generic
-        partial_config = {"copy_architecture": '{"test": true}'}
+        partial_config = {"ad_formats": '{"test": true}'}
         result2 = set_user_config(test_user, partial_config)
-        failed += ok(result2["copy_architecture"] == '{"test": true}', "Updated key present")
+        failed += ok(result2["ad_formats"] == '{"test": true}', "Updated key present")
         failed += ok(result2["product_master_doc"] == "Custom product doc for test", "Previously set key preserved")
         failed += ok(result2["copy_prompt_templates"] == generic["copy_prompt_templates"], "Unset key still falls back to generic")
 
@@ -975,7 +976,7 @@ def test_org_system() -> int:
             "starting_prompt": {"content": "org starting prompt", "content_type": "text/plain"},
             "copy_prompt_templates": {"content": '{"org": true}', "content_type": "application/json"},
             "persona_seeds": {"content": '["org"]', "content_type": "application/json"},
-            "copy_architecture": {"content": '{"org": true}', "content_type": "application/json"},
+            "ad_formats": {"content": '{"org": true}', "content_type": "application/json"},
             "background_variant": {"content": '{"org": true}', "content_type": "application/json"},
             "prompt_assembler_templates": {"content": '{"org": true}', "content_type": "application/json"},
             "conversion_916_prompt": {"content": "org conversion", "content_type": "text/plain"},
@@ -986,7 +987,10 @@ def test_org_system() -> int:
     extracted = _extract_flat_from_new_schema(test_org_doc)
     failed += ok(extracted["product_master_doc"] == "org product doc", "extract_flat preserves product_master_doc")
     failed += ok(extracted["starting_prompt"] == "org starting prompt", "extract_flat preserves starting_prompt")
-    failed += ok(all(extracted[k] for k in extracted), "No blank values in extracted org config")
+    failed += ok(
+        all(extracted[k] or k == "copy_starting_prompt" for k in extracted),
+        "No unexpected blank values in extracted org config",
+    )
 
     # 31. (reserved for future DB-dependent test)
 

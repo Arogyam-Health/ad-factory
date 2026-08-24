@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "type": "support_shape",
+    "label": "Support Shape",
+    "instruction": "The support-line sentence shape is the variable under test. The selected shape must control how the support line is built. Do not change the product facts. Do not put the whole ad into the headline. Do not print shape labels such as Pain First or Bridge in consumer copy."
+  },
+  "pain_first": {
+    "label": "Pain First",
+    "definition": "Open the support line with the persona's specific friction, then explain the product bridge and one credibility anchor. Do not use generic reassurance.",
+    "skeleton": "Persona friction → mechanism → proof"
+  },
+  "contrast": {
+    "label": "Contrast",
+    "definition": "Explain the contrast the headline implies. Name what usually fails, why it fails for this persona, and what this system does instead.",
+    "skeleton": "Failed approach → why it fails → this system"
+  },
+  "bridge": {
+    "label": "Bridge",
+    "definition": "Connect the headline hook to a system step and then to a supported result. Each phrase must add new payload, not repeat the headline.",
+    "skeleton": "Headline context → system step → supported result"
+  }
+}

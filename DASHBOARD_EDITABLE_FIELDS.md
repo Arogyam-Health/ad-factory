@@ -13,7 +13,8 @@ The operator guide for the live copy request is [`docs/STRUCTURED_COPY_SYSTEM.md
 | `persona_seeds` | yes | yes | Shared. Persona cards in both flows. |
 | `concept` | yes | yes | Shared. Creative-format catalog (IG Stories, Venn, …). Separate from H2 Concept Angle. |
 | `conversion_916_prompt` | yes | yes | Shared 9:16 conversion prompt. |
-| `starting_prompt` | yes | no | Structured Input Prompts only. |
+| `starting_prompt` | yes | no | Image starter for ChatGPT/local image prompts. Not sent to the copy LLM. |
+| `copy_starting_prompt` | yes | no | Always sent to the copy LLM when non-empty. |
 | `ad_formats` | yes | no | Format descriptions, skeletons, and output fields sent to the copy LLM. |
 | `ad_hooks` | yes | no | Hook Structure hypothesis styles. |
 | `ad_angles` | yes | no | Concept Angle hypothesis styles. |
@@ -25,8 +26,8 @@ The operator guide for the live copy request is [`docs/STRUCTURED_COPY_SYSTEM.md
 | `ad_emotions` | yes | no | Emotional Driver hypothesis styles. |
 | `ad_specificity` | yes | no | Specificity Level hypothesis styles. |
 | `ad_feature_focus` | yes | no | Feature Focus hypothesis styles. |
+| `ad_support_shapes` | yes | no | Support Shape hypothesis styles. |
 | `ad_guardrails` | yes | no | Always-on safety lines plus the no-hypothesis instruction. |
-| `copy_architecture` | readable | no | Legacy. Live copy does **not** read this file. Kept so old org saves do not 400. |
 | `copy_prompt_templates` | yes | no | Live path uses `visual_archetypes` only (pattern dropdowns and image prompts). |
 | `prompt_assembler_templates` | yes | no | Image-prompt assembly blocks. |
 | `background_variant` | yes | no | Background catalog. |
@@ -52,7 +53,8 @@ Format ids stay `HERO`, `BA`, `TEST`, `FEAT`, `UGC`.
 
 | Card | Config key | What to edit |
 |---|---|---|
-| Starting Prompt | `starting_prompt` | Plain text prepended to structured generation prompts. |
+| Starting Prompt | `starting_prompt` | Image starter. Not sent to the copy LLM. |
+| Copy Starting Prompt | `copy_starting_prompt` | Always sent to the copy LLM when non-empty. |
 | 9:16 Conversion Prompt | `conversion_916_prompt` | Plain text that converts a 4:5 creative to 9:16. |
 
 ### 3) Input Images
@@ -78,8 +80,9 @@ Click a card to edit the Mongo field for the **current Source**.
 | Emotional Drivers | `ad_emotions` | JSON |
 | Specificity Levels | `ad_specificity` | JSON |
 | Feature Focus | `ad_feature_focus` | JSON |
+| Support Shapes | `ad_support_shapes` | JSON — Pain First, Contrast, Bridge |
 | Copy Guardrails | `ad_guardrails` | JSON — `always` lines plus `no_hypothesis` |
-| Copy Architecture | `copy_architecture` | Legacy JSON. Not sent to the live copy LLM. |
+| Copy Starting Prompt | `copy_starting_prompt` | Plain text always sent to the copy LLM when non-empty |
 | Copy Prompt Templates | `copy_prompt_templates` | JSON — `visual_archetypes` drives pattern dropdowns |
 | Prompt Assembler Templates | `prompt_assembler_templates` | JSON |
 | Background Variants | `background_variant` | JSON |
@@ -91,7 +94,7 @@ Empty or missing fields are omitted from the copy LLM request. Generation still 
 
 ### 5) Hypothesis Testing
 
-Options come from the `ad_*` files above, not from `copy_architecture` → `headline_architectures`. Switching the org chip reloads `/api/defaults?org_id=…` so the Hypothesis and Style menus match that source.
+Options come from the `ad_*` files above. Switching the org chip reloads `/api/defaults?org_id=…` so the Hypothesis and Style menus match that source.
 
 | Studio type | Config file |
 |---|---|
@@ -105,6 +108,7 @@ Options come from the `ad_*` files above, not from `copy_architecture` → `head
 | Emotional Driver | `ad_emotions` |
 | Specificity Level | `ad_specificity` |
 | Feature Focus | `ad_feature_focus` |
+| Support Shape | `ad_support_shapes` |
 
 **None** omits `hypothesis` entirely. The request does not send `concept_angle` or a hidden `desired_outcome`.
 
@@ -180,8 +184,6 @@ In the matching `ad_*` file (for example `ad_frameworks` for Copy Framework), ad
 ```
 
 `label` is required for the Style dropdown. `instruction`, `definition`, and `skeleton` are optional; blank keys are omitted from the LLM JSON.
-
-The old `copy_architecture` → `headline_architectures` examples are unused on the live path.
 
 ---
 

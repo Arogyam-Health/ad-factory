@@ -33,7 +33,6 @@ _CONFIG_KEYS = frozenset(
     {
         "background_variant",
         "conversion_916_prompt",
-        "copy_architecture",
         "ad_formats",
         "ad_hooks",
         "ad_angles",
@@ -45,7 +44,9 @@ _CONFIG_KEYS = frozenset(
         "ad_emotions",
         "ad_specificity",
         "ad_feature_focus",
+        "ad_support_shapes",
         "ad_guardrails",
+        "copy_starting_prompt",
         "copy_prompt_templates",
         "persona_seeds",
         "concept",

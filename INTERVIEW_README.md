@@ -34,7 +34,7 @@ Stack: **FastAPI + MongoDB Atlas + React (Vite) press-room UI**, Google OAuth, o
 
 ## What the System Actually Produces
 
-1. **Ad copy** — headline, support, bullets, CTA under `copy_architecture.json` intent rules (not fill-in-the-blank templates).
+1. **Ad copy** — headline, support, bullets, CTA from the live `copy_system/` layers plus optional `copy_starting_prompt`.
 2. **Image prompts** — 9 mandatory sections (subject, background, composition, style, lighting, color, typography, mood, technical) per playbook.
 3. **Images** — PNGs via provider APIs or browser automation (local CDP).
 4. **Metadata** — hypothesis IDs, background slots, registry entries for dedup / A/B cells; Mongo holds **hashes/ids/status**, not bodies.
@@ -181,7 +181,7 @@ Interviewers ask “how do you prevent bad ads?” — answer with **layers**:
 
 1. **Product master doc** — only approved claims; no “fat burner” language.
 2. **Playbook** — awareness stages, format specs, safe zones, CHK-01…CHK-29.
-3. **`copy_architecture.json`** — intent-level guidance (`avoid_skeletons`, `route_bias`), not skeletons.
+3. **`copy_system/`** — split format, hypothesis, and guardrail JSON sent to the copy LLM. `copy_starting_prompt` is always appended when non-empty.
 4. **Registry** — append-only log + indexes (`used_text`, `slot_exhaustion_tracker`, `concept_combos`).
 5. **`background_variant.json`** — deterministic seeded picks (BG slots).
 6. **`persona_seeds.json`** — personas with pain/desire/friction/proof/tone.
@@ -208,9 +208,9 @@ Interviewers ask “how do you prevent bad ads?” — answer with **layers**:
 | Prompt text, images, uploads, traces, logs | **Local agent** | SQLite + content-addressed objects |
 | Org shared-config replication | Local export/import | Encrypted package; Mongo stores authority/replica **refs** only |
 
-### The eight config keys
+### Current config keys
 
-`product_master_doc`, `starting_prompt`, `copy_prompt_templates`, `persona_seeds`, `copy_architecture`, `background_variant`, `prompt_assembler_templates`, `conversion_916_prompt`
+`product_master_doc`, `starting_prompt`, `copy_starting_prompt`, `copy_prompt_templates`, `persona_seeds`, `concept`, the `ad_*` copy-system files (`ad_formats`, `ad_hooks`, `ad_angles`, `ad_frameworks`, `ad_proof`, `ad_objections`, `ad_value_props`, `ad_awareness`, `ad_emotions`, `ad_specificity`, `ad_feature_focus`, `ad_support_shapes`, `ad_guardrails`), `background_variant`, `prompt_assembler_templates`, `conversion_916_prompt`, `reference_starting_prompt`, `reference_product_master_doc`
 
 ### Interview sound bite
 
