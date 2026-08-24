@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from typing import Any, Optional
@@ -42,13 +43,14 @@ def extract_config_files(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# The reference flow keeps its own starting prompt and product document. Only
-# persona_seeds and conversion_916_prompt are shared with the structured flow.
+# The reference flow keeps its own starting prompt and product document.
+# persona_seeds, concept, and conversion_916_prompt are shared with both flows.
 CONFIG_KEYS = [
     "product_master_doc",
     "starting_prompt",
     "copy_prompt_templates",
     "persona_seeds",
+    "concept",
     "copy_architecture",
     "background_variant",
     "prompt_assembler_templates",
@@ -71,6 +73,7 @@ _CONTENT_TYPES = {
     "starting_prompt": "text/plain",
     "copy_prompt_templates": "application/json",
     "persona_seeds": "application/json",
+    "concept": "application/json",
     "copy_architecture": "application/json",
     "background_variant": "application/json",
     "prompt_assembler_templates": "application/json",
@@ -85,6 +88,7 @@ _EMPTY_BY_KEY = {
     "starting_prompt": "",
     "copy_prompt_templates": "{}",
     "persona_seeds": "[]",
+    "concept": "{}",
     "copy_architecture": "{}",
     "background_variant": "{}",
     "prompt_assembler_templates": "{}",
@@ -110,6 +114,7 @@ def _repository_generic_config() -> dict[str, str]:
     starting_prompt_path = root / "input" / "startingprompt.txt"
     copy_templates_path = root / "dashboard" / "backend" / "copy_prompt_templates.json"
     persona_seeds_path = root / "persona_seeds.json"
+    concept_path = root / "concept.json"
     copy_arch_path = root / "dashboard" / "backend" / "copy_architecture.json"
     background_variant_path = root / "background_variant.json"
     prompt_assembler_path = root / "scripts" / "prompt_assembler_templates.json"
@@ -127,6 +132,7 @@ def _repository_generic_config() -> dict[str, str]:
         "starting_prompt": _read(starting_prompt_path),
         "copy_prompt_templates": _read(copy_templates_path) or "{}",
         "persona_seeds": _read(persona_seeds_path) or "[]",
+        "concept": _read(concept_path) or "{}",
         "copy_architecture": _read(copy_arch_path) or "{}",
         "background_variant": _read(background_variant_path) or "{}",
         "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
@@ -141,6 +147,45 @@ def _empty_config() -> dict[str, str]:
 
 
 _EMPTY_OVERRIDE_PLACEHOLDERS = frozenset({"", "{}", "[]"})
+
+
+def parse_concept_catalog(raw: Any) -> list[dict[str, str]]:
+    """Turn the concept config object into dropdown rows."""
+    parsed = raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(parsed, dict):
+        return []
+    items: list[dict[str, str]] = []
+    for key, value in parsed.items():
+        ident = str(key or "").strip()
+        if not ident:
+            continue
+        description = ""
+        if isinstance(value, dict):
+            description = str(value.get("description") or "")
+        elif isinstance(value, str):
+            description = value
+        items.append({
+            "id": ident,
+            "label": ident.split("/")[-1].replace("_", " "),
+            "description": description,
+        })
+    return items
+
+
+def resolve_selected_concept(raw: Any, selected_id: Any) -> dict[str, str] | None:
+    """Return one catalog row, or None when the id is empty or unknown."""
+    ident = str(selected_id or "").strip()
+    if not ident:
+        return None
+    for item in parse_concept_catalog(raw):
+        if item["id"] == ident:
+            return item
+    return None
 
 
 def _has_config_override(value: Any) -> bool:

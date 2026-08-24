@@ -26,6 +26,7 @@ INCLUDED_FILES = [
     "scripts/prompt_assembler_templates.json",
     "background_variant.json",
     "persona_seeds.json",
+    "concept.json",
     "dashboard/backend/copy_prompt_templates.json",
     "requirements-local-agent.txt",
     "docs/LOCAL_AGENT_README.md",

@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 import requests
 
+from dashboard.backend.services.user_config import resolve_selected_concept
 from dashboard.backend.services.visual_archetypes import bundled_visual_archetypes
 from scripts import generate_ads
 
@@ -256,6 +257,10 @@ def _planned_ads(
     archetype_map = archetype_map if isinstance(archetype_map, dict) else {}
     share_background = bool(settings.get("share_background_across_personas"))
     hypothesis = _hypothesis_from_settings(settings)
+    creative_concept = resolve_selected_concept(
+        effective_config.get("concept"),
+        settings.get("selected_concept"),
+    )
     planned: list[dict[str, Any]] = []
     for raw_number in selected:
         number = int(raw_number)
@@ -292,6 +297,8 @@ def _planned_ads(
                         "variant": hypothesis["variant"],
                         "hypothesis_id": f"{hypothesis['type']}-{hypothesis['variant']}",
                     }
+                if creative_concept:
+                    item["creative_concept"] = creative_concept
                 planned.append(item)
     if not planned or len(planned) > 500:
         raise ValueError("Structured ad plan exceeds the 500-ad limit")
@@ -564,7 +571,11 @@ def generate_structured_prompt_bundle(
     product_document = str(effective_config.get("product_master_doc") or "").strip()
     if not product_document:
         raise ValueError("Product Master Doc is empty")
-    request = {
+    creative_concept = resolve_selected_concept(
+        effective_config.get("concept"),
+        settings.get("selected_concept"),
+    )
+    request: dict[str, Any] = {
         "task": "Generate structured advertising copy as JSON",
         "product_document": product_document,
         "planned_ads": planned,
@@ -597,6 +608,8 @@ def generate_structured_prompt_bundle(
             ],
         },
     }
+    if creative_concept:
+        request["creative_concept"] = creative_concept
     response = generate(request, False)
     copy_batch = _normalize_copy(response, planned, languages)
     error = _validation_error(copy_batch, languages)
@@ -718,6 +731,11 @@ def generate_structured_prompt_bundle(
                 sentence,
                 archetype,
                 templates=templates,
+                creative_concept=(
+                    ad.get("creative_concept")
+                    if isinstance(ad.get("creative_concept"), dict)
+                    else None
+                ),
             )
             prompt_id = "prm_" + hashlib.sha256(
                 f"{run_id}:{ad_index}:{language}".encode("utf-8")

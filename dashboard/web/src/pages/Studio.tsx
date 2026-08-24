@@ -116,6 +116,9 @@ export function StudioPage() {
   const [imageEngine, setImageEngine] = useState(() => (
     localStorage.getItem("adFactoryImageEngine") === "gemini" ? "gemini" : "chatgpt"
   ));
+  const [selectedConcept, setSelectedConcept] = useState(
+    () => localStorage.getItem("adFactorySelectedConcept") || "",
+  );
   const [downloadPrompt, setDownloadPrompt] = useState(false);
   const newestRunRef = useRef("");
 
@@ -125,6 +128,9 @@ export function StudioPage() {
   useEffect(() => {
     localStorage.setItem("adFactoryImageEngine", imageEngine);
   }, [imageEngine]);
+  useEffect(() => {
+    localStorage.setItem("adFactorySelectedConcept", selectedConcept);
+  }, [selectedConcept]);
 
   useEffect(() => {
     if (!ready) return;
@@ -413,6 +419,7 @@ export function StudioPage() {
             reuse_backgrounds_from_run_id: reuseBg,
             reuse_visual_patterns_from_run_id: reusePattern,
             hypothesis: { type: hypType, variant: hypVariant },
+            selected_concept: selectedConcept,
             visual_archetypes_by_format: patterns,
             language_mode: language,
             provider: providerName,
@@ -671,6 +678,15 @@ export function StudioPage() {
               ) : (
                 <p className="hint">No hypothesis style selected. Ads generate normally.</p>
               )}
+              <label className="hint">
+                Concept
+                <select className="field" value={selectedConcept} onChange={(e) => setSelectedConcept(e.target.value)}>
+                  <option value="">None</option>
+                  {(studio?.concepts || []).map((item) => (
+                    <option key={item.id} value={item.id}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
               <label className="hint">
                 LLM provider
                 <select className="field" value={provider} onChange={(e) => setProvider(e.target.value)}>
@@ -1039,6 +1055,8 @@ export function StudioPage() {
       togglePersona={togglePersona}
       language={language}
       setLanguage={setLanguage}
+      selectedConcept={selectedConcept}
+      setSelectedConcept={setSelectedConcept}
       studio={studio}
       status={status}
       setStatus={setStatus}

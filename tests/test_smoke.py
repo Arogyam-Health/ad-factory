@@ -617,7 +617,7 @@ def test_config_system() -> int:
     # 1. CONFIG_KEYS has exactly the supported keys
     expected_keys = [
         "product_master_doc", "starting_prompt", "copy_prompt_templates",
-        "persona_seeds", "copy_architecture", "background_variant",
+        "persona_seeds", "concept", "copy_architecture", "background_variant",
         "prompt_assembler_templates", "conversion_916_prompt",
         "reference_starting_prompt", "reference_product_master_doc",
     ]
@@ -1580,6 +1580,7 @@ def test_local_agent_responsiveness_contract() -> int:
         and "/api/runs/execute\"" not in studio_tsx
         and "visual_archetypes_by_format" in studio_tsx
         and "hypothesis:" in studio_tsx
+        and "selected_concept" in studio_tsx
         and "batch_size" in studio_tsx,
         "frontend allocates and executes structured copy on Render",
     )

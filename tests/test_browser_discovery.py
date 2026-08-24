@@ -159,6 +159,8 @@ class BrowserDiscoveryTests(unittest.TestCase):
             "local_agent_runtime/storage.py",
             "local_agent_runtime/browser.py",
             "background_variant.json",
+            "persona_seeds.json",
+            "concept.json",
             "dashboard/backend/copy_prompt_templates.json",
             "requirements-local-agent.txt",
             "docs/LOCAL_AGENT_WINDOWS.md",

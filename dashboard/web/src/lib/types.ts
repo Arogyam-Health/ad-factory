@@ -10,12 +10,19 @@ export type HypothesisVariable = {
   options?: HypothesisOption[];
 };
 
+export type ConceptOption = {
+  id: string;
+  label: string;
+  description?: string;
+};
+
 export type StudioPayload = {
   source?: string;
   config?: Record<string, unknown>;
   personas?: Persona[];
   formats?: string[];
   format_patterns?: Record<string, FormatPattern[]>;
+  concepts?: ConceptOption[];
   hypothesis?: {
     variables?: Record<string, HypothesisVariable>;
     default?: { type?: string; variant?: string };

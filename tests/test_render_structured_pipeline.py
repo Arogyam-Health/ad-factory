@@ -219,6 +219,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                 "reuse_backgrounds_from_run_id": "run_abc",
                 "reuse_visual_patterns_from_run_id": "run_def",
                 "hypothesis": {"type": "concept_angle", "variant": "pain_point"},
+                "selected_concept": "Concept/IG_Stories",
                 "visual_archetypes_by_format": {"HERO": "hero_center_stage"},
                 "language_mode": "EN",
                 "provider": "opencode",
@@ -233,6 +234,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
             settings["hypothesis"],
             {"type": "concept_angle", "variant": "pain_point"},
         )
+        self.assertEqual(settings["selected_concept"], "Concept/IG_Stories")
         self.assertEqual(
             settings["visual_archetypes_by_format"],
             {"HERO": "hero_center_stage"},
