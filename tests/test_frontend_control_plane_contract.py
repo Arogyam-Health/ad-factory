@@ -189,6 +189,8 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("SwipeLibrary", reference)
         self.assertIn("scroll-snap-type: x mandatory", _read("styles", "global.css"))
         self.assertIn("displayRunStatus", studio)
+        self.assertIn("copyFailureDetail", workspace)
+        self.assertIn("Copy failed:", workspace)
         self.assertIn("/image-generation", workspace)
         self.assertIn("Edit on-image copy", workspace)
         self.assertIn("Save on-image copy", workspace)

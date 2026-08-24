@@ -41,7 +41,13 @@ export type Run = {
   flow?: string;
   device_id?: string;
   agent_id?: string;
-  copy_generation?: { status?: string; delivery_status?: string };
+  copy_generation?: {
+    status?: string;
+    delivery_status?: string;
+    last_error?: string;
+    error_code?: string;
+    error_detail?: string;
+  };
   image_generation?: { status?: string };
 };
 

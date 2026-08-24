@@ -1,5 +1,13 @@
 import type { Run } from "@/lib/types";
 
+export function copyFailureDetail(
+  run: Pick<Run, "copy_generation">,
+): string {
+  const copy = run.copy_generation;
+  if (!copy) return "";
+  return String(copy.last_error || copy.error_detail || copy.error_code || "").trim();
+}
+
 export function displayRunStatus(run: Pick<Run, "status" | "image_count" | "image_generation" | "copy_generation">): string {
   const raw = String(run.status || "unknown");
   if (["deleted", "deleting", "purge_failed", "failed", "canceled"].includes(raw)) {

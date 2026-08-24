@@ -597,6 +597,15 @@ def _fail_job(
             }
         },
     )
+    _record_job_failure_trace(
+        job,
+        error_code=error_code,
+        provider=provider,
+        model=model,
+        duration_ms=duration_ms,
+        http_status=http_status,
+        error_detail=sticky,
+    )
 
 
 def _persist_copy_last_error(
@@ -725,6 +734,50 @@ def _copy_trace_org_id(job: dict[str, Any]) -> str:
         return str(job.get("owner_id") or "")
     settings = job.get("settings") if isinstance(job.get("settings"), dict) else {}
     return str(settings.get("org_id") or "")
+
+
+def _record_job_failure_trace(
+    job: dict[str, Any],
+    *,
+    error_code: str,
+    provider: str = "",
+    model: str = "",
+    duration_ms: int = 0,
+    http_status: int | None = None,
+    error_detail: str = "",
+) -> None:
+    try:
+        record_recent_llm_trace(
+            user_id=str(job["user_id"]),
+            run_id=str(job["run_id"]),
+            batch=f"v{int(job.get('run_number') or 0)}",
+            org_id=_copy_trace_org_id(job),
+            event={
+                "provider": provider,
+                "model": model,
+                "api_model": (
+                    model.removeprefix("opencode/")
+                    if str(provider or "") == "opencode"
+                    else model
+                ),
+                "endpoint": "",
+                "label": "copy",
+                "status": "failed",
+                "http_status": http_status,
+                "duration_ms": duration_ms,
+                "error_code": error_code,
+                "error_detail": error_detail,
+                "request": {
+                    "task": "Generate structured advertising copy as JSON",
+                    "planned_ad_count": 0,
+                    "languages": [],
+                    "request_sha256": "",
+                },
+                "response": {"usage": {}},
+            },
+        )
+    except Exception:
+        return
 
 
 def _record_provider_failure_trace(

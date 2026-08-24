@@ -9,7 +9,7 @@ from dashboard.backend.db.collections import COLL_LLM_TRACES, COLL_USERS
 
 
 MAX_RECENT_TRACES_PER_USER = 5
-MAX_RECENT_TRACES_PER_ORG = 10
+MAX_RECENT_TRACES_PER_ORG = 5
 MAX_TRACE_TEXT = 200_000
 
 _TRACE_PROJECTION = {
@@ -51,23 +51,27 @@ def _actor_fields(user_id: str) -> dict[str, str]:
 
 
 def _prune_stale(collection: Any, query: dict[str, Any], keep: int) -> None:
-    stale = list(
+    recent = list(
         collection.find(
             query,
-            {"_id": 0, "trace_id": 1, "created_at": 1},
-        )
-        .sort("created_at", -1)
-        .skip(keep)
+            {"_id": 0, "run_id": 1, "created_at": 1},
+        ).sort("created_at", -1)
     )
-    stale_ids = [
-        str(item.get("trace_id") or "")
-        for item in stale
-        if str(item.get("trace_id") or "")
-    ]
-    if stale_ids:
-        prune_query = dict(query)
-        prune_query["trace_id"] = {"$in": stale_ids}
-        collection.delete_many(prune_query)
+    keep_run_ids: list[str] = []
+    seen: set[str] = set()
+    for item in recent:
+        run_id = str(item.get("run_id") or "")
+        if not run_id or run_id in seen:
+            continue
+        seen.add(run_id)
+        keep_run_ids.append(run_id)
+        if len(keep_run_ids) >= keep:
+            break
+    if not keep_run_ids:
+        return
+    prune_query = dict(query)
+    prune_query["run_id"] = {"$nin": keep_run_ids}
+    collection.delete_many(prune_query)
 
 
 def record_recent_llm_trace(
@@ -177,7 +181,6 @@ def list_recent_llm_traces(
         get_sync_db()[COLL_LLM_TRACES]
         .find(query, _TRACE_PROJECTION)
         .sort("created_at", -1)
-        .limit(MAX_RECENT_TRACES_PER_USER)
     )
 
 
@@ -193,7 +196,6 @@ def list_org_llm_traces(
         get_sync_db()[COLL_LLM_TRACES]
         .find(query, _TRACE_PROJECTION)
         .sort("created_at", -1)
-        .limit(MAX_RECENT_TRACES_PER_ORG)
     )
 
 

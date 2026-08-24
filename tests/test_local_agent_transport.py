@@ -48,6 +48,34 @@ class LocalAgentTransportTests(unittest.TestCase):
         self.assertEqual(signal.drain_pairing_approvals(), [approval])
         self.assertEqual(signal.drain_pairing_approvals(), [])
 
+    def test_provider_result_send_ignores_closed_socket(self) -> None:
+        import asyncio
+
+        from local_agent_runtime.transport import AgentWebSocketClient, JobSignal
+
+        class ClosedSocket:
+            async def send(self, _payload: str) -> None:
+                raise ConnectionError("no close frame received or sent")
+
+        client = AgentWebSocketClient(
+            "https://example.test",
+            "token",
+            JobSignal(),
+            provider_handler=lambda _payload: {
+                "http_status": 200,
+                "content_type": "application/json",
+                "body": "{}",
+            },
+        )
+
+        asyncio.run(
+            client._handle_provider_call(
+                ClosedSocket(),
+                {"call_id": "rly_closed", "provider": "opencode"},
+                asyncio.Lock(),
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

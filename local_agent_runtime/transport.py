@@ -181,9 +181,7 @@ class AgentWebSocketClient:
                                         )
                                     )
                                     self._provider_tasks.add(task)
-                                    task.add_done_callback(
-                                        self._provider_tasks.discard
-                                    )
+                                    task.add_done_callback(self._finish_provider_task)
                                 else:
                                     self.signal.handle(message)
                         except asyncio.TimeoutError:
@@ -202,6 +200,8 @@ class AgentWebSocketClient:
                 self.status_callback(f"disconnected: {type(exc).__name__}")
             finally:
                 self._connected.clear()
+                for task in list(self._provider_tasks):
+                    task.cancel()
             await asyncio.sleep(backoff)
             backoff = min(30.0, backoff * 2)
 
@@ -232,15 +232,27 @@ class AgentWebSocketClient:
                 "body": "",
                 "transport_error": type(exc).__name__,
             }
-        async with send_lock:
-            await websocket.send(
-                json.dumps(
-                    {
-                        "type": "provider_result",
-                        "call_id": call_id,
-                        "result": result,
-                    },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
+        try:
+            async with send_lock:
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "type": "provider_result",
+                            "call_id": call_id,
+                            "result": result,
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
                 )
-            )
+        except Exception:
+            return
+
+    def _finish_provider_task(self, task: asyncio.Task[Any]) -> None:
+        self._provider_tasks.discard(task)
+        if task.cancelled():
+            return
+        try:
+            task.exception()
+        except (asyncio.CancelledError, asyncio.InvalidStateError):
+            return

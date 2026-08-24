@@ -1390,42 +1390,6 @@ def _save_agent_token(
     os.replace(temporary, path)
 
 
-def _register_device(name: str, device_id: str, account_user_id: str) -> bool:
-    global AGENT_ID, AGENT_TOKEN
-    if not account_user_id:
-        print("[agent] Dashboard account identity is unavailable.")
-        return False
-    print(f"[agent] Registering this device for dashboard account {account_user_id}...")
-    result = api_request(
-        "POST",
-        "/api/agents/register",
-        {
-            "name": name,
-            "device_id": device_id,
-            "protocol_version": "v1",
-            "supports_pairing": True,
-        },
-    )
-    if result is None:
-        print("[agent] Failed to register this dashboard account.")
-        return False
-    AGENT_TOKEN = str(result["token"])
-    AGENT_ID = str(result["agent_id"])
-    print(f"[agent] Registered: {result['agent_id']}")
-    print(
-        "[agent] Keep ~/ad-factory-agent/config/agent.json. "
-        "Do not pass a fresh --session-cookie unless you intend to rebind this account."
-    )
-    _save_agent_token(
-        AGENT_API_BASE,
-        account_user_id,
-        AGENT_ID,
-        AGENT_TOKEN,
-    )
-    print(f"[agent] Account credential saved to {_token_config_path()} (mode 0600)")
-    return True
-
-
 def register_and_run(args: argparse.Namespace) -> None:
     global AGENT_ID, AGENT_TOKEN, AGENT_SESSION_COOKIE, WS_CLIENT
 
@@ -1484,8 +1448,38 @@ def register_and_run(args: argparse.Namespace) -> None:
                 "[agent] Using saved credential for the selected dashboard account"
             )
         elif AGENT_SESSION_COOKIE:
-            if not _register_device(args.name, device_id, account_user_id):
+            print(
+                f"[agent] Registering this device for dashboard account {account_user_id}..."
+            )
+            result = api_request(
+                "POST",
+                "/api/agents/register",
+                {
+                    "name": args.name,
+                    "device_id": device_id,
+                    "protocol_version": "v1",
+                    "supports_pairing": True,
+                },
+            )
+            if result is None:
+                print("[agent] Failed to register this dashboard account.")
                 sys.exit(1)
+            AGENT_TOKEN = str(result["token"])
+            AGENT_ID = str(result["agent_id"])
+            print(f"[agent] Registered: {result['agent_id']}")
+            print(
+                "[agent] Keep ~/ad-factory-agent/config/agent.json. "
+                "Do not pass a fresh --session-cookie unless you intend to rebind this account."
+            )
+            _save_agent_token(
+                AGENT_API_BASE,
+                account_user_id,
+                AGENT_ID,
+                AGENT_TOKEN,
+            )
+            print(
+                f"[agent] Account credential saved to {_token_config_path()} (mode 0600)"
+            )
         else:
             print(
                 "[agent] No unambiguous saved account credential. "
@@ -1503,26 +1497,7 @@ def register_and_run(args: argparse.Namespace) -> None:
         token=AGENT_TOKEN,
         timeout=20,
     )
-    if binding is None and AGENT_SESSION_COOKIE:
-        print("[agent] Saved agent token was rejected. Re-registering this device...")
-        if _register_device(args.name, device_id, account_user_id):
-            binding = api_request(
-                "POST",
-                "/api/agents/device",
-                {
-                    "device_id": device_id,
-                    "protocol_version": "v1",
-                    "supports_pairing": True,
-                },
-                token=AGENT_TOKEN,
-                timeout=20,
-            )
     if binding is None:
-        if not AGENT_SESSION_COOKIE:
-            raise RuntimeError(
-                "Saved agent token was rejected. Restart and paste a dashboard "
-                "session cookie to rebind this machine."
-            )
         raise RuntimeError("Agent credential could not be bound to this local device")
     AGENT_ID = str(binding["agent_id"])
     AGENT_SESSION_COOKIE = ""

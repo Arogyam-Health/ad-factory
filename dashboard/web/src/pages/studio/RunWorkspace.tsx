@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import { exactOnImageCopyLines, replaceExactOnImageCopy } from "@/lib/prompt-copy.js";
-import { displayRunStatus } from "@/lib/run-status";
+import { copyFailureDetail, displayRunStatus } from "@/lib/run-status";
 import type { Run } from "@/lib/types";
 import { Button } from "@/components/Button";
 import { OutputGallery, type OutputRow } from "@/pages/studio/OutputGallery";
@@ -274,6 +274,11 @@ export function RunWorkspace({
           {busy === "cancel" ? "Cancelling…" : "Cancel run"}
         </Button>
       </div>
+      {copyFailureDetail(run) ? (
+        <p className="hint" style={{ marginBottom: 10 }}>
+          Copy failed: {copyFailureDetail(run)}
+        </p>
+      ) : null}
       <p className="hint" style={{ marginBottom: 10 }}>
         {prompts.length ? `${prompts.length} prompts on this plate.` : "No prompts yet. Run structured copy first."}
       </p>

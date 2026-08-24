@@ -15,6 +15,29 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _delete_matching_docs(docs: list[dict], query: dict) -> tuple[list[dict], int]:
+    def matches(doc: dict) -> bool:
+        for key, value in query.items():
+            if isinstance(value, dict):
+                if "$exists" in value:
+                    if (key in doc) is not bool(value["$exists"]):
+                        return False
+                elif "$in" in value:
+                    if doc.get(key) not in value["$in"]:
+                        return False
+                elif "$nin" in value:
+                    if doc.get(key) in value["$nin"]:
+                        return False
+                else:
+                    return False
+            elif doc.get(key) != value:
+                return False
+        return True
+
+    kept = [doc for doc in docs if not matches(doc)]
+    return kept, len(docs) - len(kept)
+
+
 class RenderStructuredPipelineTests(unittest.TestCase):
     def test_provider_copy_en_alias_is_normalized_to_language_block(
         self,
@@ -928,32 +951,8 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                 return Cursor(rows)
 
             def delete_many(self, query):
-                before = len(self.docs)
-                trace_filter = query.get("trace_id")
-                if isinstance(trace_filter, dict) and "$exists" in trace_filter:
-                    self.docs = [
-                        doc
-                        for doc in self.docs
-                        if not (
-                            doc.get("user_id") == query.get("user_id")
-                            and ("trace_id" in doc) is trace_filter["$exists"]
-                        )
-                    ]
-                elif isinstance(trace_filter, dict) and "$in" in trace_filter:
-                    values = set(trace_filter["$in"])
-                    self.docs = [
-                        doc
-                        for doc in self.docs
-                        if not (
-                            doc.get("trace_id") in values
-                            and all(
-                                doc.get(key) == value
-                                for key, value in query.items()
-                                if key != "trace_id"
-                            )
-                        )
-                    ]
-                return SimpleNamespace(deleted_count=before - len(self.docs))
+                self.docs, deleted = _delete_matching_docs(self.docs, query)
+                return SimpleNamespace(deleted_count=deleted)
 
         collection = Collection()
         db = {"llm_traces": collection}
@@ -993,6 +992,140 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(len(traces), 5)
         self.assertEqual(traces[0]["run_id"], "run-6")
         self.assertNotIn("api_key", json.dumps(traces).lower())
+        self.assertEqual(
+            {item["run_id"] for item in traces},
+            {f"run-{index}" for index in range(2, 7)},
+        )
+
+    def test_trace_history_keeps_all_events_for_latest_five_runs(self) -> None:
+        from dashboard.backend.services.llm_trace import (
+            list_recent_llm_traces,
+            record_recent_llm_trace,
+        )
+
+        class Cursor(list):
+            def sort(self, key, direction):
+                return Cursor(
+                    sorted(
+                        self,
+                        key=lambda item: item.get(key, 0),
+                        reverse=direction < 0,
+                    )
+                )
+
+        class Collection:
+            def __init__(self):
+                self.docs = []
+
+            def insert_one(self, doc):
+                self.docs.append(copy.deepcopy(doc))
+
+            def find(self, query, projection):
+                rows = [
+                    copy.deepcopy(doc)
+                    for doc in self.docs
+                    if all(doc.get(key) == value for key, value in query.items())
+                ]
+                if projection:
+                    rows = [
+                        {
+                            key: value
+                            for key, value in row.items()
+                            if projection.get(key) == 1
+                        }
+                        for row in rows
+                    ]
+                return Cursor(rows)
+
+            def delete_many(self, query):
+                self.docs, deleted = _delete_matching_docs(self.docs, query)
+                return SimpleNamespace(deleted_count=deleted)
+
+        collection = Collection()
+        failed = {
+            "provider": "opencode",
+            "model": "opencode/deepseek-v4-flash-free",
+            "label": "copy",
+            "status": "failed",
+            "http_status": 0,
+            "error_code": "local_provider_agent_offline",
+            "error_detail": "Local agent disconnected",
+            "request": {"task": "copy"},
+            "response": {"usage": {}},
+        }
+        completed = {
+            **failed,
+            "status": "completed",
+            "http_status": 200,
+            "error_code": "",
+            "error_detail": "",
+        }
+        with patch(
+            "dashboard.backend.services.llm_trace.get_sync_db",
+            return_value={"llm_traces": collection},
+        ):
+            for index in range(7):
+                record_recent_llm_trace(
+                    user_id="user-1",
+                    run_id=f"run-{index}",
+                    batch=f"v{index}",
+                    event=failed,
+                )
+                record_recent_llm_trace(
+                    user_id="user-1",
+                    run_id=f"run-{index}",
+                    batch=f"v{index}",
+                    event=completed,
+                )
+            traces = list_recent_llm_traces("user-1")
+
+        self.assertEqual(len(collection.docs), 10)
+        self.assertEqual(len(traces), 10)
+        self.assertEqual(
+            {item["run_id"] for item in traces},
+            {f"run-{index}" for index in range(2, 7)},
+        )
+        self.assertTrue(any(item["status"] == "failed" for item in traces))
+
+    def test_fail_job_records_a_failed_run_trace(self) -> None:
+        from dashboard.backend.db.collections import COLL_RENDER_COPY_JOBS, COLL_RUNS
+        from dashboard.backend.services.render_copy_jobs import _fail_job
+
+        db = {
+            COLL_RENDER_COPY_JOBS: SimpleNamespace(update_one=Mock()),
+            COLL_RUNS: SimpleNamespace(update_one=Mock()),
+        }
+        with (
+            patch(
+                "dashboard.backend.services.render_copy_jobs.get_sync_db",
+                return_value=db,
+            ),
+            patch(
+                "dashboard.backend.services.render_copy_jobs.record_recent_llm_trace"
+            ) as record,
+        ):
+            _fail_job(
+                {
+                    "copy_job_id": "copy-1",
+                    "run_id": "run-failed",
+                    "user_id": "user-1",
+                    "run_number": 1,
+                },
+                error_code="copy_configuration_invalid",
+                provider="opencode",
+                model="opencode/big-pickle",
+                error_detail="Provider configuration is unavailable",
+                last_error="Provider configuration is unavailable",
+            )
+
+        event = record.call_args.kwargs["event"]
+        self.assertEqual(record.call_args.kwargs["run_id"], "run-failed")
+        self.assertEqual(event["status"], "failed")
+        self.assertEqual(event["error_code"], "copy_configuration_invalid")
+        self.assertEqual(
+            event["error_detail"],
+            "Provider configuration is unavailable",
+        )
 
     def test_mongo_trace_persists_full_prompt_and_response(self) -> None:
         from dashboard.backend.services.llm_trace import (
@@ -1079,7 +1212,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertIn("Full response", traces[0]["response"]["content"])
         self.assertEqual(traces[0]["response"]["usage"]["prompt_tokens"], 10)
 
-    def test_org_trace_history_keeps_last_ten_with_actor(self) -> None:
+    def test_org_trace_history_keeps_last_five_runs_with_actor(self) -> None:
         from dashboard.backend.services.llm_trace import (
             list_org_llm_traces,
             list_traces_for_viewer,
@@ -1127,23 +1260,8 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                 return Cursor(rows)
 
             def delete_many(self, query):
-                before = len(self.docs)
-                trace_filter = query.get("trace_id")
-                if isinstance(trace_filter, dict) and "$in" in trace_filter:
-                    values = set(trace_filter["$in"])
-                    self.docs = [
-                        doc
-                        for doc in self.docs
-                        if not (
-                            doc.get("trace_id") in values
-                            and all(
-                                doc.get(key) == value
-                                for key, value in query.items()
-                                if key != "trace_id"
-                            )
-                        )
-                    ]
-                return SimpleNamespace(deleted_count=before - len(self.docs))
+                self.docs, deleted = _delete_matching_docs(self.docs, query)
+                return SimpleNamespace(deleted_count=deleted)
 
         class Users:
             def find_one(self, query, projection=None):
@@ -1185,14 +1303,14 @@ class RenderStructuredPipelineTests(unittest.TestCase):
             ):
                 listed = list_traces_for_viewer("user-0")
 
-        self.assertEqual(len(collection.docs), 10)
-        self.assertEqual(len(traces), 10)
+        self.assertEqual(len(collection.docs), 5)
+        self.assertEqual(len(traces), 5)
         self.assertEqual(traces[0]["run_id"], "run-11")
         self.assertEqual(traces[0]["actor_email"], "ada@example.com")
         self.assertEqual(traces[0]["display_name"], "Ada Lovelace")
         self.assertEqual(listed["scope"], "org")
-        self.assertEqual(listed["limit"], 10)
-        self.assertEqual(len(listed["traces"]), 10)
+        self.assertEqual(listed["limit"], 5)
+        self.assertEqual(len(listed["traces"]), 5)
 
         with patch(
             "dashboard.backend.services.llm_trace.get_sync_db",
