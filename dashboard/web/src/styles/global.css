@@ -1519,8 +1519,10 @@ input[type="number"].field::-webkit-inner-spin-button {
 }
 
 .guide-page {
-  max-width: 760px;
-  padding: 20px 24px 40px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  padding: 24px 36px 48px;
   background: var(--surface-1);
   border: 1px solid var(--rule);
   color: var(--ink);
