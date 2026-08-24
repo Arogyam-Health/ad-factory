@@ -88,8 +88,8 @@ def _compile(
         calls.append(request)
         return {
             "ads": [
-                {"copy": {"EN": _copy_for(fmt)}}
-                for fmt in planned_formats
+                {"copy": {"EN": _copy_for(str(item["format"]["id"]))}}
+                for item in request["planned_ads"]
             ]
         }
 
@@ -645,9 +645,12 @@ class CopySystemRequestTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["copy_count"], 12)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([len(item["planned_ads"]) for item in calls], [10, 2])
         self.assertEqual(calls[0]["planned_ads"][0]["format"]["id"], "HERO")
-        self.assertNotIn("product_truths", json.dumps(calls[0]))
+        for request in calls:
+            self.assertIn("product_document", request)
+            self.assertNotIn("product_truths", json.dumps(request))
 
 
 if __name__ == "__main__":

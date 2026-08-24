@@ -8,10 +8,12 @@ copy_starting_prompt is sent as starting_prompt when non-empty.
 """
 
 import hashlib
+import html
 import json
 import random
 import re
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -842,40 +844,61 @@ def _trace_request_payload(request: dict[str, Any], api_key: str = "") -> dict[s
     return payload
 
 
-def generate_structured_prompt_bundle(
+BROWSER_WARMUP_TASK = (
+    "Read this product context completely. Confirm you have read it. "
+    "Do not generate ads yet."
+)
+_BROWSER_SESSION_PREFIX = "bcs_"
+
+
+def parse_browser_copy_json(text: str) -> dict[str, Any]:
+    clean = html.unescape(str(text or "")).replace("\xa0", " ")
+    clean = re.sub(r"(?i)<br\s*/?>", "\n", clean)
+    clean = re.sub(r"<[^>]+>", "", clean)
+    clean = clean.strip()
+    for prefix in ("ChatGPT said:", "Gemini said:"):
+        if clean.startswith(prefix):
+            clean = clean[len(prefix) :].strip()
+    if clean.startswith("```"):
+        clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    start = clean.find("{")
+    end = clean.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("Browser copy response is not JSON")
+    parsed = json.loads(clean[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("Browser copy response is not a JSON object")
+    return parsed
+
+
+def assemble_browser_warmup_message(
     *,
-    run_id: str,
-    run_number: int,
-    settings: dict[str, Any],
-    effective_config: dict[str, Any],
-    provider_name: str,
-    provider_model: str,
-    generate: GenerateCallable,
-    reuse_locks: dict[str, dict[str, Any]] | None = None,
+    product_document: str,
+    starting_prompt: str = "",
 ) -> dict[str, Any]:
-    started = time.monotonic()
-    planned = _planned_ads(settings, effective_config)
-    share_background = bool(settings.get("share_background_across_personas"))
-    reuse_locks = reuse_locks if isinstance(reuse_locks, dict) else {}
-    visual_locks = reuse_locks.get("visual") if isinstance(reuse_locks.get("visual"), dict) else {}
-    background_locks = (
-        reuse_locks.get("background") if isinstance(reuse_locks.get("background"), dict) else {}
-    )
-    planned = _apply_visual_pattern_reuse(
-        planned,
-        visual_locks,
-        share_across_personas=share_background,
-    )
-    languages = resolve_language_ids(
-        effective_config,
-        settings.get("language_mode") or "EN",
-    )
-    product_document = str(effective_config.get("product_master_doc") or "").strip()
-    if not product_document:
+    document = str(product_document or "").strip()
+    if not document:
         raise ValueError("Product Master Doc is empty")
-    starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
-    catalog = _archetype_catalog(effective_config)
-    llm_prompt = str(effective_config.get("visual_archetype_llm_prompt") or "").strip()
+    return compact(
+        {
+            "task": BROWSER_WARMUP_TASK,
+            "starting_prompt": starting_prompt,
+            "product_document": document,
+        }
+    ) or {
+        "task": BROWSER_WARMUP_TASK,
+        "product_document": document,
+    }
+
+
+def assemble_browser_chunk_request(
+    *,
+    planned: list[dict[str, Any]],
+    languages: tuple[str, ...],
+    effective_config: dict[str, Any],
+    product_document: str,
+    starting_prompt: str = "",
+) -> dict[str, Any]:
     request = assemble_copy_llm_request(
         planned=planned,
         languages=languages,
@@ -883,34 +906,28 @@ def generate_structured_prompt_bundle(
         product_document=product_document,
         starting_prompt=starting_prompt,
     )
-    response = generate(request, False)
-    copy_batch = _normalize_copy(response, planned, languages, effective_config)
-    error = _validation_error(copy_batch, languages, effective_config)
-    repair_count = 0
-    if error:
-        repair_count = 1
-        response = generate(
-            {
-                "task": copy_repair_task(effective_config),
-                "validation_error": error,
-                "required_output_schema": request["output_schema"],
-                "original_request": request,
-                "invalid_response": response,
-            },
-            True,
-        )
-        copy_batch = _normalize_copy(response, planned, languages, effective_config)
-        error = _validation_error(copy_batch, languages, effective_config)
-    if error:
-        raise ProviderCallError(
-            code="provider_invalid_output",
-            provider=provider_name,
-            model=provider_model,
-            duration_ms=int((time.monotonic() - started) * 1000),
-            http_status=200,
-            error_detail=_safe_model_output_detail(error, response),
-        )
+    request.pop("product_document", None)
+    request.pop("starting_prompt", None)
+    return compact(request) or request
 
+
+def _chunk_items(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
+    step = max(1, min(int(size or 10), 500))
+    return [items[index : index + step] for index in range(0, len(items), step)]
+
+
+def _prompts_from_copy_batch(
+    *,
+    copy_batch: dict[str, Any],
+    languages: tuple[str, ...],
+    effective_config: dict[str, Any],
+    run_id: str,
+    run_number: int,
+    share_background: bool,
+    background_locks: dict[str, Any],
+    catalog: dict[str, list[dict[str, Any]]],
+    llm_prompt: str,
+) -> list[dict[str, Any]]:
     backgrounds = _resolve_backgrounds(effective_config)
     templates = _json_config(
         effective_config.get("prompt_assembler_templates"), {}
@@ -1035,8 +1052,6 @@ def generate_structured_prompt_bundle(
                 f"{run_id}:{ad_index}:{language}".encode("utf-8")
             ).hexdigest()[:24]
             concept_angle = str(concept["concept_angle"])
-            # The stem is what the user reads and what the browser automation writes
-            # to disk; prompt_id stays the stable internal key.
             display_stem = Path(
                 generate_ads.prompt_filename(
                     fmt,
@@ -1063,21 +1078,445 @@ def generate_structured_prompt_bundle(
                     "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 }
             )
-    batch_size = int(settings.get("batch_size") or 10)
+    return prompts
+
+
+def generate_structured_prompt_bundle(
+    *,
+    run_id: str,
+    run_number: int,
+    settings: dict[str, Any],
+    effective_config: dict[str, Any],
+    provider_name: str,
+    provider_model: str,
+    generate: GenerateCallable,
+    reuse_locks: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    planned = _planned_ads(settings, effective_config)
+    share_background = bool(settings.get("share_background_across_personas"))
+    reuse_locks = reuse_locks if isinstance(reuse_locks, dict) else {}
+    visual_locks = reuse_locks.get("visual") if isinstance(reuse_locks.get("visual"), dict) else {}
+    background_locks = (
+        reuse_locks.get("background") if isinstance(reuse_locks.get("background"), dict) else {}
+    )
+    planned = _apply_visual_pattern_reuse(
+        planned,
+        visual_locks,
+        share_across_personas=share_background,
+    )
+    languages = resolve_language_ids(
+        effective_config,
+        settings.get("language_mode") or "EN",
+    )
+    product_document = str(effective_config.get("product_master_doc") or "").strip()
+    if not product_document:
+        raise ValueError("Product Master Doc is empty")
+    starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
+    catalog = _archetype_catalog(effective_config)
+    llm_prompt = str(effective_config.get("visual_archetype_llm_prompt") or "").strip()
+    batch_size = max(1, min(int(settings.get("batch_size") or 10), 500))
+    chunks = _chunk_items(planned, batch_size)
+    chunk_requests: list[dict[str, Any]] = []
+    raw_responses: list[dict[str, Any]] = []
+    normalized_ads: list[dict[str, Any]] = []
+    repair_count = 0
+    last_response: dict[str, Any] = {}
+    request: dict[str, Any] = {}
+    response: dict[str, Any] = {}
+    for chunk in chunks:
+        request = assemble_copy_llm_request(
+            planned=chunk,
+            languages=languages,
+            effective_config=effective_config,
+            product_document=product_document,
+            starting_prompt=starting_prompt,
+        )
+        chunk_requests.append(request)
+        response = generate(request, False)
+        last_response = response
+        raw_responses.append(response)
+        copy_batch = _normalize_copy(response, chunk, languages, effective_config)
+        error = _validation_error(copy_batch, languages, effective_config)
+        if error:
+            repair_count += 1
+            response = generate(
+                {
+                    "task": copy_repair_task(effective_config),
+                    "validation_error": error,
+                    "required_output_schema": request["output_schema"],
+                    "original_request": request,
+                    "invalid_response": response,
+                },
+                True,
+            )
+            last_response = response
+            raw_responses[-1] = response
+            copy_batch = _normalize_copy(response, chunk, languages, effective_config)
+            error = _validation_error(copy_batch, languages, effective_config)
+        if error:
+            raise ProviderCallError(
+                code="provider_invalid_output",
+                provider=provider_name,
+                model=provider_model,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                http_status=200,
+                error_detail=_safe_model_output_detail(error, response),
+            )
+        normalized_ads.extend(copy_batch["ads"])
+    copy_batch = {"default_aspect_ratio": "4:5", "ads": normalized_ads}
+
+    prompts = _prompts_from_copy_batch(
+        copy_batch=copy_batch,
+        languages=languages,
+        effective_config=effective_config,
+        run_id=run_id,
+        run_number=run_number,
+        share_background=share_background,
+        background_locks=background_locks,
+        catalog=catalog,
+        llm_prompt=llm_prompt,
+    )
     return {
         "run_id": run_id,
         "status": "completed",
         "provider": provider_name,
         "model": provider_model,
         "duration_ms": int((time.monotonic() - started) * 1000),
-        "request_sha256": _sha256_json(request),
-        "response_sha256": _sha256_json(response),
+        "request_sha256": _sha256_json(chunk_requests or request),
+        "response_sha256": _sha256_json(raw_responses or last_response or response),
         "copy_sha256": _sha256_json(copy_batch),
         "copy_count": len(copy_batch["ads"]),
         "prompt_count": len(prompts),
         "prompt_ids": [prompt["prompt_id"] for prompt in prompts],
         "repair_count": repair_count,
         "batch_size": max(1, min(batch_size, 500)),
+        "prompts": prompts,
+    }
+
+
+def browser_copy_turn(
+    *,
+    transport: ProviderTransport,
+    engine: str,
+    session_id: str,
+    action: str,
+    prompt: str,
+    expect_json: bool,
+    label: str,
+    trace_callback: TraceCallback | None = None,
+) -> str:
+    started = time.monotonic()
+    http_status: int | None = None
+    response_text = ""
+
+    def emit(
+        *,
+        status: str,
+        code: str = "",
+        error_detail: str = "",
+        request: dict[str, Any] | None = None,
+    ) -> tuple[bool, str]:
+        if trace_callback is None:
+            return False, "not_configured"
+        try:
+            payload = request if isinstance(request, dict) else {}
+            trace_callback(
+                {
+                    "provider": "browser",
+                    "model": engine,
+                    "api_model": engine,
+                    "endpoint": "",
+                    "label": label,
+                    "status": status,
+                    "http_status": http_status,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                    "error_code": code,
+                    "error_detail": error_detail,
+                    "request": _trace_request_payload(payload),
+                    "response": {
+                        "usage": {},
+                        "content": _trace_text(response_text),
+                    },
+                }
+            )
+            return True, ""
+        except Exception as exc:
+            return False, type(exc).__name__
+
+    parsed_request: dict[str, Any] = {}
+    if prompt:
+        try:
+            loaded = json.loads(prompt)
+            if isinstance(loaded, dict):
+                parsed_request = loaded
+        except json.JSONDecodeError:
+            parsed_request = {"prompt": prompt}
+
+    relayed = transport(
+        {
+            "provider": "browser",
+            "engine": engine,
+            "action": action,
+            "session_id": session_id,
+            "prompt": prompt,
+            "expect_json": expect_json,
+        }
+    )
+    if not isinstance(relayed, dict):
+        raise TypeError("Provider relay result is invalid")
+    transport_error = str(relayed.get("transport_error") or "")
+    if transport_error:
+        if action == "close":
+            return ""
+        trace_persisted, trace_error = emit(
+            status="failed",
+            code="provider_relay_transport_error",
+            request=parsed_request,
+        )
+        raise ProviderCallError(
+            code="provider_relay_transport_error",
+            provider="browser",
+            model=engine,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            error_detail=transport_error[:100],
+            trace_persisted=trace_persisted,
+            trace_persistence_error=trace_error,
+        )
+    http_status = int(relayed.get("http_status") or 0)
+    response_text = str(relayed.get("body") or "")
+    if action == "close":
+        return response_text
+    if not 200 <= http_status < 300:
+        detail = _safe_provider_error_text(response_text, "")
+        trace_persisted, trace_error = emit(
+            status="failed",
+            code="provider_http_error",
+            error_detail=detail,
+            request=parsed_request,
+        )
+        raise ProviderCallError(
+            code="provider_http_error",
+            provider="browser",
+            model=engine,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            http_status=http_status,
+            error_detail=detail,
+            trace_persisted=trace_persisted,
+            trace_persistence_error=trace_error,
+        )
+    if expect_json and not response_text.strip():
+        trace_persisted, trace_error = emit(
+            status="failed",
+            code="provider_invalid_response",
+            request=parsed_request,
+        )
+        raise ProviderCallError(
+            code="provider_invalid_response",
+            provider="browser",
+            model=engine,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            http_status=http_status,
+            error_detail="Browser copy response is empty",
+            trace_persisted=trace_persisted,
+            trace_persistence_error=trace_error,
+        )
+    if not expect_json and not response_text.strip():
+        trace_persisted, trace_error = emit(
+            status="failed",
+            code="provider_invalid_response",
+            request=parsed_request,
+        )
+        raise ProviderCallError(
+            code="provider_invalid_response",
+            provider="browser",
+            model=engine,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            http_status=http_status,
+            error_detail="Browser warmup produced no reply",
+            trace_persisted=trace_persisted,
+            trace_persistence_error=trace_error,
+        )
+    emit(status="completed", request=parsed_request)
+    return response_text
+
+
+def generate_browser_structured_prompt_bundle(
+    *,
+    run_id: str,
+    run_number: int,
+    settings: dict[str, Any],
+    effective_config: dict[str, Any],
+    provider_name: str,
+    provider_model: str,
+    transport: ProviderTransport,
+    reuse_locks: dict[str, dict[str, Any]] | None = None,
+    trace_callback: TraceCallback | None = None,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    engine = str(provider_model or settings.get("model") or "").strip().lower()
+    if engine not in {"chatgpt", "gemini"}:
+        raise ValueError("Structured copy model is invalid")
+    planned = _planned_ads(settings, effective_config)
+    share_background = bool(settings.get("share_background_across_personas"))
+    reuse_locks = reuse_locks if isinstance(reuse_locks, dict) else {}
+    visual_locks = reuse_locks.get("visual") if isinstance(reuse_locks.get("visual"), dict) else {}
+    background_locks = (
+        reuse_locks.get("background") if isinstance(reuse_locks.get("background"), dict) else {}
+    )
+    planned = _apply_visual_pattern_reuse(
+        planned,
+        visual_locks,
+        share_across_personas=share_background,
+    )
+    languages = resolve_language_ids(
+        effective_config,
+        settings.get("language_mode") or "EN",
+    )
+    product_document = str(effective_config.get("product_master_doc") or "").strip()
+    if not product_document:
+        raise ValueError("Product Master Doc is empty")
+    starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
+    catalog = _archetype_catalog(effective_config)
+    llm_prompt = str(effective_config.get("visual_archetype_llm_prompt") or "").strip()
+    batch_size = max(1, min(int(settings.get("batch_size") or 10), 500))
+    session_id = _BROWSER_SESSION_PREFIX + uuid.uuid4().hex
+    chunks = _chunk_items(planned, batch_size)
+    chunk_requests: list[dict[str, Any]] = []
+    raw_responses: list[dict[str, Any]] = []
+    normalized_ads: list[dict[str, Any]] = []
+    repair_count = 0
+    last_response: dict[str, Any] = {}
+
+    def turn(
+        action: str,
+        payload: dict[str, Any] | str,
+        *,
+        expect_json: bool,
+        label: str,
+    ) -> str:
+        prompt = (
+            payload
+            if isinstance(payload, str)
+            else json.dumps(payload, ensure_ascii=False)
+        )
+        return browser_copy_turn(
+            transport=transport,
+            engine=engine,
+            session_id=session_id,
+            action=action,
+            prompt=prompt,
+            expect_json=expect_json,
+            label=label,
+            trace_callback=trace_callback,
+        )
+
+    try:
+        warmup = assemble_browser_warmup_message(
+            product_document=product_document,
+            starting_prompt=starting_prompt,
+        )
+        turn("new", warmup, expect_json=False, label="warmup")
+        for chunk in chunks:
+            request = assemble_browser_chunk_request(
+                planned=chunk,
+                languages=languages,
+                effective_config=effective_config,
+                product_document=product_document,
+                starting_prompt=starting_prompt,
+            )
+            chunk_requests.append(request)
+            try:
+                response = parse_browser_copy_json(
+                    turn("continue", request, expect_json=True, label="copy")
+                )
+            except ValueError as exc:
+                raise ProviderCallError(
+                    code="provider_invalid_response",
+                    provider=provider_name,
+                    model=engine,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    http_status=200,
+                    error_detail=str(exc),
+                ) from exc
+            last_response = response
+            raw_responses.append(response)
+            copy_batch = _normalize_copy(response, chunk, languages, effective_config)
+            error = _validation_error(copy_batch, languages, effective_config)
+            if error:
+                repair_count += 1
+                try:
+                    response = parse_browser_copy_json(
+                        turn(
+                            "repair",
+                            {
+                                "task": copy_repair_task(effective_config),
+                                "validation_error": error,
+                                "required_output_schema": request["output_schema"],
+                                "original_request": request,
+                                "invalid_response": response,
+                            },
+                            expect_json=True,
+                            label="repair",
+                        )
+                    )
+                except ValueError as exc:
+                    raise ProviderCallError(
+                        code="provider_invalid_response",
+                        provider=provider_name,
+                        model=engine,
+                        duration_ms=int((time.monotonic() - started) * 1000),
+                        http_status=200,
+                        error_detail=str(exc),
+                    ) from exc
+                last_response = response
+                raw_responses[-1] = response
+                copy_batch = _normalize_copy(
+                    response, chunk, languages, effective_config
+                )
+                error = _validation_error(copy_batch, languages, effective_config)
+            if error:
+                raise ProviderCallError(
+                    code="provider_invalid_output",
+                    provider=provider_name,
+                    model=engine,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    http_status=200,
+                    error_detail=_safe_model_output_detail(error, response),
+                )
+            normalized_ads.extend(copy_batch["ads"])
+    finally:
+        try:
+            turn("close", "", expect_json=False, label="close")
+        except Exception:
+            pass
+
+    copy_batch = {"default_aspect_ratio": "4:5", "ads": normalized_ads}
+    prompts = _prompts_from_copy_batch(
+        copy_batch=copy_batch,
+        languages=languages,
+        effective_config=effective_config,
+        run_id=run_id,
+        run_number=run_number,
+        share_background=share_background,
+        background_locks=background_locks,
+        catalog=catalog,
+        llm_prompt=llm_prompt,
+    )
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "provider": provider_name,
+        "model": engine,
+        "duration_ms": int((time.monotonic() - started) * 1000),
+        "request_sha256": _sha256_json(chunk_requests),
+        "response_sha256": _sha256_json(raw_responses or last_response),
+        "copy_sha256": _sha256_json(copy_batch),
+        "copy_count": len(copy_batch["ads"]),
+        "prompt_count": len(prompts),
+        "prompt_ids": [prompt["prompt_id"] for prompt in prompts],
+        "repair_count": repair_count,
+        "batch_size": batch_size,
         "prompts": prompts,
     }
 

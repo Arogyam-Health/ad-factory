@@ -1607,6 +1607,15 @@ def test_local_agent_responsiveness_contract() -> int:
         and '"requirements"' not in local_copy,
         "copy LLM request is assembled as layered JSON, not a raw plan dump",
     )
+    browser_copy = (ROOT / "local_agent_runtime" / "browser_copy.py").read_text(encoding="utf-8")
+    failed += ok(
+        "def generate_browser_structured_prompt_bundle(" in copy_assembler
+        and "def execute_browser_copy(" in browser_copy
+        and "def handle_provider_payload(" in browser_copy
+        and "Browser automation" in studio_tsx
+        and 'provider === "browser"' in studio_tsx,
+        "browser copy uses a separate warmup/chunk path and Playwright dispatch",
+    )
     failed += ok(
         '/api/runs/bulk-delete' in studio_tsx and "purge-all" in studio_tsx,
         "runs toolbar can delete selected runs and purge every run",

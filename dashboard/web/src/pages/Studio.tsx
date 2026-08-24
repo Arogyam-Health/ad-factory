@@ -154,6 +154,9 @@ export function StudioPage() {
   const [imageEngine, setImageEngine] = useState(() => (
     localStorage.getItem("adFactoryImageEngine") === "gemini" ? "gemini" : "chatgpt"
   ));
+  const [copyBrowserEngine, setCopyBrowserEngine] = useState(() => (
+    localStorage.getItem("adFactoryCopyBrowserEngine") === "gemini" ? "gemini" : "chatgpt"
+  ));
   const [selectedConcept, setSelectedConcept] = useState(
     () => localStorage.getItem("adFactorySelectedConcept") || "",
   );
@@ -166,6 +169,9 @@ export function StudioPage() {
   useEffect(() => {
     localStorage.setItem("adFactoryImageEngine", imageEngine);
   }, [imageEngine]);
+  useEffect(() => {
+    localStorage.setItem("adFactoryCopyBrowserEngine", copyBrowserEngine);
+  }, [copyBrowserEngine]);
   useEffect(() => {
     localStorage.setItem("adFactorySelectedConcept", selectedConcept);
   }, [selectedConcept]);
@@ -552,19 +558,27 @@ export function StudioPage() {
     setBusy(true);
     setStatus("Allocating copy plate…");
     try {
-      const providerName = provider === "google" ? "google_gemini" : "opencode";
-      const pendingSecret = providerName === "google_gemini" ? googleKey.trim() : opencodeKey.trim();
-      await fetchJSON(`/api/user/provider-config/${providerName}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(providerName === "opencode" && opencodeUrl.trim() ? { api_url: opencodeUrl.trim() } : {}),
-          ...(pendingSecret ? { api_key: pendingSecret } : {}),
-          default_model: model.trim() || DEFAULT_OPENCODE_MODEL,
-        }),
-      }).catch(() => undefined);
-      setGoogleKey("");
-      setOpencodeKey("");
+      const isBrowser = provider === "browser";
+      if (isBrowser) {
+        const live = paired ? { ok: true } : await pairLocalAgent();
+        if (!live.ok) return;
+      } else {
+        const providerName = provider === "google" ? "google_gemini" : "opencode";
+        const pendingSecret = providerName === "google_gemini" ? googleKey.trim() : opencodeKey.trim();
+        await fetchJSON(`/api/user/provider-config/${providerName}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(providerName === "opencode" && opencodeUrl.trim() ? { api_url: opencodeUrl.trim() } : {}),
+            ...(pendingSecret ? { api_key: pendingSecret } : {}),
+            default_model: model.trim() || DEFAULT_OPENCODE_MODEL,
+          }),
+        }).catch(() => undefined);
+        setGoogleKey("");
+        setOpencodeKey("");
+      }
+      const providerName = isBrowser ? "browser" : provider === "google" ? "google_gemini" : "opencode";
+      const modelName = isBrowser ? copyBrowserEngine : model;
       const envelope = await fetchJSON<{ run_id: string; display_batch?: string }>("/api/runs/allocate-copy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -592,7 +606,7 @@ export function StudioPage() {
             visual_archetypes_by_format: patterns,
             language_mode: language,
             provider: providerName,
-            model,
+            model: modelName,
             org_id: orgId !== "personal" ? orgId : "",
           },
         }),
@@ -909,8 +923,27 @@ export function StudioPage() {
                 <select className="field" value={provider} onChange={(e) => setProvider(e.target.value)}>
                   <option value="opencode">OpenCode</option>
                   <option value="google">Google Gemini</option>
+                  <option value="browser">Browser automation</option>
                 </select>
               </label>
+              {provider === "browser" ? (
+                <>
+                  <label className="hint">
+                    Browser engine
+                    <select
+                      className="field"
+                      value={copyBrowserEngine}
+                      onChange={(e) => setCopyBrowserEngine(e.target.value === "gemini" ? "gemini" : "chatgpt")}
+                    >
+                      <option value="chatgpt">ChatGPT</option>
+                      <option value="gemini">Gemini</option>
+                    </select>
+                  </label>
+                  <p className="hint">
+                    Uses the model already selected in your Chrome CDP tab. Pair the local agent first. Product context is sent once, then ads are requested in that chat by Ads per LLM call.
+                  </p>
+                </>
+              ) : (
               <form
                 className="provider-keys"
                 onSubmit={(event) => {
@@ -943,6 +976,7 @@ export function StudioPage() {
                   {keySaved || googleSaved ? "Saved key stays on this account. Type a new one only to replace it." : "Save before running a plate."}
                 </p>
               </form>
+              )}
               <label className="hint">
                 Ad multiplier
                 <input className="field" type="number" min={1} max={20} value={multiplier} onChange={(e) => setMultiplier(Number(e.target.value) || 1)} />

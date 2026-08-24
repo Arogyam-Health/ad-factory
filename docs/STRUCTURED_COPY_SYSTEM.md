@@ -142,6 +142,14 @@ What they lock:
 7. After you clear a style file, you can still send. The Style dropdown may be empty; the run should not 400.
 8. TEST must not invent quotes. If testimonial material is empty, the format description tells the model to keep the layout and skip fabricated claims.
 
+## Browser automation
+
+Studio can send Structured copy through ChatGPT or Gemini in a logged-in Chrome tab. That is a transport only. The layered request shape above does not change.
+
+API providers (OpenCode, Google Gemini) also split by Ads per LLM call. Each API chunk is a full layered request: `product_document` and `starting_prompt` are sent again on every call.
+
+Browser copy opens one chat for the run, sends the product document and optional starting prompt first, waits for a confirmation reply, then sends ad-generation JSON in chunks of Ads per LLM call without repeating that document. Extra keys such as `product_truths` in the scraped reply are ignored. A failed chunk gets one same-chat repair, then the job fails. This path does not fall back to OpenCode.
+
 ## Out of scope here
 
 - Binding a default framework to a format

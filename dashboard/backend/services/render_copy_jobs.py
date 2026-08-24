@@ -38,6 +38,7 @@ from dashboard.backend.services.provider_relay import (
 from dashboard.backend.services.copy_system import copy_task
 from dashboard.backend.services.render_structured_copy import (
     ProviderCallError,
+    generate_browser_structured_prompt_bundle,
     generate_structured_prompt_bundle,
     provider_generate_callable,
 )
@@ -163,10 +164,14 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
     provider = str(raw.get("provider") or "").lower()
     if provider == "google":
         provider = "google_gemini"
-    if provider not in {"opencode", "google_gemini"}:
+    if provider not in {"opencode", "google_gemini", "browser"}:
         raise ValueError("Structured copy provider is invalid")
     model = str(raw.get("model") or "").strip()
-    if not model or len(model) > 256:
+    if provider == "browser":
+        model = model.lower()
+        if model not in {"chatgpt", "gemini"}:
+            raise ValueError("Structured copy model is invalid")
+    elif not model or len(model) > 256:
         raise ValueError("Structured copy model is invalid")
     language_mode = str(raw.get("language_mode") or "EN").upper()
     if not language_mode or len(language_mode) > 16 or not language_mode.replace("_", "").isalnum():
@@ -960,6 +965,73 @@ def process_next_render_copy_job() -> bool:
             return True
         _complete_job(job, result)
         return True
+
+    if str(settings.get("provider") or "") == "browser":
+        try:
+            return finish(
+                generate_browser_structured_prompt_bundle(
+                    run_id=str(job["run_id"]),
+                    run_number=int(job["run_number"]),
+                    settings=settings,
+                    effective_config=resolve_effective_config(
+                        str(job["user_id"]),
+                        str(settings.get("org_id") or "") or None,
+                    ),
+                    provider_name="browser",
+                    provider_model=str(settings.get("model") or ""),
+                    reuse_locks=collect_copy_reuse_locks(
+                        str(job["user_id"]), settings
+                    ),
+                    transport=relay_transport,
+                    trace_callback=lambda event: record_recent_llm_trace(
+                        user_id=str(job["user_id"]),
+                        run_id=str(job["run_id"]),
+                        batch=f"v{int(job['run_number'])}",
+                        org_id=_copy_trace_org_id(job),
+                        event=event,
+                    ),
+                )
+            )
+        except ProviderCallError as exc:
+            if exc.code in _TRANSIENT_RELAY_ERRORS:
+                _defer_job_for_local_agent(job, exc.code)
+                return True
+            trace_error = exc.trace_persistence_error
+            if not exc.trace_persisted:
+                trace_error = _record_provider_failure_trace(job, exc, {})
+            _fail_job(
+                job,
+                error_code=exc.code,
+                provider="browser",
+                model=str(settings.get("model") or ""),
+                duration_ms=exc.duration_ms,
+                http_status=exc.http_status,
+                error_detail=exc.error_detail,
+                trace_persistence_error=trace_error,
+                last_error=str(exc.error_detail or exc.code),
+            )
+            return True
+        except ValueError as exc:
+            _fail_job(
+                job,
+                error_code="copy_configuration_invalid",
+                provider="browser",
+                model=str(settings.get("model") or ""),
+                error_detail=str(exc),
+                last_error=str(exc),
+            )
+            return True
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}".strip()[:2000]
+            _fail_job(
+                job,
+                error_code="copy_generation_failed",
+                provider="browser",
+                model=str(settings.get("model") or ""),
+                error_detail=detail,
+                last_error=detail,
+            )
+            return True
 
     try:
         provider_config = get_materialized_provider_config(

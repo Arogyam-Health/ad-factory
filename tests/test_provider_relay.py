@@ -736,6 +736,60 @@ class ProviderRelayTests(unittest.TestCase):
         fail.assert_called_once()
         self.assertIn("No background variants found", fail.call_args.kwargs["error_detail"])
 
+    def test_browser_provider_failure_does_not_fallback_to_opencode(self) -> None:
+        from dashboard.backend.services import render_copy_jobs
+        from dashboard.backend.services.render_structured_copy import (
+            ProviderCallError,
+        )
+
+        job = {
+            "copy_job_id": "copy-1",
+            "run_id": "run-1",
+            "run_number": 1,
+            "user_id": "user-1",
+            "settings": {
+                "provider": "browser",
+                "model": "chatgpt",
+            },
+        }
+        failed = ProviderCallError(
+            code="provider_invalid_output",
+            provider="browser",
+            model="chatgpt",
+            duration_ms=11,
+            http_status=200,
+            error_detail="headline_missing",
+        )
+        with (
+            patch.object(render_copy_jobs, "_claim_next_job", return_value=job),
+            patch.object(
+                render_copy_jobs,
+                "get_materialized_provider_config",
+            ) as materialize,
+            patch.object(
+                render_copy_jobs,
+                "generate_browser_structured_prompt_bundle",
+                side_effect=failed,
+            ),
+            patch.object(
+                render_copy_jobs,
+                "next_free_opencode_model",
+            ) as fallback,
+            patch.object(render_copy_jobs, "resolve_effective_config", return_value={}),
+            patch.object(render_copy_jobs, "collect_copy_reuse_locks", return_value={}),
+            patch.object(render_copy_jobs, "_record_provider_failure_trace", return_value=""),
+            patch.object(render_copy_jobs, "_fail_job") as fail,
+            patch.object(render_copy_jobs, "_complete_job") as complete,
+        ):
+            self.assertTrue(render_copy_jobs.process_next_render_copy_job())
+
+        materialize.assert_not_called()
+        fallback.assert_not_called()
+        complete.assert_not_called()
+        fail.assert_called_once()
+        self.assertEqual(fail.call_args.kwargs["provider"], "browser")
+        self.assertEqual(fail.call_args.kwargs["error_code"], "provider_invalid_output")
+
 
 if __name__ == "__main__":
     unittest.main()

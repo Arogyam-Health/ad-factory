@@ -47,7 +47,7 @@ from local_agent_runtime.storage import (
     resolve_data_root,
 )
 from local_agent_runtime.transport import AgentWebSocketClient, JobSignal
-from local_agent_runtime.provider_relay import execute_provider_call
+from local_agent_runtime.browser_copy import handle_provider_payload
 
 
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "http://localhost:4090")
@@ -1546,7 +1546,7 @@ def register_and_run(args: argparse.Namespace) -> None:
         AGENT_TOKEN,
         JOB_SIGNAL,
         status_callback=websocket_status,
-        provider_handler=execute_provider_call,
+        provider_handler=handle_provider_payload,
     )
     WS_CLIENT.start()
 
