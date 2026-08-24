@@ -213,7 +213,7 @@ class LocalOutputLifecycleTests(unittest.TestCase):
     def test_revision_uploads_a_real_image_file_not_the_raw_cas_blob(self) -> None:
         import importlib
 
-        local_agent = importlib.import_module("scripts.local_agent")
+        local_agent = importlib.import_module("local_agent_runtime.local_agent")
         version = self.state.output_versions("output-11")[0]
         source = self.state.resource_path(
             version["resource_id"], version["resource_version"]
@@ -241,14 +241,14 @@ class LocalOutputLifecycleTests(unittest.TestCase):
         self.assertIn(uploaded.suffix.lower(), {".png", ".jpg", ".jpeg", ".webp"})
         self.assertEqual(uploaded.read_bytes(), PNG_A)
 
-        from scripts.chatgpt_web_sutomation import parse_upload_manifest
+        from local_agent_runtime.chatgpt_web_sutomation import parse_upload_manifest
 
         self.assertEqual(parse_upload_manifest(manifest_path), [uploaded.resolve()])
 
     def test_revision_command_passes_the_manifest_instead_of_a_blob_path(self) -> None:
         import importlib
 
-        local_agent = importlib.import_module("scripts.local_agent")
+        local_agent = importlib.import_module("local_agent_runtime.local_agent")
         manifest = Path(self.temp.name) / "uploads.manifest.json"
         for engine in ("chatgpt", "gemini"):
             command = local_agent._browser_automation_cmd(

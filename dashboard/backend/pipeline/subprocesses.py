@@ -146,16 +146,7 @@ from dashboard.backend.pipeline.input_assets import (
     read_active_images,
     store_uploaded_input_images,
 )
-from dashboard.backend.pipeline.browser_env import (
-    dashboard_subprocess_env,
-    debugger_endpoint_reachable,
-    detect_wsl_user,
-    detect_wsl_windows_host_ip,
-    extension_browser_required_for_chatgpt,
-    render_chatgpt_uses_local_agent,
-    start_extension_cdp_proxy_for_user,
-    wsl_chrome_cdp_url,
-)
+from dashboard.backend.pipeline.browser_env import dashboard_subprocess_env
 from dashboard.backend.pipeline.text_scrub import (
     PROOF_NOTE_MARKERS,
     choose_text,

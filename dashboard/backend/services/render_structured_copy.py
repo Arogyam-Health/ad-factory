@@ -46,7 +46,7 @@ from dashboard.backend.services.visual_archetypes import (
     llm_decide_archetype,
     pick_random_archetype,
 )
-from scripts import generate_ads
+from dashboard.backend.services import generate_ads
 
 
 GenerateCallable = Callable[[dict[str, Any], bool], dict[str, Any]]

@@ -146,16 +146,6 @@ from dashboard.backend.pipeline.input_assets import (
     read_active_images,
     store_uploaded_input_images,
 )
-from dashboard.backend.pipeline.browser_env import (
-    dashboard_subprocess_env,
-    debugger_endpoint_reachable,
-    detect_wsl_user,
-    detect_wsl_windows_host_ip,
-    extension_browser_required_for_chatgpt,
-    render_chatgpt_uses_local_agent,
-    start_extension_cdp_proxy_for_user,
-    wsl_chrome_cdp_url,
-)
 from dashboard.backend.pipeline.text_scrub import (
     PROOF_NOTE_MARKERS,
     choose_text,
@@ -179,12 +169,10 @@ from dashboard.backend.db.settings import settings as app_settings
 
 def api_delete_input_image(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     rel_path = str(payload.get("path") or "").strip().replace("\\", "/")
-    if not rel_path.startswith("input/images/"):
-        raise HTTPException(status_code=400, detail="path must be under input/images")
     target = (ROOT / rel_path).resolve()
     images_root = INPUT_IMAGES_DIR.resolve()
     if images_root not in target.parents:
-        raise HTTPException(status_code=400, detail="Invalid image path")
+        raise HTTPException(status_code=400, detail="path must be under the input images directory")
     if not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail="Input image not found")
     target.unlink()

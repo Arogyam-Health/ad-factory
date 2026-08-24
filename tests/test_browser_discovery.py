@@ -76,9 +76,9 @@ class BrowserDiscoveryTests(unittest.TestCase):
 
     def test_gemini_default_upload_dir_is_not_a_personal_path(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        gemini = (root / "scripts" / "gemini_web_automation.py").read_text(encoding="utf-8")
-        chatgpt = (root / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
-        agent = (root / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        gemini = (root / "local_agent_runtime" / "gemini_web_automation.py").read_text(encoding="utf-8")
+        chatgpt = (root / "local_agent_runtime" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
+        agent = (root / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
         self.assertNotIn("myspace/info/input/images", gemini)
         self.assertIn("from local_agent_runtime.browser import resolve_browser_executable", gemini)
         self.assertIn("from local_agent_runtime.browser import resolve_browser_executable", chatgpt)
@@ -97,7 +97,7 @@ class BrowserDiscoveryTests(unittest.TestCase):
             data_dir=str(Path.home() / "ad-factory-agent"),
             browser="chrome",
         )
-        self.assertEqual(command[1], str(root / "scripts" / "local_agent.py"))
+        self.assertEqual(command[1], str(root / "local_agent_runtime" / "local_agent.py"))
         self.assertIn("--launch-browser", command)
         self.assertEqual(command[command.index("--browser") + 1], "chrome")
         self.assertNotIn("session", " ".join(command).lower())
@@ -121,7 +121,7 @@ class BrowserDiscoveryTests(unittest.TestCase):
         self.assertIn("subprocess.Popen", starter)
         self.assertIn("process.wait(timeout=20)", starter)
         self.assertIn("return 130", starter)
-        agent = (Path(__file__).resolve().parents[1] / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        agent = (Path(__file__).resolve().parents[1] / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
         self.assertIn("-signal.SIGINT", agent)
         self.assertIn("-signal.SIGTERM", agent)
 
@@ -152,10 +152,12 @@ class BrowserDiscoveryTests(unittest.TestCase):
         from scripts.pack_local_agent_zip import ZIP_PREFIX, included_files, write_zip
 
         required = {
-            "scripts/local_agent.py",
             "scripts/start_local_agent.py",
-            "scripts/generate_ads.py",
-            "scripts/prompt_assembler_templates.json",
+            "local_agent_runtime/local_agent.py",
+            "dashboard/backend/services/generate_ads.py",
+            "dashboard/backend/copy_system/prompt_assembler_templates.json",
+            "dashboard/backend/defaults/starting_prompt.txt",
+            "dashboard/backend/defaults/conversion_916_prompt.txt",
             "local_agent_runtime/storage.py",
             "local_agent_runtime/browser.py",
             "background_variant.json",
@@ -172,7 +174,7 @@ class BrowserDiscoveryTests(unittest.TestCase):
             zip_path = write_zip(Path(tmp) / "ad-factory-local-agent.zip")
             with zipfile.ZipFile(zip_path) as archive:
                 names = set(archive.namelist())
-            self.assertIn(f"{ZIP_PREFIX}/scripts/local_agent.py", names)
+            self.assertIn(f"{ZIP_PREFIX}/local_agent_runtime/local_agent.py", names)
             self.assertIn(f"{ZIP_PREFIX}/local_agent_runtime/browser.py", names)
             self.assertIn(f"{ZIP_PREFIX}/start_local_agent.bat", names)
             self.assertIn(f"{ZIP_PREFIX}/start_local_agent.sh", names)

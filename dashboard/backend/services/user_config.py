@@ -119,17 +119,22 @@ def _generate_config_id() -> str:
 def _repository_generic_config() -> dict[str, str]:
     """Read bundled defaults only for the one-time MongoDB bootstrap."""
     from pathlib import Path
-    root = Path(__file__).resolve().parent.parent.parent.parent
 
-    product_master_path = root / "input" / "docs" / "product master doc.txt"
-    starting_prompt_path = root / "input" / "startingprompt.txt"
-    copy_templates_path = root / "dashboard" / "backend" / "copy_prompt_templates.json"
-    persona_seeds_path = root / "persona_seeds.json"
-    concept_path = root / "concept.json"
-    background_variant_path = root / "background_variant.json"
-    prompt_assembler_path = root / "scripts" / "prompt_assembler_templates.json"
-    conversion_916_path = root / "input" / "prompt_916_from_45.txt"
-    reference_starting_prompt_path = root / "input" / "reference_startingprompt.txt"
+    from dashboard.backend.pipeline.paths import (
+        CONVERT_916_TEMPLATE_PATH,
+        COPY_PROMPTS_PATH,
+        DEFAULT_PRODUCT_MASTER,
+        PERSONA_SEEDS_PATH,
+        REFERENCE_STARTING_PROMPT_PATH,
+        ROOT,
+        STARTING_PROMPT_PATH,
+    )
+
+    copy_templates_path = COPY_PROMPTS_PATH
+    persona_seeds_path = PERSONA_SEEDS_PATH
+    concept_path = ROOT / "concept.json"
+    background_variant_path = ROOT / "background_variant.json"
+    prompt_assembler_path = ROOT / "dashboard" / "backend" / "copy_system" / "prompt_assembler_templates.json"
 
     def _read(p: Path) -> str:
         try:
@@ -138,8 +143,8 @@ def _repository_generic_config() -> dict[str, str]:
             return ""
 
     return {
-        "product_master_doc": _read(product_master_path),
-        "starting_prompt": _read(starting_prompt_path),
+        "product_master_doc": _read(DEFAULT_PRODUCT_MASTER),
+        "starting_prompt": _read(STARTING_PROMPT_PATH),
         "copy_prompt_templates": _read(copy_templates_path) or "{}",
         "persona_seeds": _read(persona_seeds_path) or "[]",
         "concept": _read(concept_path) or "{}",
@@ -148,8 +153,8 @@ def _repository_generic_config() -> dict[str, str]:
         "visual_archetype_llm_prompt": DEFAULT_VISUAL_ARCHETYPE_LLM_PROMPT,
         "background_variant": _read(background_variant_path) or "{}",
         "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
-        "conversion_916_prompt": _read(conversion_916_path),
-        "reference_starting_prompt": _read(reference_starting_prompt_path),
+        "conversion_916_prompt": _read(CONVERT_916_TEMPLATE_PATH),
+        "reference_starting_prompt": _read(REFERENCE_STARTING_PROMPT_PATH),
         "reference_product_master_doc": "",
     }
 

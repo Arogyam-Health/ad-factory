@@ -2,7 +2,7 @@
 
 This is the operator guide for the live Structured copy request. Edit the split JSON files, save them in Studio or Config, and the next run sends those layers to the copy LLM. Empty fields are omitted. Generation still runs.
 
-The live assembler is `dashboard/backend/services/render_structured_copy.py`. It reads `dashboard/backend/copy_system/` through `dashboard/backend/services/copy_system.py`. `copy_prompt_templates.json` is used only for `visual_archetypes` after copy exists. Old copy-LLM blocks in a stored file (`system_prompt_*`, CTA maps, template copy, and similar) are stripped on read and save. `copy_starting_prompt` is sent as `starting_prompt` when non-empty.
+The live assembler is `dashboard/backend/services/render_structured_copy.py`. It reads `dashboard/backend/copy_system/` through `dashboard/backend/services/copy_system.py`. Image prompts are assembled by `dashboard/backend/services/generate_ads.py` using `prompt_assembler_templates.json` in that same copy_system folder. `copy_prompt_templates.json` is used only for `visual_archetypes` after copy exists. Old copy-LLM blocks in a stored file (`system_prompt_*`, CTA maps, template copy, and similar) are stripped on read and save. `copy_starting_prompt` is sent as `starting_prompt` when non-empty.
 
 ## Request shape
 

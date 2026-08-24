@@ -116,7 +116,9 @@ class StructuredLocalFlowTests(unittest.TestCase):
                 "prompt_assembler_templates": json.loads(
                     (
                         Path(__file__).resolve().parents[1]
-                        / "scripts"
+                        / "dashboard"
+                        / "backend"
+                        / "copy_system"
                         / "prompt_assembler_templates.json"
                     ).read_text(encoding="utf-8")
                 ),

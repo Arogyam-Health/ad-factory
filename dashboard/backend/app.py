@@ -50,7 +50,6 @@ from dashboard.backend.pipeline.run_owners import (
 )
 from dashboard.backend.pipeline.copy_text import persona_slug
 from dashboard.backend.pipeline.input_assets import store_uploaded_input_images
-from dashboard.backend.pipeline.browser_env import dashboard_subprocess_env, wsl_chrome_cdp_url
 from dashboard.backend.pipeline.images import (
     EXACT_COPY_BLOCK_RE,
     _IMAGE_PATH_SORT_RE,
@@ -264,12 +263,6 @@ from dashboard.backend.pipeline.files import (
     save_upload,
     storage_info,
 )
-from dashboard.backend.pipeline.chrome_ops import (
-    _chrome_process,
-    api_kill_chrome,
-    api_launch_visible_browser,
-    api_stop_generation,
-)
 from dashboard.backend.pipeline.personas import (
     _extract_persona_slug_from_prompt_filename,
     _resolve_starting_prompt_path,
@@ -367,7 +360,7 @@ def startup() -> None:
         print(f"[startup] MongoDB index init skipped (dev): {e}")
 
 
-from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, chrome, traces
+from dashboard.backend.routes import defaults, progress, runs, generate, batch, export_import, execute, traces
 
 app.include_router(defaults.router)
 app.include_router(progress.router)
@@ -376,7 +369,6 @@ app.include_router(generate.router)
 app.include_router(batch.router)
 app.include_router(export_import.router)
 app.include_router(execute.router)
-app.include_router(chrome.router)
 app.include_router(traces.router)
 
 

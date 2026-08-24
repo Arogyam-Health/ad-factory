@@ -1,15 +1,15 @@
-# Ad Creative System
+# Ad Factory
 
-**Interview prep:** see [`INTERVIEW_README.md`](INTERVIEW_README.md) for full architecture, auth, orgs, agents, admin, and Q&A.
+Dashboard on Render plus a paired local agent. Live copy rules live in `dashboard/backend/copy_system/`. Image-prompt assembly lives in `dashboard/backend/services/generate_ads.py`. Operator guides:
 
-Structured-prompt generator for **Obesity Killer Kit** ad creatives. Produces 9-section image-generation prompts across 5 formats (HERO, BA, TEST, FEAT, UGC) and 3 languages (EN, HI, HINGLISH). The output is text — actual images are rendered downstream in Gemini Web / ChatGPT.
-
-The full system map and pipeline live in [`docs/HANDOVER.md`](docs/HANDOVER.md). Rules live in [`AD_CREATIVE_SYSTEM_PLAYBOOK.md`](AD_CREATIVE_SYSTEM_PLAYBOOK.md).
+- [`docs/STRUCTURED_COPY_SYSTEM.md`](docs/STRUCTURED_COPY_SYSTEM.md)
+- [`docs/OPERATOR_PLATE_GUIDE.md`](docs/OPERATOR_PLATE_GUIDE.md)
+- [`DASHBOARD_EDITABLE_FIELDS.md`](DASHBOARD_EDITABLE_FIELDS.md)
 
 ## Prerequisites
 
 - Python 3.10+
-- Node.js LTS (only required if `opencode` CLI is not already installed — the bootstrap script installs it via npm)
+- Node.js LTS (only required if `opencode` CLI is not already installed)
 
 ## Platform setup guides
 
@@ -19,36 +19,16 @@ The full system map and pipeline live in [`docs/HANDOVER.md`](docs/HANDOVER.md).
 | **Ubuntu local agent** | [`docs/LOCAL_AGENT_UBUNTU.md`](docs/LOCAL_AGENT_UBUNTU.md) |
 | **Windows local agent** | [`docs/LOCAL_AGENT_WINDOWS.md`](docs/LOCAL_AGENT_WINDOWS.md) |
 | **macOS local agent** | [`docs/LOCAL_AGENT_MAC.md`](docs/LOCAL_AGENT_MAC.md) |
-| **Windows + WSL2** full dashboard stack | [`docs/WSL_SETUP.md`](docs/WSL_SETUP.md) |
-| **macOS** full dashboard stack | [`docs/MAC_SETUP.md`](docs/MAC_SETUP.md) |
 
-For a quick start on any Linux machine (or inside WSL/WSL2):
+## Local dashboard (optional)
 
-```bash
-bash scripts/bootstrap_stack.sh
-```
-
-The script:
-1. Creates `.venv/` if missing
-2. Installs pinned deps from `requirements-dashboard.txt`
-3. Installs the `opencode` CLI if not on `PATH`
-4. Starts the dashboard
-
-Then login a provider:
-
-```bash
-opencode providers login
-opencode models
-```
-
-The dashboard runs at `http://127.0.0.1:8787`.
-
-## Manual setup (skip the script)
+Production runs on Render. To run the control plane on your machine:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dashboard.txt
+uvicorn dashboard.backend.control_app:app --host 0.0.0.0 --port 4090
 ```
 
 ## Server password
@@ -75,7 +55,7 @@ See [`requirements-dashboard.txt`](requirements-dashboard.txt). Current pins:
 | playwright | 1.59.0 |
 | selenium | 4.32.0 |
 
-CDP (Chrome DevTools Protocol) is used via Playwright's `connect_over_cdp` and `new_cdp_session` (`scripts/gemini_web_automation.py:536`, `scripts/chatgpt_web_sutomation.py:558`) — no separate CDP library is needed. The dashboard launches a real Chrome instance with a remote-debugging port at `http://127.0.0.1:9222` (`dashboard/backend/app.py:5700`) and the automation scripts attach to it.
+CDP (Chrome DevTools Protocol) is used via Playwright's `connect_over_cdp` and `new_cdp_session` in `local_agent_runtime/gemini_web_automation.py` and `local_agent_runtime/chatgpt_web_sutomation.py`. The local agent attaches to installed Chrome.
 
 ### Browser binary (Playwright + Chrome)
 
@@ -95,30 +75,13 @@ Chrome from <https://google.com/chrome/>.
 The local agent attaches to that installed Chrome over CDP. Do not run
 `playwright install chromium` for the local agent.
 
-## Run
-
-```bash
-# Start the full stack (dashboard + opencode server)
-bash scripts/start_dashboard_stack.sh
-
-# Stop it
-bash scripts/stop_dashboard_stack.sh
-```
-
 ## Assemble prompts
 
+Live runs assemble image prompts through `dashboard/backend/services/generate_ads.py`. Templates are `dashboard/backend/copy_system/prompt_assembler_templates.json`.
+
 ```bash
-# From an LLM-generated copy JSON
-python scripts/generate_ads.py --copy-file path/to/copy_batch.json
-
-# From an xlsx export
-python scripts/assemble_from_xlsx.py --xlsx path/to/on-image-copy.xlsx
-
-# Dry run (validate without writing)
-python scripts/generate_ads.py --copy-file copy.json --dry-run
+python dashboard/backend/services/generate_ads.py --copy-file path/to/copy_batch.json --dry-run
 ```
-
-See `docs/HANDOVER.md` for the full pipeline reference, validation gates, and what-not-to-do list.
 
 ## Gitignored (not in the repo)
 
@@ -201,8 +164,7 @@ Set `DEPLOYMENT_MODE=production` on Render. This enables:
 
 - **Auth middleware** — All `/api/*` routes (except `/api/auth/*`) require a valid session cookie. Returns 401 if missing.
 - **Startup validation** — App refuses to start if critical env vars are missing/default (MONGODB_URI, APP_SECRET_KEY, ENCRYPTION_KEY, GOOGLE OAuth, CORS)
-- **Stateless runtime boundary** — Render has no content disk. Uploaded/generated content uses localhost; the eight dashboard config files use MongoDB.
-- **Chrome routes disabled** — `/api/launch-visible-browser`, `/api/kill-chrome`, `/api/stop-generation` return 400 with "Use local agent"
+- **Stateless runtime boundary** — Render has no content disk. Uploaded/generated content uses localhost; the eight dashboard config files use MongoDB. Image generation is queued to the paired local agent.
 
 ### Content storage boundary
 

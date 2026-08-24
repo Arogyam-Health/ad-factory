@@ -14,12 +14,12 @@ class RevisionPromptTests(unittest.TestCase):
 
         self.build = build_output_revision_prompt
         self.templates = json.loads(
-            (ROOT / "scripts" / "prompt_assembler_templates.json").read_text(
+            (ROOT / "dashboard" / "backend" / "copy_system" / "prompt_assembler_templates.json").read_text(
                 encoding="utf-8"
             )
         )
         self.conversion = (
-            ROOT / "input" / "prompt_916_from_45.txt"
+            ROOT / "dashboard" / "backend" / "defaults" / "conversion_916_prompt.txt"
         ).read_text(encoding="utf-8")
 
     def test_45_revision_keeps_original_prompt_and_editable_safezone(self) -> None:

@@ -6,7 +6,7 @@ What this script does:
   - Reads externally-generated ad copy from a JSON file (no copy generation here).
   - Selects catalog backgrounds randomly from the format pool.
   - Builds seeded background sentence from `background_variant.json`.
-  - Assembles full 9-section prompts per playbook and writes `output/vN/<FORMAT>_<persona>_<lang>.txt`.
+  - Assembles image prompts from copy_system templates and writes `output/vN/<FORMAT>_<persona>_<lang>.txt`.
   - Enforces safe-zone rules by embedding an explicit SAFE-ZONE ENFORCEMENT block.
 
 What this script explicitly does NOT do:
@@ -33,9 +33,9 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 BACKGROUNDS_PATH = ROOT / "background_variant.json"
-COPY_PROMPTS_PATH = ROOT / "dashboard" / "backend" / "copy_prompt_templates.json"
+COPY_PROMPTS_PATH = Path(__file__).resolve().parent.parent / "copy_prompt_templates.json"
 OUTPUT_DIR = ROOT / "output"
 
 SUPPORTED_FORMATS = {"HERO", "BA", "TEST", "FEAT", "UGC"}
@@ -76,7 +76,7 @@ def _load_visual_archetypes() -> dict[str, list[dict[str, Any]]]:
 
 FORMAT_VISUAL_ARCHETYPES = _load_visual_archetypes()
 
-PROMPT_ASSEMBLER_DIR = Path(__file__).resolve().parent
+PROMPT_ASSEMBLER_DIR = Path(__file__).resolve().parent.parent / "copy_system"
 PROMPT_ASSEMBLER_TEMPLATES = json.loads((PROMPT_ASSEMBLER_DIR / "prompt_assembler_templates.json").read_text(encoding="utf-8"))
 
 DEFAULT_PROOF_BAR_TEXT = "70,000+ Users | 3-5 kg loss with 1 Kit | 100% Ayurvedic"

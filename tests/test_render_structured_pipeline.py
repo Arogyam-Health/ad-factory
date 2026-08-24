@@ -1618,7 +1618,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
     def test_local_agent_imports_final_prompts_before_acknowledging_delivery(
         self,
     ) -> None:
-        import scripts.local_agent as local_agent
+        import local_agent_runtime.local_agent as local_agent
         from local_agent_runtime.storage import AgentPaths, AgentState
 
         text = "Final Render-assembled prompt"
@@ -1692,7 +1692,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertIn("/structured-copy", pipeline)
 
     def test_local_agent_no_longer_executes_structured_copy(self) -> None:
-        source = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        source = (ROOT / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
         self.assertNotIn('== "generate_copy"', source)
         self.assertNotIn("StructuredCopyExecutor", source)
 

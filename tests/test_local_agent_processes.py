@@ -25,7 +25,7 @@ class LocalAgentProcessTests(unittest.TestCase):
             process = subprocess.Popen(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "local_agent.py"),
+                    str(ROOT / "local_agent_runtime" / "local_agent.py"),
                     "--component", "artifacts",
                     "--data-dir", str(data_root),
                     "--artifact-port", str(port),

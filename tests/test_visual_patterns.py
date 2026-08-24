@@ -232,7 +232,7 @@ class VisualPatternTests(unittest.TestCase):
         self.assertNotIn("system_prompt_base_rules", templates)
         self.assertNotIn("cta_variants", templates)
 
-        from scripts.generate_ads import FORMAT_VISUAL_ARCHETYPES
+        from dashboard.backend.services.generate_ads import FORMAT_VISUAL_ARCHETYPES
 
         self.assertTrue(FORMAT_VISUAL_ARCHETYPES.get("HERO"))
 

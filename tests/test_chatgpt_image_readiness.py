@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from playwright.sync_api import TimeoutError as PWTimeoutError
 
-from scripts import chatgpt_web_sutomation as automation
+from local_agent_runtime import chatgpt_web_sutomation as automation
 
 
 class _Clock:
@@ -26,7 +26,7 @@ class ChatGPTImageReadinessTests(unittest.TestCase):
         browser_source = (
             root / "local_agent_runtime/structured_browser.py"
         ).read_text(encoding="utf-8")
-        agent_source = (root / "scripts/local_agent.py").read_text(encoding="utf-8")
+        agent_source = (root / "local_agent_runtime/local_agent.py").read_text(encoding="utf-8")
         self.assertNotIn("stdout=subprocess.PIPE", browser_source)
         self.assertNotIn("stderr=subprocess.STDOUT", browser_source)
         self.assertIn(
@@ -180,9 +180,9 @@ class ChatGPTImageReadinessTests(unittest.TestCase):
 
     def test_default_image_wait_is_thirty_minutes(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        chatgpt = (root / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
-        gemini = (root / "scripts" / "gemini_web_automation.py").read_text(encoding="utf-8")
-        agent = (root / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        chatgpt = (root / "local_agent_runtime" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
+        gemini = (root / "local_agent_runtime" / "gemini_web_automation.py").read_text(encoding="utf-8")
+        agent = (root / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
         self.assertIn("default=1800", chatgpt)
         self.assertIn("default=1800", gemini)
         self.assertIn('payload.get("timeout") or 1800', agent)

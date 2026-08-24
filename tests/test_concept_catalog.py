@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from scripts.generate_ads import (
+from dashboard.backend.services.generate_ads import (
     CopyBlock,
     DEFAULT_PROOF_BAR_TEXT,
     default_visual_archetype,
@@ -186,7 +186,7 @@ class ConceptCatalogTests(unittest.TestCase):
             "A quiet table in soft daylight.",
             default_visual_archetype("HERO"),
             templates={
-                **json.loads((ROOT / "scripts" / "prompt_assembler_templates.json").read_text(encoding="utf-8")),
+                **json.loads((ROOT / "dashboard" / "backend" / "copy_system" / "prompt_assembler_templates.json").read_text(encoding="utf-8")),
                 "proof_bar_text": "12,000+ Users | Exact brand lock",
             },
         )

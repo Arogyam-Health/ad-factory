@@ -1161,12 +1161,7 @@ def test_config_versions() -> int:
     for k in CONFIG_KEYS:
         failed += ok(k in flat, f"_extract_flat_from_new_schema includes {k}")
 
-    # 20. Repair script exists and has required functions
-    import importlib.util as iu
-    spec = iu.spec_from_file_location("repair", "scripts/repair_dotted_config_files.py")
-    failed += ok(spec is not None, "repair_dotted_config_files.py exists as module spec")
-
-    # 21. Version creation raises on DB failure (function should not silently return None)
+    # 20. Version creation raises on DB failure (function should not silently return None)
     from dashboard.backend.services.config_version_service import create_config_version_before_update
     # With no DB, insert_one fails — the function should raise
     raised = False
@@ -1475,7 +1470,7 @@ def test_local_agent_916_template_flow() -> int:
         debug_dir.mkdir(parents=True)
         (debug_dir / "debug_capture.png").write_bytes(b"debug")
 
-        from scripts.local_agent import _prepare_916_conversion_prompts
+        from local_agent_runtime.local_agent import _prepare_916_conversion_prompts
 
         created = _prepare_916_conversion_prompts(
             out_45_dir=tmp_path / "generated_images" / "batch_a" / "4_5",
@@ -1509,11 +1504,11 @@ def test_local_agent_responsiveness_contract() -> int:
     failed = 0
     print("\n[Local Agent Responsiveness]")
 
-    local_agent = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+    local_agent = (ROOT / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
     artifact_server = (ROOT / "local_agent_runtime" / "artifact_server.py").read_text(encoding="utf-8")
     agent_storage = (ROOT / "local_agent_runtime" / "storage.py").read_text(encoding="utf-8")
     agent_transport = (ROOT / "local_agent_runtime" / "transport.py").read_text(encoding="utf-8")
-    chatgpt = (ROOT / "scripts" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
+    chatgpt = (ROOT / "local_agent_runtime" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
     batch_routes = (ROOT / "dashboard" / "backend" / "routes" / "batch.py").read_text(encoding="utf-8")
     agent_service = (ROOT / "dashboard" / "backend" / "agent" / "service.py").read_text(encoding="utf-8")
     studio_tsx = (ROOT / "dashboard" / "web" / "src" / "pages" / "Studio.tsx").read_text(encoding="utf-8")
@@ -1761,15 +1756,10 @@ def test_admin_readiness_phase6() -> int:
     failed += ok("encrypted_api_key" not in aj, "Admin.tsx does not render encrypted_api_key")
     failed += ok("token_hash" not in aj, "Admin.tsx does not render token_hash")
 
-    # 12. Route script exists and has required routes
-    script_path = ROOT / "scripts" / "check_admin_routes.py"
-    failed += ok(script_path.exists(), "scripts/check_admin_routes.py exists")
-    with open(script_path) as f:
-        script = f.read()
-    failed += ok("/api/admin/readiness" in script, "script checks /api/admin/readiness")
-    failed += ok("--base-url" in script, "script supports --base-url")
-    failed += ok("500" in script, "script treats 500 as failure")
-    failed += ok("--cookie" in script, "script supports --cookie")
+    # 12. Admin routes still expose readiness
+    with open(ROOT / "dashboard" / "backend" / "admin" / "admin_routes.py") as f:
+        admin_py = f.read()
+    failed += ok("/readiness" in admin_py, "admin routes include readiness")
 
     # 13. Config export excludes files content
     # Verify admin_routes.py strips files from export

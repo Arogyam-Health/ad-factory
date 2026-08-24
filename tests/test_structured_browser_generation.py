@@ -404,8 +404,8 @@ class StructuredBrowserGenerationTests(unittest.TestCase):
         self.assertEqual(result["retry_count"], 1)
 
     def test_automation_scripts_accept_the_same_ordered_json_manifest(self) -> None:
-        from scripts.chatgpt_web_sutomation import parse_upload_manifest as chatgpt_manifest
-        from scripts.gemini_web_automation import parse_upload_manifest as gemini_manifest
+        from local_agent_runtime.chatgpt_web_sutomation import parse_upload_manifest as chatgpt_manifest
+        from local_agent_runtime.gemini_web_automation import parse_upload_manifest as gemini_manifest
 
         first = self.paths.staging / "first.png"
         second = self.paths.staging / "second.png"

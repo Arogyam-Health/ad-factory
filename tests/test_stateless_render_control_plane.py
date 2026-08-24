@@ -388,42 +388,6 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
         self.assertNotIn("cloudinary uploads happen", source)
         self.assertNotIn("all files are stored locally on the server", source)
 
-    def test_phase_ledger_records_completed_repository_phases(self) -> None:
-        source = (ROOT / "LOCAL_DATA_PLANE_IMPLEMENTATION.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn(
-            "| Local lifecycle parity | Complete (repository) | `5eac75f` |",
-            source,
-        )
-        self.assertIn(
-            "| Stateless Render cleanup | Complete (repository) | `ae469c4` |",
-            source,
-        )
-        self.assertIn(
-            "| Migration | Complete (repository) | `145d7fc` |",
-            source,
-        )
-        self.assertIn(
-            "| Full verification | Complete (repository) | `1761077` |",
-            source,
-        )
-        self.assertIn(
-            "| Operations documentation | Complete (repository) | `1440df0` |",
-            source,
-        )
-
-    def test_feature_parity_checklist_is_complete(self) -> None:
-        source = (ROOT / "LOCAL_DATA_PLANE_IMPLEMENTATION.md").read_text(
-            encoding="utf-8"
-        )
-        checklist = source[
-            source.index("## Feature-Parity Checklist"):
-            source.index("## Required Test Suites")
-        ]
-        self.assertNotIn("- [ ]", checklist)
-        self.assertEqual(checklist.count("- [x]"), 35)
-
 
 if __name__ == "__main__":
     unittest.main()

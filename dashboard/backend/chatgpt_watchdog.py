@@ -7,8 +7,8 @@ import time
 import uuid
 from pathlib import Path
 
-from dashboard.backend.pipeline.browser_env import dashboard_subprocess_env, wsl_chrome_cdp_url
-from dashboard.backend.pipeline.paths import GENERATED_IMAGES_ROOT, INPUT_IMAGES_DIR, ROOT, RUNTIME_ROOT
+from dashboard.backend.pipeline.browser_env import dashboard_subprocess_env
+from dashboard.backend.pipeline.paths import GENERATED_IMAGES_ROOT, INPUT_IMAGES_DIR, ROOT, RUNTIME_ROOT, STARTING_PROMPT_PATH
 
 
 def run_chatgpt_generation_watchdog(
@@ -35,9 +35,8 @@ def run_chatgpt_generation_watchdog(
 
     starting_prompt = ""
     if prepend_starting_prompt:
-        starting_prompt_path = ROOT / "input" / "startingprompt.txt"
-        if starting_prompt_path.exists():
-            starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
+        if STARTING_PROMPT_PATH.exists():
+            starting_prompt = STARTING_PROMPT_PATH.read_text(encoding="utf-8").strip()
 
     for prompt_file in prompt_files:
         source = Path(prompt_file)
@@ -69,7 +68,7 @@ def run_chatgpt_generation_watchdog(
 
     cmd = [
         sys.executable,
-        "scripts/chatgpt_web_watchdog.py",
+        "local_agent_runtime/chatgpt_web_watchdog.py",
         "--prompt-dir",
         str(prompt_work_dir),
         "--prompt-glob",
@@ -95,10 +94,7 @@ def run_chatgpt_generation_watchdog(
         cmd.extend(["--starting-prompt-file", ""])
     cmd.extend(["--aspect-ratio", aspect_ratio])
 
-    if Path("/mnt/c").exists():
-        cdp_url = wsl_chrome_cdp_url()
-    else:
-        cdp_url = os.getenv("CHATGPT_CDP_URL", "http://127.0.0.1:9222").strip()
+    cdp_url = os.getenv("CHATGPT_CDP_URL", "http://127.0.0.1:9222").strip()
     if cdp_url:
         cmd.extend(["--cdp-url", cdp_url])
     cdp_url_for_log = cdp_url or "auto-launch"
@@ -113,7 +109,6 @@ def run_chatgpt_generation_watchdog(
         log_file.write(f"[DEBUG] CDP URL: {cdp_url_for_log}\n")
         log_file.write(f"[DEBUG] Command: {' '.join(cmd)}\n")
         log_file.write(f"[DEBUG] Hard process timeout: {hard_timeout}s\n")
-        log_file.write(f"[DEBUG] /mnt/c exists: {Path('/mnt/c').exists()}\n")
         log_file.flush()
         try:
             completed = subprocess.run(

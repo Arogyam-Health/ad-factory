@@ -84,7 +84,7 @@ class LocalhostFrontendPairingTests(unittest.TestCase):
 
     def test_conversion_prompt_is_materialized_only_when_local_image_generation_starts(self) -> None:
         studio = STUDIO.read_text(encoding="utf-8")
-        agent = (ROOT / "scripts" / "local_agent.py").read_text(encoding="utf-8")
+        agent = (ROOT / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
         routes = (
             ROOT / "dashboard" / "backend" / "agent" / "routes.py"
         ).read_text(encoding="utf-8")

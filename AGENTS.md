@@ -11,7 +11,6 @@ Ad Factory — AI ad creative generation platform. Stack: FastAPI + MongoDB + lo
 - Frontend: Export JSON buttons on users/orgs/configs/audit section headers
 - Frontend: Readiness dashboard section (renderReadiness) — summary cards + checks table
 - Frontend: Runbook section (renderRunbook) — inline operational guide
-- Route smoke script `scripts/check_admin_routes.py` — --base-url + --cookie
 - 30 Phase 6 smoke tests (backend + frontend + static analysis)
 - Commits: a7d939e (Phase 5 dashboard), 8b75bcb (fixes), d6cd1b7 (reopen fix), pending (Phase 6)
 
@@ -23,4 +22,4 @@ Kept only as quiet stubs:
 - `GET /api/extension/status` → `{ connected: false, disabled: true }`
 - `WS /api/extension/ws` → close 1008 "Use the paired local agent"
 
-Do not recreate the extension stack. WSL Chrome still uses `scripts/cdp_proxy.py` (9223→9222), which is unrelated.
+Do not recreate the extension stack. Image generation uses the paired local agent.

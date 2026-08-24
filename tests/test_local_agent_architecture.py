@@ -403,8 +403,8 @@ class RunNumberTests(unittest.TestCase):
 
 class ScopedPromptNameTests(unittest.TestCase):
     def test_scoped_prompt_names_remain_parseable_and_unique(self) -> None:
-        from scripts.chatgpt_web_sutomation import discover_prompt_jobs as discover_chatgpt
-        from scripts.gemini_web_automation import discover_prompt_jobs as discover_gemini
+        from local_agent_runtime.chatgpt_web_sutomation import discover_prompt_jobs as discover_chatgpt
+        from local_agent_runtime.gemini_web_automation import discover_prompt_jobs as discover_gemini
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -428,7 +428,7 @@ class ScopedPromptNameTests(unittest.TestCase):
 
 class AgentAuthTests(unittest.TestCase):
     def test_saved_agent_credentials_are_scoped_by_dashboard_account(self) -> None:
-        import scripts.local_agent as local_agent
+        import local_agent_runtime.local_agent as local_agent
         from local_agent_runtime.storage import AgentPaths
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -491,7 +491,7 @@ class AgentAuthTests(unittest.TestCase):
         self.assertFalse(is_agent_runtime_path("/api/agents/jobs/job-1/cancel"))
 
     def test_connected_websocket_still_sends_http_heartbeat(self) -> None:
-        source = (Path(__file__).resolve().parents[1] / "scripts" / "local_agent.py").read_text(
+        source = (Path(__file__).resolve().parents[1] / "local_agent_runtime" / "local_agent.py").read_text(
             encoding="utf-8"
         )
         self.assertIn(

@@ -97,7 +97,7 @@ function dashboardApiProxy(): Plugin {
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({
               detail:
-                "Dashboard API is not running. Start scripts/start_dashboard_stack.sh (port 4090) or scripts/run_dashboard.sh (port 8787).",
+                "Dashboard API is not running. Start uvicorn dashboard.backend.control_app:app --host 0.0.0.0 --port 4090",
             }));
           }
         }

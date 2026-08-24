@@ -22,12 +22,12 @@ class NativeWindowsAgentTests(unittest.TestCase):
             self.assertEqual(image_upload_suffix("application/octet-stream", Path("shot.png")), ".png")
 
     def test_native_windows_uploads_use_original_paths(self) -> None:
-        from scripts.chatgpt_web_sutomation import copy_to_windows_temp
+        from local_agent_runtime.chatgpt_web_sutomation import copy_to_windows_temp
 
         with TemporaryDirectory() as tmp:
             image = Path(tmp) / "product.webp"
             image.write_bytes(b"webp")
-            with patch("scripts.chatgpt_web_sutomation.sys.platform", "win32"):
+            with patch("local_agent_runtime.chatgpt_web_sutomation.sys.platform", "win32"):
                 paths = copy_to_windows_temp([image])
             self.assertEqual(paths, [str(image.resolve())])
 

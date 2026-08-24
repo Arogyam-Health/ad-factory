@@ -156,7 +156,7 @@ def _run_cancellable_image_job(
     else:
         kwargs["start_new_session"] = True
     proc = subprocess.Popen(
-        [sys.executable, "scripts/reference_image_job.py", "--config", str(config_path), "--result", str(result_path)],
+        [sys.executable, "local_agent_runtime/reference_image_job.py", "--config", str(config_path), "--result", str(result_path)],
         **kwargs,
     )
     cancel_event = cancel_event_for_run(run_id)

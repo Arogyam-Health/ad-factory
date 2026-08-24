@@ -74,7 +74,7 @@ def _browser_allowed_origins(api_base: str) -> tuple[str, ...]:
         if extra not in origins:
             origins.append(extra)
     return tuple(origins)
-SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = Path(__file__).resolve().parent.parent
 AGENT_PATHS = AgentPaths(resolve_data_root())
 AGENT_STAGING_ROOT = AGENT_PATHS.staging
@@ -256,7 +256,7 @@ def sync_pairing_approvals(*, fetch_remote: bool) -> None:
 
 def _prompt_display_stem(prompt: dict[str, Any], prompt_id: str) -> str:
     """Resolve the human-readable stem shared by a prompt and its generated images."""
-    from scripts.generate_ads import prompt_filename
+    from dashboard.backend.services.generate_ads import prompt_filename
 
     stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(prompt.get("display_stem") or "")).strip("_")
     if stem:

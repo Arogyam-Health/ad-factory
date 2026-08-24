@@ -31,7 +31,7 @@ request materializes the key to the paired agent immediately before local
 execution.
 
 The default data root is `~/ad-factory-agent`. Override it with
-`AGENT_DATA_DIR` or `scripts/local_agent.py --data-dir`. Treat the entire root
+`AGENT_DATA_DIR` or `scripts/start_local_agent.py --data-dir`. Treat the entire root
 as sensitive user data.
 
 ## Production topology
@@ -108,7 +108,7 @@ Do not run `playwright install chromium`. The agent uses installed Google Chrome
 That is equivalent to setting `AD_FACTORY_SESSION` and running:
 
 ```bash
-python scripts/local_agent.py \
+python scripts/start_local_agent.py \
   --api-base https://YOUR-SERVICE.onrender.com \
   --data-dir "$HOME/ad-factory-agent" \
   --launch-browser \
@@ -143,9 +143,9 @@ Inspect local storage, reclaim unreferenced CAS objects, or wipe run content
 while keeping device config and the product-image library:
 
 ```bash
-python scripts/local_agent.py storage gc
-python scripts/local_agent.py storage gc --apply
-python scripts/local_agent.py reset-local-data --confirm
+python local_agent_runtime/local_agent.py storage gc
+python local_agent_runtime/local_agent.py storage gc --apply
+python local_agent_runtime/local_agent.py reset-local-data --confirm
 ```
 
 `storage gc` reports unreferenced objects first. Re-run with `--apply` to
@@ -271,54 +271,11 @@ and never proxy the ZIP through Render.
 
 ## Migrate legacy content
 
-The migration is dry-run-first, idempotent, owner-scoped, checkpointed, and
-hash-verified. Start the local agent and run inspection without `--apply`:
-
-```bash
-python scripts/migrate_content_to_local.py \
-  --owner-key 'user:OWNER_ID' \
-  --data-dir "$HOME/ad-factory-agent"
-```
-
-Add explicit legacy sources when applicable:
-
-```bash
-python scripts/migrate_content_to_local.py \
-  --owner-key 'user:OWNER_ID' \
-  --local-source "artifacts=$HOME/legacy-artifacts" \
-  --render-owner-root "user:OWNER_ID=/path/to/owner-scoped-export" \
-  --render-unassigned-root "/path/to/global-legacy-content"
-```
-
-Review only the redacted counts and statuses. Ownerless Render files are
-reported as unassigned and are never imported automatically.
-
-For apply, obtain a short-lived paired local session with `documents:write`
-scope. Read it without echoing and keep it out of command history:
-
-```bash
-read -rsp "Local migration session: " LOCAL_AGENT_MIGRATION_TOKEN
-echo
-export LOCAL_AGENT_MIGRATION_TOKEN
-python scripts/migrate_content_to_local.py \
-  --apply \
-  --owner-key 'user:OWNER_ID' \
-  --data-dir "$HOME/ad-factory-agent"
-unset LOCAL_AGENT_MIGRATION_TOKEN
-```
-
-Apply order is backup, local import, hash verification, metadata-reference
-write, then removal of the verified legacy body. A mismatch or malformed body
-is preserved. Re-running uses stable operation IDs and the checkpoint.
-
-Use `--skip-mongo` when migrating only explicit filesystem sources. The retired
-owner-schema and seed scripts must not be used for content migration.
-The default agent endpoint is `http://127.0.0.1:8765`; override it with
-`--agent-url` or `LOCAL_AGENT_URL`.
-
-Mongo inspection covers legacy prompts, user configs, config versions, agent
-jobs, LLM traces, JSON blobs, and provider configs. Encrypted originals are
-written under `<data-root>/migration/backups/` before verified removal.
+One-time Mongo or filesystem body moves use
+`dashboard.backend.agent.content_migration.MongoContentMigrator` plus the local
+agent backup/restore flow above. There is no operator CLI for this. Encrypted
+originals stay under `<data-root>/migration/backups/` until verification
+succeeds. Dashboard configs are not removed by content migration.
 
 ## Organization configuration replication
 

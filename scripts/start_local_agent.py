@@ -2,7 +2,7 @@
 """Ask for the dashboard session cookie, then start the local agent with Chrome.
 
 Replaces the shell flow of exporting AD_FACTORY_SESSION and calling
-scripts/local_agent.py. The cookie is read hidden and passed only through
+local_agent_runtime/local_agent.py. The cookie is read hidden and passed only through
 the child process environment, never as a command-line argument.
 """
 
@@ -59,7 +59,7 @@ def agent_command(
 ) -> list[str]:
     return [
         python,
-        str(root / "scripts" / "local_agent.py"),
+        str(root / "local_agent_runtime" / "local_agent.py"),
         "--api-base", api_base,
         "--data-dir", data_dir,
         "--launch-browser",

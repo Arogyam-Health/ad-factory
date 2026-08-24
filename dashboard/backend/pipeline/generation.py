@@ -149,12 +149,6 @@ from dashboard.backend.pipeline.input_assets import (
 from dashboard.backend.pipeline.browser_env import (
     dashboard_subprocess_env,
     debugger_endpoint_reachable,
-    detect_wsl_user,
-    detect_wsl_windows_host_ip,
-    extension_browser_required_for_chatgpt,
-    render_chatgpt_uses_local_agent,
-    start_extension_cdp_proxy_for_user,
-    wsl_chrome_cdp_url,
 )
 from dashboard.backend.pipeline.text_scrub import (
     PROOF_NOTE_MARKERS,
@@ -405,7 +399,7 @@ def gemini_debugger_args() -> list[str]:
 def resolve_gemini_debugger_address() -> str:
     configured = str(os.getenv("GEMINI_DEBUGGER_ADDRESS") or "").strip()
     candidates = [configured] if configured else []
-    candidates.extend(["127.0.0.1:9222", "localhost:9222", "127.0.0.1:9223", "localhost:9223"])
+    candidates.extend(["127.0.0.1:9222", "localhost:9222"])
     for candidate in candidates:
         if candidate and debugger_endpoint_reachable(candidate):
             return candidate
@@ -469,7 +463,7 @@ def run_gemini_generation(
 
     cmd = [
         sys.executable,
-        "scripts/gemini_web_automation.py",
+        "local_agent_runtime/gemini_web_automation.py",
         "--prompt-dir",
         str(prompt_work_dir),
         "--prompt-glob",
@@ -552,7 +546,7 @@ def run_chatgpt_generation(
 
     cmd = [
         sys.executable,
-        "scripts/chatgpt_web_sutomation.py",
+        "local_agent_runtime/chatgpt_web_sutomation.py",
         "--prompt-dir",
         str(prompt_work_dir),
         "--prompt-glob",
@@ -580,8 +574,6 @@ def run_chatgpt_generation(
         cmd.extend(["--cdp-url", cdp_url])
         if extension_cdp:
             cmd.append("--extension-cdp")
-    elif Path("/mnt/c").exists():
-        cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
 
     env = dashboard_subprocess_env()
 
@@ -1011,7 +1003,7 @@ def rerender_prompts_for_run(run_dir: Path, batch: str, copy_file: Path, languag
     result = run_cmd(
         [
             "python3",
-            "scripts/generate_ads.py",
+            "dashboard/backend/services/generate_ads.py",
             "--copy-file",
             str(copy_file),
             "--batch",
@@ -1054,7 +1046,7 @@ def generate_916_for_run(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
     result = run_cmd(
         [
             "python3",
-            "scripts/generate_ads.py",
+            "dashboard/backend/services/generate_ads.py",
             "--copy-file",
             str(copy_916_path),
             "--batch",
@@ -1129,7 +1121,7 @@ def api_run_generate_916_selected(run_id: str, payload: dict[str, Any] = Body(..
     result = run_cmd(
         [
             "python3",
-            "scripts/generate_ads.py",
+            "dashboard/backend/services/generate_ads.py",
             "--copy-file",
             str(copy_916_path),
             "--batch",
@@ -1215,8 +1207,6 @@ def api_run_generate_images_45(
     payload: dict[str, Any] = Body(...),
     user_id: str = "",
 ) -> dict[str, Any]:
-    from dashboard.backend.pipeline.images import collect_run_result
-    from dashboard.backend.pipeline.runs_db import collect_backfill_result, load_manifest_for_run, merge_manifest
     prompt_ids = payload.get("prompt_ids")
     if not isinstance(prompt_ids, list) or not prompt_ids:
         raise HTTPException(status_code=400, detail="prompt_ids must be a non-empty array")
@@ -1238,68 +1228,11 @@ def api_run_generate_images_45(
         },
     )
 
-    run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
-    batch = str(manifest.get("batch") or "").strip()
-    if not batch:
-        raise HTTPException(status_code=400, detail="Run has no batch folder")
-
-    prompt_files = payload.get("prompt_files")
-    if not isinstance(prompt_files, list) or not prompt_files:
-        raise HTTPException(status_code=400, detail="prompt_files must be a non-empty array")
-
-    selected_45 = validate_selected_45_prompts(batch, prompt_files)
-    if not selected_45:
-        raise HTTPException(status_code=400, detail="No valid 4:5 prompt files selected")
-
-    headless = bool(payload.get("headless", False))
-    engine = str(payload.get("engine") or "gemini").strip().lower()
-    try:
-        if engine == "chatgpt":
-            result = run_chatgpt_generation(
-                batch=batch,
-                prompt_files=selected_45,
-                aspect_ratio="4:5",
-                image_sources_file=None,
-                headless=headless,
-                run_dir=run_dir,
-            )
-        else:
-            result = run_gemini_generation(
-                batch=batch,
-                prompt_files=selected_45,
-                aspect_ratio="4:5",
-                image_sources_file=None,
-                headless=headless,
-                run_dir=run_dir,
-            )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if result.returncode != 0:
-        error_text = result.stderr or result.stdout
-        engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
-        log_path = RUNTIME_ROOT / "generation_logs" / f"gen_{batch}_4_5{'_chatgpt' if engine == 'chatgpt' else ''}.log"
-        if run_dir is not None:
-            (run_dir / "logs" / f"image_generation_45_error{'_chatgpt' if engine == 'chatgpt' else ''}.txt").write_text(error_text, encoding="utf-8")
-        short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-6:])
-        raise HTTPException(status_code=500, detail=f"{engine_label} image generation failed (4:5). Log: {log_path}\n{short_error}")
-
-    if not has_storage_manifest or run_dir is None:
-        refreshed = collect_backfill_result(run_id, batch)
-        refreshed["generated_images_for_prompts_45"] = selected_45
-        return refreshed
-
-    refreshed = collect_run_result(run_dir, batch, True)
-    refreshed["generated_images_for_prompts_45"] = selected_45
-    merged = merge_manifest(run_dir, manifest, refreshed)
-    return merged
-
 def api_run_generate_images_916_from_45(
     run_id: str,
     payload: dict[str, Any] = Body(...),
     user_id: str = "",
 ) -> dict[str, Any]:
-    from dashboard.backend.pipeline.images import collect_45_reference_jobs_for_batch, collect_run_result
-    from dashboard.backend.pipeline.runs_db import collect_backfill_result, load_manifest_for_run, merge_manifest
     prompt_ids = payload.get("prompt_ids")
     if not isinstance(prompt_ids, list) or not prompt_ids:
         raise HTTPException(status_code=400, detail="prompt_ids must be a non-empty array")
@@ -1321,53 +1254,7 @@ def api_run_generate_images_916_from_45(
         },
     )
 
-    run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id)
-    batch = str(manifest.get("batch") or "").strip()
-    if not batch:
-        raise HTTPException(status_code=400, detail="Run has no batch folder")
-
-    prompt_files = payload.get("prompt_files")
-    if not isinstance(prompt_files, list) or not prompt_files:
-        raise HTTPException(status_code=400, detail="prompt_files must be a non-empty array")
-
-    selected_45 = validate_selected_45_prompts(batch, prompt_files)
-    if not selected_45:
-        raise HTTPException(status_code=400, detail="No valid 4:5 prompt files for 9:16 generation")
-
-    selected_keys = extract_selected_ad_keys_from_45_prompts(selected_45)
-    all_jobs = collect_45_reference_jobs_for_batch(batch)
-    selected_jobs = [
-        job
-        for job in all_jobs
-        if (job["format"], int(job["persona_number"])) in selected_keys or (job["format"], None) in selected_keys
-    ]
-    if not selected_jobs:
-        raise HTTPException(status_code=400, detail="No usable 4:5 reference images matched selected prompts")
-
-    headless = bool(payload.get("headless", False))
-    engine = str(payload.get("engine") or "gemini").strip().lower()
-    if engine not in {"gemini", "chatgpt"}:
-        raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
-    result = run_916_conversion_from_45_for_batch(batch=batch, headless=headless, run_dir=run_dir, engine=engine, jobs=selected_jobs)
-
-    if not has_storage_manifest or run_dir is None:
-        refreshed = collect_backfill_result(run_id, batch)
-        refreshed["generated_images_for_prompts_916"] = result.get("prompt_files_used", [])
-        refreshed["generated_variant"] = "9:16"
-        refreshed["conversion_failures"] = result.get("failures", [])
-        return refreshed
-
-    refreshed = collect_run_result(run_dir, batch, True)
-    refreshed["generated_images_for_prompts_916"] = result.get("prompt_files_used", [])
-    refreshed["generated_variant"] = "9:16"
-    refreshed["conversion_failures"] = result.get("failures", [])
-    merged = merge_manifest(run_dir, manifest, refreshed)
-    return merged
-
 def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
-    from dashboard.backend.pipeline.personas import _resolve_starting_prompt_path
-    from dashboard.backend.pipeline.runs_db import load_manifest_for_run
-    from dashboard.backend.pipeline.subprocesses import browser_automation_timeout_seconds, run_cmd
     run_ids = payload.get("run_ids")
     if not isinstance(run_ids, list) or not run_ids:
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
@@ -1387,159 +1274,13 @@ def api_batch_generate_images_45(payload: dict[str, Any] = Body(...), user_id: s
             ),
         },
     )
-
-    all_prompt_files: list[str] = []
-    prompt_sources: list[dict[str, str]] = []
-    run_info: list[dict[str, Any]] = []
-
-    primary_run_dir: Path | None = None
-    for run_id in run_ids:
-        try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
-        except HTTPException:
-            continue
-        batch = str(manifest.get("batch") or "").strip()
-        if not batch:
-            continue
-        prompt_files_all = manifest.get("prompt_files") or []
-        prompt_files_45 = [path for path in prompt_files_all if "/45/" in str(path)]
-        if not prompt_files_45:
-            continue
-        all_prompt_files.extend(prompt_files_45)
-        prompt_sources.extend({"run_id": run_id, "path": str(path)} for path in prompt_files_45)
-        if has_storage_manifest and run_dir is not None and primary_run_dir is None:
-            primary_run_dir = run_dir
-        run_info.append({
-            "run_id": run_id,
-            "batch": batch,
-            "prompt_count": len(prompt_files_45),
-        })
-
-    if not all_prompt_files:
-        raise HTTPException(status_code=400, detail="No 4:5 prompt files found for any run")
-
-    batch_names = sorted({r["batch"] for r in run_info})
-    batch_name = batch_names[0] if len(batch_names) == 1 else "_".join(batch_names)
-    work_id = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
-    engine = str(payload.get("engine") or "gemini").strip().lower()
-    engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
-    prompt_work_dir = RUNTIME_ROOT / f"{engine.lower()}_selected_prompts" / f"{batch_name}_{work_id}"
-    prompt_work_dir.mkdir(parents=True, exist_ok=True)
-    starting_prompt = ""
-    starting_prompt_path = _resolve_starting_prompt_path()
-    if starting_prompt_path.exists():
-        starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
-    prompt_files_created: list[str] = []
-    prompt_items: list[dict[str, Any]] = []
-    for item in prompt_sources:
-        dest = _write_generation_prompt(
-            user_id=user_id,
-            run_id=item["run_id"],
-            rel_path=item["path"],
-            prompt_work_dir=prompt_work_dir,
-            starting_prompt=starting_prompt,
-        )
-        if dest:
-            prompt_files_created.append(dest)
-            batch = next((entry["batch"] for entry in run_info if entry["run_id"] == item["run_id"]), "")
-            prompt_items.append(_local_prompt_item(item["run_id"], item["path"], dest, batch))
-    if not prompt_files_created:
-        raise HTTPException(status_code=400, detail="No prompt content was available for the selected run(s). Try refreshing runs after deployment, or regenerate copy first.")
-    headless = bool(payload.get("headless", False))
-    visible = bool(payload.get("visible", False))
-    out_dir = GENERATED_IMAGES_ROOT / batch_name / "4_5"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    if engine in {"chatgpt", "gemini"} and render_chatgpt_uses_local_agent():
-        return _queue_local_chatgpt_job(user_id, {
-            "mode": "45",
-            "engine": engine,
-            "run_ids": run_ids,
-            "client_operation_id": str(
-                payload.get("client_operation_id")
-                or payload.get("operation_id")
-                or f"generate45:{uuid.uuid4().hex}"
-            ),
-        })
-
-    cdp_proxy_url = ""
-    if engine == "chatgpt" and not render_chatgpt_uses_local_agent() and extension_browser_required_for_chatgpt(visible):
-        cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
-
-    if engine == "chatgpt":
-        cmd = [
-            sys.executable,
-            "scripts/chatgpt_web_sutomation.py",
-            "--prompt-dir",
-            str(prompt_work_dir),
-            "--prompt-glob",
-            "*.txt",
-            "--out-dir",
-            str(out_dir),
-            "--timeout",
-            str(int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420")),
-            "--download-timeout",
-            str(int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90")),
-            "--manual-login-timeout",
-            str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
-            "--upload-dir",
-            str(INPUT_IMAGES_DIR),
-            "--aspect-ratio", "4:5",
-        ]
-        if cdp_proxy_url:
-            cmd.extend(["--cdp-url", cdp_proxy_url])
-            cmd.append("--extension-cdp")
-        elif Path("/mnt/c").exists():
-            cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
-    else:
-        cmd = [
-            sys.executable,
-            "scripts/gemini_web_automation.py",
-            "--prompt-dir",
-            str(prompt_work_dir),
-            "--prompt-glob",
-            "*.txt",
-            "--out-dir",
-            str(out_dir),
-            "--timeout",
-            str(int(os.getenv("GEMINI_GENERATION_TIMEOUT_SECONDS") or "420")),
-            "--manual-login-timeout",
-            str(int(os.getenv("GEMINI_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
-            "--upload-dir",
-            str(INPUT_IMAGES_DIR),
-        ]
-    if headless:
-        cmd.append("--headless")
-
-    result = run_cmd(
-        cmd,
-        cwd=ROOT,
-        timeout_seconds=browser_automation_timeout_seconds(len(prompt_files_created), engine),
-    )
-    if result.returncode != 0:
-        error_text = result.stderr or result.stdout
-        short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-30:])
-        raise HTTPException(status_code=500, detail=f"Batch 4:5 generation failed ({engine_label}):\n{short_error}")
-
-    return {
-        "status": "completed",
-        "batch_key": batch_name,
-        "total_prompts": len(prompt_files_created),
-        "run_count": len(run_ids),
-    }
 
 def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
     """First generate 4:5 images, then generate 9:16 from them."""
-    from dashboard.backend.pipeline.images import collect_run_result
-    from dashboard.backend.pipeline.personas import _resolve_starting_prompt_path
-    from dashboard.backend.pipeline.runs_db import load_manifest_for_run, merge_manifest
-    from dashboard.backend.pipeline.subprocesses import browser_automation_timeout_seconds, run_cmd
     run_ids = payload.get("run_ids")
     if not isinstance(run_ids, list) or not run_ids:
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
 
-    headless = bool(payload.get("headless", False))
-    visible = bool(payload.get("visible", False))
     engine = str(payload.get("engine") or "gemini").strip().lower()
     if engine not in {"gemini", "chatgpt"}:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
@@ -1556,179 +1297,6 @@ def api_batch_generate_images_both(payload: dict[str, Any] = Body(...), user_id:
             ),
         },
     )
-    engine_label = "ChatGPT" if engine == "chatgpt" else "Gemini"
-
-    cdp_proxy_url = ""
-    if engine == "chatgpt" and not render_chatgpt_uses_local_agent() and extension_browser_required_for_chatgpt(visible):
-        cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
-
-    # ---- Step 1: Generate 4:5 images ----
-    all_prompt_files: list[str] = []
-    prompt_sources: list[dict[str, str]] = []
-    run_info: list[dict[str, Any]] = []
-    primary_run_dir: Path | None = None
-    for run_id in run_ids:
-        try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
-        except HTTPException:
-            continue
-        batch = str(manifest.get("batch") or "").strip()
-        if not batch:
-            continue
-        prompt_files_all = manifest.get("prompt_files") or []
-        prompt_files_45 = [path for path in prompt_files_all if "/45/" in str(path)]
-        if not prompt_files_45:
-            continue
-        all_prompt_files.extend(prompt_files_45)
-        prompt_sources.extend({"run_id": run_id, "path": str(path)} for path in prompt_files_45)
-        if has_storage_manifest and run_dir is not None and primary_run_dir is None:
-            primary_run_dir = run_dir
-        run_info.append({"run_id": run_id, "batch": batch, "prompt_count": len(prompt_files_45)})
-
-    if not all_prompt_files:
-        raise HTTPException(status_code=400, detail="No 4:5 prompt files found for any run")
-
-    batch_names = sorted({r["batch"] for r in run_info})
-    batch_name = batch_names[0] if len(batch_names) == 1 else "_".join(batch_names)
-    work_id = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
-    prompt_work_dir = RUNTIME_ROOT / f"{engine.lower()}_selected_prompts" / f"{batch_name}_{work_id}"
-    prompt_work_dir.mkdir(parents=True, exist_ok=True)
-    starting_prompt = ""
-    starting_prompt_path = _resolve_starting_prompt_path()
-    if starting_prompt_path.exists():
-        starting_prompt = starting_prompt_path.read_text(encoding="utf-8").strip()
-    prompt_files_created: list[str] = []
-    prompt_items: list[dict[str, Any]] = []
-    for item in prompt_sources:
-        dest = _write_generation_prompt(
-            user_id=user_id,
-            run_id=item["run_id"],
-            rel_path=item["path"],
-            prompt_work_dir=prompt_work_dir,
-            starting_prompt=starting_prompt,
-        )
-        if dest:
-            prompt_files_created.append(dest)
-            batch = next((entry["batch"] for entry in run_info if entry["run_id"] == item["run_id"]), "")
-            prompt_items.append(_local_prompt_item(item["run_id"], item["path"], dest, batch))
-    if not prompt_files_created:
-        raise HTTPException(status_code=400, detail="No prompt content was available for the selected run(s). Try refreshing runs after deployment, or regenerate copy first.")
-
-    out_dir_45 = GENERATED_IMAGES_ROOT / batch_name / "4_5"
-    out_dir_45.mkdir(parents=True, exist_ok=True)
-
-    if engine in {"chatgpt", "gemini"} and render_chatgpt_uses_local_agent():
-        org_id = str(payload.get("org_id") or "").strip() or None
-        return _queue_local_chatgpt_job(user_id, {
-            "mode": "both",
-            "engine": engine,
-            "run_ids": run_ids,
-            "client_operation_id": str(
-                payload.get("client_operation_id")
-                or payload.get("operation_id")
-                or f"generateboth:{uuid.uuid4().hex}"
-            ),
-        })
-
-    if engine == "chatgpt":
-        cmd = [
-            sys.executable, "scripts/chatgpt_web_sutomation.py",
-            "--prompt-dir", str(prompt_work_dir), "--prompt-glob", "*.txt",
-            "--out-dir", str(out_dir_45),
-            "--timeout", str(int(os.getenv("CHATGPT_GENERATION_TIMEOUT_SECONDS") or "420")),
-            "--download-timeout", str(int(os.getenv("CHATGPT_DOWNLOAD_TIMEOUT_SECONDS") or "90")),
-            "--manual-login-timeout", str(int(os.getenv("CHATGPT_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
-            "--upload-dir", str(INPUT_IMAGES_DIR),
-            "--aspect-ratio", "4:5",
-        ]
-        if cdp_proxy_url:
-            cmd.extend(["--cdp-url", cdp_proxy_url])
-            cmd.append("--extension-cdp")
-        elif Path("/mnt/c").exists():
-            cmd.extend(["--cdp-url", wsl_chrome_cdp_url()])
-    else:
-        cmd = [
-            sys.executable, "scripts/gemini_web_automation.py",
-            "--prompt-dir", str(prompt_work_dir), "--prompt-glob", "*.txt",
-            "--out-dir", str(out_dir_45),
-            "--timeout", str(int(os.getenv("GEMINI_GENERATION_TIMEOUT_SECONDS") or "420")),
-            "--manual-login-timeout", str(int(os.getenv("GEMINI_MANUAL_LOGIN_TIMEOUT_SECONDS") or "180")),
-            "--upload-dir", str(INPUT_IMAGES_DIR),
-        ]
-    if headless:
-        cmd.append("--headless")
-
-    result = run_cmd(
-        cmd,
-        cwd=ROOT,
-        timeout_seconds=browser_automation_timeout_seconds(len(prompt_files_created), engine),
-    )
-    if result.returncode != 0:
-        error_text = result.stderr or result.stdout
-        short_error = "\n".join([line for line in error_text.splitlines() if line.strip()][-30:])
-        raise HTTPException(status_code=500, detail=f"4:5 generation failed ({engine_label}):\n{short_error}")
-
-    # ---- Step 2: Generate 9:16 from 4:5 images ----
-    batch_errors: list[str] = []
-    total_completed = 0
-    total_attempted = 0
-    processed_batches: list[str] = []
-    batch_to_run_dir: dict[str, Path | None] = {}
-    run_id_by_batch: dict[str, str] = {}
-    for run_id in run_ids:
-        try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
-        except HTTPException:
-            continue
-        batch = str(manifest.get("batch") or "").strip()
-        if not batch:
-            continue
-        if has_storage_manifest and run_dir is not None:
-            batch_to_run_dir[batch] = run_dir
-        elif batch not in batch_to_run_dir:
-            batch_to_run_dir[batch] = None
-        run_id_by_batch[batch] = str(run_id)
-
-    for batch, run_dir in sorted(batch_to_run_dir.items()):
-        try:
-            result = run_916_conversion_from_45_for_batch(
-                batch=batch,
-                headless=headless,
-                run_dir=run_dir,
-                engine=engine,
-                cdp_url=cdp_proxy_url,
-                extension_cdp=bool(cdp_proxy_url),
-            )
-        except HTTPException as exc:
-            batch_errors.append(f"{batch}: {exc.detail}")
-            continue
-        processed_batches.append(batch)
-        total_attempted += int(result.get("attempted") or 0)
-        total_completed += int(result.get("completed") or 0)
-        if run_dir is not None:
-            manifest_path = run_dir / "manifest.json"
-            if manifest_path.exists():
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                refreshed = collect_run_result(run_dir, batch, True)
-                refreshed["generated_variant"] = "9:16"
-                refreshed["generated_images_for_prompts_916"] = result.get("prompt_files_used", [])
-                merge_manifest(run_dir, manifest, refreshed)
-
-    if total_completed == 0:
-        detail = "4:5 images generated but 9:16 conversion failed"
-        if batch_errors:
-            detail += ": " + " | ".join(batch_errors[:3])
-        raise HTTPException(status_code=400, detail=detail)
-
-    return {
-        "status": "completed",
-        "batch_key": ",".join(processed_batches),
-        "message": f"4:5 + 9:16 images generated for {len(processed_batches)} batch(es)",
-        "total_45_prompts": len(all_prompt_files),
-        "total_916_completed": total_completed,
-        "run_count": len(run_ids),
-        "errors": batch_errors,
-    }
 
 def _resolve_916_generation_for_run(run_dir: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
     """For a single run, build the list of {prompt_96, image_sources} entries for 9:16 generation.
@@ -1961,14 +1529,10 @@ def run_916_conversion_from_45_for_batch(
     }
 
 def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: str = "") -> dict[str, Any]:
-    from dashboard.backend.pipeline.images import collect_run_result
-    from dashboard.backend.pipeline.runs_db import load_manifest_for_run, merge_manifest
     run_ids = payload.get("run_ids")
     if not isinstance(run_ids, list) or not run_ids:
         raise HTTPException(status_code=400, detail="run_ids must be a non-empty array")
 
-    headless = bool(payload.get("headless", False))
-    visible = bool(payload.get("visible", False))
     engine = str(payload.get("engine") or "gemini").strip().lower()
     if engine not in {"gemini", "chatgpt"}:
         raise HTTPException(status_code=400, detail="engine must be gemini or chatgpt")
@@ -1986,90 +1550,6 @@ def api_batch_generate_images_916(payload: dict[str, Any] = Body(...), user_id: 
         },
     )
 
-    cdp_proxy_url = ""
-    if engine == "chatgpt" and not render_chatgpt_uses_local_agent() and extension_browser_required_for_chatgpt(visible):
-        cdp_proxy_url = start_extension_cdp_proxy_for_user(user_id, visible=visible)
-
-    batch_to_run_dir: dict[str, Path | None] = {}
-    run_id_by_batch: dict[str, str] = {}
-    for run_id in run_ids:
-        try:
-            run_dir, manifest, has_storage_manifest = load_manifest_for_run(run_id, user_id=user_id)
-        except HTTPException:
-            continue
-        batch = str(manifest.get("batch") or "").strip()
-        if not batch:
-            continue
-        if has_storage_manifest and run_dir is not None:
-            batch_to_run_dir[batch] = run_dir
-        elif batch not in batch_to_run_dir:
-            batch_to_run_dir[batch] = None
-        run_id_by_batch[batch] = str(run_id)
-
-    if not batch_to_run_dir:
-        raise HTTPException(status_code=400, detail="No valid batches found for selected runs")
-
-    if engine in {"chatgpt", "gemini"} and render_chatgpt_uses_local_agent():
-        batch_names = sorted(batch_to_run_dir)
-        org_id = str(payload.get("org_id") or "").strip() or None
-        prompts_916, prompt_items = _bundle_916_prompt_files_for_batches(batch_names, run_id_by_batch)
-        return _queue_local_chatgpt_job(user_id, {
-            "mode": "916",
-            "engine": engine,
-            "run_ids": run_ids,
-            "client_operation_id": str(
-                payload.get("client_operation_id")
-                or payload.get("operation_id")
-                or f"generate916:{uuid.uuid4().hex}"
-            ),
-        })
-
-    total_attempted = 0
-    total_completed = 0
-    processed_batches: list[str] = []
-    batch_errors: list[str] = []
-
-    for batch, run_dir in sorted(batch_to_run_dir.items()):
-        try:
-            result = run_916_conversion_from_45_for_batch(
-                batch=batch,
-                headless=headless,
-                run_dir=run_dir,
-                engine=engine,
-                cdp_url=cdp_proxy_url,
-                extension_cdp=bool(cdp_proxy_url),
-            )
-        except HTTPException as exc:
-            batch_errors.append(f"{batch}: {exc.detail}")
-            continue
-
-        processed_batches.append(batch)
-        total_attempted += int(result.get("attempted") or 0)
-        total_completed += int(result.get("completed") or 0)
-
-        if run_dir is not None:
-            manifest_path = run_dir / "manifest.json"
-            if manifest_path.exists():
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                refreshed = collect_run_result(run_dir, batch, True)
-                refreshed["generated_variant"] = "9:16"
-                refreshed["generated_images_for_prompts_916"] = result.get("prompt_files_used", [])
-                merge_manifest(run_dir, manifest, refreshed)
-
-    if total_completed == 0:
-        detail = "No 9:16 conversions succeeded"
-        if batch_errors:
-            detail += ": " + " | ".join(batch_errors[:3])
-        raise HTTPException(status_code=400, detail=detail)
-
-    return {
-        "status": "completed",
-        "batch_key": ",".join(processed_batches),
-        "total_prompts": total_completed,
-        "attempted_prompts": total_attempted,
-        "run_count": len(processed_batches),
-        "errors": batch_errors,
-    }
 
 async def api_run_execute(
     config: str = Form(...),
@@ -2312,7 +1792,7 @@ def _run_pipeline_background(
         copy_file = run_dir / "context" / "copy_batch.json"
         copy_file.write_text(json.dumps(copy_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-        assembler_result = run_cmd(["python3", "scripts/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode], cwd=ROOT, run_id=run_dir.name)
+        assembler_result = run_cmd(["python3", "dashboard/backend/services/generate_ads.py", "--copy-file", str(copy_file), "--batch", reserved_batch, "--language-mode", language_mode], cwd=ROOT, run_id=run_dir.name)
         if assembler_result.returncode != 0:
             if cancel_event_for_run(run_dir.name).is_set() or _cancel_current_run.is_set():
                 print(f"[PIPELINE] Assembler cancelled by user for run {run_dir.name}", file=sys.stderr)

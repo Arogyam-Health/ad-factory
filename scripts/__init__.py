@@ -1,1 +1,1 @@
-"""Local-agent scripts package so `from scripts import generate_ads` works from the zip."""
+"""Operator CLI scripts. Application code lives in dashboard/ and local_agent_runtime/."""

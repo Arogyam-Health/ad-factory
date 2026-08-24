@@ -586,7 +586,7 @@ class StructuredCopyExecutor:
                 run_id=run_id, job_id=job_id, resource=copy_resource, role="copy_batch", index=0
             )
 
-            from scripts import generate_ads
+            from dashboard.backend.services import generate_ads
 
             prompt_count = 0
             prompt_ids: list[str] = []

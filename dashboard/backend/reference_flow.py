@@ -22,6 +22,7 @@ from dashboard.backend.pipeline.generation import (
 from dashboard.backend.pipeline.images import scan_image_files_for_batch, scan_prompt_files_for_batch
 from dashboard.backend.pipeline.input_assets import store_uploaded_input_images
 from dashboard.backend.pipeline.paths import (
+    CONVERT_916_TEMPLATE_PATH,
     DEFAULT_PRODUCT_MASTER,
     GENERATED_IMAGES_ROOT,
     INPUT_IMAGES_DIR,
@@ -783,15 +784,14 @@ def _revision_rule_sources(manifest: dict[str, Any]) -> tuple[dict[str, Any], st
             templates = {}
             conversion = ""
     if not templates:
-        assembler_path = ROOT / "scripts" / "prompt_assembler_templates.json"
+        assembler_path = ROOT / "dashboard" / "backend" / "copy_system" / "prompt_assembler_templates.json"
         if assembler_path.exists():
             templates = parse_assembler_templates(
                 assembler_path.read_text(encoding="utf-8")
             )
     if not conversion:
-        conversion_path = ROOT / "input" / "prompt_916_from_45.txt"
-        if conversion_path.exists():
-            conversion = conversion_path.read_text(encoding="utf-8")
+        if CONVERT_916_TEMPLATE_PATH.exists():
+            conversion = CONVERT_916_TEMPLATE_PATH.read_text(encoding="utf-8")
     return templates, conversion
 
 

@@ -212,7 +212,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--starting-prompt-file",
-        default="input/startingprompt.txt",
+        default="dashboard/backend/defaults/starting_prompt.txt",
         help="Starter prompt prepended to each prompt. Use an empty value to disable.",
     )
     parser.add_argument("--image-source-file", default="", help="Optional text file of image paths/URLs to upload")
