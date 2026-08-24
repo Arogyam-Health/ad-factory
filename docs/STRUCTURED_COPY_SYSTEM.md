@@ -1,0 +1,130 @@
+# Structured copy system
+
+This is the operator guide for the live Structured copy request. Edit the split JSON files, save them in Studio or Config, and the next run sends those layers to the copy LLM. Empty fields are omitted. Generation still runs.
+
+The live assembler is `dashboard/backend/services/render_structured_copy.py`. It reads `dashboard/backend/copy_system/` through `dashboard/backend/services/copy_system.py`. It does **not** read `copy_architecture.json`. `copy_prompt_templates.json` is used only for `visual_archetypes` after copy exists.
+
+## Request shape
+
+One copy call looks like this. Optional objects appear only when they have content.
+
+```json
+{
+  "task": "Generate structured advertising copy as JSON",
+  "product_document": "<product master doc if non-empty>",
+  "languages": ["EN"],
+  "guardrails": ["...only non-empty lines..."],
+  "planned_ads": [
+    {
+      "format": {
+        "id": "HERO",
+        "description": "...from ad_formats...",
+        "skeleton": "Headline / Support / optional trust / CTA",
+        "output_fields": ["headline", "support_line", "trust_line", "cta"]
+      },
+      "persona": { "number": 28, "name": "...", "pain": "...", "desire": "..." },
+      "hypothesis": {
+        "type": "copy_framework",
+        "style": "pas",
+        "label": "PAS",
+        "instruction": "...how to apply this test...",
+        "definition": "...style writeup..."
+      },
+      "creative_concept": { "id": "Concept/iPhone_Notes", "label": "...", "description": "..." }
+    }
+  ],
+  "output_schema": { "ads": [{ "copy": { "EN": { "headline": "string" } } }] }
+}
+```
+
+Rules:
+
+- Hypothesis **None**: omit `hypothesis`. Do not send `concept_angle` or `desired_outcome`.
+- Format always has `id`. `description`, `skeleton`, and `output_fields` are attached only when those strings exist in `ad_formats`.
+- Hypothesis selected: send `type` + `style`. Attach instruction/definition/skeleton only when the style file has them.
+- Creative concept appears **once**, on the planned ad, not also at the top level.
+- Image-only keys stay out of the copy request (`background_group_key`, share-background, visual layout lines). A locked format pattern may send `{id, label}` only.
+- Persona sends only filled fields. Hindi/Hinglish fillers are not invented.
+- `output_schema` comes from that format’s `output_fields`.
+
+Format ids stay `HERO`, `BA`, `TEST`, `FEAT`, `UGC`.
+
+## Which file feeds which request key
+
+| File | Config key | Request key |
+|---|---|---|
+| `copy_system/ad_formats.json` | `ad_formats` | `planned_ads[].format` and `output_schema` |
+| `copy_system/ad_hooks.json` | `ad_hooks` | `hypothesis` when type is Hook Structure |
+| `copy_system/ad_angles.json` | `ad_angles` | `hypothesis` when type is Concept Angle |
+| `copy_system/ad_frameworks.json` | `ad_frameworks` | `hypothesis` when type is Copy Framework |
+| `copy_system/ad_proof.json` | `ad_proof` | `hypothesis` when type is Proof Strategy |
+| `copy_system/ad_objections.json` | `ad_objections` | `hypothesis` when type is Objection Strategy |
+| `copy_system/ad_value_props.json` | `ad_value_props` | `hypothesis` when type is Value Proposition |
+| `copy_system/ad_awareness.json` | `ad_awareness` | `hypothesis` when type is Awareness Stage |
+| `copy_system/ad_emotions.json` | `ad_emotions` | `hypothesis` when type is Emotional Driver |
+| `copy_system/ad_specificity.json` | `ad_specificity` | `hypothesis` when type is Specificity Level |
+| `copy_system/ad_feature_focus.json` | `ad_feature_focus` | `hypothesis` when type is Feature Focus |
+| `copy_system/ad_guardrails.json` | `ad_guardrails` | top-level `guardrails` |
+| product master doc | `product_master_doc` | `product_document` |
+| concept catalog | `concept` | `planned_ads[].creative_concept` |
+| persona seeds | `persona_seeds` | `planned_ads[].persona` |
+| copy prompt templates | `copy_prompt_templates` | not sent to the copy LLM; `visual_archetypes` only, after copy |
+| copy architecture | `copy_architecture` | unused on the live path |
+
+`ad_guardrails.always` is always attached (non-empty lines only). `ad_guardrails.no_hypothesis` is attached only when Hypothesis is None.
+
+## How to edit or remove a style
+
+Each style is a small object. Missing keys are fine.
+
+```json
+"question_led": {
+  "label": "Question Led",
+  "instruction": "The opening hook is the variable under test.",
+  "definition": "Open with one specific question the persona would actually ask.",
+  "skeleton": "Headline = one self-identifying question"
+}
+```
+
+- **Add a style**: put a new id in the matching `ad_*` file, save in Config or Studio, refresh Studio. The Style dropdown lists `label`.
+- **Edit a style**: change `definition` / `instruction` / `skeleton`. The next run sends the new text.
+- **Remove a style**: delete that id. Studio no longer lists it. Generation still runs if someone sends a leftover id; the request then has `type` + `style` and no definition.
+- **Clear a whole layer**: a stored `{}` inherits the generic bundled file. To send no styles, save a non-empty object such as `{ "_meta": { "label": "Hook Structure" } }`.
+- **Blank field**: `""` is omitted. Do not send `null` just to fill a schema.
+
+There is no PAB framework. Do not add one.
+
+## How to run the compile tests
+
+These tests capture the assembled request the same way the audit did: they call `generate_structured_prompt_bundle` with a fake `generate` and inspect that JSON.
+
+```bash
+python -m unittest tests.test_copy_system_request tests.test_render_structured_pipeline tests.test_concept_catalog
+```
+
+What they lock:
+
+- HERO vs BA payloads differ by description, skeleton, and output fields
+- Hypothesis None has no `concept_angle` and no `hypothesis`
+- `pain_point` includes definition text
+- empty `ad_hooks.question_led` still generates
+- `creative_concept` appears once, on the planned ad
+- TEST uses attribution and its no-fabricate description
+
+## Studio checklist
+
+1. Source chip is the org or personal config you intend to edit.
+2. Hypothesis and Style menus reload from `/api/defaults?org_id=…` after an org chip change. If a style looks wrong, you are probably still on My Config.
+3. Format chips stay `HERO` / `BA` / `TEST` / `FEAT` / `UGC`. Their descriptions come from `ad_formats`.
+4. Hypothesis **None** should produce a request with no `hypothesis` key. Check Traces if a run looks like it forced `desired_outcome`.
+5. A selected Concept should appear once under the planned ad, not also at the top of the request.
+6. Visual pattern dropdowns still come from `copy_prompt_templates.visual_archetypes`. They are image-only.
+7. After you clear a style file, you can still send. The Style dropdown may be empty; the run should not 400.
+8. TEST must not invent quotes. If testimonial material is empty, the format description tells the model to keep the layout and skip fabricated claims.
+
+## Out of scope here
+
+- Renaming format ids to TESTIMONIAL / BEFORE_AFTER
+- Binding a default framework to a format
+- Ranking product truths
+- Changing the local image agent beyond reading a locked pattern id
