@@ -230,6 +230,43 @@ class VisualPatternTests(unittest.TestCase):
         self.assertIn("Added default visual archetypes for STORY", notice)
         self.assertIn("story_default", files["copy_prompt_templates"])
 
+    def test_invalid_visual_archetype_key_explains_why_studio_ignores_it(self) -> None:
+        from dashboard.backend.services.user_config import apply_format_archetype_sync
+
+        with patch("dashboard.backend.services.user_config.get_config_doc", return_value=None):
+            _files, notice = apply_format_archetype_sync(
+                "user",
+                "usr_test",
+                {
+                    "copy_prompt_templates": json.dumps(
+                        {
+                            "visual_archetypes": {
+                                "HERO": [{"id": "hero_center_stage", "label": "Centered"}],
+                                "HERO v4": [{"id": "hero_center_stage", "label": "Centered"}],
+                            }
+                        }
+                    )
+                },
+            )
+        self.assertIn("HERO v4", notice)
+        self.assertIn("does not create Studio format chips", notice)
+
+    def test_orphan_visual_archetype_key_asks_for_ad_formats(self) -> None:
+        from dashboard.backend.services.visual_archetypes import visual_archetype_save_notice
+
+        notice = visual_archetype_save_notice(
+            json.dumps(
+                {
+                    "visual_archetypes": {
+                        "HERO_V4": [{"id": "hero_center_stage", "label": "Centered"}],
+                    }
+                }
+            ),
+            json.dumps({"HERO": {"label": "Hero"}}),
+        )
+        self.assertIn("HERO_V4", notice)
+        self.assertIn("Ad Formats", notice)
+
     def test_auto_rotate_picks_random_not_first(self) -> None:
         from dashboard.backend.services.visual_archetypes import (
             pick_random_archetype,

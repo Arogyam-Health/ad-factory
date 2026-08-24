@@ -219,6 +219,39 @@ def sync_visual_archetypes(templates: Any, formats: Any) -> tuple[str, list[str]
     return json.dumps(parsed, ensure_ascii=False, indent=2), added, removed
 
 
+def visual_archetype_save_notice(templates: Any, formats: Any) -> str:
+    """Explain keys that Studio will not turn into chips or pattern menus."""
+    raw = _coerce_templates(templates).get("visual_archetypes")
+    if not isinstance(raw, dict):
+        return ""
+    wanted = set(format_ids_from_formats(formats))
+    invalid: list[str] = []
+    orphan: list[str] = []
+    for key, value in raw.items():
+        if str(key).startswith("_") or not isinstance(value, list):
+            continue
+        ident = str(key or "").strip().upper()
+        if not FORMAT_ID_RE.match(ident):
+            invalid.append(str(key))
+        elif wanted and ident not in wanted:
+            orphan.append(ident)
+    parts: list[str] = []
+    if invalid:
+        parts.append(
+            "Ignored visual archetype keys "
+            + ", ".join(invalid)
+            + ". Format ids must match [A-Z][A-Z0-9_]{0,15}, for example HERO_V4. "
+            "Copy Prompt Templates does not create Studio format chips."
+        )
+    if orphan:
+        parts.append(
+            "Patterns for "
+            + ", ".join(orphan)
+            + " are stored, but Studio chips come from Ad Formats. Add that id there to see a chip."
+        )
+    return " ".join(parts)
+
+
 def format_visual_archetypes(
     templates: Any = None,
     formats: Any = None,

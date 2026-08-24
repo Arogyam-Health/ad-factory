@@ -200,7 +200,7 @@ A named catalog id locks that pattern for image assembly.
 
 ### Add or remove a format
 
-Add a new object key in `ad_formats`, for example `STORY`. Use an id like `[A-Z][A-Z0-9_]{0,15}`. Include `label`, `description`, `skeleton`, and `output_fields`.
+Add a new object key in **Ad Formats** (`ad_formats`), for example `STORY` or `HERO_V4`. Use an id like `[A-Z][A-Z0-9_]{0,15}` — no spaces. Include `label`, `description`, `skeleton`, and `output_fields`. Adding a key only in Copy Prompt Templates does not create a Studio chip.
 
 On personal or org save:
 

@@ -14,6 +14,7 @@ from dashboard.backend.services.visual_archetypes import (
     DEFAULT_VISUAL_ARCHETYPE_LLM_PROMPT,
     fill_missing_visual_archetypes,
     sanitize_copy_prompt_templates_text,
+    visual_archetype_save_notice,
 )
 
 
@@ -275,14 +276,18 @@ def apply_format_archetype_sync(
     files: dict[str, str],
 ) -> tuple[dict[str, str], str]:
     """Stub or drop visual archetypes when personal/org `ad_formats` changes."""
-    if "ad_formats" not in files:
-        return files, ""
-    from dashboard.backend.services.visual_archetypes import sync_visual_archetypes
-
     current: dict[str, str] = {}
     doc = get_config_doc(owner_type, owner_id)
     if doc:
         current = _extract_flat_from_new_schema(doc)
+    if "ad_formats" not in files:
+        if "copy_prompt_templates" not in files:
+            return files, ""
+        return files, visual_archetype_save_notice(
+            files["copy_prompt_templates"],
+            current.get("ad_formats") or "",
+        )
+    from dashboard.backend.services.visual_archetypes import sync_visual_archetypes
     if "copy_prompt_templates" in files:
         templates = files["copy_prompt_templates"]
     else:
@@ -290,10 +295,9 @@ def apply_format_archetype_sync(
         if not str(templates).strip() or str(templates).strip() in {"{}", "[]"}:
             templates = get_generic_config().get("copy_prompt_templates") or "{}"
     synced, added, removed = sync_visual_archetypes(templates, files["ad_formats"])
-    if not added and not removed:
-        return files, ""
     next_files = dict(files)
-    next_files["copy_prompt_templates"] = synced
+    if added or removed:
+        next_files["copy_prompt_templates"] = synced
     parts: list[str] = []
     if added:
         parts.append(
@@ -303,6 +307,12 @@ def apply_format_archetype_sync(
         )
     if removed:
         parts.append("Removed visual archetypes for " + ", ".join(removed) + ".")
+    key_notice = visual_archetype_save_notice(
+        next_files.get("copy_prompt_templates") or templates,
+        files["ad_formats"],
+    )
+    if key_notice:
+        parts.append(key_notice)
     return next_files, " ".join(parts)
 
 
