@@ -1,9 +1,12 @@
 # Ad Factory
 
-Dashboard on Render plus a paired local agent. Live copy rules live in `dashboard/backend/copy_system/`. Image-prompt assembly lives in `dashboard/backend/services/generate_ads.py`. Operator guides:
+Dashboard on Render plus a paired local agent. Live copy rules live in `dashboard/backend/copy_system/`. Image-prompt assembly lives in `dashboard/backend/services/generate_ads.py`. Docs on the `render-setup` branch:
 
+- [All docs](https://github.com/Vinay-003/ad-factory/tree/render-setup/docs)
+- [`docs/README.md`](docs/README.md) — index
+- [`docs/OPERATOR_PLATE_GUIDE.md`](docs/OPERATOR_PLATE_GUIDE.md) — product + operator guide (also `/guide` in the dashboard)
+- [`docs/DEVELOPER_CLOUD_MIGRATION.md`](docs/DEVELOPER_CLOUD_MIGRATION.md) — API image path, Render-side API jobs, S3
 - [`docs/STRUCTURED_COPY_SYSTEM.md`](docs/STRUCTURED_COPY_SYSTEM.md)
-- [`docs/OPERATOR_PLATE_GUIDE.md`](docs/OPERATOR_PLATE_GUIDE.md)
 - [`DASHBOARD_EDITABLE_FIELDS.md`](DASHBOARD_EDITABLE_FIELDS.md)
 
 ## Prerequisites

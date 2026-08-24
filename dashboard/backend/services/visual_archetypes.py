@@ -69,16 +69,31 @@ def _coerce_templates(templates: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def fill_missing_visual_archetypes(raw: Any) -> str:
+    """Put the bundled catalog back when a stored file lost visual_archetypes."""
+    parsed = _coerce_templates(raw)
+    groups = _archetype_groups(parsed.get("visual_archetypes"))
+    bundled = bundled_visual_archetypes()
+    if groups or not bundled:
+        if isinstance(raw, str):
+            return raw
+        return json.dumps(parsed, ensure_ascii=False, indent=2) if parsed else "{}"
+    parsed["visual_archetypes"] = bundled
+    parsed.setdefault("format", "v1")
+    parsed.setdefault("_description", _LIVE_DESCRIPTION)
+    return json.dumps(parsed, ensure_ascii=False, indent=2)
+
+
 def sanitize_copy_prompt_templates_text(raw: Any) -> str:
     """Drop unused copy-LLM blocks. Keep visual_archetypes and other live keys."""
     if isinstance(raw, str) and not raw.strip():
-        return raw
+        return fill_missing_visual_archetypes("{}")
     parsed = _coerce_templates(raw)
     if not parsed:
-        return raw if isinstance(raw, str) else "{}"
+        return fill_missing_visual_archetypes("{}")
     retired = RETIRED_COPY_PROMPT_KEYS.intersection(parsed)
     if not retired:
-        return raw if isinstance(raw, str) else json.dumps(parsed, ensure_ascii=False, indent=2)
+        return fill_missing_visual_archetypes(raw)
     cleaned = {
         key: value
         for key, value in parsed.items()
@@ -87,7 +102,7 @@ def sanitize_copy_prompt_templates_text(raw: Any) -> str:
     cleaned["_description"] = _LIVE_DESCRIPTION
     if "format" not in cleaned and parsed.get("format"):
         cleaned["format"] = parsed["format"]
-    return json.dumps(cleaned, ensure_ascii=False, indent=2)
+    return fill_missing_visual_archetypes(cleaned)
 
 
 def llm_decide_archetype(prompt: str = "") -> dict[str, Any]:

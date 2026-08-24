@@ -67,6 +67,18 @@ class VisualPatternTests(unittest.TestCase):
         payload = operator_guide()
         self.assertIn("output_fields", payload["markdown"])
         self.assertIn("visual archetypes", payload["markdown"].lower())
+        self.assertIn("https://github.com/Vinay-003/ad-factory/tree/render-setup/docs", payload["markdown"])
+        self.assertIn("/docs/STRUCTURED_COPY_SYSTEM.md", payload["markdown"])
+
+    def test_published_docs_endpoint_serves_structured_copy(self) -> None:
+        from dashboard.backend.routes.defaults import published_doc
+        from fastapi import HTTPException
+
+        payload = published_doc("STRUCTURED_COPY_SYSTEM.md")
+        self.assertIn("output_fields", payload["markdown"])
+        self.assertIn("planned_ads", payload["markdown"])
+        with self.assertRaises(HTTPException):
+            published_doc("../.env")
 
     def test_defaults_endpoint_returns_selectable_patterns_per_format(self) -> None:
         from dashboard.backend.routes.defaults import dashboard_defaults
@@ -115,6 +127,25 @@ class VisualPatternTests(unittest.TestCase):
         resolve_org.assert_called_once_with("usr_test", "org_team")
         hook_options = payload["hypothesis"]["variables"]["hook_structure"]["options"]
         self.assertEqual(hook_options, [{"id": "question_led", "label": "Org Question"}])
+
+    def test_hollow_copy_prompt_templates_get_bundled_visual_archetypes(self) -> None:
+        from dashboard.backend.services.visual_archetypes import (
+            FORMATS,
+            fill_missing_visual_archetypes,
+            sanitize_copy_prompt_templates_text,
+        )
+
+        hollow = json.dumps(
+            {
+                "format": "v1",
+                "_description": "Visual archetypes only.",
+            }
+        )
+        filled = json.loads(fill_missing_visual_archetypes(hollow))
+        self.assertEqual(sorted(filled["visual_archetypes"]), sorted(FORMATS))
+        self.assertEqual(len(filled["visual_archetypes"]["BA"]), 4)
+        cleaned = json.loads(sanitize_copy_prompt_templates_text(hollow))
+        self.assertIn("ba_classic_split", json.dumps(cleaned))
 
     def test_retired_copy_prompt_blocks_are_stripped_on_generic_only(self) -> None:
         from dashboard.backend.services.user_config import (

@@ -4,7 +4,7 @@ This is the user-facing map of what you can change in Studio and Config. Content
 
 Studio’s **Source** buttons and Config’s source tabs are the same choice. Switching org vs My Config loads that Mongo document; it is not a local-only overlay.
 
-The operator guide for the live copy request is [`docs/STRUCTURED_COPY_SYSTEM.md`](docs/STRUCTURED_COPY_SYSTEM.md). The in-dashboard guide is `/guide` ([`docs/OPERATOR_PLATE_GUIDE.md`](docs/OPERATOR_PLATE_GUIDE.md)).
+The operator guide for the live copy request is [`docs/STRUCTURED_COPY_SYSTEM.md`](docs/STRUCTURED_COPY_SYSTEM.md). The in-dashboard guide is `/guide` ([`docs/OPERATOR_PLATE_GUIDE.md`](docs/OPERATOR_PLATE_GUIDE.md)). Dedicated docs: [https://github.com/Vinay-003/ad-factory/tree/render-setup/docs](https://github.com/Vinay-003/ad-factory/tree/render-setup/docs). Developer cloud notes: [`docs/DEVELOPER_CLOUD_MIGRATION.md`](docs/DEVELOPER_CLOUD_MIGRATION.md).
 
 ## Shared vs flow-only
 

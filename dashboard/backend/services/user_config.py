@@ -12,6 +12,7 @@ from dashboard.backend.db.collections import COLL_USER_CONFIGS
 from dashboard.backend.services.copy_system import COPY_SYSTEM_KEYS, bundled_copy_system_text
 from dashboard.backend.services.visual_archetypes import (
     DEFAULT_VISUAL_ARCHETYPE_LLM_PROMPT,
+    fill_missing_visual_archetypes,
     sanitize_copy_prompt_templates_text,
 )
 
@@ -324,7 +325,7 @@ def ensure_generic_config() -> None:
         sanitized_templates = sanitize_copy_prompt_templates_text(
             stored_templates_text or ""
         )
-        if stored_templates_text and sanitized_templates != stored_templates_text:
+        if sanitized_templates and sanitized_templates != (stored_templates_text or ""):
             missing["copy_prompt_templates"] = sanitized_templates
         _purge_retired_generic_files(existing)
         if not missing:
@@ -580,6 +581,9 @@ def resolve_effective_config_for_user(user_id: str) -> dict[str, Any]:
         if _has_config_override(val):
             merged[k] = val
 
+    merged["copy_prompt_templates"] = fill_missing_visual_archetypes(
+        merged.get("copy_prompt_templates")
+    )
     return merged
 
 
@@ -608,6 +612,9 @@ def resolve_effective_config(
             val = override_config.get(k, "")
             if _has_config_override(val):
                 merged[k] = val
+        merged["copy_prompt_templates"] = fill_missing_visual_archetypes(
+            merged.get("copy_prompt_templates")
+        )
         return merged
 
     target_org_id = org_id

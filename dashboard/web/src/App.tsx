@@ -23,6 +23,9 @@ export function App() {
               <Route path="/config.html" element={<Navigate to="/config" replace />} />
               <Route path="/guide" element={<GuidePage />} />
               <Route path="/guide.html" element={<Navigate to="/guide" replace />} />
+              <Route path="/docs/:docName" element={<GuidePage />} />
+              <Route path="/STRUCTURED_COPY_SYSTEM.md" element={<GuidePage />} />
+              <Route path="/OPERATOR_PLATE_GUIDE.md" element={<Navigate to="/guide" replace />} />
               <Route path="/organizations" element={<OrganizationsPage />} />
               <Route path="/organizations.html" element={<Navigate to="/organizations" replace />} />
               <Route path="/traces" element={<TracesPage />} />

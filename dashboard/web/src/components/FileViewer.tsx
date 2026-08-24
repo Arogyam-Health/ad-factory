@@ -74,7 +74,7 @@ export function FileViewer({
             <Button variant="ghost" onClick={onClose}>Close</Button>
           </div>
           <span className="hint">
-            {status || (canEdit ? "Edits write to the selected Mongo config." : "This file is read only.")}
+            {status || (canEdit ? "Edits write to the selected Mongo config. Drag the corner to resize." : "This file is read only.")}
           </span>
         </>
       )}

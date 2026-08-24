@@ -57,7 +57,7 @@ Rules:
 
 Format ids come from `ad_formats` (`HERO`, `BA`, `TEST`, `FEAT`, `UGC` in the bundled file, plus any id matching `[A-Z][A-Z0-9_]{0,15}`). Studio chips and `/api/defaults` read that catalog. Acceptance uses that format’s `output_fields` only. Skeleton text is guidance and is never compared. `ad_guardrails` stay on every live call.
 
-The in-app operator guide is `/guide` ([`docs/OPERATOR_PLATE_GUIDE.md`](OPERATOR_PLATE_GUIDE.md)).
+The in-app operator guide is `/guide`. This file is also at `/docs/STRUCTURED_COPY_SYSTEM.md` on the dashboard.
 
 ## Which file feeds which request key
 

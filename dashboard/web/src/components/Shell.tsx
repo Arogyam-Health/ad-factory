@@ -30,7 +30,10 @@ export function Shell({ children }: { children: ReactNode }) {
   const { user, ready, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { pathname } = useLocation();
-  const page = TITLES[pathname] || TITLES["/"];
+  const page = TITLES[pathname]
+    || ((pathname.startsWith("/docs/") || pathname.endsWith(".md"))
+      ? { eyebrow: "Copy desk", title: "Docs" }
+      : TITLES["/"]);
   const name = user.display_name || user.email || "Guest";
 
   return (

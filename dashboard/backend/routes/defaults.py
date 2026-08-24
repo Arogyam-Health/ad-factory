@@ -63,7 +63,27 @@ _PUBLIC_STUDIO_TTL = 20.0
 _public_studio_cache: dict[str, Any] = {"ts": 0.0, "data": None}
 
 
-_GUIDE_PATH = Path(__file__).resolve().parents[3] / "docs" / "OPERATOR_PLATE_GUIDE.md"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_GUIDE_PATH = _REPO_ROOT / "docs" / "OPERATOR_PLATE_GUIDE.md"
+_PUBLISHED_DOCS = {
+    "OPERATOR_PLATE_GUIDE.md": _GUIDE_PATH,
+    "STRUCTURED_COPY_SYSTEM.md": _REPO_ROOT / "docs" / "STRUCTURED_COPY_SYSTEM.md",
+    "DEVELOPER_CLOUD_MIGRATION.md": _REPO_ROOT / "docs" / "DEVELOPER_CLOUD_MIGRATION.md",
+    "LOCAL_AGENT_README.md": _REPO_ROOT / "docs" / "LOCAL_AGENT_README.md",
+    "LOCAL_AGENT_UBUNTU.md": _REPO_ROOT / "docs" / "LOCAL_AGENT_UBUNTU.md",
+    "LOCAL_AGENT_WINDOWS.md": _REPO_ROOT / "docs" / "LOCAL_AGENT_WINDOWS.md",
+    "LOCAL_AGENT_MAC.md": _REPO_ROOT / "docs" / "LOCAL_AGENT_MAC.md",
+    "LOCAL_FIRST_OPERATIONS.md": _REPO_ROOT / "docs" / "LOCAL_FIRST_OPERATIONS.md",
+    "DASHBOARD_EDITABLE_FIELDS.md": _REPO_ROOT / "DASHBOARD_EDITABLE_FIELDS.md",
+    "README.md": _REPO_ROOT / "docs" / "README.md",
+}
+
+
+def _published_doc_path(name: str) -> Path | None:
+    key = Path(str(name or "")).name
+    if not key.endswith(".md"):
+        key = f"{key}.md"
+    return _PUBLISHED_DOCS.get(key)
 
 
 def _studio_payload(config: dict[str, Any], *, source: str) -> dict[str, Any]:
@@ -97,6 +117,18 @@ def operator_guide() -> dict[str, str]:
     except OSError:
         markdown = ""
     return {"title": "Operator plate guide", "markdown": markdown}
+
+
+@router.get("/api/docs/{name}")
+def published_doc(name: str) -> dict[str, str]:
+    path = _published_doc_path(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Doc not found")
+    try:
+        markdown = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="Doc not found") from exc
+    return {"title": path.stem.replace("_", " "), "markdown": markdown}
 
 
 @router.get("/api/public/studio")

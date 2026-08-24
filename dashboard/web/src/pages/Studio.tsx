@@ -408,7 +408,9 @@ export function StudioPage() {
   }, [studio?.hypothesis?.variables, hypType, hypVariant]);
 
   function formatsForPersona(n: number) {
-    return personaFormats[n] ?? formatList;
+    if (personaFormats[n]) return personaFormats[n];
+    if (selected.has(n)) return formatList;
+    return [];
   }
 
   function togglePersona(n: number) {
@@ -426,9 +428,9 @@ export function StudioPage() {
       if (next.has(fmt)) next.delete(fmt);
       else if (next.size < 8) next.add(fmt);
       setPersonaFormats((current) => {
-        const updated: Record<number, string[]> = {};
-        const ids = personas.length ? personas.map((persona) => persona.number) : Object.keys(current).map(Number);
-        for (const number of new Set([...ids, ...Object.keys(current).map(Number)])) {
+        if (!selected.size) return current;
+        const updated = { ...current };
+        for (const number of selected) {
           const existing = new Set(current[number] ?? [...prev]);
           if (next.has(fmt)) existing.add(fmt);
           else existing.delete(fmt);
@@ -710,7 +712,7 @@ export function StudioPage() {
               ))}
             </div>
             <p className="tile-kicker">Global formats</p>
-            <p className="hint" style={{ marginBottom: 8 }}>Applies to every persona card. Click a format on a card to change only that persona.</p>
+            <p className="hint" style={{ marginBottom: 8 }}>Applies to selected personas only. Click a format on a card to change only that persona.</p>
             <div className="chips" style={{ marginBottom: 18 }}>
               {formatOptions.map((fmt) => (
                 <button key={fmt.id} type="button" className={`chip${formats.has(fmt.id) ? " active" : ""}`} onClick={() => toggleFormat(fmt.id)}>
@@ -742,17 +744,22 @@ export function StudioPage() {
                     return (
                       <div
                         key={persona.number}
+                        role="button"
+                        tabIndex={0}
                         className={`persona-card${selected.has(persona.number) ? " active" : ""}`}
+                        onClick={() => togglePersona(persona.number)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            togglePersona(persona.number);
+                          }
+                        }}
                       >
-                        <button
-                          type="button"
-                          className="persona-card-head"
-                          onClick={() => togglePersona(persona.number)}
-                        >
+                        <div className="persona-card-head">
                           <span className="persona-num">P{String(persona.number).padStart(2, "0")}</span>
                           <span>{persona.name}</span>
-                        </button>
-                        <div className="persona-formats">
+                        </div>
+                        <div className="persona-formats" onClick={(event) => event.stopPropagation()}>
                           {formatOptions.map((fmt) => (
                             <button
                               key={fmt.id}
@@ -821,8 +828,7 @@ export function StudioPage() {
                 </select>
               </label>
               <form
-                className="action-row"
-                style={{ marginBottom: 12 }}
+                className="provider-keys"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void saveProviderKeys();
@@ -836,18 +842,22 @@ export function StudioPage() {
                 ) : (
                   <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder={googleHint} autoComplete="off" />
                 )}
-                <label className="hint">
-                  Model
-                  <select className="field" value={models.includes(model) ? model : DEFAULT_OPENCODE_MODEL} onChange={(e) => setModel(e.target.value)}>
-                    {models.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
-                </label>
-                <Button type="submit" disabled={savingKey || !user.authenticated}>
-                  {savingKey ? "Saving…" : "Save API key"}
-                </Button>
-                <span className="hint">{keySaved || googleSaved ? "Saved key stays on this account. Type a new one only to replace it." : "Save before running a plate."}</span>
+                <div className="provider-key-row">
+                  <label className="provider-key-model">
+                    <span>Model</span>
+                    <select className="field" value={models.includes(model) ? model : DEFAULT_OPENCODE_MODEL} onChange={(e) => setModel(e.target.value)}>
+                      {models.map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button type="submit" className="provider-key-save" disabled={savingKey || !user.authenticated}>
+                    {savingKey ? "Saving…" : "Save API key"}
+                  </Button>
+                </div>
+                <p className="hint">
+                  {keySaved || googleSaved ? "Saved key stays on this account. Type a new one only to replace it." : "Save before running a plate."}
+                </p>
               </form>
               <label className="hint">
                 Ad multiplier
