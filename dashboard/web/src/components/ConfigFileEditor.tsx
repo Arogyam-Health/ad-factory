@@ -17,7 +17,7 @@ export function ConfigFileEditor({
   isJson,
   canEdit,
   onChange,
-  rows = 20,
+  rows = 16,
 }: Props) {
   const [mode, setMode] = useState<"fields" | "json">("fields");
   const parsed = useMemo(
@@ -40,36 +40,43 @@ export function ConfigFileEditor({
     />
   );
 
-  if (!isJson) return textarea;
+  if (!isJson) {
+    return (
+      <label className="form-cell">
+        <span className="form-caption">Value</span>
+        {textarea}
+      </label>
+    );
+  }
 
   return (
     <div className="cfg-editor">
-      <div className="chips json-mode-switch">
+      <div className="form-mode-switch">
         <button
           type="button"
-          className={`chip${mode === "fields" ? " active" : ""}`}
+          className={mode === "fields" ? "active" : ""}
           disabled={!parsed.ok}
           onClick={() => {
             if (parsed.ok) setMode("fields");
           }}
         >
-          Fields
+          Form
         </button>
         <button
           type="button"
-          className={`chip${mode === "json" ? " active" : ""}`}
+          className={mode === "json" ? "active" : ""}
           onClick={() => setMode("json")}
         >
           JSON
         </button>
       </div>
       {!parsed.ok ? (
-        <p className="hint">Fix the JSON to use Fields view. {parsed.error}</p>
+        <p className="hint">This file is not valid JSON yet. Fix it here, then switch back to Form. {parsed.error}</p>
       ) : (
         <p className="hint">
           {mode === "fields"
-            ? "Edit fields and values here. Switch to JSON to replace the whole file."
-            : "Paste or replace the complete JSON file."}
+            ? "Each row is a field name and its value. Use JSON only if you need to paste the whole file."
+            : "Raw JSON. Switch to Form to edit field names and values."}
         </p>
       )}
       {mode === "json" || !parsed.ok ? textarea : (

@@ -4,7 +4,6 @@ import { fetchJSON, peekCache, clearCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { asConfigText, CONFIG_KEYS, CONFIG_SECTIONS, JSON_KEYS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
 import type { ConfigSource, ConfigVersion, EffectiveConfig, StudioPayload } from "@/lib/types";
-import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
 import { ConfigFileEditor } from "@/components/ConfigFileEditor";
 import { SkeletonLines } from "@/components/Skeleton";
@@ -38,6 +37,7 @@ export function ConfigPage() {
   const [mergeOrg, setMergeOrg] = useState("");
   const [mergeReason, setMergeReason] = useState("");
   const [personalOpen, setPersonalOpen] = useState(false);
+  const [personalOrg, setPersonalOrg] = useState("");
   const [personalReason, setPersonalReason] = useState("");
   const [versionReason, setVersionReason] = useState("");
   const [versionOpen, setVersionOpen] = useState(false);
@@ -302,16 +302,31 @@ export function ConfigPage() {
   }
 
   async function copyToPersonal() {
-    if (!meta?.config_id) return;
     try {
-      await fetchJSON(`/api/config/${meta.config_id}/copy-to-personal`, {
+      let configId = meta?.owner_type === "org" ? meta.config_id : "";
+      if (!configId) {
+        if (!personalOrg) {
+          setStatus("Pick a team plate to copy.");
+          return;
+        }
+        const source = await fetchJSON<EffectiveConfig>(
+          `/api/config/effective?org_id=${encodeURIComponent(personalOrg)}`,
+          { noCache: true },
+        );
+        configId = source.config_id || "";
+      }
+      if (!configId) {
+        setStatus("Could not find that team plate.");
+        return;
+      }
+      await fetchJSON(`/api/config/${configId}/copy-to-personal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: personalReason.trim() || "copy_config_to_personal" }),
       });
       setPersonalOpen(false);
       setPersonalReason("");
-      setStatus("Config copied to your personal plate.");
+      setStatus("Team plate copied to your personal config.");
       clearCache("/api/config/");
       switchSource("personal");
       setReload((n) => n + 1);
@@ -323,11 +338,19 @@ export function ConfigPage() {
   const orgSources = sources.filter((item) => item.type === "org");
   const copyTargets = (meta?.available_orgs || []).filter((org) => org.org_id !== meta?.org?.org_id);
 
+  function openPersonalCopy() {
+    setPersonalOrg(meta?.owner_type === "org" ? (meta.org?.org_id || "") : (orgSources[0]?.org_id || ""));
+    setPersonalOpen(true);
+  }
+
+  const viewingOrg = meta?.owner_type === "org";
+  const canCopyToPersonal = Boolean(user.authenticated && orgSources.length);
+
   return (
-    <Bento>
-      <Tile span="third" kicker="Sources" title="Files on the desk">
-        {orgSources.length ? (
-          <div className="chips" style={{ marginBottom: 14 }}>
+    <div className="config-page">
+      <header className="config-toolbar">
+        <div className="config-toolbar-source">
+          <div className="chips">
             <button type="button" className={`chip${source === "personal" ? " active" : ""}`} onClick={() => switchSource("personal")}>
               My Config
             </button>
@@ -342,35 +365,67 @@ export function ConfigPage() {
               </button>
             ))}
           </div>
-        ) : null}
-        <p className="hint" style={{ marginBottom: 12 }}>
-          Source {sourceLabel} · {guest ? "generic rules" : meta?.mode || "personal"} · {canEdit ? "editable" : "read only"}.{" "}
-          <Link to="/guide">Operator guide</Link>
-        </p>
-        {loading ? <SkeletonLines lines={10} /> : (
-          <div className="nav">
-            {CONFIG_SECTIONS.map((section) => (
-              <div key={section.id} className="nav-group">
-                <p className={`nav-section${section.id === "business" ? " nav-section-business" : ""}`}>{section.title}</p>
-                {section.keys.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`nav-link${active === key ? " active" : ""}`}
-                    onClick={() => setActive(key)}
-                  >
-                    <span>{KEY_LABELS[key]}</span>
-                    <span className="nav-index">{JSON_KEYS.has(key) ? "JSON" : "TXT"}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
+          <p className="hint">
+            {guest ? "Generic rules" : viewingOrg ? `Team plate · ${meta?.org?.name || sourceLabel}` : "Your personal plate"}
+            {" · "}
+            {canEdit ? "editable" : "read only"}.{" "}
+            <Link to="/guide">Operator guide</Link>
+          </p>
+        </div>
+        <div className="action-row">
+          <Button
+            disabled={!canCopyToPersonal}
+            onClick={openPersonalCopy}
+          >
+            Copy to my config
+          </Button>
+          <Button disabled={!canEdit || !meta?.can_copy || !copyTargets.length} onClick={() => {
+            setMergeOrg(copyTargets[0]?.org_id || "");
+            setMergeOpen(true);
+          }}>
+            Copy to org
+          </Button>
+          <Button disabled={!canEdit || !meta?.config_id} onClick={() => setVersionOpen(true)}>
+            Save version
+          </Button>
+          <Button variant="primary" disabled={!canEdit} onClick={() => void saveAll()}>
+            Save all files
+          </Button>
+        </div>
+      </header>
+      {status ? <p className="hint config-status">{status}</p> : null}
+      <div className="config-desk">
+        <aside className="config-files">
+          <p className="tile-kicker">Files</p>
+          <h2>On this plate</h2>
+          {loading ? <SkeletonLines lines={10} /> : (
+            <div className="nav">
+              {CONFIG_SECTIONS.map((section) => (
+                <div key={section.id} className="nav-group">
+                  <p className={`nav-section${section.id === "business" ? " nav-section-business" : ""}`}>{section.title}</p>
+                  {section.keys.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`nav-link${active === key ? " active" : ""}`}
+                      onClick={() => setActive(key)}
+                    >
+                      <span>{KEY_LABELS[key]}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
+        <section className="config-editor">
+          <div className="config-editor-head">
+            <div>
+              <p className="tile-kicker">{JSON_KEYS.has(active) ? "Form" : "Text"}</p>
+              <h2>{KEY_LABELS[active]}</h2>
+            </div>
           </div>
-        )}
-      </Tile>
-      <Tile span="hero" kicker={active} title={KEY_LABELS[active]}>
-        {loading ? <SkeletonLines lines={12} /> : (
-          <>
+          {loading ? <SkeletonLines lines={12} /> : (
             <ConfigFileEditor
               fileKey={active}
               text={drafts[active] ?? ""}
@@ -378,31 +433,12 @@ export function ConfigPage() {
               canEdit={canEdit}
               onChange={(text) => setDrafts((prev) => ({ ...prev, [active]: text }))}
             />
-            <div className="action-row">
-              <Button variant="primary" disabled={!canEdit} onClick={() => void saveAll()}>
-                Save all files
-              </Button>
-              <Button disabled={!canEdit || !meta?.config_id} onClick={() => setVersionOpen(true)}>
-                Save version
-              </Button>
-              <Button disabled={!canEdit || !meta?.can_copy || !copyTargets.length} onClick={() => {
-                setMergeOrg(copyTargets[0]?.org_id || "");
-                setMergeOpen(true);
-              }}>
-                Copy to org
-              </Button>
-              <Button
-                disabled={!user.authenticated || meta?.owner_type !== "org" || !meta?.config_id}
-                onClick={() => setPersonalOpen(true)}
-              >
-                Copy to my config
-              </Button>
-              <span className="hint">{status}</span>
-            </div>
-          </>
-        )}
-      </Tile>
-      <Tile span="wide" kicker="History" title="Version snapshots">
+          )}
+        </section>
+      </div>
+      <section className="config-history">
+        <p className="tile-kicker">History</p>
+        <h2>Version snapshots</h2>
         {!user.authenticated ? (
           <p className="hint">Generic files have no personal history. Sign in to snapshot and roll back your plate.</p>
         ) : (
@@ -457,7 +493,7 @@ export function ConfigPage() {
             )}
           </>
         )}
-      </Tile>
+      </section>
       {versionOpen ? (
         <Modal
           title="Save version snapshot"
@@ -484,8 +520,23 @@ export function ConfigPage() {
             </>
           )}
         >
-          <p className="hint">Replaces your personal files with this org plate. A snapshot of your current personal plate is kept when one exists.</p>
-          <input className="field" value={personalReason} onChange={(e) => setPersonalReason(e.target.value)} placeholder="e.g. Pull team plate to my desk" />
+          <p className="hint">Replaces your personal files with the selected team plate. A snapshot of your current personal plate is kept when one exists.</p>
+          {viewingOrg ? (
+            <p className="hint">Source: {meta?.org?.name || "this team plate"}</p>
+          ) : (
+            <label className="form-cell">
+              <span className="form-caption">Team plate</span>
+              <select className="field" value={personalOrg} onChange={(e) => setPersonalOrg(e.target.value)}>
+                {orgSources.map((item) => (
+                  <option key={item.org_id} value={item.org_id}>{item.org_name || item.org_id}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="form-cell">
+            <span className="form-caption">Reason</span>
+            <input className="field" value={personalReason} onChange={(e) => setPersonalReason(e.target.value)} placeholder="e.g. Pull team plate to my desk" />
+          </label>
         </Modal>
       ) : null}
       {mergeOpen ? (
@@ -509,7 +560,7 @@ export function ConfigPage() {
         </Modal>
       ) : null}
       {viewVersion ? (
-        <Modal title={`Snapshot · ${viewVersion.label}`} onClose={() => setViewVersion(null)}>
+        <Modal title={`Snapshot · ${viewVersion.label}`} onClose={() => setViewVersion(null)} size="wide">
           {CONFIG_SECTIONS.map((section) => (
             <div key={section.id} style={{ marginBottom: 12 }}>
               <p className="tile-kicker">{section.title}</p>
@@ -522,9 +573,15 @@ export function ConfigPage() {
               </div>
             </div>
           ))}
-          <textarea className="cfg-textarea" readOnly rows={16} value={viewVersion.files[active] || ""} />
+          <ConfigFileEditor
+            fileKey={active}
+            text={viewVersion.files[active] || ""}
+            isJson={JSON_KEYS.has(active)}
+            canEdit={false}
+            onChange={() => undefined}
+          />
         </Modal>
       ) : null}
-    </Bento>
+    </div>
   );
 }

@@ -61,6 +61,7 @@ export function FileViewer({
   return (
     <Modal
       title={KEY_LABELS[configKey] || configKey}
+      size="wide"
       onClose={onClose}
       footer={(
         <>

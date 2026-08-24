@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchJSON, peekCache, invalidateRuns, clearCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { asConfigText, catalogConcepts, catalogLanguageModes, CONFIG_SECTIONS, KEY_HINTS, KEY_LABELS, readStudioOrg, writeStudioOrg } from "@/lib/config-keys";
+import { catalogConcepts, catalogLanguageModes, CONFIG_SECTIONS, KEY_HINTS, KEY_LABELS, readStudioOrg, summarizeConfigValue, writeStudioOrg } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { ConfigSource, EffectiveConfig, FormatOption, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
@@ -912,7 +912,7 @@ export function StudioPage() {
             <button key={key} type="button" className="file-card" onClick={() => setViewer(key)}>
               <strong>{KEY_LABELS[key]}</strong>
               <span>{KEY_HINTS[key]}</span>
-              <em>{asConfigText(studio?.config?.[key]).slice(0, 72) || "empty"}</em>
+              <em>{summarizeConfigValue(studio?.config?.[key])}</em>
             </button>
           ))}
         </div>
@@ -927,7 +927,7 @@ export function StudioPage() {
             <button key={key} type="button" className="file-card" onClick={() => setViewer(key)}>
               <strong>{KEY_LABELS[key]}</strong>
               <span>{KEY_HINTS[key]}</span>
-              <em>{asConfigText(studio?.config?.[key]).slice(0, 72) || "empty"}</em>
+              <em>{summarizeConfigValue(studio?.config?.[key])}</em>
             </button>
           ))}
         </div>
@@ -944,7 +944,7 @@ export function StudioPage() {
             <button key={key} type="button" className="file-card file-card-business" onClick={() => setViewer(key)}>
               <strong>{KEY_LABELS[key]}</strong>
               <span>{KEY_HINTS[key]}</span>
-              <em>{asConfigText(studio?.config?.[key]).slice(0, 72) || "empty"}</em>
+              <em>{summarizeConfigValue(studio?.config?.[key])}</em>
             </button>
           ))}
         </div>

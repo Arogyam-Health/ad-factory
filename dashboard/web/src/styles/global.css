@@ -1236,6 +1236,10 @@ input[type="number"].field::-webkit-inner-spin-button {
   border: 1px solid var(--rule-strong);
 }
 
+.modal-box-wide {
+  width: min(1080px, 100%);
+}
+
 .modal-header,
 .modal-footer {
   display: flex;
@@ -1372,66 +1376,227 @@ input[type="number"].field::-webkit-inner-spin-button {
 .cfg-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.json-mode-switch {
-  margin: 0 0 4px;
+.config-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.json-fields,
-.json-stack {
+.config-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--rule);
+}
+
+.config-toolbar-source {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: min(100%, 320px);
 }
 
-.json-field {
-  padding: 10px 12px;
-  border: 1px solid var(--rule);
+.config-status {
+  margin: -4px 2px 0;
+}
+
+.config-desk {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.config-files,
+.config-editor,
+.config-history {
   background: var(--surface-1);
-  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  padding: 16px 18px;
 }
 
-.json-field-head {
+.config-files {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+}
+
+.config-files h2,
+.config-editor h2,
+.config-history h2 {
+  font-size: 1rem;
+  margin-bottom: 14px;
+}
+
+.config-files .nav-link {
+  padding: 8px 10px;
+}
+
+.config-editor-head {
+  margin-bottom: 14px;
+}
+
+.form-mode-switch {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--rule);
+  background: var(--surface-0);
+}
+
+.form-mode-switch button {
+  padding: 7px 14px;
+  color: var(--ink-muted);
+}
+
+.form-mode-switch button.active {
+  background: var(--gold-dim);
+  color: var(--ink);
+}
+
+.form-mode-switch button:disabled {
+  opacity: 0.45;
+}
+
+.form-fields,
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.form-row-group {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.form-caption {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.form-cell .field,
+.form-cell .cfg-textarea {
+  margin: 0;
+}
+
+.form-cell-value {
+  min-width: 0;
+}
+
+.form-value {
+  min-height: 40px;
+  font-family: var(--font-ui);
+  resize: vertical;
+}
+
+.form-value-tall {
+  min-height: 96px;
+}
+
+.form-index {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.form-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 18px;
+}
+
+.form-group {
+  margin: 10px 0 16px;
+  padding: 12px 14px 8px;
+  border: 1px solid var(--rule);
+  background: var(--surface-0);
+}
+
+.form-group-body {
+  margin-top: 8px;
+}
+
+.form-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+
+.form-chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  padding: 8px 0 4px;
 }
 
-.json-key {
-  flex: 1 1 180px;
-  min-width: 140px;
+.form-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 2px;
+  border: 1px solid var(--rule);
+  background: var(--plate);
+}
+
+.form-chip-input {
+  width: 8.5rem;
+  min-height: 32px;
   margin: 0;
+  border: 0;
+  background: transparent;
 }
 
-.json-type {
-  flex: 0 0 8.5rem;
-  width: auto;
-  min-width: 8.5rem;
-  margin: 0;
-}
-
-.json-index {
-  min-width: 2rem;
+.form-chip-remove {
+  width: 22px;
+  height: 22px;
   color: var(--ink-muted);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
 }
 
-.json-nested {
-  margin-top: 10px;
-  padding-left: 12px;
-  border-left: 1px solid var(--rule-strong);
-}
+@media (max-width: 980px) {
+  .config-desk {
+    grid-template-columns: 1fr;
+  }
 
-.json-value-area {
-  min-height: 96px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.45;
-  resize: vertical;
+  .config-files {
+    position: static;
+    max-height: none;
+  }
+
+  .form-row,
+  .form-row-group {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row-actions {
+    padding-top: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

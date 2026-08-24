@@ -186,6 +186,33 @@ export function asConfigText(value: unknown): string {
   }
 }
 
+export function summarizeConfigValue(value: unknown): string {
+  let parsed: unknown = value;
+  if (value == null || value === "") return "Empty";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "Empty";
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        return `${trimmed.length} characters`;
+      }
+    } else {
+      const lines = trimmed.split(/\n/).length;
+      return lines === 1 ? "1 line" : `${lines} lines`;
+    }
+  }
+  if (Array.isArray(parsed)) {
+    return parsed.length === 1 ? "1 item" : `${parsed.length} items`;
+  }
+  if (parsed && typeof parsed === "object") {
+    const count = Object.keys(parsed).length;
+    return count === 1 ? "1 field" : `${count} fields`;
+  }
+  return "Ready";
+}
+
 export type ConceptCatalogItem = {
   id: string;
   label: string;
