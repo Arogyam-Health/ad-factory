@@ -9,6 +9,7 @@ Studio’s **Source** buttons and Config’s source tabs are the same choice. Sw
 | Key / card | Structured Flow | Reference Image Flow | Notes |
 |---|---|---|---|
 | `persona_seeds` | yes | yes | Shared. Persona cards in both flows. |
+| `concept` | yes | yes | Shared. Creative-format catalog (IG Stories, Venn, …). Separate from H2 Concept Angle. |
 | `conversion_916_prompt` | yes | yes | Shared 9:16 conversion prompt. |
 | `starting_prompt` | yes | no | Structured Input Prompts only. |
 | `copy_architecture` | yes | no | Headline architectures + hypothesis styles. |
@@ -49,6 +50,7 @@ Click a card to edit the Mongo field for the **current Source**.
 | Card | Config key | Format |
 |---|---|---|
 | Persona Seeds | `persona_seeds` | JSON |
+| Concept | `concept` | JSON — creative-format catalog for the Concept dropdown |
 | Copy Architecture | `copy_architecture` | JSON — `headline_architectures` drives hypothesis styles |
 | Copy Prompt Templates | `copy_prompt_templates` | JSON — `visual_archetypes` drives pattern dropdowns |
 | Prompt Assembler Templates | `prompt_assembler_templates` | JSON |
@@ -79,13 +81,13 @@ If the chosen copy model fails, the dashboard logs the error and retries **once*
 
 ## Studio — Reference Image Flow
 
-Uses `persona_seeds`, `reference_starting_prompt`, `reference_product_master_doc`, and the shared `conversion_916_prompt`. Reference images, product packshots, and per-card comments stay on the local device.
+Uses `persona_seeds`, `concept`, `reference_starting_prompt`, `reference_product_master_doc`, and the shared `conversion_916_prompt`. Reference images, product packshots, and per-card comments stay on the local device.
 
 ---
 
 ## Config page
 
-Same ten keys as Studio §4. JSON keys are validated on save.
+Same eleven keys as Studio §4. JSON keys are validated on save.
 
 **Copy to Org** copies the current source’s ten files onto an org you can manage (creates a versioned snapshot). Creating a team also copies the creator’s current config onto the new org.
 

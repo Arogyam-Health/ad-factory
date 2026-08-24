@@ -36,6 +36,7 @@ _CONFIG_KEYS = frozenset(
         "copy_architecture",
         "copy_prompt_templates",
         "persona_seeds",
+        "concept",
         "product_master_doc",
         "prompt_assembler_templates",
         "starting_prompt",

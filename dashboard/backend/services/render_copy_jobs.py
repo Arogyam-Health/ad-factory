@@ -136,6 +136,7 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
         "reuse_backgrounds_from_run_id",
         "reuse_visual_patterns_from_run_id",
         "hypothesis",
+        "selected_concept",
         "visual_archetypes_by_format",
     }
     if set(raw) - allowed:
@@ -209,6 +210,7 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
     hyp_variant = str(hypothesis.get("variant") or "").strip()[:64]
     if not hyp_type:
         hyp_type = "none"
+    selected_concept = str(raw.get("selected_concept") or "").strip()[:160]
     archetypes = raw.get("visual_archetypes_by_format")
     if archetypes is None:
         archetypes = {}
@@ -241,6 +243,7 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
         "reuse_backgrounds_from_run_id": reuse_backgrounds,
         "reuse_visual_patterns_from_run_id": reuse_patterns,
         "hypothesis": {"type": hyp_type, "variant": hyp_variant},
+        "selected_concept": selected_concept,
         "visual_archetypes_by_format": visual_archetypes_by_format,
     }
 

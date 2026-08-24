@@ -434,6 +434,7 @@ def render_prompt(
     visual_archetype: dict[str, Any],
     visual_lock: dict[str, Any] | None = None,
     templates: dict[str, Any] | None = None,
+    creative_concept: dict[str, Any] | None = None,
 ) -> str:
     if fmt == "HERO":
         style = "HERO, polished enough for paid ad deployment."
@@ -561,6 +562,16 @@ def render_prompt(
             "- Concept path is strategy only; do not render these labels on-image.",
         ]
     )
+    if isinstance(creative_concept, dict):
+        concept_label = str(
+            creative_concept.get("label") or creative_concept.get("id") or ""
+        ).strip()
+        concept_description = str(creative_concept.get("description") or "").strip()
+        if concept_label or concept_description:
+            lines.append("")
+            lines.append("CONCEPT INPUT BLOCK")
+            lines.append(f"- Concept: {concept_label}")
+            lines.append(f"- Description: {concept_description}")
     lines.append("")
     lines.append(f"Create the ad in {LANGUAGE_LABELS.get(lang, lang)}.")
     lines.append("")

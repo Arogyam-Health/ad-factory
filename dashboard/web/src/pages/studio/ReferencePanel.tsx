@@ -19,6 +19,8 @@ type ReferenceProps = {
   togglePersona: (n: number) => void;
   language: string;
   setLanguage: (value: string) => void;
+  selectedConcept: string;
+  setSelectedConcept: (value: string) => void;
   studio: StudioPayload | null;
   status: string;
   setStatus: (value: string) => void;
@@ -313,6 +315,12 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
             })),
             persona_ids: [...props.selected].map(String),
             language_mode: props.language,
+            selected_concept: props.selectedConcept,
+            ...(props.selectedConcept
+              ? {
+                  creative_concept: props.studio?.concepts?.find((item) => item.id === props.selectedConcept) || null,
+                }
+              : {}),
             product_document: { resource_id: productDocument.resource_id, version: productDocument.version },
             starting_prompt: { resource_id: startingPrompt.resource_id, version: startingPrompt.version },
             persona_config: { resource_id: personaConfig.resource_id, version: personaConfig.version },
@@ -377,7 +385,17 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
 }
 
 export function ReferenceCompose() {
-  const { language, setLanguage, personas, selected, togglePersona, jobCount } = useReference();
+  const {
+    language,
+    setLanguage,
+    selectedConcept,
+    setSelectedConcept,
+    studio,
+    personas,
+    selected,
+    togglePersona,
+    jobCount,
+  } = useReference();
   return (
     <>
       <div className="chips" style={{ marginBottom: 12 }}>
@@ -387,6 +405,15 @@ export function ReferenceCompose() {
           </button>
         ))}
       </div>
+      <label className="hint">
+        Concept
+        <select className="field" value={selectedConcept} onChange={(e) => setSelectedConcept(e.target.value)}>
+          <option value="">None</option>
+          {(studio?.concepts || []).map((item) => (
+            <option key={item.id} value={item.id}>{item.label}</option>
+          ))}
+        </select>
+      </label>
       <p className="hint" style={{ marginBottom: 12 }}>{jobCount} jobs · personas × selected references × language</p>
       <div className="persona-grid">
         {personas.map((persona) => (

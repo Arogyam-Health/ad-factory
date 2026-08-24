@@ -15,6 +15,21 @@ from .structured_browser import (
 )
 
 
+def _resolve_creative_concept(settings: dict[str, Any]) -> dict[str, str] | None:
+    raw = settings.get("creative_concept")
+    if not isinstance(raw, dict):
+        selected = settings.get("selected_concept")
+        raw = selected if isinstance(selected, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    ident = str(raw.get("id") or "").strip()
+    label = str(raw.get("label") or "").strip()
+    description = str(raw.get("description") or "").strip()
+    if not ident and not label:
+        return None
+    return {"id": ident, "label": label, "description": description}
+
+
 _ENGINES = frozenset({"chatgpt", "gemini"})
 _MODES = {"45": "45", "4:5": "45", "both": "both", "916": "916", "9:16": "916"}
 _LANGUAGES = {
@@ -249,6 +264,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
         product_document: LocalResource,
         comment: LocalResource | None,
         language: str,
+        settings: dict[str, Any],
     ) -> tuple[str, LocalResource, str]:
         persona_id = self._persona_id(persona)
         persona_name = self._persona_name(persona)
@@ -266,22 +282,31 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
         parts = [
             starting_prompt.path.read_text(encoding="utf-8").strip(),
             "TARGET PERSONA:\n" + json.dumps(persona, ensure_ascii=False, indent=2),
-            (
-                "REFERENCE INSTRUCTION:\n"
-                + comment.path.read_text(encoding="utf-8").strip()
-                if comment is not None
-                else ""
-            ),
-            (
-                "PRODUCT DOCUMENT (SOURCE OF TRUTH):\n"
-                + product_document.path.read_text(encoding="utf-8").strip()
-            ),
-            (
-                "Create one exact 4:5 portrait ad using the first uploaded image as the "
-                "visual reference and only the subsequently uploaded product resources."
-            ),
-            f"Create the ad in {_LANGUAGE_LABELS.get(language, language)}.",
         ]
+        creative = _resolve_creative_concept(settings)
+        if creative:
+            parts.append(
+                "TARGET CONCEPT:\n" + json.dumps(creative, ensure_ascii=False, indent=2)
+            )
+        parts.extend(
+            [
+                (
+                    "REFERENCE INSTRUCTION:\n"
+                    + comment.path.read_text(encoding="utf-8").strip()
+                    if comment is not None
+                    else ""
+                ),
+                (
+                    "PRODUCT DOCUMENT (SOURCE OF TRUTH):\n"
+                    + product_document.path.read_text(encoding="utf-8").strip()
+                ),
+                (
+                    "Create one exact 4:5 portrait ad using the first uploaded image as the "
+                    "visual reference and only the subsequently uploaded product resources."
+                ),
+                f"Create the ad in {_LANGUAGE_LABELS.get(language, language)}.",
+            ]
+        )
         body = "\n\n".join(part for part in parts if part).strip() + "\n"
         temporary = self.state.paths.staging / f".reference-prompt-{uuid.uuid4().hex}.txt"
         temporary.write_text(body, encoding="utf-8")
@@ -471,6 +496,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                             product_document=product_document,
                             comment=comment,
                             language=language,
+                            settings=settings,
                         )
                         prompts.append((prompt_id, prompt, reference, display_stem))
             for aspect_ratio in phases:

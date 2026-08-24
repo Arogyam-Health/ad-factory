@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.services.user_config import (
     get_generic_config,
+    parse_concept_catalog,
     resolve_effective_config_for_user,
 )
 from dashboard.backend.services.visual_archetypes import (
@@ -96,6 +97,7 @@ def _studio_payload(config: dict[str, Any], *, source: str) -> dict[str, Any]:
         "format_patterns": format_visual_archetypes(
             _parse_json(config.get("copy_prompt_templates"), {})
         ),
+        "concepts": parse_concept_catalog(config.get("concept")),
         "hypothesis": {
             "variables": _hypothesis_variables(config),
             "default": {"type": "none", "variant": ""},
@@ -134,6 +136,7 @@ def dashboard_defaults(
         "format_patterns": format_visual_archetypes(
             _parse_json(config.get("copy_prompt_templates"), {})
         ),
+        "concepts": parse_concept_catalog(config.get("concept")),
         "image_sources": [],
         "input_images": [],
         "product_doc": {},

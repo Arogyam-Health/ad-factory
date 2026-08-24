@@ -64,6 +64,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
         reference_count: int = 1,
         reference_owner: str | None = None,
         language_mode: str = "EN",
+        settings_extra: dict | None = None,
     ) -> dict:
         references = [
             self._put(
@@ -143,6 +144,7 @@ class ReferenceLocalFlowTests(unittest.TestCase):
                         "resource_id": conversion.resource_id,
                         "version": conversion.version,
                     },
+                    **(settings_extra or {}),
                 }
             ).encode(),
             "config_file",
@@ -644,6 +646,42 @@ class ReferenceLocalFlowTests(unittest.TestCase):
                 "stuck_scale_dieter_stress_snacker_HINGLISH_4_5",
             },
         )
+
+    def test_selected_concept_appends_target_concept_block(self) -> None:
+        from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
+        from local_agent_runtime.structured_browser import DeterministicFakeBrowser
+
+        self._configured_job(
+            job_id="job-concept",
+            settings_extra={
+                "selected_concept": "Concept/IG_Stories",
+                "creative_concept": {
+                    "id": "Concept/IG_Stories",
+                    "label": "IG Stories",
+                    "description": "Casual story format.",
+                },
+            },
+        )
+        browser = DeterministicFakeBrowser()
+        result = ReferenceWorkflowExecutor(self.state, browser=browser).execute("job-concept")
+        self.assertEqual(result["status"], "completed")
+        text = Path(browser.calls[0]["prompt_path"]).read_text(encoding="utf-8")
+        self.assertIn("TARGET PERSONA:", text)
+        self.assertIn("TARGET CONCEPT:", text)
+        self.assertIn("IG Stories", text)
+        self.assertIn("Casual story format.", text)
+
+    def test_none_concept_omits_target_concept_block(self) -> None:
+        from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
+        from local_agent_runtime.structured_browser import DeterministicFakeBrowser
+
+        self._configured_job(job_id="job-no-concept")
+        browser = DeterministicFakeBrowser()
+        result = ReferenceWorkflowExecutor(self.state, browser=browser).execute("job-no-concept")
+        self.assertEqual(result["status"], "completed")
+        text = Path(browser.calls[0]["prompt_path"]).read_text(encoding="utf-8")
+        self.assertIn("TARGET PERSONA:", text)
+        self.assertNotIn("TARGET CONCEPT:", text)
 
     def test_reference_stores_raw_output_when_browser_returns_tuple(self) -> None:
         from local_agent_runtime.lifecycle import build_output_zip

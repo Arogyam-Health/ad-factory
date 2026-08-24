@@ -504,6 +504,12 @@ class StructuredCopyExecutor:
             provider = self._provider_for(owner_key, execution)
             provider_name = provider.name
             model = provider.model
+            first_planned = planned[0] if planned and isinstance(planned[0], dict) else {}
+            creative_concept = (
+                first_planned.get("creative_concept")
+                if isinstance(first_planned.get("creative_concept"), dict)
+                else settings.get("creative_concept")
+            )
             trace_request = {
                 "task": "Generate structured advertising copy as JSON",
                 "product_document": product_document,
@@ -515,6 +521,14 @@ class StructuredCopyExecutor:
                     "no_unverified_claims": True,
                 },
             }
+            if isinstance(creative_concept, dict) and (
+                creative_concept.get("id") or creative_concept.get("label")
+            ):
+                trace_request["creative_concept"] = {
+                    "id": str(creative_concept.get("id") or ""),
+                    "label": str(creative_concept.get("label") or ""),
+                    "description": str(creative_concept.get("description") or ""),
+                }
             result = provider.generate(trace_request)
             trace_response = result.raw_response
             input_tokens += result.input_tokens
@@ -606,6 +620,11 @@ class StructuredCopyExecutor:
                         sentence,
                         archetype,
                         templates=templates,
+                        creative_concept=(
+                            ad.get("creative_concept")
+                            if isinstance(ad.get("creative_concept"), dict)
+                            else None
+                        ),
                     )
                     prompt_id = "prm_" + hashlib.sha256(
                         f"{run_id}:{ad_index}:{language}".encode()

@@ -135,6 +135,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("/api/runs?flow=reference", reference)
         self.assertIn("/reference-generation", reference)
         self.assertIn("language_mode: props.language", reference)
+        self.assertIn("selected_concept: props.selectedConcept", reference)
+        self.assertIn("creative_concept:", reference)
+        self.assertIn('<option value="">None</option>', reference)
         self.assertIn("personas × selected references × language", reference)
         self.assertIn("id=\"googleApiKey\"", studio)
         self.assertIn("<form", studio)
@@ -197,6 +200,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("Cropped + raw", _read("components", "DownloadKindDialog.tsx"))
         self.assertIn("DownloadKindDialog", gallery)
         self.assertIn("adFactoryImageEngine", studio)
+        self.assertIn("adFactorySelectedConcept", studio)
+        self.assertIn("selected_concept: selectedConcept", studio)
+        self.assertIn('<option value="">None</option>', studio)
         self.assertIn("toolbar-field", studio)
         self.assertIn(".toolbar-field", _read("styles", "global.css"))
         self.assertNotIn('queueRunImages(id, mode, "chatgpt"', studio)
@@ -231,6 +237,7 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             "ad-factory-agent/config/agent.json",
             "--session-cookie",
             "persona_seeds",
+            "concept",
             "copy_prompt_templates",
             "copy_architecture",
         ):
