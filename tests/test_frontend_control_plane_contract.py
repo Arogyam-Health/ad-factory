@@ -161,10 +161,13 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("adFactoryCopyPipeline", studio)
         self.assertIn("adFactoryFlowMode", studio)
         self.assertIn("org_id=${encodeURIComponent(orgId)}", studio)
+        self.assertIn("/api/defaults?org_id=", studio)
         self.assertIn('kicker="03 · Copy desk"', studio)
         self.assertIn("<OrgConfigChips", studio.split('kicker="03 · Copy desk"')[1])
         self.assertIn("adFactoryStudioOrg:${userId}", config)
         self.assertIn("LAST_STUDIO_ORG_KEY", config)
+        self.assertIn("ad_formats", config)
+        self.assertIn("ad_guardrails", config)
         self.assertIn('{ noCache: true }', auth)
         self.assertIn('url.includes("/api/auth/")', api)
         self.assertIn('url.includes("/api/invites/")', api)
@@ -245,6 +248,8 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             "concept",
             "copy_prompt_templates",
             "copy_architecture",
+            "ad_formats",
+            "ad_guardrails",
         ):
             with self.subTest(needle=needle):
                 self.assertIn(needle, readme)
