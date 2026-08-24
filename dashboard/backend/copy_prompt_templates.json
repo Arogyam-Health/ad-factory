@@ -1,6 +1,6 @@
 {
   "format": "v1",
-  "_description": "All prompt text templates for ad copy LLM generation. Edit this file to change what the LLM sees — no code changes needed. Dynamic placeholders use {fmt}, {support_target}, {copy_fields}.",
+  "_description": "Image-prompt templates. The live structured-copy LLM reads dashboard/backend/copy_system/ instead. This file is still used for visual_archetypes (Studio pattern dropdowns and post-copy image assembly). Older copy-LLM blocks (system_prompt_*, copy_requirements, CTA fallbacks, format_defaults.structure_by_fmt) are unused on the live path.",
   "system_prompt_base_rules": [
     "Final deliverable must be composed for a 4:5 portrait crop. Keep all important text, face, hands, and products inside the central safe area. The image may be generated larger, but it must remain clean after cropping to 1080×1350.",
     "You generate ad copy JSON only. Return valid JSON with keys default_aspect_ratio and ads.",

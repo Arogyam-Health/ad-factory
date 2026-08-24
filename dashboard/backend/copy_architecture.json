@@ -1,6 +1,6 @@
 {
   "format": "v1",
-  "_description": "Headline and support line architecture templates for LLM ad copy generation. Edit this file to change what structures the LLM produces — no code changes needed. Each entry has a template (describes the sentence shape) and examples (show real implementations).",
+  "_description": "Legacy headline file. The live structured-copy path does not read this file. Edit dashboard/backend/copy_system/ (ad_hooks, ad_angles, ad_frameworks, ...) instead. Kept so existing org/personal saves do not 400.",
 
   "persona_specificity_layer": {
     "wedding_event_deadline": {

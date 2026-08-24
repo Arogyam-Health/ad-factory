@@ -2,9 +2,11 @@ from __future__ import annotations
 
 """Visual pattern (archetype) options offered per ad format.
 
-Patterns live under `visual_archetypes` in `copy_prompt_templates`. Configs
-seeded before that key existed do not carry it, so reads fall back to the
-bundled template file rather than showing an empty dropdown.
+The live copy LLM does not read copy_prompt_templates. Only
+`visual_archetypes` is used, and only after copy exists, for image-prompt
+assembly and Studio pattern dropdowns. Configs seeded before that key
+existed fall back to the bundled template file rather than showing an
+empty dropdown.
 """
 
 import json
