@@ -69,7 +69,7 @@ class VisualPatternTests(unittest.TestCase):
             "dashboard.backend.routes.defaults.resolve_effective_config_for_user",
             return_value={"persona_seeds": "[]", "copy_prompt_templates": "{}"},
         ):
-            payload = dashboard_defaults({"user_id": "usr_test"})
+            payload = dashboard_defaults(user={"user_id": "usr_test"})
 
         self.assertEqual(payload["formats"], list(FORMATS))
         for fmt in FORMATS:
@@ -78,6 +78,30 @@ class VisualPatternTests(unittest.TestCase):
             for entry in entries:
                 self.assertIn("id", entry)
                 self.assertIn("label", entry)
+        self.assertIn("none", payload["hypothesis"]["variables"])
+        self.assertIn("copy_framework", payload["hypothesis"]["variables"])
+
+    def test_defaults_reload_hypothesis_from_effective_org_config(self) -> None:
+        from dashboard.backend.routes.defaults import dashboard_defaults
+
+        org_hooks = json.dumps(
+            {
+                "_meta": {"label": "Org Hooks"},
+                "question_led": {"label": "Org Question"},
+            }
+        )
+        with patch(
+            "dashboard.backend.routes.defaults.resolve_effective_config",
+            return_value={"ad_hooks": org_hooks, "copy_prompt_templates": "{}"},
+        ) as resolve_org:
+            payload = dashboard_defaults(
+                user={"user_id": "usr_test"},
+                org_id="org_team",
+            )
+
+        resolve_org.assert_called_once_with("usr_test", "org_team")
+        hook_options = payload["hypothesis"]["variables"]["hook_structure"]["options"]
+        self.assertEqual(hook_options, [{"id": "question_led", "label": "Org Question"}])
 
     def test_generation_reads_the_same_restored_archetype_file(self) -> None:
         templates = json.loads(

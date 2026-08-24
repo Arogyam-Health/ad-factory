@@ -233,6 +233,9 @@ export function StudioPage() {
       const personaUrl = orgId && orgId !== "personal"
         ? `/api/config/persona-summary?org_id=${encodeURIComponent(orgId)}`
         : "/api/config/persona-summary";
+      const defaultsUrl = orgId && orgId !== "personal"
+        ? `/api/defaults?org_id=${encodeURIComponent(orgId)}`
+        : "/api/defaults";
       const runUrl = `/api/runs?flow=${flow}`;
       const effectiveUrl = orgId !== "personal"
         ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
@@ -254,7 +257,7 @@ export function StudioPage() {
         return nextPersonas;
       }
 
-      const cachedDefaults = peekCache<StudioPayload>("/api/defaults") || peekCache<StudioPayload>("/api/public/studio");
+      const cachedDefaults = peekCache<StudioPayload>(defaultsUrl) || peekCache<StudioPayload>("/api/public/studio");
       const cachedPersonas = peekCache<{ personas?: Persona[] }>(personaUrl);
       const cachedRuns = peekCache<{ runs?: Run[] }>(runUrl);
       const cachedEffective = peekCache<EffectiveConfig>(effectiveUrl);
@@ -292,7 +295,7 @@ export function StudioPage() {
       try {
         if (user.authenticated) {
           const [defaults, personasData, runData] = await Promise.all([
-            fetchJSON<StudioPayload>("/api/defaults"),
+            fetchJSON<StudioPayload>(defaultsUrl),
             fetchJSON<{ personas?: Persona[] }>(personaUrl).catch(() => ({ personas: [] })),
             fetchJSON<{ runs?: Run[] }>(runUrl),
           ]);
@@ -350,6 +353,20 @@ export function StudioPage() {
   }, [runs, runPage, runPages]);
   const hypVars = studio?.hypothesis?.variables || {};
   const hypOptions = hypVars[hypType]?.options || [];
+
+  useEffect(() => {
+    const variables = studio?.hypothesis?.variables;
+    if (!variables || !Object.keys(variables).length) return;
+    if (!variables[hypType]) {
+      setHypType("none");
+      setHypVariant("");
+      return;
+    }
+    const options = variables[hypType]?.options || [];
+    if (hypVariant && !options.some((opt) => opt.id === hypVariant)) {
+      setHypVariant("");
+    }
+  }, [studio?.hypothesis?.variables, hypType, hypVariant]);
 
   function togglePersona(n: number) {
     setSelected((prev) => {
@@ -672,6 +689,7 @@ export function StudioPage() {
                 <label className="hint">
                   Style
                   <select className="field" value={hypVariant} onChange={(e) => setHypVariant(e.target.value)}>
+                    <option value="">None</option>
                     {hypOptions.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                   </select>
                 </label>

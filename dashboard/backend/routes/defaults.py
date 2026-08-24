@@ -6,9 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from dashboard.backend.auth.service import require_user_dependency
+from dashboard.backend.services.copy_system import hypothesis_catalog
 from dashboard.backend.services.user_config import (
     get_generic_config,
     parse_concept_catalog,
+    resolve_effective_config,
     resolve_effective_config_for_user,
 )
 from dashboard.backend.services.visual_archetypes import (
@@ -52,36 +54,7 @@ def _persona_summaries(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _hypothesis_variables(config: dict[str, Any]) -> dict[str, Any]:
-    variables: dict[str, Any] = {
-        "none": {
-            "label": "No hypothesis test",
-            "description": "Generate ads normally without controlled A/B testing.",
-            "options": [],
-        }
-    }
-    architecture = _parse_json(config.get("copy_architecture"), {})
-    headline = (
-        architecture.get("headline_architectures", {})
-        if isinstance(architecture, dict)
-        else {}
-    )
-    definitions = {
-        "hook_structure": "Hook Structure (H1)",
-        "concept_angle": "Concept Angle (H2)",
-    }
-    for key, label in definitions.items():
-        choices = headline.get(key, {}) if isinstance(headline, dict) else {}
-        variables[key] = {
-            "label": label,
-            "options": [
-                {
-                    "id": str(choice)[:80],
-                    "label": str(choice).replace("_", " ").title()[:120],
-                }
-                for choice in choices
-            ] if isinstance(choices, dict) else [],
-        }
-    return variables
+    return hypothesis_catalog(config)
 
 
 _PUBLIC_STUDIO_TTL = 20.0
@@ -127,9 +100,15 @@ def public_studio() -> JSONResponse:
 @router.get("/api/defaults")
 def dashboard_defaults(
     user: dict[str, Any] = Depends(require_user_dependency),
+    org_id: str = "",
 ) -> dict[str, Any]:
     """Return bounded UI defaults derived from Mongo-backed dashboard config."""
-    config = resolve_effective_config_for_user(user["user_id"])
+    clean_org = str(org_id or "").strip()
+    config = (
+        resolve_effective_config(str(user["user_id"]), clean_org)
+        if clean_org
+        else resolve_effective_config_for_user(user["user_id"])
+    )
     return {
         "personas": _persona_summaries(config),
         "formats": list(FORMATS),
