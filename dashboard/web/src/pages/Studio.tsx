@@ -7,6 +7,7 @@ import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { ConfigSource, EffectiveConfig, FormatOption, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
+import { ListPager } from "@/components/ListPager";
 import { Skeleton, SkeletonLines } from "@/components/Skeleton";
 import { FileViewer } from "@/components/FileViewer";
 import { FileField } from "@/components/FileField";
@@ -162,6 +163,7 @@ export function StudioPage() {
   );
   const [downloadPrompt, setDownloadPrompt] = useState(false);
   const newestRunRef = useRef("");
+  const runsPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     localStorage.setItem("adFactoryFlowMode", flow);
@@ -412,10 +414,24 @@ export function StudioPage() {
   }, [ready, flow, user.authenticated, user.user_id, orgId, plateTick]);
 
   const selectedCount = selected.size;
-  const openRun = runs.find((run) => run.run_id === openRunId) || null;
-  const runPages = Math.max(1, Math.ceil(runs.length / RUNS_PER_PAGE));
+  const sortedRuns = useMemo(
+    () => [...runs].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0)),
+    [runs],
+  );
+  const openRun = sortedRuns.find((run) => run.run_id === openRunId)
+    || (openRunId
+      ? {
+          run_id: openRunId,
+          display_batch: openRunId,
+          prompt_count: 0,
+          image_count: 0,
+          status: "running",
+          copy_generation: { status: "queued" },
+        }
+      : null);
+  const runPages = Math.max(1, Math.ceil(sortedRuns.length / RUNS_PER_PAGE));
   const safeRunPage = Math.min(runPage, runPages - 1);
-  const pageRuns = runs.slice(safeRunPage * RUNS_PER_PAGE, safeRunPage * RUNS_PER_PAGE + RUNS_PER_PAGE);
+  const pageRuns = sortedRuns.slice(safeRunPage * RUNS_PER_PAGE, safeRunPage * RUNS_PER_PAGE + RUNS_PER_PAGE);
   const formatOptions = useMemo(() => catalogFormats(studio), [studio]);
   const languageModes = useMemo(() => catalogLanguageModes(studio), [studio]);
   const formatList = useMemo(
@@ -441,13 +457,51 @@ export function StudioPage() {
   }, [languageModes, language]);
 
   useEffect(() => {
-    const newest = runs[0]?.run_id || "";
+    const newest = sortedRuns[0]?.run_id || "";
     if (newest && newest !== newestRunRef.current) {
       newestRunRef.current = newest;
       setRunPage(0);
     }
     if (runPage > runPages - 1) setRunPage(Math.max(0, runPages - 1));
-  }, [runs, runPage, runPages]);
+  }, [sortedRuns, runPage, runPages]);
+
+  useEffect(() => {
+    if (!copyJobId || !activeRunId) return;
+    let cancelled = false;
+    let timer = 0;
+    let failures = 0;
+    async function poll() {
+      try {
+        const job = await fetchJSON<{ status?: string }>(
+          `/api/runs/${encodeURIComponent(activeRunId)}/structured-copy/${encodeURIComponent(copyJobId)}`,
+          { noCache: true },
+        );
+        if (cancelled) return;
+        failures = 0;
+        if (["completed", "failed", "canceled"].includes(String(job.status || ""))) {
+          const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
+          if (cancelled) return;
+          setRuns(data.runs || []);
+          setOpenRunId(activeRunId);
+          setRunPage(0);
+          setDeskTick((value) => value + 1);
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+        failures += 1;
+        if (failures >= 20) return;
+      }
+      timer = window.setTimeout(() => {
+        void poll();
+      }, 3000);
+    }
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [copyJobId, activeRunId, flow]);
   const hypVars = studio?.hypothesis?.variables || {};
   const hypOptions = hypVars[hypType]?.options || [];
 
@@ -616,10 +670,30 @@ export function StudioPage() {
       setOpenRunId(envelope.run_id);
       setRunPage(0);
       setCopyJobId(queued.copy_job_id || "");
+      setRuns((prev) => {
+        if (prev.some((run) => run.run_id === envelope.run_id)) return prev;
+        return [
+          {
+            run_id: envelope.run_id,
+            display_batch: envelope.display_batch || envelope.run_id,
+            created_at: Date.now() / 1000,
+            prompt_count: 0,
+            image_count: 0,
+            status: "running",
+            copy_generation: { status: "queued" },
+          },
+          ...prev,
+        ];
+      });
       invalidateRuns();
       setStatus(`Plate ${envelope.display_batch || envelope.run_id} is on press.`);
       const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
       setRuns(data.runs || []);
+      setOpenRunId(envelope.run_id);
+      setRunPage(0);
+      requestAnimationFrame(() => {
+        runsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     } catch (err) {
       setStatus(String(err));
     } finally {
@@ -993,14 +1067,14 @@ export function StudioPage() {
                 Reuse backgrounds from run
                 <select className="field" value={reuseBg} onChange={(e) => setReuseBg(e.target.value)}>
                   <option value="">None</option>
-                  {runs.map((run) => <option key={run.run_id} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
+                  {sortedRuns.map((run) => <option key={run.run_id} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
                 </select>
               </label>
               <label className="hint">
                 Reuse visual patterns from run
                 <select className="field" value={reusePattern} onChange={(e) => setReusePattern(e.target.value)}>
                   <option value="">None</option>
-                  {runs.map((run) => <option key={`p-${run.run_id}`} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
+                  {sortedRuns.map((run) => <option key={`p-${run.run_id}`} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
                 </select>
               </label>
               <label className="hint" style={{ display: "block", marginBottom: 4 }}>
@@ -1196,9 +1270,10 @@ export function StudioPage() {
         </div>
       </Tile>
 
+      <div ref={runsPanelRef}>
       <Tile span="wide" kicker="04 · Dry proofs" title="Recent runs">
         <div className="action-row" style={{ marginBottom: 12 }}>
-          <BatchSelect runs={runs} picked={pickedRuns} onChange={setPickedRuns} />
+          <BatchSelect runs={sortedRuns} picked={pickedRuns} onChange={setPickedRuns} />
           <Button variant="ghost" disabled={!user.authenticated} onClick={() => void pairLocalAgent()}>
             {paired ? "Paired" : "Pair local agent"}
           </Button>
@@ -1291,7 +1366,7 @@ export function StudioPage() {
             <Skeleton className="skel-block" />
             <Skeleton className="skel-block" />
           </div>
-        ) : runs.length ? (
+        ) : (sortedRuns.length || openRun) ? (
           <>
           <div className="run-list">
             {pageRuns.map((run) => (
@@ -1330,25 +1405,12 @@ export function StudioPage() {
               </article>
             ))}
           </div>
-          {runs.length > RUNS_PER_PAGE ? (
-            <div className="run-pager">
-              <Button
-                variant="ghost"
-                disabled={safeRunPage <= 0}
-                onClick={() => setRunPage((page) => Math.max(0, page - 1))}
-              >
-                ← Prev
-              </Button>
-              <span className="hint">Page {safeRunPage + 1} of {runPages}</span>
-              <Button
-                variant="ghost"
-                disabled={safeRunPage >= runPages - 1}
-                onClick={() => setRunPage((page) => Math.min(runPages - 1, page + 1))}
-              >
-                Next →
-              </Button>
-            </div>
-          ) : null}
+          <ListPager
+            page={safeRunPage}
+            pageCount={runPages}
+            onPage={setRunPage}
+            summary={`${sortedRuns.length} runs`}
+          />
           {openRun ? (
             <RunWorkspace
               run={openRun}
@@ -1371,6 +1433,7 @@ export function StudioPage() {
           <p className="hint">No runs in this flow yet. The stage stays empty until a plate lands.</p>
         )}
       </Tile>
+      </div>
       {viewer ? (
         <FileViewer
           configKey={viewer}

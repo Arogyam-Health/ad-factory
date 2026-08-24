@@ -5,7 +5,10 @@ import { exactOnImageCopyLines, replaceExactOnImageCopy } from "@/lib/prompt-cop
 import { copyFailureDetail, displayRunStatus } from "@/lib/run-status";
 import type { Run } from "@/lib/types";
 import { Button } from "@/components/Button";
+import { ListPager, usePageWindow } from "@/components/ListPager";
 import { OutputGallery, type OutputRow } from "@/pages/studio/OutputGallery";
+
+const PROMPTS_PER_PAGE = 8;
 
 type PromptRow = {
   prompt_id?: string;
@@ -24,6 +27,24 @@ type CopyLine = { label: string; value: string };
 
 function outputKey(item: OutputRow) {
   return item.output_id || item.resource_id || item.artifact_id || "";
+}
+
+function mergePromptRows(meta: PromptRow[], local: PromptRow[]) {
+  const byId = new Map<string, PromptRow>();
+  for (const item of [...meta, ...local]) {
+    const id = item.prompt_id || "";
+    if (!id) continue;
+    byId.set(id, { ...byId.get(id), ...item });
+  }
+  const seen = new Set<string>();
+  const ordered: PromptRow[] = [];
+  for (const item of [...meta, ...local]) {
+    const id = item.prompt_id || "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ordered.push(byId.get(id) || item);
+  }
+  return ordered;
 }
 
 function mergeOutputs(local: OutputRow[], meta: OutputRow[]) {
@@ -75,8 +96,8 @@ export function RunWorkspace({
     let cancelled = false;
     async function load() {
       const [metaPrompts, metaImages] = await Promise.all([
-        fetchJSON<{ prompts?: PromptRow[] }>(`/api/runs/${encodeURIComponent(runId)}/prompts`).catch(() => ({ prompts: [] })),
-        fetchJSON<{ images?: OutputRow[] }>(`/api/runs/${encodeURIComponent(runId)}/images`).catch(() => ({ images: [] })),
+        fetchJSON<{ prompts?: PromptRow[] }>(`/api/runs/${encodeURIComponent(runId)}/prompts`, { noCache: true }).catch(() => ({ prompts: [] })),
+        fetchJSON<{ images?: OutputRow[] }>(`/api/runs/${encodeURIComponent(runId)}/images`, { noCache: true }).catch(() => ({ images: [] })),
       ]);
       if (cancelled) return;
       let nextPrompts = metaPrompts.prompts || [];
@@ -90,14 +111,12 @@ export function RunWorkspace({
           ]);
           if (cancelled) return;
           if (localPrompts.length) {
-            nextPrompts = await Promise.all(
-              localPrompts.slice(0, 40).map(async (item) => ({
+            nextPrompts = mergePromptRows(
+              nextPrompts,
+              localPrompts.map((item) => ({
                 ...item,
                 persona: item.persona || item.persona_name || item.display_name,
                 version: item.resource_version || item.version || 0,
-                text: item.prompt_id
-                  ? await localDataPlane.promptContent(item.prompt_id, localDevice, item.resource_version || item.version).catch(() => "")
-                  : "",
               })),
             );
           }
@@ -128,6 +147,12 @@ export function RunWorkspace({
       cancelled = true;
     };
   }, [runId, deviceId, run.device_id, paired, busy, reloadToken, refreshToken]);
+
+  useEffect(() => {
+    if ((run.prompt_count || 0) <= prompts.length) return;
+    const timer = window.setTimeout(() => setReloadToken((value) => value + 1), 3000);
+    return () => window.clearTimeout(timer);
+  }, [run.prompt_count, prompts.length]);
 
   async function queueImages(mode: "45" | "both" | "916") {
     if (!runId) return;
@@ -244,7 +269,9 @@ export function RunWorkspace({
     }
   }
 
+  const promptWindow = usePageWindow(prompts, PROMPTS_PER_PAGE, runId);
   const shownCount = outputs.length || run.image_count || 0;
+  const listedCount = Math.max(prompts.length, run.prompt_count || 0);
   const imageHint = outputs.length
     ? ""
     : (run.image_count || 0) > 0
@@ -257,7 +284,7 @@ export function RunWorkspace({
     <section className="run-workspace">
       <div className="action-row" style={{ marginBottom: 12 }}>
         <strong>{run.display_batch || runId}</strong>
-        <span className="hint">{displayRunStatus(run)} · {run.prompt_count ?? prompts.length} prompts · {shownCount} images</span>
+        <span className="hint">{displayRunStatus(run)} · {listedCount} prompts · {shownCount} images</span>
         <Button variant="ghost" onClick={onClose}>Close run</Button>
       </div>
       <div className="action-row" style={{ marginBottom: 16 }}>
@@ -287,16 +314,20 @@ export function RunWorkspace({
         </p>
       ) : null}
       <p className="hint" style={{ marginBottom: 10 }}>
-        {prompts.length ? `${prompts.length} prompts on this plate.` : "No prompts yet. Run structured copy first."}
+        {prompts.length
+          ? prompts.length < listedCount
+            ? `${prompts.length} of ${listedCount} prompts loaded. Use the arrows to page through this plate.`
+            : `${listedCount} prompts on this plate.`
+          : "No prompts yet. Run structured copy first."}
       </p>
       {prompts.length ? (
         <div className="run-list" style={{ marginBottom: 16 }}>
-          {prompts.slice(0, 16).map((prompt, index) => {
-            const id = prompt.prompt_id || String(index);
+          {promptWindow.items.map((prompt, index) => {
+            const id = prompt.prompt_id || String(promptWindow.page * PROMPTS_PER_PAGE + index);
             return (
               <div key={id}>
                 <article className="run-row prompt-row">
-                  <strong>{prompt.persona || prompt.display_name || prompt.prompt_id || `Prompt ${index + 1}`}</strong>
+                  <strong>{prompt.persona || prompt.display_name || prompt.prompt_id || `Prompt ${promptWindow.page * PROMPTS_PER_PAGE + index + 1}`}</strong>
                   <span>{prompt.format || "—"}</span>
                   <span>{prompt.language || "—"}</span>
                   <span>{prompt.status || "ready"}</span>
@@ -330,6 +361,12 @@ export function RunWorkspace({
               </div>
             );
           })}
+          <ListPager
+            page={promptWindow.page}
+            pageCount={promptWindow.pageCount}
+            onPage={promptWindow.setPage}
+            summary={`${listedCount} prompts`}
+          />
         </div>
       ) : null}
       {outputs.length ? (

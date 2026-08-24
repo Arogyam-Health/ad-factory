@@ -4,7 +4,10 @@ import { useAuth } from "@/lib/auth";
 import type { Trace, TraceList } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
+import { ListPager, usePageWindow } from "@/components/ListPager";
 import { SkeletonLines } from "@/components/Skeleton";
+
+const TRACES_PER_PAGE = 5;
 
 function matchesQuery(trace: Trace, query: string) {
   if (!query) return true;
@@ -30,16 +33,19 @@ function TraceRows({
   setOpen,
   selected,
   setSelected,
+  resetKey,
 }: {
   traces: Trace[];
   open: string;
   setOpen: (id: string) => void;
   selected: Set<string>;
   setSelected: (next: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
+  resetKey: string;
 }) {
+  const windowed = usePageWindow(traces, TRACES_PER_PAGE, resetKey);
   return (
     <div className="run-list">
-      {traces.map((trace) => {
+      {windowed.items.map((trace) => {
         const id = trace.trace_id || `${trace.run_id}-${trace.created_at}`;
         return (
           <article key={id} className="run-row trace-row">
@@ -86,6 +92,12 @@ function TraceRows({
           </article>
         );
       })}
+      <ListPager
+        page={windowed.page}
+        pageCount={windowed.pageCount}
+        onPage={windowed.setPage}
+        summary={`${traces.length} traces`}
+      />
     </div>
   );
 }
@@ -126,11 +138,11 @@ export function TracesPage() {
 
   const q = query.trim().toLowerCase();
   const filteredPersonal = useMemo(
-    () => personal.filter((trace) => matchesQuery(trace, q)),
+    () => personal.filter((trace) => matchesQuery(trace, q)).sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0)),
     [personal, q],
   );
   const filteredOrg = useMemo(
-    () => orgTraces.filter((trace) => matchesQuery(trace, q)),
+    () => orgTraces.filter((trace) => matchesQuery(trace, q)).sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0)),
     [orgTraces, q],
   );
   const total = filteredPersonal.length + filteredOrg.length;
@@ -190,6 +202,7 @@ export function TracesPage() {
                 setOpen={setOpen}
                 selected={selected}
                 setSelected={setSelected}
+                resetKey={`personal:${q}`}
               />
             ) : (
               <p className="hint">No personal copy LLM calls yet. Image and reference runs do not write traces.</p>
@@ -203,6 +216,7 @@ export function TracesPage() {
                 setOpen={setOpen}
                 selected={selected}
                 setSelected={setSelected}
+                resetKey={`org:${q}`}
               />
             ) : (
               <p className="hint">No org copy LLM calls yet. Image and reference runs do not write traces.</p>

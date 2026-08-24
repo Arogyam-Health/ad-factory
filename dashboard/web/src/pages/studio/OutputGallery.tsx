@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import { Button } from "@/components/Button";
 import { DownloadKindDialog } from "@/components/DownloadKindDialog";
+import { ListPager, usePageWindow } from "@/components/ListPager";
+
+const IMAGES_PER_PAGE = 8;
 
 export type OutputRow = {
   output_id?: string;
@@ -90,6 +93,7 @@ export function OutputGallery({
   }, [outputs]);
 
   const visible = outputs.filter((item) => !filter || aspectKey(item) === filter);
+  const imageWindow = usePageWindow(visible, IMAGES_PER_PAGE, filter);
 
   async function openImage(item: OutputRow) {
     if (item.url) {
@@ -230,8 +234,8 @@ export function OutputGallery({
         </div>
       ) : null}
       <div className="output-grid">
-        {visible.map((item, index) => {
-          const id = outputKey(item) || String(index);
+        {imageWindow.items.map((item, index) => {
+          const id = outputKey(item) || String(imageWindow.page * IMAGES_PER_PAGE + index);
           const busy = busyId === id;
           return (
             <article key={id} className="image-card">
@@ -282,6 +286,12 @@ export function OutputGallery({
           );
         })}
       </div>
+      <ListPager
+        page={imageWindow.page}
+        pageCount={imageWindow.pageCount}
+        onPage={imageWindow.setPage}
+        summary={`${visible.length} images`}
+      />
       {downloadItem ? (
         <DownloadKindDialog
           title={`Download ${downloadName(downloadItem)}`}
