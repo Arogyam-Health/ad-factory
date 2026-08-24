@@ -1099,6 +1099,9 @@ def test_config_versions() -> int:
     # 9. Config routes module imports
     from dashboard.backend.services.config_routes import router
     failed += ok(router is not None, "config_routes router exists")
+    route_paths = [getattr(route, "path", "") for route in router.routes]
+    failed += ok("/api/config/{config_id}/copy-to-org" in route_paths, "copy-to-org route exists")
+    failed += ok("/api/config/{config_id}/copy-to-personal" in route_paths, "copy-to-personal route exists")
 
     # 10. Non-DB permissions sanity: own personal config
     personal_doc = {"owner_type": "user", "owner_id": "usr_me"}
@@ -1449,7 +1452,9 @@ def test_admin_frontend() -> int:
     failed += ok("conversion_916_prompt" in keys and "starting_prompt" in keys, "config keys include prompt files")
     failed += ok("saveConfigFile" in keys and "/api/user/config" in keys, "studio file save uses config PUT")
     failed += ok("expected_version" in keys, "studio config saves send expected_version")
-    failed += ok("Save file" in viewer and "readOnly={!canEdit}" in viewer, "Studio FileViewer is editable when allowed")
+    editor = (react / "components" / "ConfigFileEditor.tsx").read_text(encoding="utf-8")
+    failed += ok("Save file" in viewer, "Studio FileViewer can save")
+    failed += ok("readOnly={!canEdit}" in editor, "config editor is editable when allowed")
 
     return failed
 

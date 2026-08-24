@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from dashboard.backend.auth.service import require_user_dependency
 from dashboard.backend.db.client import get_sync_db
@@ -446,6 +446,68 @@ def copy_config_to_org(
     return {
         "status": "copied",
         "org_id": target_org_id,
+        "config": result,
+        "reason": reason,
+    }
+
+
+@router.post("/api/config/{config_id}/copy-to-personal")
+def copy_config_to_personal(
+    config_id: str,
+    payload: dict[str, Any] | None = Body(default=None),
+    user: dict[str, Any] = Depends(require_user_dependency),
+) -> dict:
+    """Copy an org (or other viewable) config onto the signed-in user's personal plate."""
+    user_id = user["user_id"]
+    user_email = user.get("email", "")
+    body = payload or {}
+
+    doc = _require_config_access(config_id, user_id)
+    source_owner_type = str(doc.get("owner_type") or "user")
+    source_owner_id = str(doc.get("owner_id") or "")
+
+    if source_owner_type == "user" and source_owner_id == user_id:
+        raise HTTPException(status_code=400, detail="This plate is already your personal config.")
+
+    if source_owner_type == "org":
+        require_org_member(user_id, source_owner_id)
+
+    reason = str(body.get("reason") or "").strip() or "copy_config_to_personal"
+
+    try:
+        result = _copy_config(
+            source_owner_type=source_owner_type,
+            source_owner_id=source_owner_id,
+            target_owner_type="user",
+            target_owner_id=user_id,
+            actor_user_id=user_id,
+            actor_email=user_email,
+            mode="replace_all",
+            reason=reason,
+            org_id=source_owner_id if source_owner_type == "org" else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    write_audit_event(
+        event_type="config_copied_to_personal",
+        actor_user_id=user_id,
+        actor_email=user_email,
+        target_type="config",
+        target_id=config_id,
+        org_id=source_owner_id if source_owner_type == "org" else None,
+        metadata={
+            "config_id": config_id,
+            "source_owner_type": source_owner_type,
+            "source_owner_id": source_owner_id,
+            "reason": reason,
+        },
+    )
+
+    return {
+        "status": "copied",
+        "owner_type": "user",
+        "owner_id": user_id,
         "config": result,
         "reason": reason,
     }

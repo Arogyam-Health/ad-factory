@@ -300,7 +300,7 @@ def copy_config(
     else:
         final_files = dict(source_files)
 
-    if target_doc and target_owner_type == "org":
+    if target_doc:
         create_config_version_before_update(
             config_doc=target_doc,
             new_files=final_files,

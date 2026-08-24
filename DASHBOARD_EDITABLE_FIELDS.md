@@ -146,7 +146,7 @@ Uses `persona_seeds`, `concept`, `reference_starting_prompt`, `reference_product
 
 Same keys as Studio §4. Plate files, hypothesis style files, and business-rule files are listed in separate blocks. JSON keys are validated on save. Business rules are this brand's lock (product doc, personas, starting prompts). The proof bar lives in Prompt Assembler Templates.
 
-**Copy to Org** copies the current source’s files onto an org you can manage (creates a versioned snapshot). Creating a team also copies the creator’s current config onto the new org.
+**Copy to Org** copies the current source’s files onto an org you can manage (creates a versioned snapshot). **Copy to my config** copies a shared org plate onto your personal files. Creating a team also copies the creator’s current config onto the new org.
 
 Org **shared** mode: members edit one org config. Org **individual** mode: each member keeps a personal config.
 

@@ -6,6 +6,7 @@ import { asConfigText, CONFIG_KEYS, CONFIG_SECTIONS, JSON_KEYS, KEY_LABELS, read
 import type { ConfigSource, ConfigVersion, EffectiveConfig, StudioPayload } from "@/lib/types";
 import { Bento, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
+import { ConfigFileEditor } from "@/components/ConfigFileEditor";
 import { SkeletonLines } from "@/components/Skeleton";
 import { Modal } from "@/components/Modal";
 
@@ -36,6 +37,8 @@ export function ConfigPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeOrg, setMergeOrg] = useState("");
   const [mergeReason, setMergeReason] = useState("");
+  const [personalOpen, setPersonalOpen] = useState(false);
+  const [personalReason, setPersonalReason] = useState("");
   const [versionReason, setVersionReason] = useState("");
   const [versionOpen, setVersionOpen] = useState(false);
   const [reload, setReload] = useState(0);
@@ -298,6 +301,25 @@ export function ConfigPage() {
     }
   }
 
+  async function copyToPersonal() {
+    if (!meta?.config_id) return;
+    try {
+      await fetchJSON(`/api/config/${meta.config_id}/copy-to-personal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: personalReason.trim() || "copy_config_to_personal" }),
+      });
+      setPersonalOpen(false);
+      setPersonalReason("");
+      setStatus("Config copied to your personal plate.");
+      clearCache("/api/config/");
+      switchSource("personal");
+      setReload((n) => n + 1);
+    } catch (err) {
+      setStatus(String(err));
+    }
+  }
+
   const orgSources = sources.filter((item) => item.type === "org");
   const copyTargets = (meta?.available_orgs || []).filter((org) => org.org_id !== meta?.org?.org_id);
 
@@ -349,13 +371,12 @@ export function ConfigPage() {
       <Tile span="hero" kicker={active} title={KEY_LABELS[active]}>
         {loading ? <SkeletonLines lines={12} /> : (
           <>
-            <textarea
-              className="cfg-textarea"
-              value={drafts[active] ?? ""}
-              readOnly={!canEdit}
-              rows={20}
-              spellCheck={false}
-              onChange={(event) => setDrafts((prev) => ({ ...prev, [active]: event.target.value }))}
+            <ConfigFileEditor
+              fileKey={active}
+              text={drafts[active] ?? ""}
+              isJson={JSON_KEYS.has(active)}
+              canEdit={canEdit}
+              onChange={(text) => setDrafts((prev) => ({ ...prev, [active]: text }))}
             />
             <div className="action-row">
               <Button variant="primary" disabled={!canEdit} onClick={() => void saveAll()}>
@@ -369,6 +390,12 @@ export function ConfigPage() {
                 setMergeOpen(true);
               }}>
                 Copy to org
+              </Button>
+              <Button
+                disabled={!user.authenticated || meta?.owner_type !== "org" || !meta?.config_id}
+                onClick={() => setPersonalOpen(true)}
+              >
+                Copy to my config
               </Button>
               <span className="hint">{status}</span>
             </div>
@@ -444,6 +471,21 @@ export function ConfigPage() {
         >
           <p className="hint">Snapshots the current files. The live plate does not change.</p>
           <input className="field" value={versionReason} onChange={(e) => setVersionReason(e.target.value)} placeholder="e.g. Before testing new prompts" />
+        </Modal>
+      ) : null}
+      {personalOpen ? (
+        <Modal
+          title="Copy config to my plate"
+          onClose={() => setPersonalOpen(false)}
+          footer={(
+            <>
+              <Button variant="primary" onClick={() => void copyToPersonal()}>Copy now</Button>
+              <Button variant="ghost" onClick={() => setPersonalOpen(false)}>Cancel</Button>
+            </>
+          )}
+        >
+          <p className="hint">Replaces your personal files with this org plate. A snapshot of your current personal plate is kept when one exists.</p>
+          <input className="field" value={personalReason} onChange={(e) => setPersonalReason(e.target.value)} placeholder="e.g. Pull team plate to my desk" />
         </Modal>
       ) : null}
       {mergeOpen ? (

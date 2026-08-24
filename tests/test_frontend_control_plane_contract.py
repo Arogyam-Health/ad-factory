@@ -151,6 +151,13 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("saveConfigFile", _read("lib", "config-keys.ts"))
         self.assertIn("Save file", _read("components", "FileViewer.tsx"))
         self.assertIn("result.notice", _read("components", "FileViewer.tsx"))
+        editor = _read("components", "ConfigFileEditor.tsx")
+        self.assertIn("Fields", editor)
+        self.assertIn("JSON", editor)
+        self.assertIn("JsonFieldEditor", editor)
+        fields = _read("components", "JsonFieldEditor.tsx")
+        self.assertIn("+ Add field", fields)
+        self.assertIn("Delete", fields)
 
     def test_guide_page_and_flexible_formats_are_wired(self) -> None:
         app = _read("App.tsx")
@@ -176,6 +183,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("studio?.formats", studio)
         self.assertIn('to="/guide"', config)
         self.assertIn("result.notice", config)
+        self.assertIn("ConfigFileEditor", config)
+        self.assertIn("Copy to my config", config)
+        self.assertIn("copy-to-personal", config)
         self.assertIn("/api/guide", guide)
         self.assertIn('"/api/guide"', defaults)
         self.assertIn("format_catalog", defaults)
@@ -291,6 +301,7 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
             "reference_starting_prompt",
             "reference_product_master_doc",
             "Copy to Org",
+            "Copy to my config",
             "ad-factory-agent/config/agent.json",
             "--session-cookie",
             "persona_seeds",

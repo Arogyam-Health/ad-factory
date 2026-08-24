@@ -590,6 +590,9 @@ class MongoDashboardConfigTests(unittest.TestCase):
         self.assertIn("reference_starting_prompt", reference)
         self.assertIn("reference_product_master_doc", reference)
         self.assertIn("/api/config/effective", config)
+        self.assertIn("copy-to-personal", config)
+        routes = (ROOT / "dashboard/backend/services/config_routes.py").read_text(encoding="utf-8")
+        self.assertIn("/api/config/{config_id}/copy-to-personal", routes)
 
     def test_empty_json_placeholders_do_not_override_generic_catalogs(self) -> None:
         from dashboard.backend.services.user_config import _has_config_override

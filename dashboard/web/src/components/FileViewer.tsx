@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { asConfigText, KEY_LABELS, saveConfigFile } from "@/lib/config-keys";
+import { asConfigText, JSON_KEYS, KEY_LABELS, saveConfigFile } from "@/lib/config-keys";
 import { Button } from "@/components/Button";
+import { ConfigFileEditor } from "@/components/ConfigFileEditor";
 import { Modal } from "@/components/Modal";
 
 type Props = {
@@ -77,13 +78,13 @@ export function FileViewer({
         </>
       )}
     >
-      <textarea
-        className="cfg-textarea"
+      <ConfigFileEditor
+        fileKey={configKey}
+        text={draft}
+        isJson={JSON_KEYS.has(configKey)}
+        canEdit={canEdit}
         rows={18}
-        value={draft}
-        readOnly={!canEdit}
-        spellCheck={false}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={setDraft}
       />
     </Modal>
   );
