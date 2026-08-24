@@ -570,6 +570,22 @@ def check_cdp() -> dict[str, Any]:
         return {"available": False, "browser": "", "url": ""}
 
 
+def _filter_product_asset_references(
+    references: list[dict[str, Any]],
+    selected_ids: Any,
+) -> list[dict[str, Any]]:
+    if selected_ids is None:
+        return list(references)
+    if not isinstance(selected_ids, list):
+        raise ValueError("Selected input images are invalid")
+    wanted = {str(item) for item in selected_ids if str(item or "").strip()}
+    return [
+        item
+        for item in references
+        if str(item.get("resource_id") or "") in wanted
+    ]
+
+
 def _local_product_asset_references(owner_key: str) -> list[dict[str, Any]]:
     if AGENT_STATE is None:
         return []
@@ -789,9 +805,22 @@ def execute_job(job: dict[str, Any]) -> None:
                     str(image_context.get("conversion_916_prompt") or ""),
                     encoding="utf-8",
                 )
+                selected_ids = (
+                    parameters.get("product_asset_ids")
+                    if "product_asset_ids" in parameters
+                    else None
+                )
+                product_assets = _filter_product_asset_references(
+                    _local_product_asset_references(owner_key),
+                    selected_ids,
+                )
+                if selected_ids is not None and not product_assets:
+                    raise RuntimeError(
+                        "None of the selected input images are available on this device"
+                    )
                 projection = StructuredBrowserExecutor(
                     AGENT_STATE,
-                    product_assets=_local_product_asset_references(owner_key),
+                    product_assets=product_assets,
                     conversion_prompt_text=conversion_path.read_text(encoding="utf-8"),
                     cancel_check=lambda: _agent_job_cancel_requested(job_id),
                 ).execute(job_id)

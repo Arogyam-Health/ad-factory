@@ -41,6 +41,7 @@ export function RunWorkspace({
   deviceId,
   agentId,
   paired,
+  productAssetIds = [],
   refreshToken = 0,
   onPair,
   onClose,
@@ -51,6 +52,7 @@ export function RunWorkspace({
   deviceId: string;
   agentId: string;
   paired: boolean;
+  productAssetIds?: string[];
   refreshToken?: number;
   onPair: () => Promise<{ ok: boolean; deviceId: string; agentId: string }>;
   onClose: () => void;
@@ -139,6 +141,10 @@ export function RunWorkspace({
     }
     setBusy(mode);
     try {
+      if (mode !== "916" && !productAssetIds.length) {
+        onStatus("Select at least one input image to send to the image model.");
+        return;
+      }
       const queued = await fetchJSON<{ job_id?: string }>(`/api/runs/${encodeURIComponent(runId)}/image-generation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,6 +154,7 @@ export function RunWorkspace({
           mode,
           agent_id: liveAgent,
           device_id: liveDevice,
+          ...(productAssetIds.length ? { product_asset_ids: productAssetIds } : {}),
         }),
       });
       invalidateRuns();

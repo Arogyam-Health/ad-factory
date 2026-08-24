@@ -16,7 +16,10 @@ from dashboard.backend.services.copy_system import (
     persona_source_map,
 )
 from dashboard.backend.services.render_structured_copy import (
+    _planned_ads,
+    assemble_copy_llm_request,
     generate_structured_prompt_bundle,
+    reject_legacy_copy_llm_request,
 )
 
 
@@ -520,6 +523,131 @@ class CopySystemRequestTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertEqual(request["task"], "Write structured advertising copy as JSON")
         self.assertNotIn("image", json.dumps(request).lower())
+
+    def test_legacy_plan_dump_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            reject_legacy_copy_llm_request(
+                {
+                    "task": "Generate structured advertising copy as JSON",
+                    "product_document": "facts",
+                    "planned_ads": [
+                        {
+                            "format": "HERO",
+                            "concept_angle": "desired_outcome",
+                            "background_group_key": "HERO::P01",
+                            "hypothesis": {
+                                "type": "concept_angle",
+                                "variant": "desired_outcome",
+                                "hypothesis_id": "concept_angle-desired_outcome",
+                            },
+                        }
+                    ],
+                    "languages": ["EN"],
+                    "requirements": {"json_only": True},
+                    "output_schema": {
+                        "product_truths": ["string"],
+                        "ads": [{"copy": {"EN": {"headline": "string"}}}],
+                    },
+                }
+            )
+
+    def test_studio_settings_compile_layered_request(self) -> None:
+        from dashboard.backend.services.copy_system import resolve_language_ids
+        from dashboard.backend.services.user_config import _repository_generic_config
+
+        config = _repository_generic_config()
+        settings = {
+            "selected_personas": [1, 2, 3],
+            "global_formats": ["FEAT"],
+            "formats_by_persona": {
+                "1": ["HERO", "FEAT"],
+                "2": ["BA", "TEST"],
+                "3": ["HERO", "UGC"],
+            },
+            "multiplier": 2,
+            "language_mode": "EN",
+            "hypothesis": {
+                "type": "concept_angle",
+                "variant": "desired_outcome",
+            },
+            "selected_concept": "Concept/Dont_Buy_This",
+            "share_background_across_personas": False,
+        }
+        planned = _planned_ads(settings, config)
+        self.assertEqual(len(planned), 12)
+        request = assemble_copy_llm_request(
+            planned=planned,
+            languages=resolve_language_ids(config, "EN"),
+            effective_config=config,
+            product_document=str(config["product_master_doc"]),
+        )
+        encoded = json.dumps(request)
+        self.assertNotIn("product_truths", encoded)
+        self.assertNotIn("requirements", request)
+        self.assertNotIn("background_group_key", encoded)
+        self.assertNotIn("hypothesis_id", encoded)
+        self.assertEqual(request["languages"][0]["id"], "EN")
+        self.assertTrue(request["languages"][0]["rules"])
+        self.assertTrue(request["guardrails"])
+        self.assertEqual(len(request["planned_ads"]), 12)
+        first = request["planned_ads"][0]
+        self.assertEqual(first["format"]["id"], "HERO")
+        self.assertIn("support_line", first["format"]["output_fields"])
+        self.assertIsInstance(first["format"]["description"], str)
+        self.assertEqual(first["hypothesis"]["type"], "concept_angle")
+        self.assertEqual(first["hypothesis"]["style"], "desired_outcome")
+        self.assertIn("Lead with what the person wants", first["hypothesis"]["definition"])
+        self.assertEqual(first["creative_concept"]["id"], "Concept/Dont_Buy_This")
+        self.assertNotIn("pain_hi", first["persona"])
+        self.assertIn("pain", first["persona"])
+        feat = next(
+            item for item in request["planned_ads"] if item["format"]["id"] == "FEAT"
+        )
+        test_ad = next(
+            item for item in request["planned_ads"] if item["format"]["id"] == "TEST"
+        )
+        self.assertEqual(feat["format"]["output_fields"], ["headline", "bullets", "cta"])
+        self.assertEqual(
+            test_ad["format"]["output_fields"],
+            ["headline", "attribution", "trust_line", "cta"],
+        )
+        schemas = {
+            item["format"]["id"]: schema["copy"]["EN"]
+            for item, schema in zip(request["planned_ads"], request["output_schema"]["ads"])
+        }
+        self.assertIn("support_line", schemas["HERO"])
+        self.assertIn("bullets", schemas["FEAT"])
+        self.assertNotIn("support_line", schemas["FEAT"])
+        self.assertIn("attribution", schemas["TEST"])
+        self.assertNotIn("bullets", schemas["TEST"])
+        self.assertIn("support_line", schemas["UGC"])
+        self.assertNotIn("trust_line", schemas["UGC"])
+
+        calls: list[dict] = []
+
+        def generate(payload: dict, repair: bool = False) -> dict:
+            calls.append(payload)
+            return {
+                "ads": [
+                    {"copy": {"EN": _copy_for(str(item["format"]["id"]))}}
+                    for item in payload["planned_ads"]
+                ]
+            }
+
+        result = generate_structured_prompt_bundle(
+            run_id="run-studio-compile",
+            run_number=12,
+            settings=settings,
+            effective_config=config,
+            provider_name="opencode",
+            provider_model="opencode/nemotron-3.5-lightning-free",
+            generate=generate,
+        )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["copy_count"], 12)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["planned_ads"][0]["format"]["id"], "HERO")
+        self.assertNotIn("product_truths", json.dumps(calls[0]))
 
 
 if __name__ == "__main__":

@@ -231,6 +231,29 @@ class AgentMetadataJobTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_job_envelope(envelope)
 
+    def test_validator_accepts_bounded_product_asset_ids(self) -> None:
+        from dashboard.backend.agent.service import validate_job_envelope
+
+        envelope = self.valid_envelope()
+        envelope["parameters"]["product_asset_ids"] = [
+            "res_" + "a" * 32,
+            "res_" + "b" * 32,
+        ]
+        clean = validate_job_envelope(envelope)
+        self.assertEqual(
+            clean["parameters"]["product_asset_ids"],
+            ["res_" + "a" * 32, "res_" + "b" * 32],
+        )
+
+    def test_validator_rejects_product_asset_paths_and_empty_lists(self) -> None:
+        from dashboard.backend.agent.service import validate_job_envelope
+
+        for value in ([], ["/tmp/secret.png"], ["http://localhost/x"], "res_only"):
+            envelope = self.valid_envelope()
+            envelope["parameters"]["product_asset_ids"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_job_envelope(envelope)
+
     def test_validator_enforces_parameter_and_message_bounds(self) -> None:
         from dashboard.backend.agent.service import validate_job_envelope
 

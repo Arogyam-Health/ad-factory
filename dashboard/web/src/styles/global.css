@@ -1420,6 +1420,11 @@ input[type="number"].field::-webkit-inner-spin-button {
   padding-bottom: 6px;
 }
 
+.asset-card {
+  position: relative;
+  flex: 0 0 auto;
+}
+
 .asset-strip img,
 .asset-thumb img,
 .asset-thumb {
@@ -1431,8 +1436,51 @@ input[type="number"].field::-webkit-inner-spin-button {
   background: var(--surface-2);
 }
 
-.asset-thumb.active {
+.asset-card .asset-thumb {
+  display: block;
+  padding: 0;
+  cursor: pointer;
+}
+
+.asset-thumb.active,
+.asset-card.selected .asset-thumb,
+.asset-card.selected .asset-thumb img {
   border-color: var(--gold);
+}
+
+.asset-card-check {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 252, 247, 0.92);
+  border: 1px solid var(--rule);
+}
+
+.asset-card-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: rgba(255, 252, 247, 0.92);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.asset-card-remove:hover {
+  border-color: var(--gold);
+  color: var(--gold);
 }
 
 .trace-row {

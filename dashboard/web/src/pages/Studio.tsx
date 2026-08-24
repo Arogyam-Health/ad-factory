@@ -35,6 +35,21 @@ function catalogFormats(studio: StudioPayload | null): FormatOption[] {
 }
 const DEFAULT_OPENCODE_MODEL = "opencode/big-pickle";
 const RUNS_PER_PAGE = 5;
+const PICKED_PRODUCTS_KEY = "adFactoryPickedProducts";
+const PRODUCT_ASSET_LIMIT = 48;
+
+type ProductAsset = { resource_id: string; url?: string; filename?: string; version?: number };
+
+function readPickedProducts(): string[] | null {
+  try {
+    const raw = localStorage.getItem(PICKED_PRODUCTS_KEY);
+    if (raw == null) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch {
+    return null;
+  }
+}
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -60,7 +75,11 @@ async function queueRunImages(
   engine: string,
   agentId: string,
   deviceId: string,
+  productAssetIds: string[] = [],
 ) {
+  if (mode !== "916" && !productAssetIds.length) {
+    throw new Error("Select at least one input image to send to the image model.");
+  }
   return fetchJSON<{ job_id?: string }>(`/api/runs/${encodeURIComponent(runId)}/image-generation`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -70,6 +89,7 @@ async function queueRunImages(
       mode,
       agent_id: agentId,
       device_id: deviceId,
+      ...(productAssetIds.length ? { product_asset_ids: productAssetIds } : {}),
     }),
   });
 }
@@ -97,7 +117,8 @@ export function StudioPage() {
   const [busy, setBusy] = useState(false);
   const [deviceId, setDeviceId] = useState("");
   const [agentId, setAgentId] = useState("");
-  const [assets, setAssets] = useState<{ resource_id: string; url?: string; filename?: string; version?: number }[]>([]);
+  const [assets, setAssets] = useState<ProductAsset[]>([]);
+  const [pickedProducts, setPickedProducts] = useState<Set<string>>(new Set());
   const [assetBusy, setAssetBusy] = useState(false);
   const [hypType, setHypType] = useState("none");
   const [hypVariant, setHypVariant] = useState("");
@@ -148,6 +169,37 @@ export function StudioPage() {
   useEffect(() => {
     localStorage.setItem("adFactorySelectedConcept", selectedConcept);
   }, [selectedConcept]);
+  useEffect(() => {
+    if (!assets.length && !pickedProducts.size) return;
+    localStorage.setItem(PICKED_PRODUCTS_KEY, JSON.stringify([...pickedProducts]));
+  }, [pickedProducts, assets.length]);
+  useEffect(() => {
+    if (!paired || !deviceId) return;
+    let cancelled = false;
+    setAssetBusy(true);
+    void localDataPlane.listAssets({ kind: "product_image", deviceId })
+      .then((items) => {
+        if (cancelled) return;
+        const next = items.slice(0, PRODUCT_ASSET_LIMIT);
+        setAssets(next);
+        setPickedProducts((prev) => {
+          const available = new Set(next.map((item) => item.resource_id));
+          if (prev.size) return new Set([...prev].filter((id) => available.has(id)));
+          const stored = readPickedProducts();
+          if (stored) return new Set(stored.filter((id) => available.has(id)));
+          return available;
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setStatus(String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setAssetBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [paired, deviceId]);
 
   useEffect(() => {
     if (!ready) return;
@@ -442,6 +494,34 @@ export function StudioPage() {
     });
   }
 
+  function toggleProduct(id: string) {
+    setPickedProducts((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function removeProduct(item: ProductAsset) {
+    if (!deviceId || !window.confirm(`Remove ${item.filename || "this image"}?`)) return;
+    setAssetBusy(true);
+    try {
+      await localDataPlane.deleteAsset(item.resource_id, { deviceId });
+      setAssets((prev) => prev.filter((asset) => asset.resource_id !== item.resource_id));
+      setPickedProducts((prev) => {
+        const next = new Set(prev);
+        next.delete(item.resource_id);
+        return next;
+      });
+      setStatus(`Removed ${item.filename || "image"}.`);
+    } catch (err) {
+      setStatus(String(err));
+    } finally {
+      setAssetBusy(false);
+    }
+  }
+
   function togglePersonaFormat(n: number, fmt: string) {
     setPersonaFormats((current) => {
       const existing = new Set(current[n] ?? formatList);
@@ -611,6 +691,10 @@ export function StudioPage() {
       setStatus("Select batches first.");
       return;
     }
+    if (!pickedProducts.size) {
+      setStatus("Select at least one input image to send to the image model.");
+      return;
+    }
     const live = paired
       ? { ok: true, deviceId, agentId }
       : await pairLocalAgent();
@@ -618,7 +702,7 @@ export function StudioPage() {
     setBatchBusy(mode);
     try {
       for (const id of ids) {
-        await queueRunImages(id, mode, imageEngine, live.agentId, live.deviceId);
+        await queueRunImages(id, mode, imageEngine, live.agentId, live.deviceId, [...pickedProducts]);
       }
       invalidateRuns();
       const label = mode === "both" ? "4:5 + 9:16" : "4:5";
@@ -905,9 +989,20 @@ export function StudioPage() {
                   if (!files?.length || !deviceId || !paired) return;
                   setAssetBusy(true);
                   try {
+                    const known = new Set(assets.map((item) => item.resource_id));
                     await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
-                    const items = await localDataPlane.listAssets({ kind: "product_image", deviceId });
-                    setAssets(items.slice(0, 12));
+                    const items = (await localDataPlane.listAssets({ kind: "product_image", deviceId }))
+                      .slice(0, PRODUCT_ASSET_LIMIT);
+                    const uploaded = items
+                      .map((item) => item.resource_id)
+                      .filter((id) => !known.has(id));
+                    setAssets(items);
+                    setPickedProducts((prev) => {
+                      const available = new Set(items.map((item) => item.resource_id));
+                      const next = new Set([...prev].filter((id) => available.has(id)));
+                      for (const id of uploaded) next.add(id);
+                      return next;
+                    });
                     setStatus(`Stored ${files.length} image${files.length === 1 ? "" : "s"} on this device.`);
                   } catch (err) {
                     setStatus(String(err));
@@ -918,17 +1013,70 @@ export function StudioPage() {
                 }}
               />
               {assets.length ? (
-                <div className="asset-strip" style={{ marginBottom: 16 }}>
-                  {assets.map((item) => (
-                    <LazyAsset
-                      key={item.resource_id}
-                      resourceId={item.resource_id}
-                      deviceId={deviceId}
-                      version={item.version}
-                      alt={item.filename || "Input image"}
-                    />
-                  ))}
-                </div>
+                <>
+                  <p className="hint" style={{ margin: "8px 0 6px" }}>
+                    Check the images to send to the image model. Unchecked images stay stored.
+                  </p>
+                  <div className="action-row" style={{ marginBottom: 8 }}>
+                    <span className="hint">{assets.length} stored · {pickedProducts.size} selected</span>
+                    <Button
+                      variant="ghost"
+                      disabled={!assets.length}
+                      onClick={() => setPickedProducts(new Set(assets.map((item) => item.resource_id)))}
+                    >
+                      Select all
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={!pickedProducts.size}
+                      onClick={() => setPickedProducts(new Set())}
+                    >
+                      Select none
+                    </Button>
+                  </div>
+                  <div className="asset-strip" style={{ marginBottom: 16 }}>
+                    {assets.map((item) => {
+                      const selectedImage = pickedProducts.has(item.resource_id);
+                      return (
+                        <article
+                          key={item.resource_id}
+                          className={`asset-card${selectedImage ? " selected" : ""}`}
+                        >
+                          <label className="asset-card-check">
+                            <input
+                              type="checkbox"
+                              checked={selectedImage}
+                              onChange={() => toggleProduct(item.resource_id)}
+                              aria-label={`Send ${item.filename || "image"} to the image model`}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="asset-thumb"
+                            title={item.filename || item.resource_id}
+                            onClick={() => toggleProduct(item.resource_id)}
+                          >
+                            <LazyAsset
+                              resourceId={item.resource_id}
+                              deviceId={deviceId}
+                              version={item.version}
+                              alt={item.filename || "Input image"}
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            className="asset-card-remove"
+                            aria-label={`Remove ${item.filename || "image"}`}
+                            disabled={assetBusy}
+                            onClick={() => void removeProduct(item)}
+                          >
+                            ×
+                          </button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
               ) : assetBusy ? (
                 <Skeleton className="skel-block" />
               ) : null}
@@ -1173,6 +1321,7 @@ export function StudioPage() {
               deviceId={deviceId}
               agentId={agentId}
               paired={paired}
+              productAssetIds={[...pickedProducts]}
               refreshToken={deskTick}
               onPair={pairLocalAgent}
               onClose={() => setOpenRunId("")}

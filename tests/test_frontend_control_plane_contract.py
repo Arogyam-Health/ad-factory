@@ -112,6 +112,9 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("ownerKey || this._pairedOwner", local_client)
         self.assertIn("this._pairedOwner || this.activeOwnerKey(deviceId)", local_client)
         self.assertIn("listAssets({ kind: \"product_image\"", studio)
+        self.assertIn("deleteAsset(", studio)
+        self.assertIn("product_asset_ids", studio)
+        self.assertIn("pickedProducts", studio)
 
     def test_structured_copy_runs_on_render_and_reference_hydration_stays_local(self) -> None:
         studio = _read("pages", "Studio.tsx")

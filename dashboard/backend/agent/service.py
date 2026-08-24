@@ -70,8 +70,10 @@ _JOB_PARAMETER_KEYS = frozenset(
         "resource_version",
         "upload_set_version",
         "output_version",
+        "product_asset_ids",
     }
 )
+_PRODUCT_ASSET_ID_LIMIT = 48
 _JOB_TOP_LEVEL_KEYS = frozenset(
     {
         "job_id",
@@ -121,13 +123,7 @@ def _bounded_identifier(value: Any, field: str, *, required: bool = True) -> str
     return text
 
 
-def _safe_parameter_value(key: str, value: Any) -> Any:
-    if isinstance(value, bool) or value is None:
-        raise ValueError("Job parameters must be bounded metadata")
-    if isinstance(value, int):
-        if not 0 <= value <= 10_000:
-            raise ValueError("Job parameter integer is out of bounds")
-        return value
+def _safe_parameter_string(value: Any) -> str:
     if not isinstance(value, str) or not value or len(value) > 64:
         raise ValueError("Job parameter string is out of bounds")
     lowered_value = value.lower()
@@ -140,6 +136,20 @@ def _safe_parameter_value(key: str, value: Any) -> Any:
     ):
         raise ValueError("Job parameters contain prohibited values")
     return value
+
+
+def _safe_parameter_value(key: str, value: Any) -> Any:
+    if key == "product_asset_ids":
+        if not isinstance(value, list) or not (1 <= len(value) <= _PRODUCT_ASSET_ID_LIMIT):
+            raise ValueError("Job parameters must be bounded metadata")
+        return [_safe_parameter_string(item) for item in value]
+    if isinstance(value, bool) or value is None:
+        raise ValueError("Job parameters must be bounded metadata")
+    if isinstance(value, int):
+        if not 0 <= value <= 10_000:
+            raise ValueError("Job parameter integer is out of bounds")
+        return value
+    return _safe_parameter_string(value)
 
 
 def validate_job_envelope(envelope: dict[str, Any]) -> dict[str, Any]:

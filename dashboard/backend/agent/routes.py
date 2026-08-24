@@ -362,6 +362,14 @@ def queue_structured_image_generation(
         raise HTTPException(
             status_code=400, detail="Image generation settings are invalid"
         )
+    parameters: dict[str, Any] = {"engine": engine, "mode": mode}
+    raw_ids = payload.get("product_asset_ids")
+    if raw_ids is not None:
+        if not isinstance(raw_ids, list) or not raw_ids:
+            raise HTTPException(
+                status_code=400, detail="Select at least one input image"
+            )
+        parameters["product_asset_ids"] = [str(item or "") for item in raw_ids]
     try:
         job = create_job(
             agent_id=str(run["agent_id"]),
@@ -372,7 +380,7 @@ def queue_structured_image_generation(
             run_id=run_id,
             job_type="execute_run",
             command="generate_images",
-            parameters={"engine": engine, "mode": mode},
+            parameters=parameters,
             client_operation_id=operation_id,
         )
     except ValueError as exc:

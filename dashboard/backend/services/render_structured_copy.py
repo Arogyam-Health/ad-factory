@@ -514,6 +514,109 @@ def _llm_planned_ad(
     return compact(payload) or payload
 
 
+def reject_legacy_copy_llm_request(request: dict[str, Any]) -> None:
+    """Refuse the old plan-dump request that leaked image keys and product_truths."""
+    if not isinstance(request, dict):
+        raise ValueError("Copy request is invalid")
+    if "requirements" in request:
+        raise ValueError("Copy request must not include the legacy requirements object")
+    schema = request.get("output_schema")
+    if not isinstance(schema, dict) or "ads" not in schema or "product_truths" in schema:
+        raise ValueError("Copy output_schema must contain only ads")
+    if any("product_truths" in item for item in (schema.get("ads") or []) if isinstance(item, dict)):
+        raise ValueError("Copy output_schema must not ask for product_truths")
+    languages = request.get("languages")
+    if (
+        not isinstance(languages, list)
+        or not languages
+        or not all(isinstance(item, dict) and str(item.get("id") or "").strip() for item in languages)
+    ):
+        raise ValueError("Copy languages must be layer objects")
+    planned = request.get("planned_ads")
+    if not isinstance(planned, list) or not planned:
+        raise ValueError("Copy planned_ads are missing")
+    language_ids = {
+        str(item.get("id") or "").strip().upper()
+        for item in languages
+        if isinstance(item, dict)
+    }
+    for ad in planned:
+        if not isinstance(ad, dict):
+            raise ValueError("Copy planned_ads entries must be objects")
+        fmt = ad.get("format")
+        if not isinstance(fmt, dict) or not str(fmt.get("id") or "").strip():
+            raise ValueError("Copy planned_ads.format must be a layer object")
+        for key in (
+            "background_group_key",
+            "share_background_across_personas",
+            "creative_index",
+            "creative_total",
+            "concept_angle",
+        ):
+            if key in ad:
+                raise ValueError(f"Copy request must not include {key}")
+        hypothesis = ad.get("hypothesis")
+        if isinstance(hypothesis, dict) and (
+            "hypothesis_id" in hypothesis or "variant" in hypothesis
+        ):
+            raise ValueError("Copy hypothesis must use style layers, not plan variants")
+        persona = ad.get("persona") if isinstance(ad.get("persona"), dict) else {}
+        if "HI" not in language_ids:
+            if any(str(key).endswith("_hi") for key in persona):
+                raise ValueError("Copy persona must not send Hindi fillers on a non-Hindi run")
+        if "HINGLISH" not in language_ids:
+            if any(str(key).endswith("_hinglish") for key in persona):
+                raise ValueError("Copy persona must not send Hinglish fillers on a non-Hinglish run")
+    if not isinstance(request.get("guardrails"), list) or not request["guardrails"]:
+        raise ValueError("Copy request is missing guardrails")
+    if not str(request.get("product_document") or "").strip():
+        raise ValueError("Copy request is missing the product document")
+
+
+def assemble_copy_llm_request(
+    *,
+    planned: list[dict[str, Any]],
+    languages: tuple[str, ...],
+    effective_config: dict[str, Any],
+    product_document: str,
+    starting_prompt: str = "",
+) -> dict[str, Any]:
+    catalog = _archetype_catalog(effective_config)
+    has_hypothesis = any(
+        isinstance(item.get("hypothesis"), dict)
+        and str(item.get("hypothesis", {}).get("type") or "") not in {"", "none"}
+        for item in planned
+    )
+    request = compact(
+        {
+            "task": copy_task(effective_config),
+            "starting_prompt": starting_prompt,
+            "product_document": product_document,
+            "planned_ads": [
+                _llm_planned_ad(
+                    item,
+                    effective_config=effective_config,
+                    languages=languages,
+                    catalog=catalog,
+                )
+                for item in planned
+            ],
+            "languages": language_layers(effective_config, languages),
+            "guardrails": guardrails(
+                effective_config,
+                hypothesis=has_hypothesis,
+            ),
+            "output_schema": _copy_output_schema(
+                planned,
+                languages,
+                effective_config,
+            ),
+        }
+    )
+    reject_legacy_copy_llm_request(request)
+    return request
+
+
 def _copy_output_schema(
     planned: list[dict[str, Any]],
     languages: tuple[str, ...],
@@ -773,36 +876,12 @@ def generate_structured_prompt_bundle(
     starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
     catalog = _archetype_catalog(effective_config)
     llm_prompt = str(effective_config.get("visual_archetype_llm_prompt") or "").strip()
-    has_hypothesis = any(
-        isinstance(item.get("hypothesis"), dict)
-        and str(item.get("hypothesis", {}).get("type") or "") not in {"", "none"}
-        for item in planned
-    )
-    request = compact(
-        {
-            "task": copy_task(effective_config),
-            "starting_prompt": starting_prompt,
-            "product_document": product_document,
-            "planned_ads": [
-                _llm_planned_ad(
-                    item,
-                    effective_config=effective_config,
-                    languages=languages,
-                    catalog=catalog,
-                )
-                for item in planned
-            ],
-            "languages": language_layers(effective_config, languages),
-            "guardrails": guardrails(
-                effective_config,
-                hypothesis=has_hypothesis,
-            ),
-            "output_schema": _copy_output_schema(
-                planned,
-                languages,
-                effective_config,
-            ),
-        }
+    request = assemble_copy_llm_request(
+        planned=planned,
+        languages=languages,
+        effective_config=effective_config,
+        product_document=product_document,
+        starting_prompt=starting_prompt,
     )
     response = generate(request, False)
     copy_batch = _normalize_copy(response, planned, languages, effective_config)

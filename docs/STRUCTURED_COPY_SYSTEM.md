@@ -54,6 +54,7 @@ Rules:
 - Persona sends only filled fields. Hindi/Hinglish fillers are not invented. Which persona keys are copied is `ad_languages.persona_map`.
 - `languages` is a list of objects from `ad_languages` for the selected mode. Each object has `id` plus `label` / `rules` when those exist. Changing rules does not fail a run.
 - `output_schema` comes from that format’s `output_fields`. Extra LLM keys are ignored. Missing listed fields (except optional `trust_line`) trigger one repair, then fail.
+- Do not send `product_truths`, `requirements`, `background_group_key`, or `format` as a string. Product truths stay inside `product_document` for the model to use, not echo.
 
 Format ids come from `ad_formats` (`HERO`, `BA`, `TEST`, `FEAT`, `UGC` in the bundled file, plus any id matching `[A-Z][A-Z0-9_]{0,15}`). Studio chips and `/api/defaults` read that catalog. Acceptance uses that format’s `output_fields` only. Skeleton text is guidance and is never compared. `ad_guardrails` stay on every live call.
 

@@ -304,6 +304,14 @@ class StructuredLocalFlowTests(unittest.TestCase):
         context = self.state.resolve_job_context("job-copy")
         kinds = {entry["kind"] for entry in context["entries"]}
         self.assertTrue({"copy_batch", "trace", "prompt", "prompt_sidecar"}.issubset(kinds))
+        trace_entry = next(entry for entry in context["entries"] if entry["kind"] == "trace")
+        trace = json.loads(Path(trace_entry["local_path"]).read_text(encoding="utf-8"))
+        copy_request = trace["request"]
+        self.assertNotIn("requirements", copy_request)
+        self.assertNotIn("product_truths", json.dumps(copy_request.get("output_schema") or {}))
+        self.assertIsInstance(copy_request["planned_ads"][0]["format"], dict)
+        self.assertEqual(copy_request["planned_ads"][0]["format"]["id"], "HERO")
+        self.assertIsInstance(copy_request["languages"][0], dict)
         prompt_entry = next(entry for entry in context["entries"] if entry["kind"] == "prompt")
         prompt_text = Path(prompt_entry["local_path"]).read_text(encoding="utf-8")
         self.assertIn("PRODUCT LOCK BLOCK", prompt_text)
@@ -517,6 +525,51 @@ class StructuredLocalFlowTests(unittest.TestCase):
             )
         self.assertEqual(result["device_id"], device_id)
         self.assertEqual(db["runs"].docs[0]["device_id"], device_id)
+
+    def test_dashboard_queues_selected_product_asset_ids(self) -> None:
+        from dashboard.backend.agent.routes import queue_structured_image_generation
+        from tests.test_agent_metadata_jobs import _DB
+
+        db = _DB()
+        device_id = "dev_" + "c" * 32
+        db["agents"].insert_one(
+            {
+                "agent_id": "agent-selected",
+                "user_id": "user-selected",
+                "device_id": device_id,
+                "is_active": True,
+            }
+        )
+        db["runs"].insert_one(
+            {
+                "run_id": "run-selected-images",
+                "user_id": "user-selected",
+                "owner_type": "user",
+                "owner_id": "user-selected",
+                "agent_id": "agent-selected",
+                "device_id": device_id,
+                "flow_type": "structured",
+            }
+        )
+        selected = ["res_" + "d" * 32]
+        with (
+            patch("dashboard.backend.db.client.get_sync_db", return_value=db),
+            patch("dashboard.backend.agent.service.get_sync_db", return_value=db),
+        ):
+            queue_structured_image_generation(
+                "run-selected-images",
+                {
+                    "operation_id": "selected-images-operation",
+                    "engine": "chatgpt",
+                    "mode": "45",
+                    "product_asset_ids": selected,
+                },
+                {"user_id": "user-selected"},
+            )
+        self.assertEqual(
+            db["agent_jobs"].docs[0]["parameters"],
+            {"engine": "chatgpt", "mode": "45", "product_asset_ids": selected},
+        )
 
     def test_all_language_mode_writes_named_en_hi_hinglish_prompt_files(self) -> None:
         from local_agent_runtime.structured_copy import DeterministicFakeProvider, StructuredCopyExecutor

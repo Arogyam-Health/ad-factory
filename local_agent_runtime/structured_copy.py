@@ -333,7 +333,7 @@ class StructuredCopyExecutor:
                     **{key: value for key, value in plan.items() if key != "copy"},
                     "format": str(plan.get("format") or "").upper(),
                     "concept_angle": str(
-                        candidate.get("concept_angle") or plan.get("concept_angle") or "desired_outcome"
+                        candidate.get("concept_angle") or plan.get("concept_angle") or "none"
                     ),
                     "copy": copy_value,
                 }
@@ -498,8 +498,23 @@ class StructuredCopyExecutor:
                 settings.get("product_assets") if isinstance(settings.get("product_assets"), list) else [],
             )
             product_document = Path(product_entry["local_path"]).read_text(encoding="utf-8")
-            languages = _LANGUAGES.get(
-                str(execution.get("language_mode") or "EN").upper(), ("EN",)
+            from dashboard.backend.services.copy_system import COPY_SYSTEM_KEYS, resolve_language_ids
+            from dashboard.backend.services.render_structured_copy import assemble_copy_llm_request
+
+            effective_config = {
+                key: settings[key]
+                for key in (
+                    *COPY_SYSTEM_KEYS,
+                    "copy_starting_prompt",
+                    "copy_prompt_templates",
+                    "persona_seeds",
+                    "concept",
+                )
+                if key in settings
+            }
+            languages = resolve_language_ids(
+                effective_config,
+                str(execution.get("language_mode") or "EN"),
             )
             provider = self._provider_for(owner_key, execution)
             provider_name = provider.name
@@ -510,25 +525,29 @@ class StructuredCopyExecutor:
                 if isinstance(first_planned.get("creative_concept"), dict)
                 else settings.get("creative_concept")
             )
-            trace_request = {
-                "task": "Generate structured advertising copy as JSON",
-                "product_document": product_document,
-                "planned_ads": planned,
-                "languages": list(languages),
-                "requirements": {
-                    "json_only": True,
-                    "preserve_persona_and_format": True,
-                    "no_unverified_claims": True,
-                },
-            }
             if isinstance(creative_concept, dict) and (
                 creative_concept.get("id") or creative_concept.get("label")
             ):
-                trace_request["creative_concept"] = {
-                    "id": str(creative_concept.get("id") or ""),
-                    "label": str(creative_concept.get("label") or ""),
-                    "description": str(creative_concept.get("description") or ""),
-                }
+                planned = [
+                    {
+                        **item,
+                        "creative_concept": item.get("creative_concept") or creative_concept,
+                    }
+                    if isinstance(item, dict)
+                    else item
+                    for item in planned
+                ]
+            trace_request = assemble_copy_llm_request(
+                planned=planned,
+                languages=languages,
+                effective_config=effective_config,
+                product_document=product_document,
+                starting_prompt=str(
+                    settings.get("copy_starting_prompt")
+                    or effective_config.get("copy_starting_prompt")
+                    or ""
+                ),
+            )
             result = provider.generate(trace_request)
             trace_response = result.raw_response
             input_tokens += result.input_tokens

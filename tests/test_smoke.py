@@ -1538,6 +1538,8 @@ def test_local_agent_responsiveness_contract() -> int:
                  "active job status excludes local job payload content")
     failed += ok("listAssets({ kind: \"product_image\"" in studio_tsx,
                  "dashboard resolves local product images from the paired agent")
+    failed += ok("deleteAsset(" in studio_tsx and "product_asset_ids" in studio_tsx,
+                 "dashboard can delete and select local product images for the image model")
     failed += ok("legacy_artifact_plane_removed" in artifact_server and '"Access-Control-Allow-Private-Network", "true"' in artifact_server,
                  "local content server retires the legacy artifact plane and keeps PNA headers")
     failed += ok("requests.Session()" in local_agent and "_API_SESSIONS = threading.local()" in local_agent,
@@ -1595,6 +1597,15 @@ def test_local_agent_responsiveness_contract() -> int:
         and "selected_concept" in studio_tsx
         and "batch_size" in studio_tsx,
         "frontend allocates and executes structured copy on Render",
+    )
+    copy_assembler = (ROOT / "dashboard" / "backend" / "services" / "render_structured_copy.py").read_text(encoding="utf-8")
+    local_copy = (ROOT / "local_agent_runtime" / "structured_copy.py").read_text(encoding="utf-8")
+    failed += ok(
+        "def assemble_copy_llm_request(" in copy_assembler
+        and "reject_legacy_copy_llm_request" in copy_assembler
+        and "assemble_copy_llm_request(" in local_copy
+        and '"requirements"' not in local_copy,
+        "copy LLM request is assembled as layered JSON, not a raw plan dump",
     )
     failed += ok(
         '/api/runs/bulk-delete' in studio_tsx and "purge-all" in studio_tsx,

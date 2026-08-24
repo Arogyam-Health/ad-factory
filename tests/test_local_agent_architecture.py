@@ -155,6 +155,23 @@ class LocalAgentStorageTests(unittest.TestCase):
             self.assertGreaterEqual(report["deleted_runs"], 1)
             self.assertTrue(product.path.exists())
 
+    def test_selected_product_asset_ids_filter_local_references(self) -> None:
+        from local_agent_runtime.local_agent import _filter_product_asset_references
+
+        refs = [
+            {"resource_id": "res_keep", "version": 1},
+            {"resource_id": "res_drop", "version": 2},
+        ]
+        self.assertEqual(
+            _filter_product_asset_references(refs, None),
+            refs,
+        )
+        self.assertEqual(
+            _filter_product_asset_references(refs, ["res_keep"]),
+            [{"resource_id": "res_keep", "version": 1}],
+        )
+        self.assertEqual(_filter_product_asset_references(refs, ["res_missing"]), [])
+
     def test_one_account_cannot_delete_or_reset_another_accounts_local_runs(self) -> None:
         from local_agent_runtime.storage import AgentPaths, AgentState
 
