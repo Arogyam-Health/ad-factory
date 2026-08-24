@@ -9,6 +9,7 @@ from pymongo.errors import DuplicateKeyError
 
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import COLL_USER_CONFIGS
+from dashboard.backend.services.copy_system import COPY_SYSTEM_KEYS, bundled_copy_system_text
 
 
 class ConfigVersionConflict(ValueError):
@@ -52,6 +53,7 @@ CONFIG_KEYS = [
     "persona_seeds",
     "concept",
     "copy_architecture",
+    *COPY_SYSTEM_KEYS,
     "background_variant",
     "prompt_assembler_templates",
     "conversion_916_prompt",
@@ -75,6 +77,7 @@ _CONTENT_TYPES = {
     "persona_seeds": "application/json",
     "concept": "application/json",
     "copy_architecture": "application/json",
+    **{key: "application/json" for key in COPY_SYSTEM_KEYS},
     "background_variant": "application/json",
     "prompt_assembler_templates": "application/json",
     "conversion_916_prompt": "text/plain",
@@ -90,6 +93,7 @@ _EMPTY_BY_KEY = {
     "persona_seeds": "[]",
     "concept": "{}",
     "copy_architecture": "{}",
+    **{key: "{}" for key in COPY_SYSTEM_KEYS},
     "background_variant": "{}",
     "prompt_assembler_templates": "{}",
     "conversion_916_prompt": "",
@@ -134,6 +138,7 @@ def _repository_generic_config() -> dict[str, str]:
         "persona_seeds": _read(persona_seeds_path) or "[]",
         "concept": _read(concept_path) or "{}",
         "copy_architecture": _read(copy_arch_path) or "{}",
+        **bundled_copy_system_text(),
         "background_variant": _read(background_variant_path) or "{}",
         "prompt_assembler_templates": _read(prompt_assembler_path) or "{}",
         "conversion_916_prompt": _read(conversion_916_path),

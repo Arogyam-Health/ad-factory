@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "type": "proof_strategy",
+    "label": "Proof Strategy",
+    "instruction": "The selected proof type must be the primary credibility mechanism. Use only supplied proof. Do not invent missing proof. If the selected proof style cannot be supported by the product document, stay factual and do not fake the missing evidence."
+  },
+  "customer_scale": {
+    "label": "Customer Scale",
+    "definition": "Use verified user counts or served-user proof from the product document. One number is enough. Explain why it matters."
+  },
+  "expert_authority": {
+    "label": "Expert Authority",
+    "definition": "Use doctor, Ayurveda, or institutional credibility supplied in the product document. Translate authority into a daily benefit."
+  },
+  "product_structure": {
+    "label": "Product Structure",
+    "definition": "Use the course structure, day-wise pouches, or guided routine as the proof that the system is organized."
+  },
+  "demonstration": {
+    "label": "Demonstration",
+    "definition": "Show how the routine works in practice using only supplied steps or mechanics."
+  },
+  "testimonial": {
+    "label": "Testimonial",
+    "definition": "Use only verified testimonial material. If none is supplied, do not invent a customer quote."
+  },
+  "specific_detail": {
+    "label": "Specific Detail",
+    "definition": "Use one concrete supplied detail as credibility: ingredient count, day count, coach access, or similar."
+  },
+  "no_explicit_proof": {
+    "label": "No Explicit Proof",
+    "definition": "Do not lead with numbers or authority. Persuade through clarity, persona relevance, and product structure only."
+  }
+}

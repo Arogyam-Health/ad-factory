@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "type": "specificity_level",
+    "label": "Specificity Level",
+    "instruction": "How concrete the copy should be is the variable under test. Only use specific facts supplied by the product document."
+  },
+  "broad": {
+    "label": "Broad",
+    "definition": "Keep the message category-level. Example shape: a structured weight-loss course."
+  },
+  "specific": {
+    "label": "Specific",
+    "definition": "Add one supplied concrete marker such as a 15-day window."
+  },
+  "ultra_specific": {
+    "label": "Ultra Specific",
+    "definition": "Use multiple supplied details such as day-wise pouches and a defined morning and night routine."
+  }
+}

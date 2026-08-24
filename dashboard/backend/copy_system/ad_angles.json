@@ -1,0 +1,72 @@
+{
+  "_meta": {
+    "type": "concept_angle",
+    "label": "Concept Angle",
+    "instruction": "The central reason-to-care is the variable under test. The selected angle should determine the headline proposition, support, and which product truths are emphasized. Do not mention the angle once and then write a generic ad. Do not change factual product claims."
+  },
+  "pain_point": {
+    "label": "Pain Point",
+    "definition": "Focus on an existing frustration. Structure: pain, then consequence, then the relevant product support. Use persona-specific pain.",
+    "skeleton": "Pain → consequence → relevant product support"
+  },
+  "desired_outcome": {
+    "label": "Desired Outcome",
+    "definition": "Lead with what the person wants to achieve. Do not automatically promise the outcome. Use designed-to-help language when required by product truth.",
+    "skeleton": "Desired future → how the product supports it"
+  },
+  "social_proof": {
+    "label": "Social Proof",
+    "definition": "Lead with verified adoption, user counts, or similar proof from the product document. Never generate proof.",
+    "skeleton": "Verified proof → buyer relevance → result or mechanism"
+  },
+  "authority": {
+    "label": "Authority",
+    "definition": "Lead with verified expertise, origin, credentials, or institutional association supplied in the product document.",
+    "skeleton": "Authority hook → practical daily benefit"
+  },
+  "curiosity": {
+    "label": "Curiosity",
+    "definition": "Lead with a useful knowledge gap, then resolve it. Do not use meaningless clickbait.",
+    "skeleton": "Observation → missing information → product explanation"
+  },
+  "comparison": {
+    "label": "Comparison",
+    "definition": "Contrast approaches, routines, or product structures. Do not demean competitors or make unsupported superiority claims.",
+    "skeleton": "Harder alternative vs this path → less-sacrifice detail"
+  },
+  "offer": {
+    "label": "Offer",
+    "definition": "Lead with a legitimate supplied offer such as a money-back policy or bundle. If offer facts are missing, do not invent one.",
+    "skeleton": "Reason to act → what is included or reduced-risk"
+  },
+  "mechanism": {
+    "label": "Mechanism",
+    "definition": "Focus on why or how the product supports the desired behavior or outcome. Stay inside verified product truths.",
+    "skeleton": "How it works → why that helps this persona"
+  },
+  "structure": {
+    "label": "Structure",
+    "definition": "Focus on systemization: day-wise steps, food guidance, a fixed routine. Excellent for confused or failed-diet personas.",
+    "skeleton": "The system → why structure reduces guesswork"
+  },
+  "ease": {
+    "label": "Ease",
+    "definition": "Focus on practicality or simplicity. Only use supported ease claims. Do not make it sound effortless.",
+    "skeleton": "What is simpler → the supported reason it fits daily life"
+  },
+  "accountability": {
+    "label": "Accountability",
+    "definition": "Focus on coaching, check-ins, guidance, or consistency support from the product document.",
+    "skeleton": "Support system → why consistency gets easier"
+  },
+  "objection": {
+    "label": "Objection",
+    "definition": "Address the reason this persona is hesitant, then answer with product truth. Do not guarantee it works for everyone.",
+    "skeleton": "The hesitation → reframe → relevant product truth"
+  },
+  "product_differentiation": {
+    "label": "Product Differentiation",
+    "definition": "Explain what category the product actually belongs to. Avoid attacking other products.",
+    "skeleton": "What it is not → what it actually is → why that matters"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "type": "emotional_driver",
+    "label": "Emotional Driver",
+    "instruction": "The selected emotion should change tone and framing. It must not change product facts or invent outcomes."
+  },
+  "relief": {
+    "label": "Relief",
+    "definition": "Frame the ad as reducing strain, guesswork, or daily friction."
+  },
+  "confidence": {
+    "label": "Confidence",
+    "definition": "Frame the ad as a calmer, more assured next step. Avoid hype."
+  },
+  "control": {
+    "label": "Control",
+    "definition": "Frame the ad as restoring a sense of handle on routine or hunger."
+  },
+  "clarity": {
+    "label": "Clarity",
+    "definition": "Frame the ad as making the plan obvious and easy to follow."
+  },
+  "hope": {
+    "label": "Hope",
+    "definition": "Frame a believable better path without miracle language."
+  },
+  "trust": {
+    "label": "Trust",
+    "definition": "Frame with supplied credibility and low-risk next steps."
+  },
+  "momentum": {
+    "label": "Momentum",
+    "definition": "Frame a start that feels movable in the next 15 days, using only supplied windows."
+  },
+  "accountability": {
+    "label": "Accountability",
+    "definition": "Frame the feeling of not doing this alone, using supplied support."
+  }
+}

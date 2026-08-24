@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "type": "copy_framework",
+    "label": "Copy Framework",
+    "instruction": "The persuasion sequence is the variable under test. Follow the selected framework structurally. Do not expose framework labels such as Problem, Agitate, or Solution in consumer copy unless the creative concept calls for labels. Adapt the framework to the selected format. Do not force steps that require unsupported facts."
+  },
+  "pas": {
+    "label": "PAS",
+    "definition": "Problem, Agitate, Solution. Identify the relevant problem, explain why it is frustrating without body-shaming, then introduce the product as the relevant support system.",
+    "skeleton": "Problem → Agitate → Solution"
+  },
+  "bab": {
+    "label": "BAB",
+    "definition": "Before, After, Bridge. Describe the existing undesirable state, the desired improved state, and how the product helps move from one toward the other. BAB is a narrative framework, not the BA format.",
+    "skeleton": "Before → After → Bridge"
+  },
+  "fab": {
+    "label": "FAB",
+    "definition": "Feature, Advantage, Benefit. Name what the product includes, why that is useful operationally, then why the user should care.",
+    "skeleton": "Feature → Advantage → Benefit"
+  },
+  "aida": {
+    "label": "AIDA",
+    "definition": "Attention, Interest, Desire, Action. Gain attention, give relevant information, explain why the product matters, then give a clear CTA.",
+    "skeleton": "Attention → Interest → Desire → Action"
+  },
+  "problem_solution": {
+    "label": "Problem Solution",
+    "definition": "Simple pair: name the problem, then the relevant product support. Use when the ad needs simplicity rather than elaborate persuasion.",
+    "skeleton": "Problem → Solution"
+  },
+  "objection_reframe": {
+    "label": "Objection Reframe",
+    "definition": "Start from the audience objection, reframe it, then connect a relevant product truth. Do not attack other products.",
+    "skeleton": "Objection → Reframe → Product relevance"
+  },
+  "story": {
+    "label": "Story",
+    "definition": "Situation, friction, discovery, change. Best for UGC and testimonial layouts. Do not fabricate real customer stories.",
+    "skeleton": "Situation → Friction → Discovery → Change"
+  },
+  "four_us": {
+    "label": "Four Us",
+    "definition": "Useful, Urgent, Unique, Ultra-specific. Especially useful as a headline quality system. Urgency is optional and must never be fabricated. Can compress into a short HERO headline while support carries proof.",
+    "skeleton": "Useful + unique + specific headline\nSupport carries proof or mechanism"
+  }
+}

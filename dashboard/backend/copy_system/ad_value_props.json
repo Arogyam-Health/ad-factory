@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "type": "value_proposition",
+    "label": "Value Proposition",
+    "instruction": "The selected value proposition should dominate the ad. Other product features may appear only as supporting information. Do not dilute the main proposition by giving equal priority to every benefit."
+  },
+  "structure": {
+    "label": "Structure",
+    "definition": "Dominate with the guided, day-wise, or course-like organization of the product."
+  },
+  "hunger_support": {
+    "label": "Hunger Support",
+    "definition": "Dominate with craving or hunger support, only using supplied product truths."
+  },
+  "guidance": {
+    "label": "Guidance",
+    "definition": "Dominate with food guidance, protocol clarity, or step-by-step instruction."
+  },
+  "accountability": {
+    "label": "Accountability",
+    "definition": "Dominate with coaches, check-ins, or consistency support."
+  },
+  "simplicity": {
+    "label": "Simplicity",
+    "definition": "Dominate with how little extra planning the routine requires. Do not claim zero effort."
+  },
+  "doctor_developed": {
+    "label": "Doctor Developed",
+    "definition": "Dominate with the supplied developer or clinical-practice origin."
+  },
+  "guided_system": {
+    "label": "Guided System",
+    "definition": "Dominate with the product as a guided course rather than a loose supplement."
+  },
+  "result_support": {
+    "label": "Result Support",
+    "definition": "Dominate with the supported result window or progress framing. Do not guarantee outcomes."
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "_description": "Format layer. The selected format's object is sent as planned_ads[].format. Empty fields are omitted.",
+  "HERO": {
+    "label": "Hero",
+    "description": "A HERO ad presents the product, offer, outcome, or main proposition immediately. One dominant headline, strong visual hierarchy, product prominently displayed, short supporting copy, one primary message, CTA, optional trust line. Optimize for immediate comprehension and low copy density. Format is the presentation system, not a persuasion framework.",
+    "skeleton": "Headline\nSupport line\nOptional proof/trust line\nCTA",
+    "output_fields": ["headline", "support_line", "trust_line", "cta"]
+  },
+  "BA": {
+    "label": "Before / After",
+    "description": "BEFORE_AFTER is a presentation format that shows contrast between a current state and a desired state. It is not the same as the BAB copy framework. For health or appearance products, use conceptual, routine, or process contrasts. Do not fabricate physical transformations or guaranteed results.",
+    "skeleton": "Headline (the contrast)\nBefore state\nAfter state\nBridge / why the shift is possible\nCTA",
+    "output_fields": ["headline", "bullets", "cta"]
+  },
+  "TEST": {
+    "label": "Testimonial",
+    "description": "A TESTIMONIAL ad communicates through customer experience or verified social proof. Never fabricate customers, quotes, ratings, results, or review text. If verified testimonial material is unavailable, keep the layout but do not invent testimonial claims. Use role-based attribution, not personal names.",
+    "skeleton": "Customer statement or representative line\nExperience / outcome\nProduct attribution\nTrust line\nCTA",
+    "output_fields": ["headline", "attribution", "trust_line", "cta"]
+  },
+  "FEAT": {
+    "label": "Feature",
+    "description": "FEATURE ads focus on one or more capabilities, components, or mechanisms. Do not simply list features. Translate each feature into user relevance: feature, then why it helps, then the benefit. One feature should normally dominate.",
+    "skeleton": "Feature headline\nFeature explanation / why it matters\nBenefit\nCTA",
+    "output_fields": ["headline", "bullets", "cta"]
+  },
+  "UGC": {
+    "label": "UGC",
+    "description": "UGC should feel like person-to-person communication rather than polished brand advertising. Conversational, direct, experience-oriented. Do not create false authenticity or claim generated personas are genuine customers.",
+    "skeleton": "Hook\nProblem or observation\nExplanation\nProduct introduction\nReason to care\nCTA",
+    "output_fields": ["headline", "support_line", "cta"]
+  }
+}

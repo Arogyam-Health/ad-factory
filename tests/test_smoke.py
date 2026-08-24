@@ -617,7 +617,11 @@ def test_config_system() -> int:
     # 1. CONFIG_KEYS has exactly the supported keys
     expected_keys = [
         "product_master_doc", "starting_prompt", "copy_prompt_templates",
-        "persona_seeds", "concept", "copy_architecture", "background_variant",
+        "persona_seeds", "concept", "copy_architecture",
+        "ad_formats", "ad_hooks", "ad_angles", "ad_frameworks", "ad_proof",
+        "ad_objections", "ad_value_props", "ad_awareness", "ad_emotions",
+        "ad_specificity", "ad_feature_focus", "ad_guardrails",
+        "background_variant",
         "prompt_assembler_templates", "conversion_916_prompt",
         "reference_starting_prompt", "reference_product_master_doc",
     ]

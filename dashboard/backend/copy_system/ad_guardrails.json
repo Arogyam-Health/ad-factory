@@ -1,0 +1,12 @@
+{
+  "_description": "Always-on safety lines plus the no-hypothesis instruction. Empty strings are omitted from the request.",
+  "always": [
+    "Use only product facts supplied in the product document. Do not invent claims, prices, discounts, testimonials, ratings, or stock scarcity.",
+    "Do not body-shame, guarantee results, or attack other products, gyms, yoga, or diets.",
+    "Do not mention price, currency, MRP, or discount language unless those facts are explicitly supplied.",
+    "FORMAT is presentation. FRAMEWORK is persuasion sequence. ANGLE is the reason to care. CREATIVE CONCEPT is the execution device. Do not merge these layers.",
+    "A creative concept must never override factual accuracy. A hypothesis must never override safety.",
+    "If a creative concept requires evidence that is missing, keep a neutral composition and do not invent the missing claim."
+  ],
+  "no_hypothesis": "NO HYPOTHESIS MODE. No specific persuasion variable is under test. Generate the strongest natural ad for the selected persona, format, creative concept, and available product truths. Do not force any named copy framework. Do not invent an experimental angle. Use the format's natural copy hierarchy. Prefer clarity, factual support, and product relevance."
+}

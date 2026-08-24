@@ -1,0 +1,31 @@
+{
+  "_meta": {
+    "type": "feature_focus",
+    "label": "Feature Focus",
+    "instruction": "One product capability should dominate. Translate it into user relevance. Other features stay in the background."
+  },
+  "day_wise_pouches": {
+    "label": "Day-Wise Pouches",
+    "definition": "Dominate with the pre-portioned daily structure if that fact is supplied."
+  },
+  "food_guidance": {
+    "label": "Food Guidance",
+    "definition": "Dominate with what to eat or how homemade food fits, using only supplied guidance."
+  },
+  "hunger_support": {
+    "label": "Hunger Support",
+    "definition": "Dominate with the hunger or craving-support component."
+  },
+  "coach_support": {
+    "label": "Coach Support",
+    "definition": "Dominate with coach chat, calls, or check-ins if supplied."
+  },
+  "time_fit": {
+    "label": "Time Fit",
+    "definition": "Dominate with the short daily time claim if supplied."
+  },
+  "kit_completeness": {
+    "label": "Kit Completeness",
+    "definition": "Dominate with the kit as a complete guided course rather than a single item."
+  }
+}

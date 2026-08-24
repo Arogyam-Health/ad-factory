@@ -1,0 +1,57 @@
+{
+  "_meta": {
+    "type": "hook_structure",
+    "label": "Hook Structure",
+    "instruction": "The opening hook is the primary variable under test. The selected hook style must materially control the headline or first line. Do not merely add a question, command, or proof phrase in front of otherwise identical copy. Keep the product proposition, persona, and format aligned. Do not invent facts to satisfy the hook."
+  },
+  "question_led": {
+    "label": "Question Led",
+    "definition": "Open with one specific question the persona would actually ask. Do not answer it inside the headline. The question must have a clear object and a real-world blocker.",
+    "skeleton": "Headline = one self-identifying question\nSupport = mechanism and proof as standalone ad copy, not an FAQ answer"
+  },
+  "proof_led": {
+    "label": "Proof Led",
+    "definition": "Open with one verified credibility marker, number, or trust anchor from the product document. Do not invent statistics, ratings, reviews, or customer counts.",
+    "skeleton": "Headline = one proof anchor\nSupport = why that proof matters for this persona"
+  },
+  "contrast_loop": {
+    "label": "Contrast Loop",
+    "definition": "Open by creating tension between two approaches, states, or outcomes. Use a natural contrast word such as without, instead, still, or but. Do not unfairly attack competitors.",
+    "skeleton": "Headline = old friction versus better path\nSupport = the mechanism that makes the contrast believable"
+  },
+  "confession_led": {
+    "label": "Confession Led",
+    "definition": "Open as a believable first-person-like admission or shared struggle. Keep only the admission in the headline. Frame generated creator copy as script, not verified customer testimony.",
+    "skeleton": "Headline = admission\nSupport = what changes after the struggle"
+  },
+  "command_led": {
+    "label": "Command Led",
+    "definition": "Open with a direct but helpful instruction. Avoid aggressive, insulting, or unsafe commands.",
+    "skeleton": "Headline = short instruction\nSupport = why acting that way helps"
+  },
+  "curiosity_led": {
+    "label": "Curiosity Led",
+    "definition": "Create an information gap the body immediately resolves. Do not use meaningless clickbait.",
+    "skeleton": "Headline = useful unknown\nSupport = the reveal from product truth"
+  },
+  "outcome_led": {
+    "label": "Outcome Led",
+    "definition": "Lead with the desired practical outcome without guaranteeing results. Use designed-to-help language when required.",
+    "skeleton": "Headline = desired future\nSupport = how the product supports it"
+  },
+  "problem_led": {
+    "label": "Problem Led",
+    "definition": "Lead directly with the persona's pain. Name one concrete friction. Do not solve it in the headline.",
+    "skeleton": "Headline = the problem\nSupport = consequence and relevant product support"
+  },
+  "specificity_led": {
+    "label": "Specificity Led",
+    "definition": "Lead with a concrete supplied detail such as a number, pouch count, or routine step. Only use facts from the product document.",
+    "skeleton": "Headline = one concrete detail\nSupport = why that detail matters"
+  },
+  "objection_led": {
+    "label": "Objection Led",
+    "definition": "Open with the audience's skepticism. Acknowledge it, then answer with product truth. Do not invent unrelated objections.",
+    "skeleton": "Headline = the doubt\nSupport = reframe and relevant product truth"
+  }
+}

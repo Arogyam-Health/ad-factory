@@ -1,0 +1,23 @@
+{
+  "_meta": {
+    "type": "awareness_stage",
+    "label": "Awareness Stage",
+    "instruction": "The audience's awareness stage is the variable under test. Talk at the selected stage. Do not assume they already want the product unless the stage is product-aware or most-aware."
+  },
+  "problem_aware": {
+    "label": "Problem Aware",
+    "definition": "The audience knows the problem but may not know this solution. Talk more about the problem and make the next step feel smaller."
+  },
+  "solution_aware": {
+    "label": "Solution Aware",
+    "definition": "The audience knows solutions exist and has likely tried some. Explain why this type of solution is different."
+  },
+  "product_aware": {
+    "label": "Product Aware",
+    "definition": "The audience knows the product. Focus on differentiation, proof, and objection handling. Do not re-introduce the whole product."
+  },
+  "most_aware": {
+    "label": "Most Aware",
+    "definition": "The audience understands the product and wants a reason to act. Use offer, reminder, or direct CTA only when those facts are supplied."
+  }
+}

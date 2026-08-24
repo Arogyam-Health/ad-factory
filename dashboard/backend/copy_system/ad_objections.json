@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "type": "objection_strategy",
+    "label": "Objection Strategy",
+    "instruction": "Start from the audience objection or skepticism. Acknowledge it without exaggeration. Respond using relevant verified product truths. Do not guarantee that the product solves the objection for everyone. Do not attack other products or methods."
+  },
+  "too_hard": {
+    "label": "Too Hard",
+    "definition": "The persona believes the plan will take too much effort. Answer with supported ease, time fit, or homemade-food compatibility."
+  },
+  "too_confusing": {
+    "label": "Too Confusing",
+    "definition": "The persona does not know what to follow. Answer with structure, day-wise guidance, or coach support."
+  },
+  "tried_before": {
+    "label": "Tried Before",
+    "definition": "The persona has failed other methods. Acknowledge that history. Position this as a guided course, not another loose product."
+  },
+  "too_much_hunger": {
+    "label": "Too Much Hunger",
+    "definition": "Hunger or cravings broke previous plans. Use only supplied hunger-support truths."
+  },
+  "no_support": {
+    "label": "No Support",
+    "definition": "The persona felt alone on previous plans. Use supplied coach, tracker, or guidance truths."
+  },
+  "too_time_consuming": {
+    "label": "Too Time Consuming",
+    "definition": "The persona cannot add a large routine. Use supplied time or simplicity claims only."
+  },
+  "skeptical_of_products": {
+    "label": "Skeptical Of Products",
+    "definition": "The persona doubts products in this category. Use supplied authority, structure, or money-back policy. Do not overclaim."
+  }
+}
