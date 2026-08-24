@@ -136,7 +136,7 @@ class ConceptCatalogTests(unittest.TestCase):
                 "concept": catalog,
             },
         )
-        self.assertEqual(planned[0]["concept_angle"], "desired_outcome")
+        self.assertNotIn("concept_angle", planned[0])
         self.assertEqual(
             planned[0]["creative_concept"],
             {
@@ -202,8 +202,9 @@ class ConceptCatalogTests(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "completed")
+        self.assertNotIn("creative_concept", calls[0])
         self.assertEqual(
-            calls[0]["creative_concept"]["id"],
+            calls[0]["planned_ads"][0]["creative_concept"]["id"],
             "Concept/IG_Stories",
         )
         self.assertIn("CONCEPT INPUT BLOCK", result["prompts"][0]["text"])

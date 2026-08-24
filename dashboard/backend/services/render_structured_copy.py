@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Live structured-copy assembler.
+
+Copy-LLM layers come from dashboard/backend/copy_system/ via copy_system.py.
+copy_architecture.json is not read here. copy_prompt_templates.json is read
+only for visual_archetypes after copy exists.
+"""
+
 import hashlib
 import json
 import random
@@ -10,6 +17,13 @@ from typing import Any, Callable
 
 import requests
 
+from dashboard.backend.services.copy_system import (
+    compact,
+    format_layer,
+    format_output_fields,
+    guardrails,
+    hypothesis_layer,
+)
 from dashboard.backend.services.llm_trace import MAX_TRACE_TEXT
 from dashboard.backend.services.user_config import resolve_selected_concept
 from dashboard.backend.services.visual_archetypes import bundled_visual_archetypes
@@ -106,20 +120,84 @@ def _persona_map(effective_config: dict[str, Any]) -> dict[int, dict[str, Any]]:
 
 
 def _persona(number: int, source: dict[str, Any]) -> dict[str, Any]:
-    return {
+    name = str(source.get("persona_name") or source.get("name") or f"Persona {number}")
+    pain = str(source.get("core_pattern") or source.get("pain_en") or "").strip()
+    desire = str(source.get("relevant_ok_kit_role") or source.get("desire_en") or "").strip()
+    friction = str(source.get("why_it_failed") or source.get("friction_en") or "").strip()
+    proof = str(source.get("guardrail") or source.get("proof_needed_en") or "").strip()
+    tone = str(source.get("tone_cue_en") or source.get("tone") or "").strip()
+    payload = {
         "number": number,
-        "name": str(source.get("persona_name") or source.get("name") or f"Persona {number}"),
-        "pain_en": str(source.get("core_pattern") or "The current routine is difficult to sustain."),
-        "desire_en": str(source.get("relevant_ok_kit_role") or "A practical routine that fits daily life."),
-        "friction_en": str(source.get("why_it_failed") or "Past approaches felt difficult to maintain."),
-        "proof_needed_en": str(source.get("guardrail") or "Use verified product facts only."),
-        "tone_cue_en": "Practical, empathetic, and confidence-building.",
-        "pain_hi": "मौजूदा रूटीन को लगातार निभाना मुश्किल है।",
-        "desire_hi": "रोज़मर्रा में फिट होने वाला आसान रूटीन चाहिए।",
-        "friction_hi": "पुराने तरीके लगातार निभाना मुश्किल था।",
-        "proof_needed_hi": "केवल सत्यापित प्रोडक्ट तथ्यों का उपयोग करें।",
-        "tone_cue_hi": "सरल, भरोसेमंद और व्यावहारिक।",
+        "name": name,
+        "pain_en": pain or "The current routine is difficult to sustain.",
+        "desire_en": desire or "A practical routine that fits daily life.",
+        "friction_en": friction or "Past approaches felt difficult to maintain.",
+        "proof_needed_en": proof or "Use verified product facts only.",
+        "tone_cue_en": tone or "Practical, empathetic, and confidence-building.",
     }
+    for key in (
+        "pain_hi",
+        "desire_hi",
+        "friction_hi",
+        "proof_needed_hi",
+        "tone_cue_hi",
+        "pain_hinglish",
+        "desire_hinglish",
+        "friction_hinglish",
+        "proof_needed_hinglish",
+        "tone_cue_hinglish",
+    ):
+        value = str(source.get(key) or "").strip()
+        if value:
+            payload[key] = value
+    return payload
+
+
+def _persona_for_llm(
+    persona: dict[str, Any],
+    languages: tuple[str, ...],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "number": persona.get("number"),
+        "name": persona.get("name"),
+    }
+    if "EN" in languages:
+        mapping = {
+            "pain": "pain_en",
+            "desire": "desire_en",
+            "friction": "friction_en",
+            "proof_needed": "proof_needed_en",
+            "tone_cue": "tone_cue_en",
+        }
+        for dest, source in mapping.items():
+            value = str(persona.get(source) or "").strip()
+            if value:
+                payload[dest] = value
+    if "HI" in languages:
+        mapping = {
+            "pain_hi": "pain_hi",
+            "desire_hi": "desire_hi",
+            "friction_hi": "friction_hi",
+            "proof_needed_hi": "proof_needed_hi",
+            "tone_cue_hi": "tone_cue_hi",
+        }
+        for dest, source in mapping.items():
+            value = str(persona.get(source) or "").strip()
+            if value:
+                payload[dest] = value
+    if "HINGLISH" in languages:
+        mapping = {
+            "pain_hinglish": "pain_hinglish",
+            "desire_hinglish": "desire_hinglish",
+            "friction_hinglish": "friction_hinglish",
+            "proof_needed_hinglish": "proof_needed_hinglish",
+            "tone_cue_hinglish": "tone_cue_hinglish",
+        }
+        for dest, source in mapping.items():
+            value = str(persona.get(source) or "").strip()
+            if value:
+                payload[dest] = value
+    return compact(payload) or {"number": persona.get("number"), "name": persona.get("name")}
 
 
 def _hypothesis_from_settings(settings: dict[str, Any]) -> dict[str, Any]:
@@ -277,19 +355,20 @@ def _planned_ads(
                 if share_background
                 else f"{normalized_format}::P{number:02d}"
             )
-            concept_angle = "desired_outcome"
-            if hypothesis["type"] == "concept_angle" and hypothesis["variant"]:
-                concept_angle = hypothesis["variant"]
             for creative_index in range(1, multiplier + 1):
                 item = {
                     "format": normalized_format,
                     "creative_index": creative_index,
                     "creative_total": multiplier,
-                    "concept_angle": concept_angle,
                     "persona": _persona(number, personas.get(number, {})),
                     "background_group_key": background_group_key,
                     "share_background_across_personas": share_background,
                 }
+                if (
+                    hypothesis["type"] == "concept_angle"
+                    and hypothesis["variant"]
+                ):
+                    item["concept_angle"] = hypothesis["variant"]
                 if forced_archetype:
                     item["visual_archetype"] = forced_archetype
                 if hypothesis["type"] not in {"", "none"}:
@@ -364,6 +443,94 @@ def _normalized_language_block(
     return block
 
 
+def _ad_format_id(ad: dict[str, Any]) -> str:
+    raw = ad.get("format")
+    if isinstance(raw, dict):
+        return str(raw.get("id") or "").upper()
+    return str(raw or "").upper()
+
+
+def _pattern_for_llm(
+    fmt: str,
+    archetype_id: str,
+    catalog: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any] | None:
+    wanted = str(archetype_id or "").strip()
+    if not wanted:
+        return None
+    for item in catalog.get(fmt) or []:
+        if str(item.get("id") or "").strip() == wanted:
+            payload = {"id": wanted}
+            label = str(item.get("label") or "").strip()
+            if label:
+                payload["label"] = label
+            return payload
+    return {"id": wanted}
+
+
+def _llm_planned_ad(
+    plan: dict[str, Any],
+    *,
+    effective_config: dict[str, Any],
+    languages: tuple[str, ...],
+    catalog: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    fmt = _ad_format_id(plan)
+    payload: dict[str, Any] = {
+        "format": format_layer(effective_config, fmt),
+        "persona": _persona_for_llm(
+            plan.get("persona") if isinstance(plan.get("persona"), dict) else {},
+            languages,
+        ),
+    }
+    hypothesis = plan.get("hypothesis") if isinstance(plan.get("hypothesis"), dict) else {}
+    layer = hypothesis_layer(
+        effective_config,
+        str(hypothesis.get("type") or ""),
+        str(hypothesis.get("variant") or ""),
+    )
+    if layer:
+        payload["hypothesis"] = layer
+    if isinstance(plan.get("creative_concept"), dict):
+        payload["creative_concept"] = plan["creative_concept"]
+    pattern = _pattern_for_llm(
+        fmt,
+        str(plan.get("visual_archetype") or ""),
+        catalog,
+    )
+    if pattern:
+        payload["format_pattern"] = pattern
+    return compact(payload) or payload
+
+
+def _copy_output_schema(
+    planned: list[dict[str, Any]],
+    languages: tuple[str, ...],
+    effective_config: dict[str, Any],
+) -> dict[str, Any]:
+    ads = []
+    for plan in planned:
+        fmt = _ad_format_id(plan)
+        fields = format_output_fields(effective_config, fmt)
+        block = {
+            field: (
+                ["string"]
+                if field == "bullets"
+                else "string"
+            )
+            for field in fields
+        }
+        ads.append(
+            {
+                "copy": {
+                    language: dict(block)
+                    for language in languages
+                }
+            }
+        )
+    return {"ads": ads}
+
+
 def _normalize_copy(
     response: dict[str, Any],
     planned: list[dict[str, Any]],
@@ -377,42 +544,55 @@ def _normalize_copy(
             if index < len(candidates) and isinstance(candidates[index], dict)
             else {}
         )
-        ads.append(
-            {
-                **plan,
-                "concept_angle": str(
-                    candidate.get("concept_angle")
-                    or plan.get("concept_angle")
-                    or "desired_outcome"
-                ),
-                "copy": {
-                    language: _normalized_language_block(
-                        candidate,
-                        language,
-                    )
-                    for language in languages
-                },
-            }
-        )
+        merged = {
+            **plan,
+            "format": _ad_format_id(plan),
+            "copy": {
+                language: _normalized_language_block(
+                    candidate,
+                    language,
+                )
+                for language in languages
+            },
+        }
+        angle = str(plan.get("concept_angle") or "").strip()
+        if angle:
+            merged["concept_angle"] = angle
+        ads.append(merged)
     return {"default_aspect_ratio": "4:5", "ads": ads}
 
 
 def _validation_error(
-    copy_batch: dict[str, Any], languages: tuple[str, ...]
+    copy_batch: dict[str, Any],
+    languages: tuple[str, ...],
+    effective_config: dict[str, Any] | None = None,
 ) -> str | None:
+    optional = {"trust_line"}
     for ad in copy_batch.get("ads", []):
-        fmt = str(ad.get("format") or "")
+        fmt = _ad_format_id(ad)
+        fields = format_output_fields(effective_config, fmt)
         copy = ad.get("copy") if isinstance(ad.get("copy"), dict) else {}
         for language in languages:
             block = copy.get(language) if isinstance(copy.get(language), dict) else {}
-            if not str(block.get("headline") or "").strip():
-                return "headline_missing"
-            if not str(block.get("cta") or "").strip():
-                return "cta_missing"
-            if fmt in {"HERO", "UGC"} and not str(
-                block.get("support_line") or block.get("subheadline") or ""
-            ).strip():
-                return "support_line_missing"
+            for field in fields:
+                if field in optional:
+                    continue
+                value = block.get(field)
+                if field == "bullets":
+                    items = value if isinstance(value, list) else []
+                    if not any(str(item or "").strip() for item in items):
+                        return f"{field}_missing"
+                    continue
+                if field == "support_line":
+                    text = str(
+                        block.get("support_line")
+                        or block.get("subheadline")
+                        or ""
+                    ).strip()
+                else:
+                    text = str(value or "").strip()
+                if not text:
+                    return f"{field}_missing"
     return None
 
 
@@ -569,48 +749,40 @@ def generate_structured_prompt_bundle(
     product_document = str(effective_config.get("product_master_doc") or "").strip()
     if not product_document:
         raise ValueError("Product Master Doc is empty")
-    creative_concept = resolve_selected_concept(
-        effective_config.get("concept"),
-        settings.get("selected_concept"),
+    catalog = _archetype_catalog(effective_config)
+    has_hypothesis = any(
+        isinstance(item.get("hypothesis"), dict)
+        and str(item.get("hypothesis", {}).get("type") or "") not in {"", "none"}
+        for item in planned
     )
-    request: dict[str, Any] = {
-        "task": "Generate structured advertising copy as JSON",
-        "product_document": product_document,
-        "planned_ads": planned,
-        "languages": list(languages),
-        "requirements": {
-            "json_only": True,
-            "preserve_persona_and_format": True,
-            "one_ad_per_planned_ad_in_the_same_order": True,
-            "no_unverified_claims": True,
-            "copy_must_be_nested_by_language": True,
-        },
-        "output_schema": {
-            "product_truths": ["string"],
-            "ads": [
-                {
-                    "concept_angle": "string",
-                    "copy": {
-                        language: {
-                            "headline": "string",
-                            "cta": "string",
-                            "support_line": (
-                                "required string for HERO and UGC"
-                            ),
-                            "trust_line": "optional string",
-                            "bullets": ["optional string"],
-                        }
-                        for language in languages
-                    },
-                }
+    request = compact(
+        {
+            "task": "Generate structured advertising copy as JSON",
+            "product_document": product_document,
+            "planned_ads": [
+                _llm_planned_ad(
+                    item,
+                    effective_config=effective_config,
+                    languages=languages,
+                    catalog=catalog,
+                )
+                for item in planned
             ],
-        },
-    }
-    if creative_concept:
-        request["creative_concept"] = creative_concept
+            "languages": list(languages),
+            "guardrails": guardrails(
+                effective_config,
+                hypothesis=has_hypothesis,
+            ),
+            "output_schema": _copy_output_schema(
+                planned,
+                languages,
+                effective_config,
+            ),
+        }
+    )
     response = generate(request, False)
     copy_batch = _normalize_copy(response, planned, languages)
-    error = _validation_error(copy_batch, languages)
+    error = _validation_error(copy_batch, languages, effective_config)
     repair_count = 0
     if error:
         repair_count = 1
@@ -625,7 +797,7 @@ def generate_structured_prompt_bundle(
             True,
         )
         copy_batch = _normalize_copy(response, planned, languages)
-        error = _validation_error(copy_batch, languages)
+        error = _validation_error(copy_batch, languages, effective_config)
     if error:
         raise ProviderCallError(
             code="provider_invalid_output",
@@ -640,7 +812,6 @@ def generate_structured_prompt_bundle(
     templates = _json_config(
         effective_config.get("prompt_assembler_templates"), {}
     ) or None
-    catalog = _archetype_catalog(effective_config)
     background_cache: dict[str, tuple[dict[str, Any], int]] = {}
     prompts: list[dict[str, Any]] = []
     for ad_index, ad in enumerate(copy_batch["ads"], start=1):
@@ -710,7 +881,8 @@ def generate_structured_prompt_bundle(
             background_seed,
             "4:5",
         )
-        concept = generate_ads.resolve_concept_fields(ad, fmt, persona)
+        angle = str(ad.get("concept_angle") or "").strip() or "none"
+        concept = {"concept_angle": angle}
         for language in languages:
             block = generate_ads.parse_copy_block(
                 fmt,

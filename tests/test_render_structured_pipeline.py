@@ -71,6 +71,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                             "body": (
                                 "A practical approach for everyday life."
                             ),
+                            "attribution": "Representative user experience",
                             "cta": "Take the first step today.",
                         },
                     }
@@ -103,6 +104,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                         "copy": {
                             "EN": {
                                 "headline": "Stay consistent",
+                                "attribution": "Representative user experience",
                                 "trust_line": "Built around verified product facts",
                                 "cta": "Learn more",
                             }
@@ -161,10 +163,10 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(result["model"], "opencode/big-pickle")
         self.assertEqual(len(result["prompts"]), 1)
         self.assertIn("Stay consistent", result["prompts"][0]["text"])
-        self.assertEqual(result["prompts"][0]["concept_angle"], "desired_outcome")
+        self.assertEqual(result["prompts"][0]["concept_angle"], "none")
         self.assertEqual(
             result["prompts"][0]["display_stem"],
-            "TEST_stress_snacker_EN_desired_outcome",
+            "TEST_stress_snacker_EN_none",
         )
         self.assertNotIn("product_assets", calls[0]["request"])
         self.assertNotIn("image", json.dumps(calls[0]["request"]).lower())
