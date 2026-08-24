@@ -879,8 +879,9 @@ p {
 
 .trace-pre {
   grid-column: 1 / -1;
-  max-height: 280px;
-  overflow: auto;
+  overflow: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
   margin: 0;
   padding: 12px;
   background: var(--canvas);

@@ -135,6 +135,7 @@ export type ConfigVersion = {
 export type Trace = {
   trace_id?: string;
   run_id?: string;
+  batch?: string;
   label?: string;
   model?: string;
   provider?: string;
@@ -143,6 +144,17 @@ export type Trace = {
   duration_ms?: number;
   created_at?: number;
   error_detail?: string;
+  org_id?: string;
+  scope?: "personal" | "org";
+  actor_email?: string;
+  display_name?: string;
   request?: { prompt?: unknown };
   response?: { content?: unknown };
+};
+
+export type TraceList = {
+  personal?: Trace[];
+  org?: Trace[];
+  org_name?: string;
+  traces?: Trace[];
 };

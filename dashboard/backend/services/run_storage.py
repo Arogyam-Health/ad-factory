@@ -21,6 +21,10 @@ REFERENCE_FLOW_TYPES = frozenset({"reference", "reference_image"})
 _DEAD_RUN_STATUSES = frozenset({"deleted", "deleting", "purge_failed"})
 
 
+def _sync_db(db: Any | None) -> Any:
+    return db if db is not None else get_sync_db()
+
+
 def numbering_scope(flow_type: str | None) -> str:
     """Structured and Reference keep independent vN sequences."""
     return "reference" if str(flow_type or "").strip().lower() in REFERENCE_FLOW_TYPES else "structured"
@@ -77,7 +81,7 @@ def next_available_run_number(
     db: Any | None = None,
 ) -> int:
     """Lowest unused vN for this dashboard account and flow."""
-    used = _used_run_numbers(db or get_sync_db(), account_id, flow_type)
+    used = _used_run_numbers(_sync_db(db), account_id, flow_type)
     number = 1
     while number in used:
         number += 1
@@ -134,7 +138,7 @@ def rewind_run_counter(
         return 0
     from dashboard.backend.db.collections import COLL_RUN_COUNTERS
 
-    db = db or get_sync_db()
+    db = _sync_db(db)
     family = numbering_scope(flow_type)
     used = _used_run_numbers(db, str(owner_id), flow_type)
     highest = max(used) if used else 0
@@ -246,7 +250,7 @@ def purge_run_metadata(db: Any, *, user_id: str, run_id: str) -> None:
     db[COLL_PROMPTS].delete_many(scope)
     db[COLL_IMAGES].delete_many(scope)
     db[COLL_AGENT_JOBS].delete_many(scope)
-    db[COLL_LLM_TRACES].delete_many(scope)
+    db[COLL_LLM_TRACES].delete_many({"run_id": run_id})
     db[COLL_FILE_MAP].delete_many({"run_id": run_id})
     db[COLL_RUNS].delete_one(scope)
     if run:

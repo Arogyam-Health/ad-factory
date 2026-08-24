@@ -24,11 +24,15 @@ def get_llm_traces(
         str(user["user_id"]),
         run_id=str(run_id or "")[:200],
     )
-    traces = listed["traces"]
+    personal = listed.get("personal") or listed.get("traces") or []
+    org_traces = listed.get("org") or []
     response.headers["Cache-Control"] = "no-store"
     return {
-        "traces": traces,
-        "total": len(traces),
+        "personal": personal,
+        "org": org_traces,
+        "org_name": listed.get("org_name") or "",
+        "traces": personal,
+        "total": len(personal) + len(org_traces),
         "offset": 0,
         "limit": listed["limit"],
         "scope": listed["scope"],

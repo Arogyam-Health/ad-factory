@@ -12,6 +12,7 @@ from pymongo.errors import DuplicateKeyError
 from dashboard.backend.agent.connections import agent_connections
 from dashboard.backend.db.client import get_sync_db
 from dashboard.backend.db.collections import (
+    COLL_LLM_TRACES,
     COLL_PROMPT_DELIVERIES,
     COLL_PROMPTS,
     COLL_RENDER_COPY_JOBS,
@@ -545,6 +546,17 @@ def _complete_job(job: dict[str, Any], result: dict[str, Any]) -> None:
             }
         },
     )
+    _ensure_run_trace(
+        job,
+        status="completed",
+        provider=str(result.get("provider") or ""),
+        model=str(result.get("model") or ""),
+        duration_ms=int(result.get("duration_ms") or 0),
+        http_status=200,
+        error_detail="",
+        request_sha256=str(result.get("request_sha256") or ""),
+        prompt_count=int(result.get("prompt_count") or 0),
+    )
 
 
 def _fail_job(
@@ -734,6 +746,62 @@ def _copy_trace_org_id(job: dict[str, Any]) -> str:
         return str(job.get("owner_id") or "")
     settings = job.get("settings") if isinstance(job.get("settings"), dict) else {}
     return str(settings.get("org_id") or "")
+
+
+def _ensure_run_trace(
+    job: dict[str, Any],
+    *,
+    status: str,
+    error_code: str = "",
+    provider: str = "",
+    model: str = "",
+    duration_ms: int = 0,
+    http_status: int | None = None,
+    error_detail: str = "",
+    request_sha256: str = "",
+    prompt_count: int = 0,
+) -> None:
+    try:
+        existing = get_sync_db()[COLL_LLM_TRACES].find_one(
+            {
+                "run_id": str(job["run_id"]),
+                "user_id": str(job["user_id"]),
+            },
+            {"_id": 1},
+        )
+        if existing is not None:
+            return
+        record_recent_llm_trace(
+            user_id=str(job["user_id"]),
+            run_id=str(job["run_id"]),
+            batch=f"v{int(job.get('run_number') or 0)}",
+            org_id=_copy_trace_org_id(job),
+            event={
+                "provider": provider,
+                "model": model,
+                "api_model": (
+                    model.removeprefix("opencode/")
+                    if str(provider or "") == "opencode"
+                    else model
+                ),
+                "endpoint": "",
+                "label": "copy",
+                "status": status,
+                "http_status": http_status,
+                "duration_ms": duration_ms,
+                "error_code": error_code,
+                "error_detail": error_detail,
+                "request": {
+                    "task": "Generate structured advertising copy as JSON",
+                    "planned_ad_count": max(0, prompt_count),
+                    "languages": [],
+                    "request_sha256": request_sha256[:64],
+                },
+                "response": {"usage": {}},
+            },
+        )
+    except Exception:
+        return
 
 
 def _record_job_failure_trace(

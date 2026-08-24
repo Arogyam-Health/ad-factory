@@ -340,7 +340,8 @@ class RunReconciliationTests(unittest.TestCase):
         self.assertEqual(result, {"status": "deleted", "run_id": "run-orphan"})
         collections[COLL_RUNS].delete_one.assert_called_once_with(scope)
         collections[COLL_FILE_MAP].delete_many.assert_called_once_with({"run_id": "run-orphan"})
-        for name in (COLL_PROMPTS, COLL_IMAGES, COLL_LLM_TRACES):
+        collections[COLL_LLM_TRACES].delete_many.assert_called_once_with({"run_id": "run-orphan"})
+        for name in (COLL_PROMPTS, COLL_IMAGES):
             collections[name].delete_many.assert_called_once_with(scope)
 
     def test_device_bound_run_still_queues_a_local_purge_job(self) -> None:
@@ -404,6 +405,93 @@ class RunReconciliationTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as raised:
                 bulk_delete_runs(self.request(), payload)
             self.assertEqual(raised.exception.status_code, 400)
+
+    def test_failed_empty_run_bulk_delete_clears_run_and_traces(self) -> None:
+        from dashboard.backend.db.collections import (
+            COLL_LLM_TRACES,
+            COLL_RENDER_COPY_JOBS,
+            COLL_RUN_COUNTERS,
+            COLL_RUNS,
+        )
+        from dashboard.backend.routes.runs import bulk_delete_runs
+
+        class PyMongoLikeDb:
+            def __init__(self, collections: dict) -> None:
+                self._collections = collections
+
+            def __bool__(self) -> bool:
+                raise NotImplementedError(
+                    "Database objects do not implement truth value testing "
+                    "or bool(). Please compare with None instead: database is not None"
+                )
+
+            def __getitem__(self, name: str):
+                return self._collections[name]
+
+        db, collections = self._delete_collections()
+        collections[COLL_RUNS].find_one.return_value = {
+            "run_id": "run-failed",
+            "user_id": "user-1",
+            "owner_type": "user",
+            "owner_id": "user-1",
+            "flow_type": "structured",
+            "status": "failed",
+            "prompt_count": 0,
+            "image_count": 0,
+            "copy_generation": {
+                "status": "failed",
+                "error_code": "provider_http_error",
+                "last_error": "Invalid API key",
+            },
+        }
+        pymongo_db = PyMongoLikeDb(collections)
+
+        with patch(
+            "dashboard.backend.routes.runs.get_sync_db", return_value=pymongo_db
+        ):
+            result = bulk_delete_runs(
+                self.request(), {"run_ids": ["run-failed"]}
+            )
+
+        self.assertEqual(result["deleted"], 1)
+        self.assertEqual(result["failed"], 0)
+        collections[COLL_RUNS].delete_one.assert_called_once_with(
+            {"run_id": "run-failed", "user_id": "user-1"}
+        )
+        collections[COLL_LLM_TRACES].delete_many.assert_called_once_with(
+            {"run_id": "run-failed"}
+        )
+        collections[COLL_RENDER_COPY_JOBS].delete_many.assert_called_once_with(
+            {"run_id": "run-failed", "user_id": "user-1"}
+        )
+        collections[COLL_RUN_COUNTERS].update_one.assert_called_once()
+
+    def test_bulk_delete_keeps_going_when_one_run_errors(self) -> None:
+        from dashboard.backend.routes.runs import bulk_delete_runs
+
+        def delete_one(db, *, user_id, run_id):
+            del db, user_id
+            if run_id == "run-bad":
+                raise RuntimeError("boom")
+            return {"status": "deleted", "run_id": run_id}
+
+        with (
+            patch(
+                "dashboard.backend.routes.runs.delete_run_for_user",
+                side_effect=delete_one,
+            ),
+            patch(
+                "dashboard.backend.routes.runs.get_sync_db", return_value=MagicMock()
+            ),
+        ):
+            result = bulk_delete_runs(
+                self.request(), {"run_ids": ["run-ok", "run-bad"]}
+            )
+
+        self.assertEqual(result["deleted"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["results"][1]["run_id"], "run-bad")
+        self.assertIn("boom", result["results"][1]["detail"])
 
     def test_prompt_metadata_patch_is_user_and_run_scoped(self) -> None:
         from dashboard.backend.db.collections import COLL_PROMPTS, COLL_RUNS

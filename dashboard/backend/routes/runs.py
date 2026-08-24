@@ -489,6 +489,14 @@ def bulk_delete_runs(
             results.append(
                 {"status": "error", "run_id": run_id, "detail": str(exc.detail)}
             )
+        except Exception as exc:
+            results.append(
+                {
+                    "status": "error",
+                    "run_id": run_id,
+                    "detail": f"{type(exc).__name__}: {exc}"[:500],
+                }
+            )
     return {
         "results": results,
         "deleted": sum(1 for item in results if item["status"] == "deleted"),

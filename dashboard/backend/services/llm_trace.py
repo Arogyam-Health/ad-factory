@@ -10,7 +10,8 @@ from dashboard.backend.db.collections import COLL_LLM_TRACES, COLL_USERS
 
 MAX_RECENT_TRACES_PER_USER = 5
 MAX_RECENT_TRACES_PER_ORG = 5
-MAX_TRACE_TEXT = 200_000
+# Mongo documents cap at 16MB. This is only a crash guard, not a display trim.
+MAX_TRACE_TEXT = 14_000_000
 
 _TRACE_PROJECTION = {
     "_id": 0,
@@ -50,13 +51,31 @@ def _actor_fields(user_id: str) -> dict[str, str]:
     }
 
 
-def _prune_stale(collection: Any, query: dict[str, Any], keep: int) -> None:
+def _is_personal_trace(doc: dict[str, Any]) -> bool:
+    return not str(doc.get("org_id") or "")
+
+
+def _prune_stale(
+    collection: Any,
+    query: dict[str, Any],
+    keep: int,
+    *,
+    personal_only: bool = False,
+) -> None:
     recent = list(
         collection.find(
             query,
-            {"_id": 0, "run_id": 1, "created_at": 1},
+            {
+                "_id": 0,
+                "run_id": 1,
+                "created_at": 1,
+                "org_id": 1,
+                "trace_id": 1,
+            },
         ).sort("created_at", -1)
     )
+    if personal_only:
+        recent = [item for item in recent if _is_personal_trace(item)]
     keep_run_ids: list[str] = []
     seen: set[str] = set()
     for item in recent:
@@ -69,9 +88,15 @@ def _prune_stale(collection: Any, query: dict[str, Any], keep: int) -> None:
             break
     if not keep_run_ids:
         return
-    prune_query = dict(query)
-    prune_query["run_id"] = {"$nin": keep_run_ids}
-    collection.delete_many(prune_query)
+    drop_ids = [
+        str(item.get("trace_id") or "")
+        for item in recent
+        if str(item.get("run_id") or "") not in keep_run_ids
+        and str(item.get("trace_id") or "")
+    ]
+    if not drop_ids:
+        return
+    collection.delete_many({"trace_id": {"$in": drop_ids}})
 
 
 def record_recent_llm_trace(
@@ -95,7 +120,6 @@ def record_recent_llm_trace(
         "trace_id": "trc_" + uuid.uuid4().hex,
         "user_id": user_id,
         "run_id": run_id,
-        "org_id": clean_org_id,
         "actor_email": actor["actor_email"],
         "display_name": actor["display_name"],
         "batch": str(batch or "")[:100],
@@ -118,26 +142,24 @@ def record_recent_llm_trace(
         "error_code": str(event.get("error_code") or "")[:100],
         "error_detail": str(event.get("error_detail") or "")[:2000],
         "request": {
-            "task": str(request.get("task") or "")[:160],
+            "task": str(request.get("task") or ""),
             "planned_ad_count": max(
                 0, int(request.get("planned_ad_count") or 0)
             ),
             "languages": [
-                str(value)[:20]
+                str(value)
                 for value in (
                     request.get("languages")
                     if isinstance(request.get("languages"), list)
                     else []
                 )
-            ][:10],
-            "request_sha256": str(
-                request.get("request_sha256") or ""
-            )[:64],
+            ],
+            "request_sha256": str(request.get("request_sha256") or ""),
             "prompt": str(request.get("prompt") or "")[:MAX_TRACE_TEXT],
         },
         "response": {
             "usage": {
-                str(key)[:80]: value
+                str(key): value
                 for key, value in usage.items()
                 if isinstance(value, (int, float))
             },
@@ -145,6 +167,8 @@ def record_recent_llm_trace(
         },
         "created_at": now,
     }
+    if clean_org_id:
+        doc["org_id"] = clean_org_id
     collection = get_sync_db()[COLL_LLM_TRACES]
     collection.delete_many(
         {"user_id": user_id, "trace_id": {"$exists": False}}
@@ -161,6 +185,7 @@ def record_recent_llm_trace(
             collection,
             {"user_id": user_id},
             MAX_RECENT_TRACES_PER_USER,
+            personal_only=True,
         )
     return {
         key: value
@@ -177,11 +202,12 @@ def list_recent_llm_traces(
     query: dict[str, Any] = {"user_id": user_id}
     if run_id:
         query["run_id"] = run_id
-    return list(
+    rows = list(
         get_sync_db()[COLL_LLM_TRACES]
         .find(query, _TRACE_PROJECTION)
         .sort("created_at", -1)
     )
+    return [row for row in rows if not str(row.get("org_id") or "")]
 
 
 def list_org_llm_traces(
@@ -206,18 +232,24 @@ def list_traces_for_viewer(
 ) -> dict[str, Any]:
     from dashboard.backend.services.org_helper import get_user_default_org
 
+    personal = [
+        {**trace, "scope": "personal"}
+        for trace in list_recent_llm_traces(user_id, run_id=run_id)
+    ]
     org = get_user_default_org(user_id) or {}
-    if org.get("config_mode") == "shared_org_config" and org.get("org_id"):
-        traces = list_org_llm_traces(str(org["org_id"]), run_id=run_id)
-        return {
-            "traces": traces,
-            "scope": "org",
-            "limit": MAX_RECENT_TRACES_PER_ORG,
-        }
-    traces = list_recent_llm_traces(user_id, run_id=run_id)
+    org_id = str(org.get("org_id") or "")
+    org_traces = [
+        {**trace, "scope": "org"}
+        for trace in (
+            list_org_llm_traces(org_id, run_id=run_id) if org_id else []
+        )
+    ]
     return {
-        "traces": traces,
-        "scope": "personal",
+        "personal": personal,
+        "org": org_traces,
+        "org_name": str(org.get("name") or "")[:200],
+        "traces": personal,
+        "scope": "split",
         "limit": MAX_RECENT_TRACES_PER_USER,
     }
 

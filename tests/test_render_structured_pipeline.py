@@ -902,6 +902,8 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertIn("/api/llm-traces", source)
         self.assertNotIn("localDataPlane.listTraces", source)
         self.assertNotIn("localDataPlane.traceContent", source)
+        self.assertIn("Personal runs", source)
+        self.assertIn("Org runs", source)
         self.assertIn("Trace", source)
 
     def test_mongo_trace_history_keeps_only_five_sanitized_records(self) -> None:
@@ -1127,6 +1129,229 @@ class RenderStructuredPipelineTests(unittest.TestCase):
             "Provider configuration is unavailable",
         )
 
+    def test_completed_copy_writes_a_trace_when_emit_did_not(self) -> None:
+        from dashboard.backend.db.collections import COLL_LLM_TRACES
+        from dashboard.backend.services.render_copy_jobs import _ensure_run_trace
+
+        traces = SimpleNamespace(find_one=Mock(return_value=None))
+        with (
+            patch(
+                "dashboard.backend.services.render_copy_jobs.get_sync_db",
+                return_value={COLL_LLM_TRACES: traces},
+            ),
+            patch(
+                "dashboard.backend.services.render_copy_jobs.record_recent_llm_trace"
+            ) as record,
+        ):
+            _ensure_run_trace(
+                {
+                    "run_id": "run-ok",
+                    "user_id": "user-1",
+                    "run_number": 1,
+                },
+                status="completed",
+                provider="opencode",
+                model="opencode/big-pickle",
+                duration_ms=12,
+                http_status=200,
+                prompt_count=1,
+            )
+
+        traces.find_one.assert_called_once()
+        self.assertEqual(record.call_args.kwargs["run_id"], "run-ok")
+        self.assertEqual(record.call_args.kwargs["event"]["status"], "completed")
+
+    def test_completed_copy_does_not_duplicate_an_existing_trace(self) -> None:
+        from dashboard.backend.db.collections import COLL_LLM_TRACES
+        from dashboard.backend.services.render_copy_jobs import _ensure_run_trace
+
+        traces = SimpleNamespace(find_one=Mock(return_value={"_id": "1"}))
+        with (
+            patch(
+                "dashboard.backend.services.render_copy_jobs.get_sync_db",
+                return_value={COLL_LLM_TRACES: traces},
+            ),
+            patch(
+                "dashboard.backend.services.render_copy_jobs.record_recent_llm_trace"
+            ) as record,
+        ):
+            _ensure_run_trace(
+                {"run_id": "run-ok", "user_id": "user-1", "run_number": 1},
+                status="completed",
+            )
+
+        record.assert_not_called()
+
+    def test_traces_page_shows_personal_copy_when_default_org_is_shared(self) -> None:
+        from dashboard.backend.services.llm_trace import (
+            list_traces_for_viewer,
+            record_recent_llm_trace,
+        )
+
+        class Cursor(list):
+            def sort(self, key, direction):
+                return Cursor(
+                    sorted(
+                        self,
+                        key=lambda item: item.get(key, 0),
+                        reverse=direction < 0,
+                    )
+                )
+
+        class Collection:
+            def __init__(self):
+                self.docs = []
+
+            def insert_one(self, doc):
+                self.docs.append(copy.deepcopy(doc))
+
+            def find(self, query, projection):
+                rows = [
+                    copy.deepcopy(doc)
+                    for doc in self.docs
+                    if all(doc.get(key) == value for key, value in query.items())
+                ]
+                if projection:
+                    rows = [
+                        {
+                            key: value
+                            for key, value in row.items()
+                            if projection.get(key) == 1
+                        }
+                        for row in rows
+                    ]
+                return Cursor(rows)
+
+            def delete_many(self, query):
+                self.docs, deleted = _delete_matching_docs(self.docs, query)
+                return SimpleNamespace(deleted_count=deleted)
+
+        collection = Collection()
+        with (
+            patch(
+                "dashboard.backend.services.llm_trace.get_sync_db",
+                return_value={"llm_traces": collection, "users": {"find_one": lambda *a, **k: {}}},
+            ),
+            patch(
+                "dashboard.backend.services.org_helper.get_user_default_org",
+                return_value={
+                    "org_id": "org_shared",
+                    "config_mode": "shared_org_config",
+                },
+            ),
+        ):
+            record_recent_llm_trace(
+                user_id="user-1",
+                run_id="run-personal",
+                batch="v1",
+                event={
+                    "provider": "opencode",
+                    "model": "opencode/big-pickle",
+                    "label": "copy",
+                    "status": "completed",
+                    "http_status": 200,
+                    "request": {"task": "copy"},
+                    "response": {"usage": {}},
+                },
+            )
+            listed = list_traces_for_viewer("user-1")
+
+        self.assertEqual(listed["scope"], "split")
+        self.assertEqual([item["run_id"] for item in listed["personal"]], ["run-personal"])
+        self.assertEqual(listed["org"], [])
+        self.assertEqual([item["run_id"] for item in listed["traces"]], ["run-personal"])
+        self.assertNotIn("org_id", collection.docs[0])
+
+    def test_viewer_keeps_personal_and_org_traces_separate(self) -> None:
+        from dashboard.backend.services.llm_trace import (
+            list_traces_for_viewer,
+            record_recent_llm_trace,
+        )
+
+        class Cursor(list):
+            def sort(self, key, direction):
+                return Cursor(
+                    sorted(
+                        self,
+                        key=lambda item: item.get(key, 0),
+                        reverse=direction < 0,
+                    )
+                )
+
+        class Collection:
+            def __init__(self):
+                self.docs = []
+
+            def insert_one(self, doc):
+                self.docs.append(copy.deepcopy(doc))
+
+            def find(self, query, projection):
+                rows = [
+                    copy.deepcopy(doc)
+                    for doc in self.docs
+                    if all(doc.get(key) == value for key, value in query.items())
+                ]
+                if projection:
+                    rows = [
+                        {
+                            key: value
+                            for key, value in row.items()
+                            if projection.get(key) == 1
+                        }
+                        for row in rows
+                    ]
+                return Cursor(rows)
+
+            def delete_many(self, query):
+                return SimpleNamespace(deleted_count=0)
+
+        collection = Collection()
+        event = {
+            "provider": "opencode",
+            "model": "opencode/big-pickle",
+            "label": "copy",
+            "status": "completed",
+            "http_status": 200,
+            "request": {"task": "copy", "prompt": "full-request"},
+            "response": {"content": "full-response"},
+        }
+        with (
+            patch(
+                "dashboard.backend.services.llm_trace.get_sync_db",
+                return_value={"llm_traces": collection, "users": {"find_one": lambda *a, **k: {}}},
+            ),
+            patch(
+                "dashboard.backend.services.org_helper.get_user_default_org",
+                return_value={
+                    "org_id": "org_shared",
+                    "name": "Shared Ads",
+                    "config_mode": "shared_org_config",
+                },
+            ),
+        ):
+            record_recent_llm_trace(
+                user_id="user-1",
+                run_id="run-personal",
+                batch="v1",
+                event=event,
+            )
+            record_recent_llm_trace(
+                user_id="user-1",
+                run_id="run-org",
+                batch="v2",
+                org_id="org_shared",
+                event=event,
+            )
+            listed = list_traces_for_viewer("user-1")
+
+        self.assertEqual(listed["scope"], "split")
+        self.assertEqual(listed["org_name"], "Shared Ads")
+        self.assertEqual([item["run_id"] for item in listed["personal"]], ["run-personal"])
+        self.assertEqual([item["run_id"] for item in listed["org"]], ["run-org"])
+        self.assertEqual([item["run_id"] for item in listed["traces"]], ["run-personal"])
+        self.assertEqual(listed["personal"][0]["scope"], "personal")
+        self.assertEqual(listed["org"][0]["scope"], "org")
+
     def test_mongo_trace_persists_full_prompt_and_response(self) -> None:
         from dashboard.backend.services.llm_trace import (
             list_recent_llm_traces,
@@ -1205,12 +1430,40 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                     },
                 },
             )
+            record_recent_llm_trace(
+                user_id="user-1",
+                run_id="run-long",
+                batch="v2",
+                event={
+                    "provider": "opencode",
+                    "model": "opencode/big-pickle",
+                    "label": "copy",
+                    "status": "completed",
+                    "http_status": 200,
+                    "request": {
+                        "task": "Generate structured advertising copy as JSON",
+                        "planned_ad_count": 3,
+                        "languages": ["EN"],
+                        "prompt": "P" * 250_000,
+                    },
+                    "response": {
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 4},
+                        "content": "R" * 250_000,
+                    },
+                },
+            )
             traces = list_recent_llm_traces("user-1")
 
-        self.assertEqual(len(traces), 1)
-        self.assertIn("product_document", traces[0]["request"]["prompt"])
-        self.assertIn("Full response", traces[0]["response"]["content"])
-        self.assertEqual(traces[0]["response"]["usage"]["prompt_tokens"], 10)
+        self.assertEqual(len(traces), 2)
+        full = next(item for item in traces if item["run_id"] == "run-full")
+        long = next(item for item in traces if item["run_id"] == "run-long")
+        self.assertIn("product_document", full["request"]["prompt"])
+        self.assertIn("Full response", full["response"]["content"])
+        self.assertEqual(full["response"]["usage"]["prompt_tokens"], 10)
+        self.assertEqual(len(long["request"]["prompt"]), 250_000)
+        self.assertEqual(len(long["response"]["content"]), 250_000)
+        self.assertEqual(long["request"]["prompt"], "P" * 250_000)
+        self.assertEqual(long["response"]["content"], "R" * 250_000)
 
     def test_org_trace_history_keeps_last_five_runs_with_actor(self) -> None:
         from dashboard.backend.services.llm_trace import (
@@ -1308,9 +1561,11 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(traces[0]["run_id"], "run-11")
         self.assertEqual(traces[0]["actor_email"], "ada@example.com")
         self.assertEqual(traces[0]["display_name"], "Ada Lovelace")
-        self.assertEqual(listed["scope"], "org")
+        self.assertEqual(listed["scope"], "split")
         self.assertEqual(listed["limit"], 5)
-        self.assertEqual(len(listed["traces"]), 5)
+        self.assertEqual(len(listed["org"]), 5)
+        self.assertEqual(listed["personal"], [])
+        self.assertEqual(listed["traces"], [])
 
         with patch(
             "dashboard.backend.services.llm_trace.get_sync_db",
@@ -1320,8 +1575,10 @@ class RenderStructuredPipelineTests(unittest.TestCase):
             return_value={"org_id": "org_personal", "config_mode": "individual_member_config"},
         ):
             personal = list_traces_for_viewer("user-1")
-        self.assertEqual(personal["scope"], "personal")
+        self.assertEqual(personal["scope"], "split")
         self.assertEqual(personal["limit"], 5)
+        self.assertEqual(personal["org"], [])
+        self.assertEqual(personal["personal"], [])
 
     def test_delivery_and_render_jobs_have_ttl_indexes(self) -> None:
         from dashboard.backend.db.collections import (

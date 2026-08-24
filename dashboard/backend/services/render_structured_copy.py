@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 import requests
 
+from dashboard.backend.services.llm_trace import MAX_TRACE_TEXT
 from dashboard.backend.services.user_config import resolve_selected_concept
 from dashboard.backend.services.visual_archetypes import bundled_visual_archetypes
 from scripts import generate_ads
@@ -436,9 +437,6 @@ def _background(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-MAX_TRACE_TEXT = 200_000
-
-
 def _sha256_json(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -508,12 +506,12 @@ def _trace_request_metadata(request: dict[str, Any]) -> dict[str, Any]:
     planned = request.get("planned_ads")
     languages = request.get("languages")
     return {
-        "task": str(request.get("task") or "")[:160],
+        "task": str(request.get("task") or ""),
         "planned_ad_count": len(planned) if isinstance(planned, list) else 0,
         "languages": [
-            str(value)[:20]
+            str(value)
             for value in (languages if isinstance(languages, list) else [])
-        ][:10],
+        ],
         "request_sha256": _sha256_json(request),
     }
 
