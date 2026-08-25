@@ -22,7 +22,13 @@ from dashboard.backend.db.settings import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PUBLIC_API_PREFIXES = ("/api/auth/", "/api/invites/", "/api/public/")
+PUBLIC_API_PREFIXES = (
+    "/api/auth/",
+    "/api/invites/",
+    "/api/public/",
+    "/api/guide",
+    "/api/docs/",
+)
 
 app = FastAPI(title="Ad Factory Control Plane", version="2.0.0")
 app.add_middleware(

@@ -94,11 +94,13 @@ cloning the whole repo. Guides:
 - [`docs/LOCAL_AGENT_UBUNTU.md`](LOCAL_AGENT_UBUNTU.md)
 - [`docs/LOCAL_AGENT_MAC.md`](LOCAL_AGENT_MAC.md)
 
-Install dependencies from the unzipped folder. `requirements-local-agent.txt`
-is already in the zip. Use the venv Python (no activate, no global pip):
+Install **Python 3.12 exactly** (3.13+ cannot run the agent: `cgi` was
+removed). Install dependencies from the unzipped folder.
+`requirements-local-agent.txt` is already in the zip. Use the venv Python
+(no activate, no global pip):
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements-local-agent.txt
 .venv/bin/python scripts/start_local_agent.py
 ```

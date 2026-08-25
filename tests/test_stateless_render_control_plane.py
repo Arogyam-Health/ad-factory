@@ -63,6 +63,8 @@ class StatelessRenderControlPlaneTests(unittest.TestCase):
         self.assertIn("mount_react_spa", source)
         self.assertIn('app.mount("/assets"', (ROOT / "dashboard/backend/spa_static.py").read_text(encoding="utf-8"))
         self.assertIn('"/api/public/"', source)
+        self.assertIn('"/api/guide"', source)
+        self.assertIn('"/api/docs/"', source)
 
     def test_startup_does_not_create_or_scan_runtime_content(self) -> None:
         source = (ROOT / "dashboard/backend/control_app.py").read_text(

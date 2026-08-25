@@ -1,5 +1,12 @@
 # Local agent setup
 
+Install **Python 3.12 exactly**. Do not use 3.13 or newer. The agent still
+imports Python's `cgi` module, which was removed after 3.12, so a newer
+interpreter will fail before the agent starts. Confirm with
+`python3.12 --version` or `py -3.12 --version` — it must print `3.12.x`.
+Create the venv with that binary (`python3.12 -m venv .venv` or
+`py -3.12 -m venv .venv`), not plain `python3` / `py -3`.
+
 Share **only** `ad-factory-local-agent.zip`. That zip already contains the
 Python code, `requirements-local-agent.txt`, and these setup guides. Do not
 send `requirements-local-agent.txt` or any README as a separate file.

@@ -231,13 +231,15 @@ Operators should install the zip, not clone the repo.
 1. Download [ad-factory-local-agent.zip](https://github.com/Vinay-003/ad-factory/raw/render-setup/ad-factory-local-agent.zip).
 2. Unzip it. Leave `scripts/`, `local_agent_runtime/`, `dashboard/backend/`, and `docs/` inside the folder.
 3. Install Google Chrome. Do not run `playwright install chromium`.
-4. Create a local `.venv` and install with the venv Python. Do not `pip install` globally.
+4. Install **Python 3.12 exactly**. 3.13+ fails because the agent still uses
+   Python's `cgi` module, which was removed after 3.12. Create a local `.venv`
+   with that 3.12 binary. Do not `pip install` globally.
 
 ```text
-Windows:  py -3 -m venv .venv
+Windows:  py -3.12 -m venv .venv
           .venv\Scripts\python.exe -m pip install -r requirements-local-agent.txt
 
-Ubuntu / macOS:  python3 -m venv .venv
+Ubuntu / macOS:  python3.12 -m venv .venv
                  .venv/bin/python -m pip install -r requirements-local-agent.txt
 ```
 

@@ -60,6 +60,7 @@ _CONTROL_PLANE_ROUTES = frozenset(
     {
         "/api/defaults",
         "/api/public/studio",
+        "/api/guide",
         "/api/config/persona-summary",
         "/api/config/effective",
         "/api/config/sources",
@@ -70,6 +71,7 @@ _CONTROL_PLANE_ROUTES = frozenset(
 )
 _CONTROL_PLANE_PREFIXES = (
     "/api/public/",
+    "/api/docs/",
     "/api/config/",
     "/api/user/config",
     "/api/llm-traces",

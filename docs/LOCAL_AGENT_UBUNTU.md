@@ -10,9 +10,15 @@ Default production URL: `https://ad-factory-pzgh.onrender.com`
 
 ## 1. Install Python and Chrome
 
+Install **Python 3.12 exactly**. 3.13+ cannot run the agent (`cgi` was
+removed). If `apt` has no `python3.12` package, use the
+[deadsnakes PPA](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa) or
+install 3.12 from https://www.python.org/downloads/.
+
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip unzip
+sudo apt install -y python3.12 python3.12-venv unzip
+python3.12 --version
 ```
 
 Install Google Chrome:
@@ -48,7 +54,7 @@ download it separately. Create a **local** `.venv` and install into it with
 the venv Python (no `activate`, no global `pip`):
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements-local-agent.txt
 ```
 

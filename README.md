@@ -11,7 +11,8 @@ Dashboard on Render plus a paired local agent. Live copy rules live in `dashboar
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.10+ for the dashboard control plane
+- **Python 3.12 exactly** for the local agent (3.13+ removed `cgi`)
 - Node.js LTS (only required if `opencode` CLI is not already installed)
 
 ## Platform setup guides

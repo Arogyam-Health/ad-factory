@@ -308,7 +308,14 @@ app.add_middleware(
 )
 
 
-PUBLIC_API_PREFIXES = ("/api/auth/", "/api/generic-config", "/api/invites/", "/api/public/")
+PUBLIC_API_PREFIXES = (
+    "/api/auth/",
+    "/api/generic-config",
+    "/api/invites/",
+    "/api/public/",
+    "/api/guide",
+    "/api/docs/",
+)
 
 
 @app.middleware("http")

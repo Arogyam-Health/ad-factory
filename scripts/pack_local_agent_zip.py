@@ -55,14 +55,16 @@ Then open ONE guide and follow it:
   Ubuntu:   docs/LOCAL_AGENT_UBUNTU.md
   macOS:    docs/LOCAL_AGENT_MAC.md
 
+Python 3.12 exactly is required (3.13+ removed cgi, which the agent still uses).
+
 Install into a local .venv (do not pip install globally, do not activate):
 
-  Windows:     py -3 -m venv .venv
+  Windows:     py -3.12 -m venv .venv
                .venv\\Scripts\\python.exe -m pip install -r requirements-local-agent.txt
                .venv\\Scripts\\python.exe scripts\\start_local_agent.py
                or double-click start_local_agent.bat
 
-  Ubuntu/Mac:  python3 -m venv .venv
+  Ubuntu/Mac:  python3.12 -m venv .venv
                .venv/bin/python -m pip install -r requirements-local-agent.txt
                .venv/bin/python scripts/start_local_agent.py
                or ./start_local_agent.sh
@@ -75,7 +77,7 @@ cd /d "%~dp0"
 if exist ".venv\\Scripts\\python.exe" (
   ".venv\\Scripts\\python.exe" scripts\\start_local_agent.py %*
 ) else (
-  py -3 scripts\\start_local_agent.py %*
+  py -3.12 scripts\\start_local_agent.py %*
 )
 """
 
@@ -85,7 +87,7 @@ cd "$(dirname "$0")"
 if [ -x .venv/bin/python ]; then
   exec .venv/bin/python scripts/start_local_agent.py "$@"
 fi
-exec python3 scripts/start_local_agent.py "$@"
+exec python3.12 scripts/start_local_agent.py "$@"
 """
 
 

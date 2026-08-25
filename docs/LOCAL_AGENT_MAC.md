@@ -10,16 +10,13 @@ Default production URL: `https://ad-factory-pzgh.onrender.com`
 
 ## 1. Install Python and Chrome
 
-Install Python 3.10+ from https://www.python.org/downloads/macos/ or Homebrew:
+Install **Python 3.12 exactly** from https://www.python.org/downloads/macos/
+or Homebrew. Do not use 3.13+ — the agent still imports `cgi`, which was
+removed after 3.12.
 
 ```bash
-brew install python
-```
-
-Confirm:
-
-```bash
-python3 --version
+brew install python@3.12
+python3.12 --version
 ```
 
 Install Google Chrome from https://www.google.com/chrome/.
@@ -47,7 +44,7 @@ download it separately. Create a **local** `.venv` and install into it with
 the venv Python (no `activate`, no global `pip`):
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements-local-agent.txt
 ```
 

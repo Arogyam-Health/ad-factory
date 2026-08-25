@@ -19,7 +19,7 @@ Execution policy only blocks PowerShell `.ps1` files such as
 Use one of these (no policy change):
 
 ```bat
-py -3 scripts\start_local_agent.py
+py -3.12 scripts\start_local_agent.py
 ```
 
 ```bat
@@ -41,11 +41,12 @@ That is enough. Do not use Bypass.
 
 ## 1. Install Python and Chrome
 
-1. Python 3.10+ from https://www.python.org/downloads/ — enable
-   **Add python.exe to PATH**. Confirm:
+1. **Python 3.12 exactly** from https://www.python.org/downloads/ — enable
+   **Add python.exe to PATH**. Do not install 3.13+. The agent still imports
+   `cgi`, which was removed after 3.12. Confirm:
 
    ```bat
-   py -3 --version
+   py -3.12 --version
    ```
 
 2. Google Chrome from https://www.google.com/chrome/
@@ -68,7 +69,7 @@ Create a **local** `.venv` and install into it with the venv Python (no
 
 ```bat
 cd %USERPROFILE%\Downloads\ad-factory-local-agent
-py -3 -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-local-agent.txt
 ```
 
