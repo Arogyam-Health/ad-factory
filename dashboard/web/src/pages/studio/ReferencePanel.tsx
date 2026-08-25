@@ -429,19 +429,21 @@ export function ReferenceCompose() {
       </div>
       <ConceptSelect value={selectedConcept} onChange={setSelectedConcept} studio={studio} />
       <p className="hint" style={{ marginBottom: 12 }}>{jobCount} jobs · personas × selected references × language</p>
-      <div className="persona-grid">
-        {personas.map((persona) => (
-          <button
-            key={persona.number}
-            type="button"
-            className={`persona-card${selected.has(persona.number) ? " active" : ""}`}
-            onClick={() => togglePersona(persona.number)}
-          >
-            <span className="persona-num">P{String(persona.number).padStart(2, "0")}</span>
-            <span>{persona.name}</span>
-          </button>
-        ))}
-        {!personas.length ? <p className="hint">No personas on this plate yet.</p> : null}
+      <div className="persona-board">
+        <div className="persona-grid">
+          {personas.map((persona) => (
+            <button
+              key={persona.number}
+              type="button"
+              className={`persona-card${selected.has(persona.number) ? " active" : ""}`}
+              onClick={() => togglePersona(persona.number)}
+            >
+              <span className="persona-num">P{String(persona.number).padStart(2, "0")}</span>
+              <span>{persona.name}</span>
+            </button>
+          ))}
+          {!personas.length ? <p className="hint">No personas on this plate yet.</p> : null}
+        </div>
       </div>
     </>
   );

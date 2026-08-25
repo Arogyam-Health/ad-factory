@@ -287,6 +287,7 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("Comment & revise", gallery)
         self.assertIn("Optional instruction for only this reference image", reference)
         self.assertIn("SwipeLibrary", reference)
+        self.assertIn("persona-board", reference)
         self.assertIn("scroll-snap-type: x mandatory", _read("styles", "global.css"))
         self.assertIn("displayRunStatus", studio)
         self.assertIn("copyFailureDetail", workspace)
