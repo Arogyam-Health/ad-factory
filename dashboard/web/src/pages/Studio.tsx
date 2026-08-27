@@ -79,22 +79,19 @@ function PatternSelect({
   value,
   options,
   onChange,
-  compact,
 }: {
   fmt: string;
   value: string;
   options: FormatPattern[];
   onChange: (value: string) => void;
-  compact?: boolean;
 }) {
   return (
-    <label className={compact ? "hint persona-pattern" : "hint"}>
+    <label className="hint">
       {fmt} pattern
       <select
         className="field"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        onClick={(event) => event.stopPropagation()}
       >
         <option value="">Auto rotate</option>
         <option value="llm_decide">Leave it to the image model</option>
@@ -159,7 +156,6 @@ export function StudioPage() {
   const [formats, setFormats] = useState<Set<string>>(new Set(["HERO"]));
   const [personaFormats, setPersonaFormats] = useState<Record<number, string[]>>({});
   const [patterns, setPatterns] = useState<Record<string, string>>({});
-  const [personaPatterns, setPersonaPatterns] = useState<Record<number, Record<string, string>>>({});
   const [language, setLanguage] = useState("EN");
   const [flow, setFlow] = useState<"structured" | "reference">(
     () => (localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured"),
@@ -609,6 +605,13 @@ export function StudioPage() {
     () => formatOptions.filter((item) => formats.has(item.id)).map((item) => item.id),
     [formatOptions, formats],
   );
+  const usedPatternFormats = useMemo(() => {
+    const used = new Set(formatList);
+    for (const list of Object.values(personaFormats)) {
+      for (const fmt of list) used.add(fmt);
+    }
+    return formatOptions.filter((item) => used.has(item.id)).map((item) => item.id);
+  }, [formatList, formatOptions, personaFormats]);
 
   useEffect(() => {
     const ids = new Set(formatOptions.map((item) => item.id));
@@ -741,31 +744,6 @@ export function StudioPage() {
     return [];
   }
 
-  function patternForPersona(n: number, fmt: string) {
-    const local = personaPatterns[n]?.[fmt];
-    if (local != null) return local;
-    return patterns[fmt] || "";
-  }
-
-  function setFormatPattern(fmt: string, value: string) {
-    setPatterns((prev) => ({ ...prev, [fmt]: value }));
-    if (!selected.size) return;
-    setPersonaPatterns((current) => {
-      const updated = { ...current };
-      for (const number of selected) {
-        updated[number] = { ...current[number], [fmt]: value };
-      }
-      return updated;
-    });
-  }
-
-  function setPersonaPattern(n: number, fmt: string, value: string) {
-    setPersonaPatterns((current) => ({
-      ...current,
-      [n]: { ...current[n], [fmt]: value },
-    }));
-  }
-
   function togglePersona(n: number) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -843,12 +821,15 @@ export function StudioPage() {
   }
 
   function togglePersonaFormat(n: number, fmt: string) {
-    setPersonaFormats((current) => {
-      const existing = new Set(current[n] ?? formatList);
-      if (existing.has(fmt)) existing.delete(fmt);
-      else if (existing.size < 8) existing.add(fmt);
-      return { ...current, [n]: [...existing] };
-    });
+    const baseline = personaFormats[n] ?? (selected.has(n) ? formatList : []);
+    const existing = new Set(baseline);
+    if (existing.has(fmt)) existing.delete(fmt);
+    else if (existing.size < 8) existing.add(fmt);
+    else return;
+    setPersonaFormats((current) => ({ ...current, [n]: [...existing] }));
+    if (existing.has(fmt)) {
+      setSelected((prev) => (prev.has(n) ? prev : new Set(prev).add(n)));
+    }
   }
 
   async function startStructured() {
@@ -857,19 +838,12 @@ export function StudioPage() {
       return;
     }
     const formatsByPersona: Record<string, string[]> = {};
-    const archetypesByPersona: Record<string, Record<string, string>> = {};
     const usedFormats = new Set<string>();
     for (const n of selected) {
       const list = formatsForPersona(n);
       if (!list.length) continue;
       formatsByPersona[String(n)] = list;
-      const row: Record<string, string> = {};
-      for (const fmt of list) {
-        usedFormats.add(fmt);
-        const archetype = patternForPersona(n, fmt);
-        if (archetype) row[fmt] = archetype;
-      }
-      if (Object.keys(row).length) archetypesByPersona[String(n)] = row;
+      for (const fmt of list) usedFormats.add(fmt);
     }
     const globalForRequest = formatList.length ? formatList : [...usedFormats];
     if (!selectedCount || !globalForRequest.length) {
@@ -927,7 +901,6 @@ export function StudioPage() {
             hypothesis: { type: hypType, variant: hypVariant },
             selected_concept: selectedConcept,
             visual_archetypes_by_format: patterns,
-            visual_archetypes_by_persona: archetypesByPersona,
             language_mode: language,
             provider: providerName,
             model: modelName,
@@ -1178,7 +1151,9 @@ export function StudioPage() {
               ))}
             </div>
             <p className="tile-kicker">Global formats</p>
-            <p className="hint" style={{ marginBottom: 8 }}>Applies to selected personas only. Click a format on a card to change only that persona.</p>
+            <p className="hint" style={{ marginBottom: 8 }}>
+              Format chips on a card change only that persona. Selecting a format anywhere shows its pattern above. That pattern applies to every selected card that uses that format.
+            </p>
             <div className="chips" style={{ marginBottom: 18 }}>
               {formatOptions.map((fmt) => (
                 <button key={fmt.id} type="button" className={`chip${formats.has(fmt.id) ? " active" : ""}`} onClick={() => toggleFormat(fmt.id)}>
@@ -1186,15 +1161,15 @@ export function StudioPage() {
                 </button>
               ))}
             </div>
-            {formatList.length ? (
+            {usedPatternFormats.length ? (
               <div className="pattern-grid">
-                {formatList.map((fmt) => (
+                {usedPatternFormats.map((fmt) => (
                   <PatternSelect
                     key={fmt}
                     fmt={fmt}
                     value={patterns[fmt] || ""}
                     options={studio?.format_patterns?.[fmt] || []}
-                    onChange={(value) => setFormatPattern(fmt, value)}
+                    onChange={(value) => setPatterns((prev) => ({ ...prev, [fmt]: value }))}
                   />
                 ))}
               </div>
@@ -1234,24 +1209,6 @@ export function StudioPage() {
                             </button>
                           ))}
                         </div>
-                        {personaFormatSet.size ? (
-                          <div
-                            className="persona-patterns"
-                            onClick={(event) => event.stopPropagation()}
-                            onPointerDown={(event) => event.stopPropagation()}
-                          >
-                            {formatOptions.filter((fmt) => personaFormatSet.has(fmt.id)).map((fmt) => (
-                              <PatternSelect
-                                key={fmt.id}
-                                fmt={fmt.id}
-                                compact
-                                value={patternForPersona(persona.number, fmt.id)}
-                                options={studio?.format_patterns?.[fmt.id] || []}
-                                onChange={(value) => setPersonaPattern(persona.number, fmt.id, value)}
-                              />
-                            ))}
-                          </div>
-                        ) : null}
                       </div>
                     );
                   })}

@@ -661,27 +661,6 @@ p {
   width: 100%;
 }
 
-.persona-patterns {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-}
-
-.persona-pattern {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  font-size: 0.72rem;
-}
-
-.persona-pattern .field {
-  min-height: 32px;
-  margin-top: 2px;
-  margin-bottom: 0;
-  padding: 4px 28px 4px 8px;
-  font-size: 0.72rem;
-}
-
 .chip-mini {
   min-height: 22px;
   padding: 0 7px;
