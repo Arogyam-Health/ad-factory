@@ -531,7 +531,7 @@ export function ReferenceDesk() {
   return (
     <div className="press-stack">
       <p className="hint">{ctx.status}</p>
-      <PressDrawer title="References">
+      <PressDrawer title="References" wide>
         <label className="hint">Reference library</label>
         <FileField
           id="referenceLibraryFiles"
@@ -546,73 +546,77 @@ export function ReferenceDesk() {
           }}
         />
         <p className="hint">{ctx.refs.length} stored · {ctx.pickedRefs.size} selected</p>
-        <SwipeLibrary label="Reference images">
-          {ctx.refs.map((item, index) => (
-            <article
-              key={item.resource_id}
-              className={`reference-slide${ctx.pickedRefs.has(item.resource_id) ? " selected" : ""}`}
-            >
-              <label className="reference-select">
-                <input
-                  type="checkbox"
-                  checked={ctx.pickedRefs.has(item.resource_id)}
-                  onChange={() => ctx.toggleRef(item.resource_id)}
-                />
-                Use
-              </label>
-              <button
-                type="button"
-                className="reference-thumb"
-                onClick={() => ctx.toggleRef(item.resource_id)}
+        {ctx.refs.length ? (
+          <SwipeLibrary label="Reference images">
+            {ctx.refs.map((item, index) => (
+              <article
+                key={item.resource_id}
+                className={`reference-slide${ctx.pickedRefs.has(item.resource_id) ? " selected" : ""}`}
               >
-                <LazyAsset
-                  resourceId={item.resource_id}
-                  deviceId={ctx.deviceId}
-                  version={item.version}
-                  alt={item.filename || "Reference"}
-                />
-              </button>
-              <div className="reference-slide-body">
-                <strong>{index + 1}. {item.filename || item.resource_id}</strong>
-                <textarea
-                  rows={3}
-                  placeholder="Optional instruction for only this reference image…"
-                  value={ctx.comments[item.resource_id] || ""}
-                  onChange={(e) => ctx.setComments((prev) => ({ ...prev, [item.resource_id]: e.target.value }))}
-                />
-                <div className="reference-slide-actions">
-                  <Button
-                    variant="ghost"
-                    onClick={async () => {
-                      const url = await localDataPlane.assetObjectUrl(item.resource_id, ctx.deviceId, item.version).catch(() => "");
-                      if (url) window.open(url, "_blank", "noopener");
-                    }}
-                  >
-                    Open
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={async () => {
-                      if (!window.confirm(`Remove ${item.filename || item.resource_id}?`)) return;
-                      await localDataPlane.deleteAsset(item.resource_id, { deviceId: ctx.deviceId });
-                      ctx.setComments((prev) => {
-                        const next = { ...prev };
-                        delete next[item.resource_id];
-                        return next;
-                      });
-                      if (ctx.pickedRefs.has(item.resource_id)) ctx.toggleRef(item.resource_id);
-                      await ctx.uploadKind("reference_image", null);
-                    }}
-                  >
-                    Remove
-                  </Button>
+                <label className="reference-select">
+                  <input
+                    type="checkbox"
+                    checked={ctx.pickedRefs.has(item.resource_id)}
+                    onChange={() => ctx.toggleRef(item.resource_id)}
+                  />
+                  Use
+                </label>
+                <button
+                  type="button"
+                  className="reference-thumb"
+                  onClick={() => ctx.toggleRef(item.resource_id)}
+                >
+                  <LazyAsset
+                    resourceId={item.resource_id}
+                    deviceId={ctx.deviceId}
+                    version={item.version}
+                    alt={item.filename || "Reference"}
+                  />
+                </button>
+                <div className="reference-slide-body">
+                  <strong>{index + 1}. {item.filename || item.resource_id}</strong>
+                  <textarea
+                    rows={3}
+                    placeholder="Optional instruction for only this reference image…"
+                    value={ctx.comments[item.resource_id] || ""}
+                    onChange={(e) => ctx.setComments((prev) => ({ ...prev, [item.resource_id]: e.target.value }))}
+                  />
+                  <div className="reference-slide-actions">
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        const url = await localDataPlane.assetObjectUrl(item.resource_id, ctx.deviceId, item.version).catch(() => "");
+                        if (url) window.open(url, "_blank", "noopener");
+                      }}
+                    >
+                      Open
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        if (!window.confirm(`Remove ${item.filename || item.resource_id}?`)) return;
+                        await localDataPlane.deleteAsset(item.resource_id, { deviceId: ctx.deviceId });
+                        ctx.setComments((prev) => {
+                          const next = { ...prev };
+                          delete next[item.resource_id];
+                          return next;
+                        });
+                        if (ctx.pickedRefs.has(item.resource_id)) ctx.toggleRef(item.resource_id);
+                        await ctx.uploadKind("reference_image", null);
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
-        </SwipeLibrary>
+              </article>
+            ))}
+          </SwipeLibrary>
+        ) : (
+          <p className="hint">Images land in a horizontal strip here. Check Use, add a note, Open to preview.</p>
+        )}
       </PressDrawer>
-      <PressDrawer title="Products">
+      <PressDrawer title="Products" wide>
         <label className="hint">Product assets</label>
         <FileField
           id="referenceProductFiles"
@@ -627,58 +631,62 @@ export function ReferenceDesk() {
           }}
         />
         <p className="hint">{ctx.products.length} stored · {ctx.pickedProducts.size} selected</p>
-        <SwipeLibrary label="Product assets" className="product-library">
-          {ctx.products.map((item, index) => (
-            <article
-              key={item.resource_id}
-              className={`reference-slide${ctx.pickedProducts.has(item.resource_id) ? " selected" : ""}`}
-            >
-              <label className="reference-select">
-                <input
-                  type="checkbox"
-                  checked={ctx.pickedProducts.has(item.resource_id)}
-                  onChange={() => ctx.toggleProduct(item.resource_id)}
-                />
-                Use
-              </label>
-              <button type="button" className="reference-thumb" onClick={() => ctx.toggleProduct(item.resource_id)}>
-                <LazyAsset
-                  resourceId={item.resource_id}
-                  deviceId={ctx.deviceId}
-                  version={item.version}
-                  alt={item.filename || "Product"}
-                />
-              </button>
-              <div className="reference-slide-body">
-                <strong>{index + 1}. {item.filename || item.resource_id}</strong>
-                <div className="reference-slide-actions">
-                  <Button
-                    variant="ghost"
-                    onClick={async () => {
-                      const url = await localDataPlane.assetObjectUrl(item.resource_id, ctx.deviceId, item.version).catch(() => "");
-                      if (url) window.open(url, "_blank", "noopener");
-                    }}
-                  >
-                    Open
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={async () => {
-                      if (!window.confirm(`Remove ${item.filename || item.resource_id}?`)) return;
-                      await localDataPlane.deleteAsset(item.resource_id, { deviceId: ctx.deviceId });
-                      if (ctx.pickedProducts.has(item.resource_id)) ctx.toggleProduct(item.resource_id);
-                      await ctx.uploadKind("product_image", null);
-                    }}
-                  >
-                    Remove
-                  </Button>
+        {ctx.products.length ? (
+          <SwipeLibrary label="Product assets" className="product-library">
+            {ctx.products.map((item, index) => (
+              <article
+                key={item.resource_id}
+                className={`reference-slide${ctx.pickedProducts.has(item.resource_id) ? " selected" : ""}`}
+              >
+                <label className="reference-select">
+                  <input
+                    type="checkbox"
+                    checked={ctx.pickedProducts.has(item.resource_id)}
+                    onChange={() => ctx.toggleProduct(item.resource_id)}
+                  />
+                  Use
+                </label>
+                <button type="button" className="reference-thumb" onClick={() => ctx.toggleProduct(item.resource_id)}>
+                  <LazyAsset
+                    resourceId={item.resource_id}
+                    deviceId={ctx.deviceId}
+                    version={item.version}
+                    alt={item.filename || "Product"}
+                  />
+                </button>
+                <div className="reference-slide-body">
+                  <strong>{index + 1}. {item.filename || item.resource_id}</strong>
+                  <div className="reference-slide-actions">
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        const url = await localDataPlane.assetObjectUrl(item.resource_id, ctx.deviceId, item.version).catch(() => "");
+                        if (url) window.open(url, "_blank", "noopener");
+                      }}
+                    >
+                      Open
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        if (!window.confirm(`Remove ${item.filename || item.resource_id}?`)) return;
+                        await localDataPlane.deleteAsset(item.resource_id, { deviceId: ctx.deviceId });
+                        if (ctx.pickedProducts.has(item.resource_id)) ctx.toggleProduct(item.resource_id);
+                        await ctx.uploadKind("product_image", null);
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
-        </SwipeLibrary>
+              </article>
+            ))}
+          </SwipeLibrary>
+        ) : (
+          <p className="hint">Product shots sit in the same strip. Check Use, then Open or Remove.</p>
+        )}
       </PressDrawer>
-      <PressDrawer title="Run">
+      <PressDrawer title="Run" wide>
         <ConceptSelect value={ctx.selectedConcept} onChange={ctx.setSelectedConcept} studio={ctx.studio} />
         <div className="action-row">
           <label className="toolbar-field">

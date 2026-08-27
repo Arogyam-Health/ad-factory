@@ -23,11 +23,19 @@ export function Tile({ span = "wide", kicker, title, className, children }: Prop
   );
 }
 
-export function PressDrawer({ title, children }: { title: string; children: ReactNode }) {
+export function PressDrawer({
+  title,
+  wide,
+  children,
+}: {
+  title: string;
+  wide?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <motion.section className="press-drawer" variants={fadeUp}>
+    <motion.section className={`press-drawer${wide ? " press-drawer-wide" : ""}`} variants={fadeUp}>
       <h3 className="press-drawer-title">{title}</h3>
-      <div className="press-drawer-body">{children}</div>
+      <div className="press-drawer-body press-cols">{children}</div>
     </motion.section>
   );
 }

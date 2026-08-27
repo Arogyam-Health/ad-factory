@@ -1138,7 +1138,7 @@ export function StudioPage() {
       {flow === "structured" ? (
         <Tile span="side" kicker="02 · Make ready" title="Send to press">
           {loading ? <SkeletonLines lines={5} /> : (
-            <div className="press-stack">
+            <div className="press-stack desk-scroll">
               <p className="hint">
                 {selectedCount} persona{selectedCount === 1 ? "" : "s"} · {[...new Set([...selected].flatMap((n) => formatsForPersona(n)))].join(" / ") || "no formats"} · {language}
               </p>
@@ -1237,7 +1237,7 @@ export function StudioPage() {
                 </form>
                 )}
               </PressDrawer>
-              <PressDrawer title="Batch">
+              <PressDrawer title="Batch" wide>
                 <label className="hint">
                   Ad multiplier
                   <input className="field" type="number" min={1} max={20} value={multiplier} onChange={(e) => setMultiplier(Number(e.target.value) || 1)} />
@@ -1265,7 +1265,7 @@ export function StudioPage() {
                   </select>
                 </label>
               </PressDrawer>
-              <PressDrawer title="Images">
+              <PressDrawer title="Images" wide>
                 <label className="hint" style={{ display: "block", marginBottom: 4 }}>
                   Input images
                 </label>
@@ -1388,7 +1388,7 @@ export function StudioPage() {
                   <Skeleton className="skel-block" />
                 ) : null}
               </PressDrawer>
-              <PressDrawer title="Run">
+              <PressDrawer title="Run" wide>
                 <div className="action-row">
                   <Button variant="primary" disabled={busy || !user.authenticated} onClick={() => void startStructured()}>
                     {busy ? "On press…" : "Run structured plate"}
@@ -1415,14 +1415,17 @@ export function StudioPage() {
         </Tile>
       ) : (
         <Tile span="side" kicker="02 · Reference desk" title="Context">
-          {loading ? <SkeletonLines lines={8} /> : <ReferenceDesk />}
-          <p className="hint" style={{ margin: "14px 0 0" }}>{status}</p>
-          <RunTerminal lines={logLines} />
+          <div className="desk-scroll">
+            {loading ? <SkeletonLines lines={8} /> : <ReferenceDesk />}
+            <p className="hint" style={{ margin: "14px 0 0" }}>{status}</p>
+            <RunTerminal lines={logLines} />
+          </div>
         </Tile>
       )}
       </div>
 
-      <Tile span="wide" kicker="03 · Copy desk" title="Plate files">
+      <div className="desk-row">
+      <Tile span="half" kicker="03 · Copy desk" title="Plate files">
         {orgSources.length ? (
           <OrgConfigChips orgId={orgId} sources={orgSources} onSelect={selectOrg} />
         ) : null}
@@ -1443,7 +1446,7 @@ export function StudioPage() {
         </div>
       </Tile>
 
-      <Tile span="wide" kicker="03 · Hypothesis" title="Hypothesis styles">
+      <Tile span="half" kicker="03 · Hypothesis" title="Hypothesis styles">
         <p className="hint" style={{ marginBottom: 12 }}>
           These files feed the Hypothesis and Style menus. They are not mixed with plate files.
         </p>
@@ -1457,6 +1460,7 @@ export function StudioPage() {
           ))}
         </div>
       </Tile>
+      </div>
 
       <Tile span="wide" className="tile-business" kicker="03 · Business" title="Business rules">
         <p className="hint" style={{ marginBottom: 12 }}>

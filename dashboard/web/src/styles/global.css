@@ -119,9 +119,9 @@ p {
 .masthead {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  min-height: var(--header);
-  padding: 8px var(--space-5);
+  gap: var(--space-5);
+  min-height: 72px;
+  padding: 14px var(--space-5);
   border-bottom: 1px solid var(--rule);
   background: var(--surface-0);
 }
@@ -134,7 +134,8 @@ p {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) 0;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 .brand-mark {
@@ -158,11 +159,14 @@ p {
 }
 
 .masthead .nav {
+  flex: 1 1 auto;
   flex-direction: row;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 8px;
   min-width: 0;
-  flex: 1;
+  overflow-x: auto;
+  padding: 2px 0;
 }
 
 .nav-group {
@@ -221,8 +225,22 @@ p {
   box-shadow: inset 2px 0 0 var(--gold);
 }
 
+.masthead .nav-link {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 16px;
+  background: var(--surface-1);
+}
+
 .masthead .nav-link.active {
-  box-shadow: inset 0 -2px 0 var(--gold);
+  box-shadow: none;
+}
+
+.masthead .nav-index {
+  margin-left: 2px;
+  letter-spacing: 0.08em;
 }
 
 .nav-index {
@@ -236,8 +254,7 @@ p {
 }
 
 .masthead .topbar-title {
-  flex: 0 1 auto;
-  min-width: 0;
+  display: none;
 }
 
 .topbar {
@@ -335,9 +352,12 @@ p {
 .studio-row {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
   align-items: stretch;
+  height: min(78vh, 860px);
+  max-height: min(78vh, 860px);
+  min-height: 420px;
 }
 
 .tile {
@@ -354,14 +374,14 @@ p {
 }
 
 .tile-hero {
-  grid-column: span 7;
+  grid-column: span 6;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
 .tile-side {
-  grid-column: span 5;
+  grid-column: span 6;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -371,6 +391,16 @@ p {
 .studio-row .tile-side {
   grid-column: auto;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.desk-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .tile-wide,
@@ -381,6 +411,38 @@ p {
 
 .tile-half {
   grid-column: span 6;
+}
+
+.desk-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+.desk-row .tile-half {
+  grid-column: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.desk-row .file-card-grid,
+.tile-business .file-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(118px * 2 + 8px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tile-business {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .tile-third {
@@ -543,7 +605,7 @@ p {
 }
 
 .persona-board {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   height: auto;
   max-height: none;
@@ -1011,6 +1073,29 @@ p {
   font-size: 0.75rem;
 }
 
+@media (max-width: 1180px) {
+  .studio-row,
+  .desk-row {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .studio-row .tile-hero,
+  .studio-row .tile-side {
+    height: min(70vh, 720px);
+    max-height: min(70vh, 720px);
+  }
+
+  .press-stack,
+  .press-drawer-body,
+  .press-cols,
+  .provider-keys {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 980px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
@@ -1019,21 +1104,14 @@ p {
 
   .masthead {
     flex-wrap: wrap;
-    padding: 8px var(--space-3);
+    gap: var(--space-3);
+    padding: 12px var(--space-4);
   }
 
-  .masthead .topbar-title {
-    display: none;
-  }
-
-  .nav {
-    flex-direction: row;
+  .masthead .nav {
     order: 3;
     flex-basis: 100%;
-  }
-
-  .studio-row {
-    grid-template-columns: minmax(0, 1fr);
+    padding-top: 4px;
   }
 
   .tile-hero,
@@ -1084,8 +1162,14 @@ form.action-row {
 
 .provider-keys {
   display: grid;
-  gap: 10px;
-  margin: 0 0 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.provider-keys > .provider-key-row,
+.provider-keys > .hint {
+  grid-column: 1 / -1;
 }
 
 .provider-keys > .field {
@@ -1451,11 +1535,13 @@ input[type="number"].field::-webkit-inner-spin-button {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  min-height: 110px;
+  height: 118px;
+  min-height: 118px;
   padding: 12px;
   border: 1px solid var(--rule);
   background: var(--surface-2);
   text-align: left;
+  overflow: hidden;
 }
 
 .file-card strong {
@@ -1467,6 +1553,15 @@ input[type="number"].field::-webkit-inner-spin-button {
   color: var(--ink-muted);
   font-size: 0.75rem;
   font-style: normal;
+}
+
+.file-card span {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .asset-strip {
@@ -1556,12 +1651,19 @@ input[type="number"].field::-webkit-inner-spin-button {
 
 .press-stack {
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.press-stack > .run-terminal,
+.press-stack > .press-drawer-wide {
+  grid-column: 1 / -1;
 }
 
 .press-drawer {
   border: 1px solid var(--rule);
   background: var(--surface-0);
+  min-width: 0;
 }
 
 .press-drawer-title {
@@ -1575,11 +1677,35 @@ input[type="number"].field::-webkit-inner-spin-button {
   color: var(--gold);
 }
 
-.press-drawer-body {
+.press-drawer-body,
+.press-cols {
   display: grid;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: start;
   padding: 10px;
   background: var(--plate);
+}
+
+.press-drawer-body > p,
+.press-drawer-body > form,
+.press-drawer-body > .toggle-row,
+.press-drawer-body > .action-row,
+.press-drawer-body > .asset-strip,
+.press-drawer-body > .file-field,
+.press-drawer-body > .reference-rail,
+.press-drawer-body > .press-span {
+  grid-column: 1 / -1;
+}
+
+.press-drawer-body > label,
+.press-drawer-body > .hint {
+  min-width: 0;
+}
+
+.press-drawer-body .field,
+.press-drawer-body select.field {
+  margin-bottom: 0;
 }
 
 .trace-row {
@@ -2026,14 +2152,17 @@ input[type="number"].field::-webkit-inner-spin-button {
 
 .run-terminal {
   margin-top: 12px;
-  max-height: 180px;
-  overflow: auto;
-  padding: 10px 12px;
+  min-height: 80px;
+  max-height: 280px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 12px 14px;
   background: color-mix(in srgb, var(--ink) 86%, var(--canvas));
   color: #d7d2c4;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
+  white-space: pre-wrap;
   border: 1px solid var(--rule-strong);
 }
 
