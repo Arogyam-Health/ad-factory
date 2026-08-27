@@ -483,23 +483,13 @@ function ConceptSelect({
 
 export function ReferenceCompose() {
   const {
-    language,
-    setLanguage,
-    studio,
     personas,
     selected,
     togglePersona,
     jobCount,
   } = useReference();
   return (
-    <>
-      <div className="chips" style={{ marginBottom: 12 }}>
-        {catalogLanguageModes(studio).map((mode) => (
-          <button key={mode.id} type="button" className={`chip${language === mode.id ? " active" : ""}`} onClick={() => setLanguage(mode.id)}>
-            {mode.label || mode.id}
-          </button>
-        ))}
-      </div>
+    <div className="compose-body">
       <p className="hint" style={{ marginBottom: 12 }}>{jobCount} jobs · personas × selected references × language</p>
       <div className="persona-board">
         <div className="persona-grid">
@@ -519,7 +509,7 @@ export function ReferenceCompose() {
           {!personas.length ? <p className="hint">No personas on this plate yet.</p> : null}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

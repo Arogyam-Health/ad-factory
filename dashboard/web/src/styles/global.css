@@ -617,6 +617,56 @@ p {
   background: var(--surface-0);
 }
 
+.compose-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 0;
+  margin-bottom: 12px;
+}
+
+.compose-toolbar-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.compose-toolbar-configs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  margin: 0 28px;
+  min-width: 0;
+}
+
+.compose-toolbar .chips {
+  margin: 0;
+}
+
+.compose-toolbar-langs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.compose-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .persona-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -627,9 +677,10 @@ p {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
-  min-height: 0;
-  padding: 10px;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 118px;
+  padding: 12px;
   border: 1px solid var(--rule);
   background: var(--surface-2);
   text-align: left;

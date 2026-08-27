@@ -1178,30 +1178,38 @@ export function StudioPage() {
     <Bento>
       <div className="studio-row">
       <Tile span="hero" kicker="01 · Composition" title="Personas and formats">
-        <div className="chips" style={{ marginBottom: 16 }}>
-          <button type="button" className={`chip${flow === "structured" ? " active" : ""}`} onClick={() => setFlow("structured")}>
-            Structured
-          </button>
-          <button type="button" className={`chip${flow === "reference" ? " active" : ""}`} onClick={() => setFlow("reference")}>
-            Reference
-          </button>
+        <div className="compose-toolbar">
+          <div className="compose-toolbar-start">
+            <div className="chips">
+              <button type="button" className={`chip${flow === "structured" ? " active" : ""}`} onClick={() => setFlow("structured")}>
+                Structured
+              </button>
+              <button type="button" className={`chip${flow === "reference" ? " active" : ""}`} onClick={() => setFlow("reference")}>
+                Reference
+              </button>
+            </div>
+          </div>
+          <div className="compose-toolbar-configs">
+            <OrgConfigChips orgId={orgId} sources={orgSources} onSelect={selectOrg} />
+          </div>
+          <div className="compose-toolbar-langs chips" role="group" aria-label="Language">
+            {languageModes.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                className={`chip${language === mode.id ? " active" : ""}`}
+                onClick={() => setLanguage(mode.id)}
+              >
+                {mode.label || mode.id}
+              </button>
+            ))}
+          </div>
         </div>
-        {orgSources.length ? (
-          <OrgConfigChips orgId={orgId} sources={orgSources} onSelect={selectOrg} />
-        ) : null}
 
         {flow === "reference" ? (
           loading ? <SkeletonGridLite /> : <ReferenceCompose />
         ) : (
-          <>
-            <p className="tile-kicker">Language</p>
-            <div className="chips" style={{ marginBottom: 18 }}>
-              {languageModes.map((mode) => (
-                <button key={mode.id} type="button" className={`chip${language === mode.id ? " active" : ""}`} onClick={() => setLanguage(mode.id)}>
-                  {mode.label || mode.id}
-                </button>
-              ))}
-            </div>
+          <div className="compose-body">
             <p className="tile-kicker">Global formats</p>
             <p className="hint" style={{ marginBottom: 8 }}>
               Format chips on a card change only that persona. Selecting a format anywhere shows its pattern above. That pattern applies to every selected card that uses that format.
@@ -1268,7 +1276,7 @@ export function StudioPage() {
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </Tile>
 
@@ -1879,7 +1887,7 @@ function OrgConfigChips({
   onSelect: (next: string) => void;
 }) {
   return (
-    <div className="chips" style={{ marginBottom: 16 }}>
+    <div className="chips">
       <button
         type="button"
         className={`chip${orgId === "personal" ? " active" : ""}`}
