@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import { exactOnImageCopyLines, replaceExactOnImageCopy } from "@/lib/prompt-copy.js";
+import { isReferenceRun } from "@/lib/run-flow";
 import { copyFailureDetail, displayRunStatus, imageFailureDetail } from "@/lib/run-status";
 import type { Run } from "@/lib/types";
 import { Button } from "@/components/Button";
@@ -57,11 +58,23 @@ function mergeOutputs(local: OutputRow[], meta: OutputRow[]) {
   return [...byKey.values()];
 }
 
+function runOwnerKey(run: Run) {
+  const ownerType = run.owner_type === "org" || run.owner_type === "user" ? run.owner_type : "";
+  const ownerId = String(run.owner_id || "");
+  return ownerType && ownerId ? `${ownerType}:${ownerId}` : "";
+}
+
+function deskPromptStatus(status?: string) {
+  const raw = String(status || "ready").trim();
+  return !raw || raw === "available_local" ? "ready" : raw;
+}
+
 export function RunWorkspace({
   run,
   deviceId,
   agentId,
   paired,
+  plateOwner = "",
   productAssetIds = [],
   refreshToken = 0,
   onPair,
@@ -73,6 +86,7 @@ export function RunWorkspace({
   deviceId: string;
   agentId: string;
   paired: boolean;
+  plateOwner?: string;
   productAssetIds?: string[];
   refreshToken?: number;
   onPair: () => Promise<{ ok: boolean; deviceId: string; agentId: string }>;
@@ -91,9 +105,47 @@ export function RunWorkspace({
   const [copyVersion, setCopyVersion] = useState(0);
   const [copyError, setCopyError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
+  const missTries = useRef(0);
+
+  useEffect(() => {
+    missTries.current = 0;
+  }, [runId]);
 
   useEffect(() => {
     let cancelled = false;
+    async function loadLocalInventory(localDevice: string) {
+      const owners = [
+        runOwnerKey(run),
+        plateOwner,
+        ...localDataPlane.storedOwnerKeys(localDevice),
+      ].filter((owner, index, list) => owner && list.indexOf(owner) === index);
+      let localPrompts: PromptRow[] = [];
+      let localOutputs: OutputRow[] = [];
+      let matchedOwner = "";
+      for (const owner of owners) {
+        const parts = String(owner).split(":");
+        const ownerType = parts[0];
+        const ownerId = parts.slice(1).join(":");
+        if ((ownerType !== "org" && ownerType !== "user") || !ownerId) continue;
+        if (!localDataPlane.session(localDevice, owner)?.access_token) {
+          try {
+            await localDataPlane.ensurePaired({ ownerType, ownerId, deviceId: localDevice, agentId });
+          } catch {
+            continue;
+          }
+        }
+        const [promptsForOwner, outputsForOwner] = await Promise.all([
+          localDataPlane.listPrompts(runId, localDevice, owner).catch(() => []),
+          localDataPlane.listOutputs(runId, localDevice, owner).catch(() => []),
+        ]);
+        if (!promptsForOwner.length && !outputsForOwner.length) continue;
+        localPrompts = promptsForOwner;
+        localOutputs = outputsForOwner;
+        matchedOwner = owner;
+        break;
+      }
+      return { localPrompts, localOutputs, matchedOwner };
+    }
     async function load() {
       const [metaPrompts, metaImages] = await Promise.all([
         fetchJSON<{ prompts?: PromptRow[] }>(`/api/runs/${encodeURIComponent(runId)}/prompts`, { noCache: true }).catch(() => ({ prompts: [] })),
@@ -105,10 +157,7 @@ export function RunWorkspace({
       const localDevice = deviceId || run.device_id || "";
       if (localDevice && paired) {
         try {
-          const [localPrompts, localOutputs] = await Promise.all([
-            localDataPlane.listPrompts(runId, localDevice).catch(() => []),
-            localDataPlane.listOutputs(runId, localDevice).catch(() => []),
-          ]);
+          const { localPrompts, localOutputs, matchedOwner } = await loadLocalInventory(localDevice);
           if (cancelled) return;
           if (localPrompts.length) {
             nextPrompts = mergePromptRows(
@@ -117,6 +166,7 @@ export function RunWorkspace({
                 ...item,
                 persona: item.persona || item.persona_name || item.display_name,
                 version: item.resource_version || item.version || 0,
+                status: item.status || "ready",
               })),
             );
           }
@@ -128,13 +178,13 @@ export function RunWorkspace({
               return {
                 ...item,
                 url: id
-                  ? await localDataPlane.outputObjectUrl(id, localDevice, version).catch(() => "")
+                  ? await localDataPlane.outputObjectUrl(id, localDevice, version, matchedOwner).catch(() => "")
                   : "",
               };
             }),
           );
         } catch {
-          nextOutputs = metaImages.images || [];
+          /* keep metadata rows; local bytes are optional until the matching owner session is live */
         }
       }
       if (!cancelled) {
@@ -146,13 +196,20 @@ export function RunWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [runId, deviceId, run.device_id, paired, busy, reloadToken, refreshToken]);
+  }, [runId, deviceId, agentId, run.device_id, run.owner_type, run.owner_id, plateOwner, paired, busy, reloadToken, refreshToken]);
 
   useEffect(() => {
-    if ((run.prompt_count || 0) <= prompts.length) return;
-    const timer = window.setTimeout(() => setReloadToken((value) => value + 1), 3000);
+    const missingPrompts = (run.prompt_count || 0) > prompts.length;
+    const missingImages = (run.image_count || 0) > outputs.length;
+    if (!missingPrompts && !missingImages) {
+      missTries.current = 0;
+      return;
+    }
+    if (missTries.current >= 12) return;
+    missTries.current += 1;
+    const timer = window.setTimeout(() => setReloadToken((value) => value + 1), 2500);
     return () => window.clearTimeout(timer);
-  }, [run.prompt_count, prompts.length]);
+  }, [run.prompt_count, run.image_count, prompts.length, outputs.length, runId]);
 
   const copyErr = copyFailureDetail(run);
   const imageErr = imageFailureDetail(run);
@@ -320,7 +377,9 @@ export function RunWorkspace({
           ? prompts.length < listedCount
             ? `${prompts.length} of ${listedCount} prompts loaded. Use the arrows to page through this plate.`
             : `${listedCount} prompts on this plate.`
-          : "No prompts yet. Run structured copy first."}
+          : isReferenceRun(run)
+            ? "No prompts yet. Retry reference generation if this plate is empty."
+            : "No prompts yet. Run structured copy first."}
       </p>
       {prompts.length ? (
         <div className="run-list" style={{ marginBottom: 16 }}>
@@ -332,7 +391,7 @@ export function RunWorkspace({
                   <strong>{prompt.persona || prompt.display_name || prompt.prompt_id || `Prompt ${promptWindow.page * PROMPTS_PER_PAGE + index + 1}`}</strong>
                   <span>{prompt.format || "—"}</span>
                   <span>{prompt.language || "—"}</span>
-                  <span>{prompt.status || "ready"}</span>
+                  <span>{deskPromptStatus(prompt.status)}</span>
                   <Button variant="ghost" onClick={() => void openCopyEditor(prompt)}>
                     {editingId === id ? "Close copy" : "Edit on-image copy"}
                   </Button>
@@ -388,7 +447,10 @@ export function RunWorkspace({
           <p className="hint">{imageHint}</p>
           {(run.image_count || 0) > 0 ? (
             paired ? (
-              <Button variant="ghost" onClick={() => setReloadToken((value) => value + 1)}>
+              <Button variant="ghost" onClick={() => {
+                missTries.current = 0;
+                void onPair().finally(() => setReloadToken((value) => value + 1));
+              }}>
                 Show local images
               </Button>
             ) : (

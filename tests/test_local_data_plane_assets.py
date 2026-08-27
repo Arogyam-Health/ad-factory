@@ -305,6 +305,18 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
             prompts = json.loads(response.read())["items"]
         self.assertEqual(prompts[0]["prompt_id"], "prompt-1")
         self.assertNotIn("make an ad", json.dumps(prompts))
+        with self.open("GET", "/v1/runs") as response:
+            listed = json.loads(response.read())["items"]
+        self.assertEqual(listed[0]["run_id"], "run-1")
+        self.assertEqual(listed[0]["prompt_count"], 1)
+        self.assertEqual(listed[0]["image_count"], 0)
+        self.assertNotIn("owner_key", json.dumps(listed))
+        self.assertNotIn("owner_type", json.dumps(listed))
+        with self.open("GET", "/v1/runs/run-1") as response:
+            one = json.loads(response.read())
+        self.assertEqual(one["prompt_count"], 1)
+        self.assertEqual(one["image_count"], 0)
+        self.assertNotIn("owner_key", json.dumps(one))
         with self.open("GET", "/v1/prompts/prompt-1/content") as response:
             self.assertEqual(response.read(), b"make an ad")
         with self.open(
@@ -388,9 +400,14 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
             archive = zipfile.ZipFile(io.BytesIO(response.read()))
         self.assertEqual(archive.read("prompts/imported-1.txt"), b"imported prompt")
         with self.open("GET", "/v1/runs") as response:
-            self.assertIn("run-import", [item["run_id"] for item in json.loads(response.read())["items"]])
+            listed = json.loads(response.read())["items"]
+        imported = next(item for item in listed if item["run_id"] == "run-import")
+        self.assertEqual(imported["prompt_count"], 1)
+        self.assertNotIn("owner_key", json.dumps(listed))
         with self.open("GET", "/v1/runs/run-import") as response:
-            self.assertEqual(json.loads(response.read())["run_id"], "run-import")
+            one = json.loads(response.read())
+        self.assertEqual(one["run_id"], "run-import")
+        self.assertEqual(one["prompt_count"], 1)
         with self.open(
             "DELETE",
             "/v1/runs/run-import",

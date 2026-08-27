@@ -62,11 +62,17 @@ type ReferenceApi = ReferenceProps & {
 const ReferenceCtx = createContext<ReferenceApi | null>(null);
 
 function localReferenceOwner(props: Pick<ReferenceProps, "userId" | "orgId" | "deviceId">) {
+  const useOrg = Boolean(props.orgId && props.orgId !== "personal");
+  if (useOrg || props.userId) {
+    return {
+      ownerType: useOrg ? "org" : "user",
+      ownerId: useOrg ? String(props.orgId) : props.userId,
+    };
+  }
   const session = localDataPlane.session(props.deviceId);
   if ((session?.owner_type === "org" || session?.owner_type === "user") && session.owner_id) {
     return { ownerType: session.owner_type, ownerId: session.owner_id };
   }
-  const useOrg = Boolean(props.orgId && props.orgId !== "personal");
   return {
     ownerType: useOrg ? "org" : "user",
     ownerId: useOrg ? String(props.orgId) : props.userId,
@@ -317,39 +323,42 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
       }
       setBusy(true);
       props.setStatus("Preparing reference run…");
+      let envelope: { run_id: string; display_batch?: string; device_id?: string } | null = null;
       try {
         const owner = localReferenceOwner(props);
-        const envelope = await localDataPlane.allocateLocalRun({
+        const allocated = await localDataPlane.allocateLocalRun({
           ownerType: owner.ownerType,
           ownerId: owner.ownerId,
           flowType: "reference",
           settings: { engine, generate_916: make916 },
         });
+        envelope = allocated;
+        const runId = allocated.run_id;
         const productDocument = await localDataPlane.putText(
           "documents",
-          `${envelope.run_id}-reference-product-document`,
+          `${runId}-reference-product-document`,
           productDoc,
-          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-product-document`, runId: envelope.run_id, role: "reference_product_document" },
+          { deviceId: allocated.device_id, operationId: `${runId}-product-document`, runId, role: "reference_product_document" },
         );
         const startingPrompt = await localDataPlane.putText(
           "configs",
-          `${envelope.run_id}-reference-starting-prompt`,
+          `${runId}-reference-starting-prompt`,
           starting,
-          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-starting-prompt`, runId: envelope.run_id, role: "reference_starting_prompt" },
+          { deviceId: allocated.device_id, operationId: `${runId}-starting-prompt`, runId, role: "reference_starting_prompt" },
         );
         const personaConfig = await localDataPlane.putText(
           "configs",
-          `${envelope.run_id}-reference-personas`,
+          `${runId}-reference-personas`,
           personasText,
-          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-persona-config`, runId: envelope.run_id, role: "reference_persona_config" },
+          { deviceId: allocated.device_id, operationId: `${runId}-persona-config`, runId, role: "reference_persona_config" },
         );
         let conversionPrompt = null;
         if (make916 && conversion.trim()) {
           conversionPrompt = await localDataPlane.putText(
             "configs",
-            `${envelope.run_id}-reference-conversion-916`,
+            `${runId}-reference-conversion-916`,
             conversion,
-            { deviceId: envelope.device_id, operationId: `${envelope.run_id}-conversion-916`, runId: envelope.run_id, role: "conversion_prompt" },
+            { deviceId: allocated.device_id, operationId: `${runId}-conversion-916`, runId, role: "conversion_prompt" },
           );
         }
         const referenceDeclarations = [];
@@ -359,9 +368,9 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
           if (comment) {
             const saved = await localDataPlane.putText(
               "configs",
-              `${envelope.run_id}-reference-comment-${item.resource_id}`,
+              `${runId}-reference-comment-${item.resource_id}`,
               comment,
-              { deviceId: envelope.device_id, operationId: `${envelope.run_id}-comment-${item.resource_id}` },
+              { deviceId: allocated.device_id, operationId: `${runId}-comment-${item.resource_id}` },
             );
             declaration.comment_resource_id = saved.resource_id;
             declaration.comment_version = saved.version;
@@ -370,7 +379,7 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
         }
         await localDataPlane.putText(
           "configs",
-          `${envelope.run_id}-reference-settings`,
+          `${runId}-reference-settings`,
           JSON.stringify({
             references: referenceDeclarations,
             products: products.filter((item) => pickedProducts.has(item.resource_id)).map((item) => ({
@@ -390,24 +399,25 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
             persona_config: { resource_id: personaConfig.resource_id, version: personaConfig.version },
             ...(conversionPrompt ? { conversion_prompt: { resource_id: conversionPrompt.resource_id, version: conversionPrompt.version } } : {}),
           }),
-          { deviceId: envelope.device_id, operationId: `${envelope.run_id}-settings`, runId: envelope.run_id, role: "reference_settings" },
+          { deviceId: allocated.device_id, operationId: `${runId}-settings`, runId, role: "reference_settings" },
         );
-        const queued = await fetchJSON<{ job_id?: string }>(`/api/runs/${encodeURIComponent(envelope.run_id)}/reference-generation`, {
+        const queued = await fetchJSON<{ job_id?: string }>(`/api/runs/${encodeURIComponent(runId)}/reference-generation`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          retry: 2,
           body: JSON.stringify({
-            operation_id: `${envelope.run_id}-reference-generation`,
+            operation_id: `${runId}-reference-generation`,
             engine,
             mode: make916 ? "both" : "45",
           }),
         });
-        setRunId(envelope.run_id);
+        setRunId(runId);
         setJobId(queued.job_id || "");
-        localStorage.setItem("adFactoryReferencePipeline", envelope.run_id);
-        props.onOpenRun?.(envelope.run_id);
+        localStorage.setItem("adFactoryReferencePipeline", runId);
+        props.onOpenRun?.(runId);
         props.onStubRun?.({
-          run_id: envelope.run_id,
-          display_batch: envelope.display_batch || envelope.run_id,
+          run_id: runId,
+          display_batch: allocated.display_batch || runId,
           flow_type: "reference",
           created_at: Date.now() / 1000,
           prompt_count: 0,
@@ -418,9 +428,27 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
         invalidateRuns();
         const data = await fetchJSON<{ runs?: Run[] }>("/api/runs?flow=reference", { noCache: true });
         props.onRuns(data.runs || []);
-        props.setStatus(`Reference plate ${envelope.display_batch || envelope.run_id} queued.`);
+        props.setStatus(`Reference plate ${allocated.display_batch || runId} queued.`);
       } catch (err) {
-        props.setStatus(String(err));
+        const detail = String(err).replace(/\s+/g, " ").slice(0, 180);
+        if (envelope?.run_id) {
+          setRunId(envelope.run_id);
+          localStorage.setItem("adFactoryReferencePipeline", envelope.run_id);
+          props.onOpenRun?.(envelope.run_id);
+          props.onStubRun?.({
+            run_id: envelope.run_id,
+            display_batch: envelope.display_batch || envelope.run_id,
+            flow_type: "reference",
+            created_at: Date.now() / 1000,
+            prompt_count: 0,
+            image_count: 0,
+            status: "allocated",
+          });
+          invalidateRuns();
+          props.setStatus(`${detail} Plate ${envelope.display_batch || envelope.run_id} is on this machine. Retry reference generation.`);
+        } else {
+          props.setStatus(detail);
+        }
       } finally {
         setBusy(false);
       }

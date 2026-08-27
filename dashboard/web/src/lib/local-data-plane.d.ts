@@ -3,6 +3,7 @@ export class LocalDataPlaneClient {
   restoreStoredSession(preferredOwners?: { ownerType?: string; owner_type?: string; ownerId?: string; owner_id?: string }[]):
     | { deviceId: string; agentId: string; session: unknown }
     | null;
+  storedOwnerKeys(deviceId?: string): string[];
   session(deviceId?: string, ownerKey?: string): {
     owner_type?: string;
     owner_id?: string;
@@ -36,17 +37,17 @@ export class LocalDataPlaneClient {
     content: string,
     opts?: { deviceId?: string; operationId?: string; runId?: string; role?: string; expectedVersion?: number },
   ): Promise<{ resource_id: string; version?: number }>;
-  listOutputs(runId: string, deviceId?: string): Promise<{ output_id?: string; resource_id?: string; version?: number; current_version?: number; filename?: string; display_name?: string; aspect_ratio?: string }[]>;
-  listPrompts(runId: string, deviceId?: string): Promise<{ prompt_id?: string; version?: number; resource_version?: number; format?: string; persona?: string; persona_name?: string; display_name?: string; language?: string; status?: string }[]>;
+  listOutputs(runId: string, deviceId?: string, ownerKey?: string): Promise<{ output_id?: string; resource_id?: string; version?: number; current_version?: number; filename?: string; display_name?: string; aspect_ratio?: string }[]>;
+  listPrompts(runId: string, deviceId?: string, ownerKey?: string): Promise<{ prompt_id?: string; version?: number; resource_version?: number; format?: string; persona?: string; persona_name?: string; display_name?: string; language?: string; status?: string }[]>;
   promptContent(promptId: string, deviceId?: string, version?: number): Promise<string>;
   putPrompt(promptId: string, runId: string, content: string, expectedVersion: number, deviceId?: string): Promise<{ version?: number }>;
-  outputObjectUrl(outputId: string, deviceId?: string, version?: number): Promise<string>;
+  outputObjectUrl(outputId: string, deviceId?: string, version?: number, ownerKey?: string): Promise<string>;
   outputRawBlob(outputId: string, deviceId?: string): Promise<Blob>;
   outputAction(outputId: string, action: string, deviceId?: string, payload?: Record<string, unknown>): Promise<{ revision_id?: string; status?: string }>;
   revisionStatus(revisionId: string, deviceId?: string): Promise<{ status?: string; error?: string }>;
   deleteOutput(outputId: string, deviceId?: string): Promise<unknown>;
   downloadRun(runId: string, deviceId?: string, opts?: { includeRaw?: boolean }): Promise<Blob>;
-  listRuns(deviceId?: string): Promise<Array<{
+  listRuns(deviceId?: string, ownerKey?: string): Promise<Array<{
     run_id?: string;
     display_batch?: string;
     flow_type?: string;
@@ -54,8 +55,26 @@ export class LocalDataPlaneClient {
     status?: string;
     prompt_count?: number;
     image_count?: number;
+    owner_type?: string;
+    owner_id?: string;
+    device_id?: string;
   }>>;
-  deleteRun?(runId: string, deviceId?: string): Promise<unknown>;
+  listRunsAcrossOwners(
+    deviceId: string,
+    owners?: Array<{ ownerType?: string; owner_type?: string; ownerId?: string; owner_id?: string }>,
+  ): Promise<Array<{
+    run_id?: string;
+    display_batch?: string;
+    flow_type?: string;
+    created_at?: number;
+    status?: string;
+    prompt_count?: number;
+    image_count?: number;
+    owner_type?: string;
+    owner_id?: string;
+    device_id?: string;
+  }>>;
+  deleteRun?(runId: string, deviceId?: string, ownerKey?: string): Promise<unknown>;
   clearSessions(): void;
 }
 

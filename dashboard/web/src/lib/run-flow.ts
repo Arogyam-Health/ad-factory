@@ -32,8 +32,11 @@ export function overlayLocalRunStats(server: Run[], local: Run[] = []): Run[] {
     return {
       ...run,
       display_batch: run.display_batch || extra.display_batch,
-      prompt_count: Number(extra.prompt_count || 0) || run.prompt_count,
-      image_count: Number(extra.image_count || 0) || run.image_count,
+      owner_type: run.owner_type || extra.owner_type,
+      owner_id: run.owner_id || extra.owner_id,
+      device_id: run.device_id || extra.device_id,
+      prompt_count: Math.max(Number(extra.prompt_count || 0), Number(run.prompt_count || 0)),
+      image_count: Math.max(Number(extra.image_count || 0), Number(run.image_count || 0)),
     };
   });
 }

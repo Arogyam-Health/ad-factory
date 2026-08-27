@@ -45,6 +45,8 @@ export type Run = {
   created_at?: number;
   flow?: string;
   flow_type?: string;
+  owner_type?: string;
+  owner_id?: string;
   device_id?: string;
   agent_id?: string;
   copy_generation?: {

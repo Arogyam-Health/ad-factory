@@ -3,7 +3,7 @@ const STALE_MS = 15 * 60_000;
 const STORAGE_KEY = "adFactoryUiCache";
 
 type Entry = { data: unknown; ts: number };
-type FetchInit = RequestInit & { noCache?: boolean };
+type FetchInit = RequestInit & { noCache?: boolean; retry?: number };
 
 const cache = new Map<string, Entry>();
 const inflight = new Map<string, Promise<unknown>>();
@@ -41,7 +41,27 @@ function persist() {
 
 loadPersistent();
 
-async function networkFetch<T>(url: string, fetchInit: RequestInit, key: string, cacheable: boolean): Promise<T> {
+function errorDetail(res: Response, data: unknown): string {
+  if (data && typeof data === "object" && "detail" in data) {
+    return String((data as { detail: unknown }).detail);
+  }
+  if (typeof data === "string") {
+    const trimmed = data.trim();
+    if (trimmed.startsWith("<") || trimmed.includes("<!DOCTYPE")) {
+      return res.statusText || "upstream error";
+    }
+    return trimmed.length > 180 ? `${trimmed.slice(0, 180)}…` : trimmed;
+  }
+  return res.statusText || "request failed";
+}
+
+async function networkFetch<T>(
+  url: string,
+  fetchInit: RequestInit,
+  key: string,
+  cacheable: boolean,
+  retries = 0,
+): Promise<T> {
   const res = await fetch(url, {
     credentials: "same-origin",
     cache: "no-store",
@@ -57,11 +77,11 @@ async function networkFetch<T>(url: string, fetchInit: RequestInit, key: string,
     }
   }
   if (!res.ok) {
-    const detail =
-      data && typeof data === "object" && "detail" in data
-        ? String((data as { detail: unknown }).detail)
-        : data || res.statusText;
-    throw new Error(`${res.status} ${url}: ${detail}`);
+    if (retries > 0 && [502, 503, 504].includes(res.status)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+      return networkFetch<T>(url, fetchInit, key, cacheable, retries - 1);
+    }
+    throw new Error(`${res.status} ${url}: ${errorDetail(res, data)}`);
   }
   if (cacheable) {
     cache.set(key, { data, ts: Date.now() });
@@ -71,7 +91,7 @@ async function networkFetch<T>(url: string, fetchInit: RequestInit, key: string,
 }
 
 export async function fetchJSON<T = unknown>(url: string, init: FetchInit = {}): Promise<T> {
-  const { noCache, ...fetchInit } = init;
+  const { noCache, retry = 0, ...fetchInit } = init;
   const bypassCache = noCache || fetchInit.cache === "no-store" || url.includes("/api/auth/") || url.includes("/api/invites/");
   const key = cacheKey(url, init);
   const method = String(fetchInit.method || "GET").toUpperCase();
@@ -94,7 +114,7 @@ export async function fetchJSON<T = unknown>(url: string, init: FetchInit = {}):
 
   if (cacheable && inflight.has(key)) return inflight.get(key) as Promise<T>;
 
-  const request = networkFetch<T>(url, fetchInit, key, cacheable);
+  const request = networkFetch<T>(url, fetchInit, key, cacheable, retry);
   if (cacheable) inflight.set(key, request);
   try {
     return await request;

@@ -127,8 +127,8 @@ async function cachedText(kind, id, version, loader) {
   }
 }
 
-async function fetchImmutableBlob(url, authorizedFetch, deviceId) {
-  const response = await authorizedFetch(url, { method: "GET" }, deviceId);
+async function fetchImmutableBlob(url, authorizedFetch, deviceId, ownerKey = "") {
+  const response = await authorizedFetch(url, { method: "GET" }, deviceId, ownerKey);
   if (!response.ok) await readJson(response);
   return response.blob();
 }
@@ -332,6 +332,7 @@ export class LocalDataPlaneClient {
     const owners = preferredOwners
       .map((item) => ownerKeyOf(item.ownerType || item.owner_type, item.ownerId || item.owner_id))
       .filter(Boolean);
+    const candidates = [];
     try {
       for (const store of [window.localStorage, window.sessionStorage]) {
         if (!store) continue;
@@ -344,22 +345,47 @@ export class LocalDataPlaneClient {
           const deviceId = rest.slice(0, split);
           const owner = rest.slice(split + 1);
           if (owners.length && !owners.includes(owner)) continue;
-          const session = this.session(deviceId, owner);
-          if (!session?.access_token) continue;
-          this._pairedOwner = owner;
-          return { deviceId, agentId: session.agent_id || "", session };
+          candidates.push({ deviceId, owner });
         }
       }
     } catch {
       /* ignore quota / private-mode failures */
     }
+    const order = owners.length ? owners : candidates.map((item) => item.owner);
+    for (const owner of order) {
+      for (const item of candidates.filter((entry) => entry.owner === owner)) {
+        const session = this.session(item.deviceId, item.owner);
+        if (!session?.access_token) continue;
+        this._pairedOwner = owner;
+        return { deviceId: item.deviceId, agentId: session.agent_id || "", session };
+      }
+    }
     return null;
+  }
+
+  storedOwnerKeys(deviceId = "") {
+    const keys = [];
+    const prefix = deviceId ? `${SESSION_PREFIX}${deviceId}:` : SESSION_PREFIX;
+    try {
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        if (!store) continue;
+        for (let index = 0; index < store.length; index += 1) {
+          const key = store.key(index);
+          if (!key?.startsWith(prefix)) continue;
+          const owner = deviceId ? key.slice(prefix.length) : key.slice(SESSION_PREFIX.length).split(":").slice(1).join(":");
+          if (owner && !keys.includes(owner)) keys.push(owner);
+        }
+      }
+    } catch {
+      /* ignore quota / private-mode failures */
+    }
+    return keys;
   }
 
   session(deviceId, ownerKey = "") {
     const owner = ownerKey || this._pairedOwner || this.activeOwnerKey(deviceId);
     if (!owner) return null;
-    if (!this._pairedOwner) this._pairedOwner = owner;
+    if (!ownerKey && !this._pairedOwner) this._pairedOwner = owner;
     const storageKey = `${SESSION_PREFIX}${deviceId}:${owner}`;
     const raw = storageGet(storageKey);
     if (!raw) return null;
@@ -442,10 +468,11 @@ export class LocalDataPlaneClient {
     return this._repairPromise;
   }
 
-  async authorizedFetch(path, options = {}, deviceId) {
+  async authorizedFetch(path, options = {}, deviceId, ownerKey = "") {
     const liveDeviceId = this._liveDeviceId || deviceId;
-    let session = this.session(liveDeviceId, this._pairedOwner)
-      || this.session(deviceId, this._pairedOwner);
+    const preferred = ownerKey || this._pairedOwner;
+    let session = this.session(liveDeviceId, preferred)
+      || this.session(deviceId, preferred);
     if (!session?.access_token) {
       session = await this._repairSession(liveDeviceId || deviceId);
     }
@@ -519,16 +546,42 @@ export class LocalDataPlaneClient {
     }, deviceId));
   }
 
-  async listRuns(deviceId) {
+  async listRuns(deviceId, ownerKey = "") {
     const payload = await readJson(await this.authorizedFetch(
       "/v1/runs",
       { method: "GET", cache: "no-store" },
       deviceId,
+      ownerKey,
     ));
     return payload.items || [];
   }
 
-  async deleteRun(runId, deviceId) {
+  async listRunsAcrossOwners(deviceId, owners = []) {
+    const previous = this._pairedOwner;
+    const byId = new Map();
+    const keys = [
+      ...owners.map((item) => ownerKeyOf(item.ownerType || item.owner_type, item.ownerId || item.owner_id)),
+      ...this.storedOwnerKeys(deviceId),
+    ].filter((owner, index, list) => owner && list.indexOf(owner) === index);
+    try {
+      for (const owner of keys) {
+        if (!this.session(deviceId, owner)?.access_token) continue;
+        this._pairedOwner = owner;
+        try {
+          for (const item of await this.listRuns(deviceId, owner)) {
+            if (item?.run_id) byId.set(item.run_id, item);
+          }
+        } catch {
+          /* skip owners without a live session */
+        }
+      }
+    } finally {
+      this._pairedOwner = previous;
+    }
+    return [...byId.values()];
+  }
+
+  async deleteRun(runId, deviceId, ownerKey = "") {
     return readJson(await this.authorizedFetch(
       `/v1/runs/${encodeURIComponent(runId)}`,
       {
@@ -536,6 +589,7 @@ export class LocalDataPlaneClient {
         headers: { "Idempotency-Key": operationId("delete_run") },
       },
       deviceId,
+      ownerKey,
     ));
   }
 
@@ -710,11 +764,12 @@ export class LocalDataPlaneClient {
     ));
   }
 
-  async listOutputs(runId, deviceId) {
+  async listOutputs(runId, deviceId, ownerKey = "") {
     const payload = await readJson(await this.authorizedFetch(
       `/v1/runs/${encodeURIComponent(runId)}/outputs`,
       { method: "GET", cache: "no-store" },
       deviceId,
+      ownerKey,
     ));
     return payload.items || [];
   }
@@ -742,21 +797,23 @@ export class LocalDataPlaneClient {
     return response.blob();
   }
 
-  async outputObjectUrl(outputId, deviceId, version) {
+  async outputObjectUrl(outputId, deviceId, version, ownerKey = "") {
     return cachedObjectUrl("output", outputId, version, () =>
       fetchImmutableBlob(
         `/v1/outputs/${encodeURIComponent(outputId)}/content`,
         this.authorizedFetch.bind(this),
         deviceId,
+        ownerKey,
       ),
     );
   }
 
-  async listPrompts(runId, deviceId) {
+  async listPrompts(runId, deviceId, ownerKey = "") {
     const payload = await readJson(await this.authorizedFetch(
       `/v1/runs/${encodeURIComponent(runId)}/prompts`,
       { method: "GET", cache: "no-store" },
       deviceId,
+      ownerKey,
     ));
     return payload.items || [];
   }

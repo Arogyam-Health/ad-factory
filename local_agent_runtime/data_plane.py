@@ -1450,9 +1450,48 @@ class LocalDataPlane:
             ).fetchone()
         return dict(row) if row else None
 
-    @staticmethod
-    def _safe_run(run: dict[str, Any]) -> dict[str, Any]:
+    def _run_counts(self, owner_key: str, run_ids: list[str]) -> dict[str, tuple[int, int]]:
+        counts = {run_id: (0, 0) for run_id in run_ids if run_id}
+        if not counts:
+            return counts
+        ids = list(counts)
+        placeholders = ",".join("?" for _ in ids)
+        with self.state._connect() as conn:
+            prompt_rows = conn.execute(
+                f"""
+                SELECT re.run_id AS run_id, COUNT(*) AS n
+                FROM run_entries re
+                JOIN resources r ON r.resource_id = re.resource_id
+                WHERE re.run_id IN ({placeholders})
+                  AND r.owner_key = ?
+                  AND r.kind = 'prompt'
+                GROUP BY re.run_id
+                """,
+                (*ids, owner_key),
+            ).fetchall()
+            output_rows = conn.execute(
+                f"""
+                SELECT o.run_id AS run_id, COUNT(*) AS n
+                FROM outputs o
+                JOIN runs r ON r.run_id = o.run_id
+                WHERE o.run_id IN ({placeholders})
+                  AND r.owner_key = ?
+                  AND IFNULL(o.status, '') != 'deleted'
+                GROUP BY o.run_id
+                """,
+                (*ids, owner_key),
+            ).fetchall()
+        prompts = {str(row["run_id"]): int(row["n"]) for row in prompt_rows}
+        images = {str(row["run_id"]): int(row["n"]) for row in output_rows}
         return {
+            run_id: (prompts.get(run_id, 0), images.get(run_id, 0))
+            for run_id in ids
+        }
+
+    def _safe_run(
+        self, run: dict[str, Any], counts: tuple[int, int] | None = None
+    ) -> dict[str, Any]:
+        payload = {
             key: run[key]
             for key in (
                 "run_id",
@@ -1467,7 +1506,23 @@ class LocalDataPlane:
                 "created_at",
                 "updated_at",
             )
+            if key in run
         }
+        owner = str(run.get("owner_key") or "")
+        kind, separator, ident = owner.partition(":")
+        if separator and kind in {"user", "org"} and ident:
+            payload["owner_type"] = kind
+            payload["owner_id"] = ident
+        run_id = str(run.get("run_id") or "")
+        owner_key = str(run.get("owner_key") or "")
+        if counts is None:
+            if run_id and owner_key:
+                counts = self._run_counts(owner_key, [run_id]).get(run_id, (0, 0))
+            else:
+                counts = (0, 0)
+        payload["prompt_count"] = int(counts[0])
+        payload["image_count"] = int(counts[1])
+        return payload
 
     def _run_route(self, handler: Any, path: str) -> None:
         if path == "/v1/runs":
@@ -1496,12 +1551,29 @@ class LocalDataPlane:
             if handler.command == "GET":
                 session = self._session(handler, "manifest:read")
                 with self.state._connect() as conn:
-                    rows = conn.execute(
-                        "SELECT * FROM runs WHERE owner_key = ? ORDER BY run_number DESC",
-                        (session.owner_key,),
-                    ).fetchall()
+                    rows = [
+                        dict(row)
+                        for row in conn.execute(
+                            "SELECT * FROM runs WHERE owner_key = ? ORDER BY run_number DESC",
+                            (session.owner_key,),
+                        ).fetchall()
+                    ]
+                counted = self._run_counts(
+                    session.owner_key,
+                    [str(row.get("run_id") or "") for row in rows],
+                )
                 self._json(
-                    handler, 200, {"items": [self._safe_run(dict(row)) for row in rows]}
+                    handler,
+                    200,
+                    {
+                        "items": [
+                            self._safe_run(
+                                row,
+                                counted.get(str(row.get("run_id") or ""), (0, 0)),
+                            )
+                            for row in rows
+                        ]
+                    },
                 )
                 return
             raise APIError(405, "method_not_allowed", "Method not allowed")

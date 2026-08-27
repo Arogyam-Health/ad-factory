@@ -292,10 +292,6 @@ export function StudioPage() {
       if (id) localStorage.setItem("adFactoryReferencePipeline", id);
       else localStorage.removeItem("adFactoryReferencePipeline");
     }
-    if (!id && target === "structured") {
-      setActiveRunId("");
-      setCopyJobId("");
-    }
   }
 
   function writeRunList(target: FlowKind, rows: Run[], allowEmpty = false) {
@@ -316,7 +312,20 @@ export function StudioPage() {
     let next = data.runs || [];
     if (paired && deviceId) {
       try {
-        const local = await localDataPlane.listRuns(deviceId);
+        const owners = [
+          ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
+          ...(user.user_id ? [{ ownerType: "user" as const, ownerId: user.user_id }] : []),
+        ];
+        for (const owner of owners) {
+          const key = `${owner.ownerType}:${owner.ownerId}`;
+          if (localDataPlane.session(deviceId, key)?.access_token) continue;
+          try {
+            await localDataPlane.ensurePaired({ ...owner, deviceId, agentId });
+          } catch {
+            /* inventory for this owner is optional */
+          }
+        }
+        const local = await localDataPlane.listRunsAcrossOwners(deviceId, owners);
         const mapped = local.map((item) => ({
           run_id: item.run_id,
           display_batch: item.display_batch,
@@ -325,8 +334,11 @@ export function StudioPage() {
           status: item.status || "",
           prompt_count: item.prompt_count || 0,
           image_count: item.image_count || 0,
+          owner_type: item.owner_type,
+          owner_id: item.owner_id,
+          device_id: item.device_id,
         }));
-        next = overlayLocalRunStats(next, filterRunsByFlow(mapped, target));
+        next = overlayLocalRunStats(mergeRunLists(next, mapped), mapped);
       } catch {
         /* local inventory is optional */
       }
@@ -704,7 +716,11 @@ export function StudioPage() {
         if (["completed", "failed", "canceled"].includes(String(job.status || ""))) {
           await loadFlowRuns("structured", true);
           if (cancelled) return;
-          setFlowOpenRun("structured", activeRunId);
+          setOpenRunByFlow((prev) => {
+            if (prev.structured && prev.structured !== activeRunId) return prev;
+            localStorage.setItem("adFactoryCopyPipeline", activeRunId);
+            return { ...prev, structured: activeRunId };
+          });
           setRunPage(0);
           setDeskTick((value) => value + 1);
           appendStructuredLog(`Structured copy ${job.status} for ${activeRunId}.`, job.status === "failed" ? "error" : "info");
@@ -865,8 +881,13 @@ export function StudioPage() {
 
   async function deleteLocalRuns(ids: string[]) {
     if (!ids.length || !deviceId || !paired) return;
+    const rows = [...structuredRuns, ...referenceRuns];
     await Promise.all(
-      ids.map((id) => localDataPlane.deleteRun?.(id, deviceId).catch(() => undefined)),
+      ids.map((id) => {
+        const run = rows.find((item) => item.run_id === id);
+        const owner = run?.owner_type && run?.owner_id ? `${run.owner_type}:${run.owner_id}` : "";
+        return localDataPlane.deleteRun?.(id, deviceId, owner).catch(() => undefined);
+      }),
     );
   }
 
@@ -1024,7 +1045,6 @@ export function StudioPage() {
   function openRunRow(run: Run) {
     const id = run.run_id || "";
     setFlowOpenRun(isReferenceRun(run) ? "reference" : "structured", id);
-    if (!isReferenceRun(run)) setActiveRunId(id);
   }
 
   async function pairLocalAgent(opts?: { silent?: boolean }) {
@@ -1038,11 +1058,17 @@ export function StudioPage() {
       { ownerType: "user" as const, ownerId: user.user_id },
     ];
     const restored = localDataPlane.restoreStoredSession(owners);
-    if (restored?.deviceId && localDataPlane.session(restored.deviceId)) {
+    const plate = owners[0];
+    const plateKey = plate ? `${plate.ownerType}:${plate.ownerId}` : "";
+    if (restored?.deviceId && plateKey && localDataPlane.session(restored.deviceId, plateKey)?.access_token) {
       setDeviceId(restored.deviceId);
       setAgentId(restored.agentId);
       setPaired(true);
       return { ok: true, deviceId: restored.deviceId, agentId: restored.agentId };
+    }
+    if (restored?.deviceId) {
+      setDeviceId(restored.deviceId);
+      setAgentId(restored.agentId);
     }
     if (!silent) setStatus("Pairing this tab with the local agent…");
     try {
@@ -1686,8 +1712,7 @@ export function StudioPage() {
             {batchBusy === "download" ? "Downloading…" : "Download batches"}
           </Button>
           <Button variant="ghost" onClick={async () => {
-            const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
-            writeRunList(flow, data.runs || [], true);
+            await loadFlowRuns(flow, true);
             setDeskTick((value) => value + 1);
           }}>Refresh</Button>
           <Button
@@ -1727,7 +1752,11 @@ export function StudioPage() {
                   body: JSON.stringify({ confirm: "PURGE" }),
                 });
                 if (paired && deviceId) {
-                  const local = await localDataPlane.listRuns(deviceId).catch(() => []);
+                  const owners = [
+                    ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
+                    ...(user.user_id ? [{ ownerType: "user" as const, ownerId: user.user_id }] : []),
+                  ];
+                  const local = await localDataPlane.listRunsAcrossOwners(deviceId, owners).catch(() => []);
                   await deleteLocalRuns(local.map((item) => String(item.run_id || "")).filter(Boolean));
                 }
                 invalidateRuns();
@@ -1804,14 +1833,14 @@ export function StudioPage() {
               deviceId={deviceId}
               agentId={agentId}
               paired={paired}
+              plateOwner={orgId && orgId !== "personal" ? `org:${orgId}` : (user.user_id ? `user:${user.user_id}` : "")}
               productAssetIds={[...pickedProducts]}
               refreshToken={deskTick}
               onPair={pairLocalAgent}
               onClose={() => setFlowOpenRun(flow, "")}
               onStatus={appendLog}
               onRefresh={async () => {
-                const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
-                writeRunList(flow, data.runs || [], true);
+                await loadFlowRuns(flow, true);
               }}
             />
           ) : null}
