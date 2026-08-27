@@ -801,9 +801,6 @@ def execute_job(job: dict[str, Any]) -> None:
 
     print(f"  [agent] Executing job {job_id}: {job_type}")
 
-    if AGENT_STATE is not None:
-        AGENT_STATE.record_job(job_id, owner_key, "pending", local_payload)
-
     claim_id = "claim_" + hashlib.sha256(f"{AGENT_PATHS.root}:{job_id}".encode()).hexdigest()[:24]
     claim_result = api_request(
         "POST",
@@ -816,10 +813,12 @@ def execute_job(job: dict[str, Any]) -> None:
         print(f"  [agent] Failed to claim job {job_id}")
         return
     ACTIVE_JOB_FENCES[job_id] = int(claim_result.get("fence") or 0)
-    if AGENT_STATE is not None:
-        AGENT_STATE.update_job_status(job_id, "running")
 
     try:
+        if AGENT_STATE is not None:
+            AGENT_STATE.record_job(job_id, owner_key, "pending", local_payload)
+            AGENT_STATE.update_job_status(job_id, "running")
+
         if job_type == "check_cdp":
             check_cdp()
             report_job_terminal(job_id, "complete")

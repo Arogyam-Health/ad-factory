@@ -114,6 +114,111 @@ def resolve_browser_executable(
     return ""
 
 
+def mark_cdp_attached(context):
+    """Mark a Playwright context as attached to the shared CDP Chrome."""
+    if context is None:
+        return context
+    try:
+        setattr(context, "_ad_factory_cdp", True)
+    except Exception:
+        pass
+    return context
+
+
+def is_cdp_attached(context) -> bool:
+    return getattr(context, "_ad_factory_cdp", False) is True
+
+
+def remember_job_page(job_pages: list, page):
+    """Track a page this job opened so cleanup can close only those targets."""
+    if page is not None and page not in job_pages:
+        job_pages.append(page)
+    return page
+
+
+def _page_target_id(page) -> str:
+    stored = str(getattr(page, "_ad_factory_target_id", "") or "")
+    if stored:
+        return stored
+    context = getattr(page, "context", None)
+    if context is None:
+        return ""
+    try:
+        session = context.new_cdp_session(page)
+        info = session.send("Target.getTargetInfo")
+    except Exception:
+        return ""
+    if not isinstance(info, dict):
+        return ""
+    nested = info.get("targetInfo")
+    if isinstance(nested, dict) and nested.get("targetId"):
+        return str(nested["targetId"])
+    return str(info.get("targetId") or "")
+
+
+def close_cdp_page(page) -> None:
+    """Close one job-opened tab/window. Never closes the shared Chrome profile."""
+    if page is None:
+        return
+    context = getattr(page, "context", None)
+    target_id = _page_target_id(page)
+    try:
+        page.close()
+        return
+    except Exception:
+        pass
+    if not target_id or context is None:
+        return
+    try:
+        pages = list(getattr(context, "pages", []) or [])
+        seed = next((candidate for candidate in pages if candidate is not page), None)
+        if seed is None and pages:
+            seed = pages[0]
+        if seed is None:
+            return
+        session = context.new_cdp_session(seed)
+        session.send("Target.closeTarget", {"targetId": target_id})
+    except Exception:
+        pass
+
+
+def close_job_pages(job_pages: list | None) -> None:
+    for page in list(job_pages or []):
+        close_cdp_page(page)
+
+
+def release_browser(playwright, context, job_pages: list | None = None) -> None:
+    """Detach Playwright. On CDP, close only job pages; never kill Chrome."""
+    close_job_pages(job_pages)
+    if context is not None and not is_cdp_attached(context):
+        try:
+            context.close()
+        except Exception:
+            pass
+    if playwright is not None:
+        try:
+            playwright.stop()
+        except Exception:
+            pass
+
+
+def install_job_signal_handlers() -> None:
+    """Turn cancel SIGTERM/SIGINT into a clean exit so finally still runs."""
+    import signal
+
+    def _stop(signum, _frame) -> None:
+        raise SystemExit(128 + int(signum))
+
+    for name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _stop)
+        except (ValueError, OSError):
+            continue
+
+
 def open_cdp_page(context, *, new_window: bool = False):
     """Open a tab or window on the already-logged-in CDP Chrome profile.
 
@@ -127,11 +232,21 @@ def open_cdp_page(context, *, new_window: bool = False):
             before = {id(page) for page in list(context.pages)}
             seed = context.pages[0] if context.pages else context.new_page()
             session = context.new_cdp_session(seed)
-            session.send("Target.createTarget", {"url": "about:blank", "newWindow": True})
+            created = session.send(
+                "Target.createTarget", {"url": "about:blank", "newWindow": True}
+            )
+            created_id = ""
+            if isinstance(created, dict):
+                created_id = str(created.get("targetId") or "")
             deadline = time.time() + 5
             while time.time() < deadline:
                 for page in context.pages:
                     if id(page) not in before:
+                        if created_id:
+                            try:
+                                page._ad_factory_target_id = created_id
+                            except Exception:
+                                pass
                         try:
                             page.bring_to_front()
                         except Exception:

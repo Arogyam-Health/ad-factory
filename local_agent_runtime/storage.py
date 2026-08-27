@@ -46,8 +46,10 @@ _LOCAL_JOB_PARAMETER_KEYS = frozenset(
         "resource_version",
         "upload_set_version",
         "output_version",
+        "product_asset_ids",
     }
 )
+_PRODUCT_ASSET_ID_LIMIT = 48
 _LOCAL_FORBIDDEN_PARTS = (
     "base64",
     "body",
@@ -63,6 +65,31 @@ _LOCAL_FORBIDDEN_PARTS = (
     "trace",
     "url",
 )
+
+
+def _local_parameter_string_ok(value: str) -> bool:
+    return not (
+        not value
+        or len(value) > 64
+        or "://" in value
+        or value.startswith(("/", "\\\\", "data:", "file:"))
+        or bool(re.match(r"^[A-Za-z]:[\\/]", value))
+    )
+
+
+def _clean_product_asset_ids(value: Any, *, strict: bool) -> list[str] | None:
+    if not isinstance(value, list) or not (1 <= len(value) <= _PRODUCT_ASSET_ID_LIMIT):
+        if strict:
+            raise ValueError("Local job parameters must be bounded scalars")
+        return None
+    clean_ids: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not _local_parameter_string_ok(item):
+            if strict:
+                raise ValueError("Local job parameter is prohibited")
+            return None
+        clean_ids.append(item)
+    return clean_ids
 
 
 def metadata_job_payload(payload: dict[str, Any], *, strict: bool = True) -> dict[str, Any]:
@@ -89,18 +116,19 @@ def metadata_job_payload(payload: dict[str, Any], *, strict: bool = True) -> dic
                     if strict:
                         raise ValueError("Local job parameters contain unsupported fields")
                     continue
+                if parameter_key == "product_asset_ids":
+                    asset_ids = _clean_product_asset_ids(parameter_value, strict=strict)
+                    if asset_ids is not None:
+                        parameters[parameter_key] = asset_ids
+                    continue
                 if isinstance(parameter_value, bool) or not isinstance(
                     parameter_value, (str, int)
                 ):
                     if strict:
                         raise ValueError("Local job parameters must be bounded scalars")
                     continue
-                if isinstance(parameter_value, str) and (
-                    not parameter_value
-                    or len(parameter_value) > 64
-                    or "://" in parameter_value
-                    or parameter_value.startswith(("/", "\\\\", "data:", "file:"))
-                    or re.match(r"^[A-Za-z]:[\\/]", parameter_value)
+                if isinstance(parameter_value, str) and not _local_parameter_string_ok(
+                    parameter_value
                 ):
                     if strict:
                         raise ValueError("Local job parameter is prohibited")

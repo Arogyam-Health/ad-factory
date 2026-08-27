@@ -84,7 +84,8 @@ def _attach_cdp(engine: str) -> dict[str, Any]:
             )
         except Exception:
             pass
-        from local_agent_runtime.browser import open_cdp_page
+        from local_agent_runtime.browser import mark_cdp_attached, open_cdp_page
+        mark_cdp_attached(context)
         page = open_cdp_page(context, new_window=True)
         return {
             "engine": engine,
@@ -109,16 +110,9 @@ def _close_session(session_id: str) -> None:
         return
     page = session.get("page")
     playwright = session.get("playwright")
-    try:
-        if page is not None:
-            page.close()
-    except Exception:
-        pass
-    try:
-        if playwright is not None:
-            playwright.stop()
-    except Exception:
-        pass
+    context = session.get("context")
+    from local_agent_runtime.browser import release_browser
+    release_browser(playwright, context, [page] if page is not None else [])
 
 
 def _get_session(session_id: str) -> dict[str, Any] | None:

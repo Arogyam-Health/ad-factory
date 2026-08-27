@@ -39,7 +39,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from local_agent_runtime.browser import resolve_browser_executable
+from local_agent_runtime.browser import (
+    install_job_signal_handlers,
+    mark_cdp_attached,
+    release_browser,
+    remember_job_page,
+    resolve_browser_executable,
+)
 from playwright.sync_api import sync_playwright, Page, Locator, TimeoutError as PWTimeoutError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
@@ -598,7 +604,9 @@ def build_browser_context(args: argparse.Namespace, download_dir: Path):
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         ctx.set_default_timeout(30000)
         grant_gemini_permissions(ctx)
-        ctx.pages[0].goto("about:blank") if ctx.pages else ctx.new_page().goto("about:blank")
+        if not ctx.pages:
+            ctx.new_page().goto("about:blank")
+        mark_cdp_attached(ctx)
         return p, ctx
     except Exception:
         pass
@@ -3512,6 +3520,7 @@ def save_debug_snapshot(page: Page, base: Path, label: str) -> dict[str, str | N
 
 
 def run() -> None:
+    install_job_signal_handlers()
     args = parse_args()
     hypothesis_config: dict[str, Any] = {}
     if args.hypothesis_config:
@@ -3579,14 +3588,15 @@ def run() -> None:
 
         log_progress("browser_launch", f"Launching browser, headless={args.headless}")
         pw, context = build_browser_context(args, download_dir=browser_download_dir)
-        from local_agent_runtime.browser import open_cdp_page
-        page = open_cdp_page(context, new_window=True)
-
-        log_progress("browser_ready", f"Browser launched, headless={args.headless}")
-        print(f"\nBrowser launched in {'HEADLESS' if args.headless else 'VISIBLE'} mode.")
-
+        job_pages: list = []
         results: list[dict[str, Any]] = []
         try:
+            from local_agent_runtime.browser import open_cdp_page
+            page = remember_job_page(job_pages, open_cdp_page(context, new_window=True))
+
+            log_progress("browser_ready", f"Browser launched, headless={args.headless}")
+            print(f"\nBrowser launched in {'HEADLESS' if args.headless else 'VISIBLE'} mode.")
+
             strict_login = args.login_wait_mode == "strict"
             for idx, job in enumerate(jobs, start=1):
                 print("\n" + "=" * 72)
@@ -3617,7 +3627,10 @@ def run() -> None:
                         print(f"  Attempt {attempt}/{attempts}")
                     try:
                         log_progress("opening_tab", f"Job {idx}: opening tab, attempt {attempt}")
-                        page = open_prompt_tab(context, page, idx if attempt == 1 else 999999, args.first_tab_mode, browser_download_dir)
+                        page = remember_job_page(
+                            job_pages,
+                            open_prompt_tab(context, page, idx if attempt == 1 else 999999, args.first_tab_mode, browser_download_dir),
+                        )
                         log_progress("navigating", f"Job {idx}: navigating to Gemini")
                         navigate_to_fresh_chat(
                             page,
@@ -3711,7 +3724,7 @@ def run() -> None:
                         log_progress("error", f"Job {idx} attempt {attempt}: {exc}")
                         if attempt < attempts:
                             try:
-                                page = context.new_page()
+                                page = remember_job_page(job_pages, context.new_page())
                             except Exception:
                                 pass
                             continue
@@ -3752,9 +3765,8 @@ def run() -> None:
             log_progress("complete", f"All done. {sum(1 for r in results if r['status'] == 'success')}/{len(results)} succeeded.")
             print("\nAll prompt jobs finished.")
         finally:
-            context.close()
-            pw.stop()
-            print("Browser closed.")
+            release_browser(pw, context, job_pages)
+            print("Browser detached.")
 
 
 if __name__ == "__main__":

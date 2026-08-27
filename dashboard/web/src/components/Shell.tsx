@@ -38,7 +38,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app">
-      <aside className="rail">
+      <header className="masthead">
         <div className="brand">
           <span className="brand-mark">AF</span>
           <span className="brand-name">Factory</span>
@@ -71,10 +71,6 @@ export function Shell({ children }: { children: ReactNode }) {
             </NavLink>
           ) : null}
         </nav>
-        <p className="rail-foot">PRESS ROOM · BLACK PLATE</p>
-      </aside>
-
-      <header className="topbar">
         <div className="topbar-title">
           <p className="eyebrow">{page.eyebrow}</p>
           <h1>{page.title}</h1>

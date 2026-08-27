@@ -23,6 +23,15 @@ export function Tile({ span = "wide", kicker, title, className, children }: Prop
   );
 }
 
+export function PressDrawer({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <motion.section className="press-drawer" variants={fadeUp}>
+      <h3 className="press-drawer-title">{title}</h3>
+      <div className="press-drawer-body">{children}</div>
+    </motion.section>
+  );
+}
+
 export function Bento({ children }: { children: ReactNode }) {
   return (
     <motion.div className="bento" variants={stagger} initial="hidden" animate="show">

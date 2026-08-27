@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { catalogConcepts, catalogLanguageModes, CONFIG_SECTIONS, KEY_HINTS, KEY_LABELS, readStudioOrg, summarizeConfigValue, writeStudioOrg } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { ConfigSource, EffectiveConfig, FormatOption, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
-import { Bento, Tile } from "@/components/Tile";
+import { Bento, PressDrawer, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
 import { ListPager } from "@/components/ListPager";
 import { Skeleton, SkeletonLines } from "@/components/Skeleton";
@@ -1031,8 +1031,14 @@ export function StudioPage() {
     }
   }
 
+  async function openLocalAsset(resourceId: string, version?: number) {
+    const url = await localDataPlane.assetObjectUrl(resourceId, deviceId, version).catch(() => "");
+    if (url) window.open(url, "_blank", "noopener");
+  }
+
   const studioBody = (
     <Bento>
+      <div className="studio-row">
       <Tile span="hero" kicker="01 · Composition" title="Personas and formats">
         <div className="chips" style={{ marginBottom: 16 }}>
           <button type="button" className={`chip${flow === "structured" ? " active" : ""}`} onClick={() => setFlow("structured")}>
@@ -1132,259 +1138,279 @@ export function StudioPage() {
       {flow === "structured" ? (
         <Tile span="side" kicker="02 · Make ready" title="Send to press">
           {loading ? <SkeletonLines lines={5} /> : (
-            <>
+            <div className="press-stack">
               <p className="hint">
                 {selectedCount} persona{selectedCount === 1 ? "" : "s"} · {[...new Set([...selected].flatMap((n) => formatsForPersona(n)))].join(" / ") || "no formats"} · {language}
               </p>
-              <p className="hint" style={{ margin: "14px 0 18px" }}>
+              <p className="hint">
                 {paired ? `Paired ${deviceId.slice(0, 8)} · ` : deviceId ? `Agent ${deviceId.slice(0, 8)} reachable · ` : ""}{status}
               </p>
               <RunTerminal lines={logLines} />
-              <label className="hint">
-                Hypothesis
-                <select className="field" value={hypType} onChange={(e) => { setHypType(e.target.value); setHypVariant(""); }}>
-                  {Object.entries(hypVars).map(([key, defn]) => (
-                    <option key={key} value={key}>{defn.label || key}</option>
-                  ))}
-                </select>
-              </label>
-              {hypOptions.length ? (
+              <PressDrawer title="Job">
                 <label className="hint">
-                  Style
-                  <select className="field" value={hypVariant} onChange={(e) => setHypVariant(e.target.value)}>
-                    <option value="">None</option>
-                    {hypOptions.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                  Hypothesis
+                  <select className="field" value={hypType} onChange={(e) => { setHypType(e.target.value); setHypVariant(""); }}>
+                    {Object.entries(hypVars).map(([key, defn]) => (
+                      <option key={key} value={key}>{defn.label || key}</option>
+                    ))}
                   </select>
                 </label>
-              ) : (
-                <p className="hint">No hypothesis style selected. Ads generate normally.</p>
-              )}
-              <label className="hint">
-                Concept
-                <select className="field" value={selectedConcept} onChange={(e) => setSelectedConcept(e.target.value)}>
-                  <option value="">None</option>
-                  {catalogConcepts(studio).map((item) => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="hint">
-                LLM provider
-                <select className="field" value={provider} onChange={(e) => setProvider(e.target.value)}>
-                  <option value="opencode">OpenCode</option>
-                  <option value="google">Google Gemini</option>
-                  <option value="browser">Browser automation</option>
-                </select>
-              </label>
-              {provider === "browser" ? (
-                <>
+                {hypOptions.length ? (
                   <label className="hint">
-                    Browser engine
-                    <select
-                      className="field"
-                      value={copyBrowserEngine}
-                      onChange={(e) => setCopyBrowserEngine(e.target.value === "gemini" ? "gemini" : "chatgpt")}
-                    >
-                      <option value="chatgpt">ChatGPT</option>
-                      <option value="gemini">Gemini</option>
+                    Style
+                    <select className="field" value={hypVariant} onChange={(e) => setHypVariant(e.target.value)}>
+                      <option value="">None</option>
+                      {hypOptions.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                     </select>
                   </label>
-                  <p className="hint">
-                    Uses the model already selected in your Chrome CDP tab. Pair the local agent first. Product context is sent once, then ads are requested in that chat by Ads per LLM call.
-                  </p>
-                </>
-              ) : (
-              <form
-                className="provider-keys"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void saveProviderKeys();
-                }}
-              >
-                {provider === "opencode" ? (
+                ) : (
+                  <p className="hint">No hypothesis style selected. Ads generate normally.</p>
+                )}
+                <label className="hint">
+                  Concept
+                  <select className="field" value={selectedConcept} onChange={(e) => setSelectedConcept(e.target.value)}>
+                    <option value="">None</option>
+                    {catalogConcepts(studio).map((item) => (
+                      <option key={item.id} value={item.id}>{item.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </PressDrawer>
+              <PressDrawer title="Provider">
+                <label className="hint">
+                  LLM provider
+                  <select className="field" value={provider} onChange={(e) => setProvider(e.target.value)}>
+                    <option value="opencode">OpenCode</option>
+                    <option value="google">Google Gemini</option>
+                    <option value="browser">Browser automation</option>
+                  </select>
+                </label>
+                {provider === "browser" ? (
                   <>
-                    <input className="field" value={opencodeUrl} onChange={(e) => setOpencodeUrl(e.target.value)} placeholder="https://opencode.ai/zen/v1" />
-                    <input className="field" type="password" value={opencodeKey} onChange={(e) => setOpencodeKey(e.target.value)} placeholder={keyHint} autoComplete="off" />
+                    <label className="hint">
+                      Browser engine
+                      <select
+                        className="field"
+                        value={copyBrowserEngine}
+                        onChange={(e) => setCopyBrowserEngine(e.target.value === "gemini" ? "gemini" : "chatgpt")}
+                      >
+                        <option value="chatgpt">ChatGPT</option>
+                        <option value="gemini">Gemini</option>
+                      </select>
+                    </label>
+                    <p className="hint">
+                      Uses the model already selected in your Chrome CDP tab. Pair the local agent first. Product context is sent once, then ads are requested in that chat by Ads per LLM call.
+                    </p>
                   </>
                 ) : (
-                  <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder={googleHint} autoComplete="off" />
-                )}
-                <div className="provider-key-row">
-                  <label className="provider-key-model">
-                    <span>Model</span>
-                    <select className="field" value={models.includes(model) ? model : DEFAULT_OPENCODE_MODEL} onChange={(e) => setModel(e.target.value)}>
-                      {models.map((item) => (
-                        <option key={item} value={item}>{item}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button type="submit" className="provider-key-save" disabled={savingKey || !user.authenticated}>
-                    {savingKey ? "Saving…" : "Save API key"}
-                  </Button>
-                </div>
-                <p className="hint">
-                  {keySaved || googleSaved ? "Saved key stays on this account. Type a new one only to replace it." : "Save before running a plate."}
-                </p>
-              </form>
-              )}
-              <label className="hint">
-                Ad multiplier
-                <input className="field" type="number" min={1} max={20} value={multiplier} onChange={(e) => setMultiplier(Number(e.target.value) || 1)} />
-              </label>
-              <label className="hint">
-                Ads per LLM call
-                <input className="field" type="number" min={1} max={500} value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value) || 10)} />
-              </label>
-              <label className="toggle-row">
-                <input type="checkbox" checked={shareBg} onChange={(e) => setShareBg(e.target.checked)} />
-                Keep same background across personas
-              </label>
-              <label className="hint">
-                Reuse backgrounds from run
-                <select className="field" value={reuseBg} onChange={(e) => setReuseBg(e.target.value)}>
-                  <option value="">None</option>
-                  {sortedRuns.map((run) => <option key={run.run_id} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
-                </select>
-              </label>
-              <label className="hint">
-                Reuse visual patterns from run
-                <select className="field" value={reusePattern} onChange={(e) => setReusePattern(e.target.value)}>
-                  <option value="">None</option>
-                  {sortedRuns.map((run) => <option key={`p-${run.run_id}`} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
-                </select>
-              </label>
-              <label className="hint" style={{ display: "block", marginBottom: 4 }}>
-                Input images
-              </label>
-              <FileField
-                id="inputImageFiles"
-                label="Choose images"
-                multiple
-                accept="image/*"
-                disabled={!paired || assetBusy}
-                emptyHint={
-                  paired
-                    ? "No file chosen"
-                    : deviceId
-                      ? "Agent is on this machine, but this tab is not paired to it"
-                      : "Start the local agent on this machine"
-                }
-                onFiles={async (files, input) => {
-                  if (!files?.length || !deviceId || !paired) return;
-                  setAssetBusy(true);
-                  try {
-                    const known = new Set(assets.map((item) => item.resource_id));
-                    await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
-                    const items = (await localDataPlane.listAssets({ kind: "product_image", deviceId }))
-                      .slice(0, PRODUCT_ASSET_LIMIT);
-                    const uploaded = items
-                      .map((item) => item.resource_id)
-                      .filter((id) => !known.has(id));
-                    setAssets(items);
-                    setPickedProducts((prev) => {
-                      const available = new Set(items.map((item) => item.resource_id));
-                      const next = new Set([...prev].filter((id) => available.has(id)));
-                      for (const id of uploaded) next.add(id);
-                      return next;
-                    });
-                    setStatus(`Stored ${files.length} image${files.length === 1 ? "" : "s"} on this device.`);
-                  } catch (err) {
-                    setStatus(String(err));
-                  } finally {
-                    setAssetBusy(false);
-                    input.value = "";
-                  }
-                }}
-              />
-              {assets.length ? (
-                <>
-                  <p className="hint" style={{ margin: "8px 0 6px" }}>
-                    Check the images to send to the image model. Unchecked images stay stored.
-                  </p>
-                  <div className="action-row" style={{ marginBottom: 8 }}>
-                    <span className="hint">{assets.length} stored · {pickedProducts.size} selected</span>
-                    <Button
-                      variant="ghost"
-                      disabled={!assets.length}
-                      onClick={() => setPickedProducts(new Set(assets.map((item) => item.resource_id)))}
-                    >
-                      Select all
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={!pickedProducts.size}
-                      onClick={() => setPickedProducts(new Set())}
-                    >
-                      Select none
-                    </Button>
-                  </div>
-                  <div className="asset-strip" style={{ marginBottom: 16 }}>
-                    {assets.map((item) => {
-                      const selectedImage = pickedProducts.has(item.resource_id);
-                      return (
-                        <article
-                          key={item.resource_id}
-                          className={`asset-card${selectedImage ? " selected" : ""}`}
-                        >
-                          <label className="asset-card-check">
-                            <input
-                              type="checkbox"
-                              checked={selectedImage}
-                              onChange={() => toggleProduct(item.resource_id)}
-                              aria-label={`Send ${item.filename || "image"} to the image model`}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            className="asset-thumb"
-                            title={item.filename || item.resource_id}
-                            onClick={() => toggleProduct(item.resource_id)}
-                          >
-                            <LazyAsset
-                              resourceId={item.resource_id}
-                              deviceId={deviceId}
-                              version={item.version}
-                              alt={item.filename || "Input image"}
-                            />
-                          </button>
-                          <button
-                            type="button"
-                            className="asset-card-remove"
-                            aria-label={`Remove ${item.filename || "image"}`}
-                            disabled={assetBusy}
-                            onClick={() => void removeProduct(item)}
-                          >
-                            ×
-                          </button>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : assetBusy ? (
-                <Skeleton className="skel-block" />
-              ) : null}
-              <div className="action-row">
-                <Button variant="primary" disabled={busy || !user.authenticated} onClick={() => void startStructured()}>
-                  {busy ? "On press…" : "Run structured plate"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={!activeRunId}
-                  onClick={async () => {
-                    try {
-                      await fetchJSON(`/api/runs/${encodeURIComponent(activeRunId)}/cancel`, { method: "POST" });
-                      setStatus(`Cancel requested for ${activeRunId}.`);
-                    } catch (err) {
-                      setStatus(String(err));
-                    }
+                <form
+                  className="provider-keys"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveProviderKeys();
                   }}
                 >
-                  Cancel
-                </Button>
-              </div>
-              {copyJobId ? <p className="hint">Copy job {copyJobId}</p> : null}
-            </>
+                  {provider === "opencode" ? (
+                    <>
+                      <input className="field" value={opencodeUrl} onChange={(e) => setOpencodeUrl(e.target.value)} placeholder="https://opencode.ai/zen/v1" />
+                      <input className="field" type="password" value={opencodeKey} onChange={(e) => setOpencodeKey(e.target.value)} placeholder={keyHint} autoComplete="off" />
+                    </>
+                  ) : (
+                    <input id="googleApiKey" className="field" type="password" value={googleKey} onChange={(e) => setGoogleKey(e.target.value)} placeholder={googleHint} autoComplete="off" />
+                  )}
+                  <div className="provider-key-row">
+                    <label className="provider-key-model">
+                      <span>Model</span>
+                      <select className="field" value={models.includes(model) ? model : DEFAULT_OPENCODE_MODEL} onChange={(e) => setModel(e.target.value)}>
+                        {models.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <Button type="submit" className="provider-key-save" disabled={savingKey || !user.authenticated}>
+                      {savingKey ? "Saving…" : "Save API key"}
+                    </Button>
+                  </div>
+                  <p className="hint">
+                    {keySaved || googleSaved ? "Saved key stays on this account. Type a new one only to replace it." : "Save before running a plate."}
+                  </p>
+                </form>
+                )}
+              </PressDrawer>
+              <PressDrawer title="Batch">
+                <label className="hint">
+                  Ad multiplier
+                  <input className="field" type="number" min={1} max={20} value={multiplier} onChange={(e) => setMultiplier(Number(e.target.value) || 1)} />
+                </label>
+                <label className="hint">
+                  Ads per LLM call
+                  <input className="field" type="number" min={1} max={500} value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value) || 10)} />
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={shareBg} onChange={(e) => setShareBg(e.target.checked)} />
+                  Keep same background across personas
+                </label>
+                <label className="hint">
+                  Reuse backgrounds from run
+                  <select className="field" value={reuseBg} onChange={(e) => setReuseBg(e.target.value)}>
+                    <option value="">None</option>
+                    {sortedRuns.map((run) => <option key={run.run_id} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
+                  </select>
+                </label>
+                <label className="hint">
+                  Reuse visual patterns from run
+                  <select className="field" value={reusePattern} onChange={(e) => setReusePattern(e.target.value)}>
+                    <option value="">None</option>
+                    {sortedRuns.map((run) => <option key={`p-${run.run_id}`} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
+                  </select>
+                </label>
+              </PressDrawer>
+              <PressDrawer title="Images">
+                <label className="hint" style={{ display: "block", marginBottom: 4 }}>
+                  Input images
+                </label>
+                <FileField
+                  id="inputImageFiles"
+                  label="Choose images"
+                  multiple
+                  accept="image/*"
+                  disabled={!paired || assetBusy}
+                  emptyHint={
+                    paired
+                      ? "No file chosen"
+                      : deviceId
+                        ? "Agent is on this machine, but this tab is not paired to it"
+                        : "Start the local agent on this machine"
+                  }
+                  onFiles={async (files, input) => {
+                    if (!files?.length || !deviceId || !paired) return;
+                    setAssetBusy(true);
+                    try {
+                      const known = new Set(assets.map((item) => item.resource_id));
+                      await localDataPlane.uploadAssets(files, { kind: "product_image", deviceId });
+                      const items = (await localDataPlane.listAssets({ kind: "product_image", deviceId }))
+                        .slice(0, PRODUCT_ASSET_LIMIT);
+                      const uploaded = items
+                        .map((item) => item.resource_id)
+                        .filter((id) => !known.has(id));
+                      setAssets(items);
+                      setPickedProducts((prev) => {
+                        const available = new Set(items.map((item) => item.resource_id));
+                        const next = new Set([...prev].filter((id) => available.has(id)));
+                        for (const id of uploaded) next.add(id);
+                        return next;
+                      });
+                      setStatus(`Stored ${files.length} image${files.length === 1 ? "" : "s"} on this device.`);
+                    } catch (err) {
+                      setStatus(String(err));
+                    } finally {
+                      setAssetBusy(false);
+                      input.value = "";
+                    }
+                  }}
+                />
+                {assets.length ? (
+                  <>
+                    <p className="hint" style={{ margin: "8px 0 6px" }}>
+                      Check the images to send to the image model. Unchecked images stay stored.
+                    </p>
+                    <div className="action-row" style={{ marginBottom: 8 }}>
+                      <span className="hint">{assets.length} stored · {pickedProducts.size} selected</span>
+                      <Button
+                        variant="ghost"
+                        disabled={!assets.length}
+                        onClick={() => setPickedProducts(new Set(assets.map((item) => item.resource_id)))}
+                      >
+                        Select all
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={!pickedProducts.size}
+                        onClick={() => setPickedProducts(new Set())}
+                      >
+                        Select none
+                      </Button>
+                    </div>
+                    <div className="asset-strip" style={{ marginBottom: 16 }}>
+                      {assets.map((item) => {
+                        const selectedImage = pickedProducts.has(item.resource_id);
+                        return (
+                          <article
+                            key={item.resource_id}
+                            className={`asset-card${selectedImage ? " selected" : ""}`}
+                          >
+                            <label className="asset-card-check">
+                              <input
+                                type="checkbox"
+                                checked={selectedImage}
+                                onChange={() => toggleProduct(item.resource_id)}
+                                aria-label={`Send ${item.filename || "image"} to the image model`}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="asset-thumb"
+                              title={item.filename || item.resource_id}
+                              onClick={() => toggleProduct(item.resource_id)}
+                            >
+                              <LazyAsset
+                                resourceId={item.resource_id}
+                                deviceId={deviceId}
+                                version={item.version}
+                                alt={item.filename || "Input image"}
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              className="asset-card-remove"
+                              aria-label={`Remove ${item.filename || "image"}`}
+                              disabled={assetBusy}
+                              onClick={() => void removeProduct(item)}
+                            >
+                              ×
+                            </button>
+                            <button
+                              type="button"
+                              className="asset-card-open"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void openLocalAsset(item.resource_id, item.version);
+                              }}
+                            >
+                              Open
+                            </button>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : assetBusy ? (
+                  <Skeleton className="skel-block" />
+                ) : null}
+              </PressDrawer>
+              <PressDrawer title="Run">
+                <div className="action-row">
+                  <Button variant="primary" disabled={busy || !user.authenticated} onClick={() => void startStructured()}>
+                    {busy ? "On press…" : "Run structured plate"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={!activeRunId}
+                    onClick={async () => {
+                      try {
+                        await fetchJSON(`/api/runs/${encodeURIComponent(activeRunId)}/cancel`, { method: "POST" });
+                        setStatus(`Cancel requested for ${activeRunId}.`);
+                      } catch (err) {
+                        setStatus(String(err));
+                      }
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                {copyJobId ? <p className="hint">Copy job {copyJobId}</p> : null}
+              </PressDrawer>
+            </div>
           )}
         </Tile>
       ) : (
@@ -1394,6 +1420,7 @@ export function StudioPage() {
           <RunTerminal lines={logLines} />
         </Tile>
       )}
+      </div>
 
       <Tile span="wide" kicker="03 · Copy desk" title="Plate files">
         {orgSources.length ? (
@@ -1582,8 +1609,8 @@ export function StudioPage() {
                 <span>{displayRunStatus(run)}</span>
                 <span>{run.prompt_count ?? 0} prompts</span>
                 <span>{run.image_count ?? 0} images</span>
-                {imageFailureDetail(run) ? <span>Image failed: {imageFailureDetail(run)}</span> : null}
-                {copyFailureDetail(run) ? <span>Copy failed: {copyFailureDetail(run)}</span> : null}
+                {imageFailureDetail(run) ? <span className="run-row-error">Image failed: {imageFailureDetail(run)}</span> : null}
+                {copyFailureDetail(run) ? <span className="run-row-error">Copy failed: {copyFailureDetail(run)}</span> : null}
               </article>
             ))}
           </div>

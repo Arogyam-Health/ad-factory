@@ -44,7 +44,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from local_agent_runtime.browser import resolve_browser_executable
+from local_agent_runtime.browser import (
+    install_job_signal_handlers,
+    mark_cdp_attached,
+    release_browser,
+    remember_job_page,
+    resolve_browser_executable,
+)
 from typing import Any, Callable, Iterable
 
 from PIL import Image as PILImage
@@ -730,6 +736,7 @@ def build_browser_context(args: argparse.Namespace, download_dir: Path):
                 time.sleep(0.25)
         elif not context.pages:
             context.new_page().goto("about:blank")
+        mark_cdp_attached(context)
         return p, context
 
     print("  [launch] No Chrome debug port found, launching a persistent browser profile...")
@@ -3159,6 +3166,7 @@ def build_image_metadata(
 
 
 def run() -> None:
+    install_job_signal_handlers()
     args = parse_args()
 
     prompt_dir = Path(args.prompt_dir).expanduser().resolve()
@@ -3193,6 +3201,7 @@ def run() -> None:
 
         p = None
         context: BrowserContext | None = None
+        job_pages: list = []
         try:
             p, context = build_browser_context(args, download_dir)
             _configure_download_dir(context, download_dir)
@@ -3200,7 +3209,7 @@ def run() -> None:
             if not context.pages and args.extension_cdp:
                 raise RuntimeError("Extension CDP proxy connected, but Playwright did not receive any page targets from the extension")
             from local_agent_runtime.browser import open_cdp_page
-            page = open_cdp_page(context, new_window=True)
+            page = remember_job_page(job_pages, open_cdp_page(context, new_window=True))
             page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
 
             for index, job in enumerate(jobs, start=1):
@@ -3219,7 +3228,10 @@ def run() -> None:
                 while attempt <= max(1, args.max_attempts):
                     page_for_job: Page | None = None
                     try:
-                        page_for_job = open_prompt_tab(context, page, index if attempt == 1 else 999999, args.first_tab_mode)
+                        page_for_job = remember_job_page(
+                            job_pages,
+                            open_prompt_tab(context, page, index if attempt == 1 else 999999, args.first_tab_mode),
+                        )
                         page = page_for_job
                         navigate_to_fresh_chat(
                             page_for_job,
@@ -3343,16 +3355,7 @@ def run() -> None:
                         attempt += 1
 
         finally:
-            try:
-                if context is not None:
-                    context.close()
-            except Exception:
-                pass
-            try:
-                if p is not None:
-                    p.stop()
-            except Exception:
-                pass
+            release_browser(p, context, job_pages)
 
 
 if __name__ == "__main__":

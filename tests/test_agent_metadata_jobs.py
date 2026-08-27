@@ -490,6 +490,103 @@ class AgentMetadataJobTests(unittest.TestCase):
         self.assertNotIn("prompt", stored.lower())
         self.assertNotIn("base64", stored.lower())
 
+    def test_local_payload_accepts_product_asset_ids(self) -> None:
+        from local_agent_runtime.storage import AgentPaths, AgentState, metadata_job_payload
+
+        ids = ["res_" + "a" * 32, "res_" + "b" * 32]
+        clean = metadata_job_payload(
+            {
+                "run_id": "run-1",
+                "command": "generate_images",
+                "parameters": {
+                    "engine": "chatgpt",
+                    "mode": "45",
+                    "product_asset_ids": ids,
+                },
+            }
+        )
+        self.assertEqual(clean["parameters"]["product_asset_ids"], ids)
+
+        with tempfile.TemporaryDirectory() as temp:
+            state = AgentState(AgentPaths(Path(temp)))
+            state.record_job(
+                "job-images",
+                "user:user-1",
+                "pending",
+                {
+                    "run_id": "run-1",
+                    "command": "generate_images",
+                    "parameters": {
+                        "engine": "chatgpt",
+                        "mode": "45",
+                        "product_asset_ids": ids,
+                    },
+                },
+            )
+            with state._connect() as conn:
+                stored = json.loads(
+                    conn.execute(
+                        "SELECT payload_json FROM jobs WHERE job_id = 'job-images'"
+                    ).fetchone()[0]
+                )
+        self.assertEqual(stored["parameters"]["product_asset_ids"], ids)
+
+    def test_local_payload_rejects_paths_and_unknown_parameters(self) -> None:
+        from local_agent_runtime.storage import metadata_job_payload
+
+        with self.assertRaises(ValueError):
+            metadata_job_payload(
+                {
+                    "run_id": "run-1",
+                    "command": "generate_images",
+                    "parameters": {"product_asset_ids": ["/tmp/secret.png"]},
+                }
+            )
+        with self.assertRaises(ValueError):
+            metadata_job_payload(
+                {
+                    "run_id": "run-1",
+                    "command": "generate_images",
+                    "parameters": {"not_allowed": "x"},
+                }
+            )
+
+    def test_unsupported_local_parameter_fails_job_once(self) -> None:
+        from local_agent_runtime import local_agent
+        from local_agent_runtime.storage import AgentPaths, AgentState
+
+        reports: list[tuple[str, str]] = []
+
+        def fake_report(job_id: str, action: str, **_kwargs) -> bool:
+            reports.append((job_id, action))
+            return True
+
+        with tempfile.TemporaryDirectory() as temp:
+            paths = AgentPaths(Path(temp))
+            state = AgentState(paths)
+            with patch.object(local_agent, "AGENT_STATE", state), patch.object(
+                local_agent, "AGENT_PATHS", paths
+            ), patch.object(local_agent, "AGENT_TOKEN", "tok"), patch.object(
+                local_agent, "ACTIVE_JOB_FENCES", {}
+            ), patch.object(
+                local_agent, "api_request", return_value={"fence": 1}
+            ), patch.object(
+                local_agent, "report_job_terminal", side_effect=fake_report
+            ):
+                local_agent.execute_job(
+                    {
+                        "job_id": "job_bad",
+                        "job_type": "execute_run",
+                        "command": "generate_images",
+                        "run_id": "run_1",
+                        "owner_type": "user",
+                        "owner_id": "u1",
+                        "parameters": {"not_allowed": "x"},
+                    }
+                )
+
+        self.assertEqual(reports, [("job_bad", "fail")])
+
     def test_local_cleanup_is_dry_run_first_idempotent_and_redacted(self) -> None:
         from dashboard.backend.agent.migration import cleanup_local_job_payloads
         from local_agent_runtime.storage import AgentPaths, AgentState

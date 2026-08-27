@@ -80,9 +80,14 @@ class BrowserDiscoveryTests(unittest.TestCase):
         chatgpt = (root / "local_agent_runtime" / "chatgpt_web_sutomation.py").read_text(encoding="utf-8")
         agent = (root / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
         self.assertNotIn("myspace/info/input/images", gemini)
-        self.assertIn("from local_agent_runtime.browser import resolve_browser_executable", gemini)
-        self.assertIn("from local_agent_runtime.browser import resolve_browser_executable", chatgpt)
+        self.assertIn("from local_agent_runtime.browser import", gemini)
+        self.assertIn("resolve_browser_executable", gemini)
+        self.assertIn("from local_agent_runtime.browser import", chatgpt)
+        self.assertIn("resolve_browser_executable", chatgpt)
         self.assertIn("from local_agent_runtime.browser import resolve_browser_executable", agent)
+        self.assertIn("release_browser", gemini)
+        self.assertIn("release_browser", chatgpt)
+        self.assertIn("close_cdp_page", (root / "local_agent_runtime" / "browser.py").read_text(encoding="utf-8"))
         self.assertNotIn("def _browser_candidates", agent)
         self.assertIn("LOCAL_DASHBOARD_ORIGINS", agent)
         self.assertIn("http://127.0.0.1:4090", agent)
@@ -181,6 +186,81 @@ class BrowserDiscoveryTests(unittest.TestCase):
             joined = "\n".join(names)
             self.assertNotIn("/home/mylappy", joined)
             self.assertNotIn("myspace/info", joined)
+
+
+class CloseCdpPageTests(unittest.TestCase):
+    def test_close_cdp_page_does_not_close_context_or_browser(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import close_cdp_page
+
+        context = MagicMock()
+        browser = MagicMock()
+        page = MagicMock()
+        page.context = context
+        context.browser = browser
+        context.pages = [page]
+        context.close = MagicMock()
+        browser.close = MagicMock()
+
+        close_cdp_page(page)
+
+        page.close.assert_called_once()
+        context.close.assert_not_called()
+        browser.close.assert_not_called()
+
+    def test_close_cdp_page_falls_back_to_target_close(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import close_cdp_page
+
+        context = MagicMock()
+        page = MagicMock()
+        seed = MagicMock()
+        page.context = context
+        page.close.side_effect = RuntimeError("already gone")
+        page._ad_factory_target_id = "tid-1"
+        context.pages = [seed]
+        session = MagicMock()
+        context.new_cdp_session.return_value = session
+
+        close_cdp_page(page)
+
+        session.send.assert_called_with("Target.closeTarget", {"targetId": "tid-1"})
+        context.close.assert_not_called()
+
+    def test_release_browser_skips_context_close_on_cdp(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import mark_cdp_attached, release_browser
+
+        context = MagicMock()
+        mark_cdp_attached(context)
+        playwright = MagicMock()
+        page = MagicMock()
+        page.context = context
+
+        release_browser(playwright, context, [page])
+
+        page.close.assert_called_once()
+        context.close.assert_not_called()
+        playwright.stop.assert_called_once()
+
+    def test_release_browser_closes_launched_context(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import release_browser
+
+        context = MagicMock()
+        playwright = MagicMock()
+        page = MagicMock()
+        page.context = context
+
+        release_browser(playwright, context, [page])
+
+        page.close.assert_called_once()
+        context.close.assert_called_once()
+        playwright.stop.assert_called_once()
 
 
 if __name__ == "__main__":
