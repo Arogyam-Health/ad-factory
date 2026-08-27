@@ -296,22 +296,27 @@ class ReferenceLocalFlowTests(unittest.TestCase):
             Path(call_916["prompt_path"]).read_text(encoding="utf-8"),
         )
 
-    def test_owner_isolation_rejects_cross_owner_reference(self) -> None:
+    def test_selected_library_images_resolve_across_owners(self) -> None:
         from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor
         from local_agent_runtime.structured_browser import DeterministicFakeBrowser
 
-        self._configured_job(
-            job_id="job-owner-isolation",
-            reference_owner="user:other-owner",
+        configured = self._configured_job(
+            job_id="job-library-images",
+            reference_owner="org:other-org",
         )
         browser = DeterministicFakeBrowser()
         result = ReferenceWorkflowExecutor(self.state, browser=browser).execute(
-            "job-owner-isolation"
+            "job-library-images"
         )
 
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["error_code"], "local_resource_missing")
-        self.assertEqual(browser.calls, [])
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(
+            [entry["resource_id"] for entry in browser.calls[0]["manifest"]["entries"]],
+            [
+                configured["references"][0].resource_id,
+                *[item.resource_id for item in configured["products"]],
+            ],
+        )
 
     def test_gemini_executes_selected_persona_and_exact_order(self) -> None:
         from local_agent_runtime.reference_workflow import ReferenceWorkflowExecutor

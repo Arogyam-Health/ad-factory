@@ -1030,34 +1030,75 @@ class LocalDataPlane:
 
     def _list_resources(self, handler: Any, kinds: frozenset[str]) -> None:
         session = self._session(handler, "manifest:read")
+        library = kinds <= ASSET_KINDS
         placeholders = ",".join("?" for _ in kinds)
+        conditions = [f"kind IN ({placeholders})", "deleted_at IS NULL"]
+        values: list[Any] = [*sorted(kinds)]
+        if not library:
+            conditions.insert(0, "owner_key = ?")
+            values.insert(0, session.owner_key)
         with self.state._connect() as conn:
             rows = conn.execute(
                 f"""
                 SELECT resource_id FROM resources
-                WHERE owner_key = ? AND kind IN ({placeholders}) AND deleted_at IS NULL
+                WHERE {' AND '.join(conditions)}
                 ORDER BY updated_at DESC
                 """,
-                [session.owner_key, *sorted(kinds)],
+                values,
             ).fetchall()
         items = [
             self._metadata(record)
             for row in rows
             if (
-                record := self._resource_record(
-                    session.owner_key, resource_id=str(row["resource_id"])
+                record := (
+                    self._asset_record(str(row["resource_id"]))
+                    if library
+                    else self._resource_record(
+                        session.owner_key, resource_id=str(row["resource_id"])
+                    )
                 )
             )
         ]
         self._json(handler, 200, {"items": items})
+
+    def _asset_record(
+        self,
+        resource_id: str,
+        *,
+        version: int | None = None,
+    ) -> dict[str, Any] | None:
+        with self.state._connect() as conn:
+            selected_version = "r.current_version" if version is None else "?"
+            parameters: list[Any] = []
+            if version is not None:
+                parameters.append(int(version))
+            placeholders = ",".join("?" for _ in ASSET_KINDS)
+            parameters.extend([resource_id, *sorted(ASSET_KINDS)])
+            row = conn.execute(
+                f"""
+                SELECT r.resource_id, r.owner_key, r.kind, r.logical_key, r.current_version,
+                       r.status, r.created_at, r.updated_at, rv.version, rv.object_sha256,
+                       rv.content_hash, rv.metadata_json, o.relative_path, o.bytes, o.media_type
+                FROM resources r
+                JOIN resource_versions rv
+                  ON rv.resource_id = r.resource_id AND rv.version = {selected_version}
+                JOIN objects o ON o.sha256 = rv.object_sha256
+                WHERE r.resource_id = ? AND r.kind IN ({placeholders}) AND r.deleted_at IS NULL
+                """,
+                parameters,
+            ).fetchone()
+        return dict(row) if row else None
 
     def _asset_route(self, handler: Any, suffix: str) -> None:
         resource_id, separator, tail = suffix.partition("/")
         resource_id = self._safe_logical_key(resource_id)
         if not separator and handler.command == "DELETE":
             session = self._session(handler, "delete")
+            record = self._asset_record(resource_id)
             self._delete_resource(
-                session.owner_key, resource_id, self._operation_id(handler)
+                str(record["owner_key"]) if record else session.owner_key,
+                resource_id,
+                self._operation_id(handler),
             )
             self._json(handler, 200, {"resource_id": resource_id, "status": "deleted"})
             return
@@ -1065,8 +1106,8 @@ class LocalDataPlane:
             handler,
             "content:read" if separator and tail == "content" else "manifest:read",
         )
-        record = self._resource_record(session.owner_key, resource_id=resource_id)
-        if record is None or record["kind"] not in ASSET_KINDS:
+        record = self._asset_record(resource_id)
+        if record is None:
             raise APIError(404, "asset_not_found", "Asset not found")
         if separator and tail == "content" and handler.command in {"GET", "HEAD"}:
             self._send_file(handler, record)

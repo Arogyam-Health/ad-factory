@@ -322,6 +322,7 @@ class StructuredBrowserExecutor:
         *,
         required_kind: str | None = None,
     ) -> LocalResource:
+        library_image = required_kind in {"product_image", "reference_image"}
         with self.state._connect() as conn:
             row = conn.execute(
                 """
@@ -330,9 +331,12 @@ class StructuredBrowserExecutor:
                 JOIN resource_versions rv
                   ON rv.resource_id = r.resource_id AND rv.version = ?
                 JOIN objects o ON o.sha256 = rv.object_sha256
-                WHERE r.resource_id = ? AND r.owner_key = ?
-                """,
-                (int(version), resource_id, owner_key),
+                WHERE r.resource_id = ?
+                """
+                + ("" if library_image else " AND r.owner_key = ?"),
+                (int(version), resource_id)
+                if library_image
+                else (int(version), resource_id, owner_key),
             ).fetchone()
         if row is None or row["deleted_at"] is not None:
             raise ValueError("Selected local resource version is unavailable")

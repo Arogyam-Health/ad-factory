@@ -13,6 +13,7 @@ type Asset = { resource_id: string; url?: string; filename?: string; version?: n
 type ReferenceProps = {
   authenticated: boolean;
   userId: string;
+  orgId?: string;
   deviceId: string;
   personas: Persona[];
   selected: Set<number>;
@@ -57,6 +58,18 @@ type ReferenceApi = ReferenceProps & {
 };
 
 const ReferenceCtx = createContext<ReferenceApi | null>(null);
+
+function localReferenceOwner(props: Pick<ReferenceProps, "userId" | "orgId" | "deviceId">) {
+  const session = localDataPlane.session(props.deviceId);
+  if ((session?.owner_type === "org" || session?.owner_type === "user") && session.owner_id) {
+    return { ownerType: session.owner_type, ownerId: session.owner_id };
+  }
+  const useOrg = Boolean(props.orgId && props.orgId !== "personal");
+  return {
+    ownerType: useOrg ? "org" : "user",
+    ownerId: useOrg ? String(props.orgId) : props.userId,
+  };
+}
 
 function useReference() {
   const ctx = useContext(ReferenceCtx);
@@ -298,9 +311,10 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
       setBusy(true);
       props.setStatus("Preparing reference run…");
       try {
+        const owner = localReferenceOwner(props);
         const envelope = await localDataPlane.allocateLocalRun({
-          ownerType: "user",
-          ownerId: props.userId,
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
           flowType: "reference",
           settings: { engine, generate_916: make916 },
         });

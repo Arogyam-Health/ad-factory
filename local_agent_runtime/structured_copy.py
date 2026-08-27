@@ -311,10 +311,10 @@ class StructuredCopyExecutor:
                     """
                     SELECT 1 FROM resources r JOIN resource_versions rv
                       ON rv.resource_id = r.resource_id
-                    WHERE r.resource_id = ? AND r.owner_key = ? AND r.kind = 'product_image'
+                    WHERE r.resource_id = ? AND r.kind = 'product_image'
                       AND rv.version = ? AND r.deleted_at IS NULL
                     """,
-                    (resource_id, owner_key, version),
+                    (resource_id, version),
                 ).fetchone()
                 if row is None:
                     raise ValueError("Selected local product asset is unavailable")

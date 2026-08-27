@@ -3,6 +3,13 @@ export class LocalDataPlaneClient {
   restoreStoredSession(preferredOwners?: { ownerType?: string; owner_type?: string; ownerId?: string; owner_id?: string }[]):
     | { deviceId: string; agentId: string; session: unknown }
     | null;
+  session(deviceId?: string, ownerKey?: string): {
+    owner_type?: string;
+    owner_id?: string;
+    access_token?: string;
+    agent_id?: string;
+    scopes?: string[];
+  } | null;
   ensurePaired(opts: {
     ownerType?: string;
     ownerId: string;

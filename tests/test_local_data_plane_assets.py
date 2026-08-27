@@ -104,6 +104,34 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
             },
         )
 
+    def test_library_images_are_visible_across_owners(self) -> None:
+        source = self.server.config.paths.staging / "org-product.png"
+        source.write_bytes(PNG)
+        version = self.server.state.put_resource(
+            source=source,
+            owner_key="org:other-org",
+            kind="product_image",
+            logical_key="product_image/org-upload",
+            operation_id="org-upload",
+            metadata={"filename": "org-product.png"},
+            media_type="image/png",
+        )
+        with self.open("GET", "/v1/assets") as response:
+            items = json.loads(response.read())["items"]
+        self.assertIn(version.resource_id, [item["resource_id"] for item in items])
+        self.assertNotIn("owner_key", json.dumps(items))
+        with self.open("GET", f"/v1/assets/{version.resource_id}/content") as response:
+            self.assertEqual(response.read(), PNG)
+        with self.open(
+            "DELETE",
+            f"/v1/assets/{version.resource_id}",
+            headers={"Idempotency-Key": "delete-org-library-image"},
+        ):
+            pass
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.open("GET", f"/v1/assets/{version.resource_id}")
+        self.assertEqual(caught.exception.code, 404)
+
     def test_streaming_upload_is_hashed_idempotent_and_metadata_is_redacted(self) -> None:
         with self.upload() as response:
             created = json.loads(response.read())

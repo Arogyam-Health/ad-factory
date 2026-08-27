@@ -1629,6 +1629,7 @@ export function StudioPage() {
     <ReferenceFlow
       authenticated={user.authenticated}
       userId={user.user_id}
+      orgId={orgId}
       deviceId={deviceId}
       personas={personas}
       selected={selected}

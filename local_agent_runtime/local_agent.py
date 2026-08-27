@@ -634,7 +634,7 @@ def _filter_product_asset_references(
     ]
 
 
-def _local_product_asset_references(owner_key: str) -> list[dict[str, Any]]:
+def _local_product_asset_references() -> list[dict[str, Any]]:
     if AGENT_STATE is None:
         return []
     with AGENT_STATE._connect() as conn:
@@ -642,10 +642,9 @@ def _local_product_asset_references(owner_key: str) -> list[dict[str, Any]]:
             """
             SELECT resource_id, current_version
             FROM resources
-            WHERE owner_key = ? AND kind = 'product_image' AND deleted_at IS NULL
+            WHERE kind = 'product_image' AND deleted_at IS NULL
             ORDER BY created_at, resource_id
             """,
-            (owner_key,),
         ).fetchall()
     return [
         {
@@ -859,7 +858,7 @@ def execute_job(job: dict[str, Any]) -> None:
                     else None
                 )
                 product_assets = _filter_product_asset_references(
-                    _local_product_asset_references(owner_key),
+                    _local_product_asset_references(),
                     selected_ids,
                 )
                 if selected_ids is not None and not product_assets:

@@ -382,6 +382,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
         latest: dict[str, Any] | None = None,
         retry_count: int = 0,
         error_code: str = "",
+        error_message: str = "",
     ) -> dict[str, Any]:
         projection: dict[str, Any] = {
             "job_id": job_id,
@@ -409,6 +410,8 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
             )
         if error_code:
             projection["error_code"] = error_code
+        if error_message:
+            projection["error_message"] = " ".join(str(error_message).split())[:512]
         return projection
 
     def execute(self, job_id: str) -> dict[str, Any]:
@@ -684,6 +687,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 if isinstance(exc, (ValueError, json.JSONDecodeError, UnicodeDecodeError))
                 else "browser_automation_failed"
             )
+            print(f"  [agent] Reference job {job_id} failed: {type(exc).__name__}: {exc}", flush=True)
             failed = self._reference_projection(
                 job_id=job_id,
                 run_id=run_id,
@@ -698,6 +702,7 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
                 latest=latest,
                 retry_count=retry_count,
                 error_code=error_code,
+                error_message=str(exc),
             )
             self.state.queue_projection(
                 owner_key=owner_key,
