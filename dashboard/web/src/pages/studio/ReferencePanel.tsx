@@ -485,8 +485,6 @@ export function ReferenceCompose() {
   const {
     language,
     setLanguage,
-    selectedConcept,
-    setSelectedConcept,
     studio,
     personas,
     selected,
@@ -502,7 +500,6 @@ export function ReferenceCompose() {
           </button>
         ))}
       </div>
-      <ConceptSelect value={selectedConcept} onChange={setSelectedConcept} studio={studio} />
       <p className="hint" style={{ marginBottom: 12 }}>{jobCount} jobs · personas × selected references × language</p>
       <div className="persona-board">
         <div className="persona-grid">
