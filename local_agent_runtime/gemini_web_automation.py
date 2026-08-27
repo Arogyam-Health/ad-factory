@@ -814,6 +814,8 @@ def assert_not_temporary_chat(page: Page) -> None:
 
 def open_prompt_tab(context, page: Page, job_index: int, first_tab_mode: str, download_dir: Path) -> Page:
     """Open/switch to the tab that will own this prompt."""
+    from local_agent_runtime.browser import open_cdp_page
+
     use_current = False
     if job_index == 1 and first_tab_mode == "reuse-blank":
         try:
@@ -824,11 +826,8 @@ def open_prompt_tab(context, page: Page, job_index: int, first_tab_mode: str, do
     if use_current:
         print("  [tab] Reusing initial blank tab for the first prompt.")
         return page
-    else:
-        print("  [tab] Opening a new tab for this prompt.")
-        new_page = context.new_page()
-        new_page.bring_to_front()
-        return new_page
+    print("  [tab] Opening a new tab for this prompt.")
+    return open_cdp_page(context, new_window=False)
 
 
 
@@ -3580,7 +3579,8 @@ def run() -> None:
 
         log_progress("browser_launch", f"Launching browser, headless={args.headless}")
         pw, context = build_browser_context(args, download_dir=browser_download_dir)
-        page = context.pages[0]
+        from local_agent_runtime.browser import open_cdp_page
+        page = open_cdp_page(context, new_window=True)
 
         log_progress("browser_ready", f"Browser launched, headless={args.headless}")
         print(f"\nBrowser launched in {'HEADLESS' if args.headless else 'VISIBLE'} mode.")

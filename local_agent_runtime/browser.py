@@ -112,3 +112,37 @@ def resolve_browser_executable(
         except OSError:
             continue
     return ""
+
+
+def open_cdp_page(context, *, new_window: bool = False):
+    """Open a tab or window on the already-logged-in CDP Chrome profile.
+
+    Uses the default browser context so ChatGPT/Gemini cookies stay shared.
+    Falls back to a new tab if a separate window cannot be created.
+    """
+    import time
+
+    if new_window:
+        try:
+            before = {id(page) for page in list(context.pages)}
+            seed = context.pages[0] if context.pages else context.new_page()
+            session = context.new_cdp_session(seed)
+            session.send("Target.createTarget", {"url": "about:blank", "newWindow": True})
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                for page in context.pages:
+                    if id(page) not in before:
+                        try:
+                            page.bring_to_front()
+                        except Exception:
+                            pass
+                        return page
+                time.sleep(0.1)
+        except Exception as exc:
+            print(f"  [tab] New window unavailable ({type(exc).__name__}); opening a tab instead.")
+    page = context.new_page()
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+    return page

@@ -511,10 +511,12 @@ p {
 }
 
 .persona-board {
-  min-height: min(560px, calc(100vh - 220px));
-  height: min(68vh, 720px);
-  max-height: min(72vh, 760px);
-  overflow: auto;
+  min-height: 280px;
+  height: min(52vh, 560px);
+  max-height: min(56vh, 600px);
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
   padding: 10px;
   border: 1px solid var(--rule);
   background: var(--surface-0);
@@ -1929,4 +1931,34 @@ input[type="number"].field::-webkit-inner-spin-button {
   .skeleton::after {
     display: none;
   }
+}
+
+.desk-pane-hidden {
+  display: none;
+}
+
+.run-terminal {
+  margin-top: 12px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--ink) 86%, var(--canvas));
+  color: #d7d2c4;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid var(--rule-strong);
+}
+
+.run-terminal-line.warning {
+  color: #e6d08a;
+}
+
+.run-terminal-line.error {
+  color: #e8b4b4;
+}
+
+.run-terminal-time {
+  opacity: 0.55;
+  margin-right: 8px;
 }

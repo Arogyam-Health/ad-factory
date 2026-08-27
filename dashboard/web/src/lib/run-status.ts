@@ -8,6 +8,14 @@ export function copyFailureDetail(
   return String(copy.last_error || copy.error_detail || copy.error_code || "").trim();
 }
 
+export function imageFailureDetail(
+  run: Pick<Run, "image_generation">,
+): string {
+  const image = run.image_generation;
+  if (!image) return "";
+  return String(image.last_error || image.error_code || "").trim();
+}
+
 export function displayRunStatus(run: Pick<Run, "status" | "image_count" | "image_generation" | "copy_generation">): string {
   const raw = String(run.status || "unknown");
   if (["deleted", "deleting", "purge_failed", "failed", "canceled"].includes(raw)) {

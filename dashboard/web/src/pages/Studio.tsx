@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { fetchJSON, peekCache, invalidateRuns, clearCache } from "@/lib/api";
+import { Link, useLocation } from "react-router-dom";
+import { fetchJSON, peekCache, invalidateRuns, clearCache, primeCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { catalogConcepts, catalogLanguageModes, CONFIG_SECTIONS, KEY_HINTS, KEY_LABELS, readStudioOrg, summarizeConfigValue, writeStudioOrg } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
@@ -11,11 +11,14 @@ import { ListPager } from "@/components/ListPager";
 import { Skeleton, SkeletonLines } from "@/components/Skeleton";
 import { FileViewer } from "@/components/FileViewer";
 import { FileField } from "@/components/FileField";
+import { RunTerminal, type TerminalLine } from "@/components/RunTerminal";
 import { ReferenceCompose, ReferenceDesk, ReferenceFlow } from "@/pages/studio/ReferencePanel";
 import { RunWorkspace } from "@/pages/studio/RunWorkspace";
 import { BatchSelect } from "@/pages/studio/BatchSelect";
 import { LazyAsset } from "@/pages/studio/LazyAsset";
-import { displayRunStatus } from "@/lib/run-status";
+import { copyFailureDetail, displayRunStatus, imageFailureDetail } from "@/lib/run-status";
+import { filterRunsByFlow, isActiveRun, isReferenceRun, mergeRunLists } from "@/lib/run-flow";
+import { readStudioSession, writeStudioSession } from "@/lib/studio-session";
 import { DownloadKindDialog } from "@/components/DownloadKindDialog";
 
 const FALLBACK_FORMATS: FormatOption[] = [
@@ -40,6 +43,15 @@ const PICKED_PRODUCTS_KEY = "adFactoryPickedProducts";
 const PRODUCT_ASSET_LIMIT = 48;
 
 type ProductAsset = { resource_id: string; url?: string; filename?: string; version?: number };
+type FlowKind = "structured" | "reference";
+
+function restorePairing() {
+  try {
+    return localDataPlane.restoreStoredSession() || null;
+  } catch {
+    return null;
+  }
+}
 
 function readPickedProducts(): string[] | null {
   try {
@@ -97,6 +109,10 @@ async function queueRunImages(
 
 export function StudioPage() {
   const { user, ready } = useAuth();
+  const { pathname } = useLocation();
+  const studioVisible = pathname === "/";
+  const restoredPair = useMemo(() => restorePairing(), []);
+  const savedSession = useMemo(() => readStudioSession(), []);
   const [loading, setLoading] = useState(() => !(
     peekCache<StudioPayload>("/api/defaults")
     || peekCache<StudioPayload>("/api/public/studio")
@@ -113,11 +129,13 @@ export function StudioPage() {
   const [flow, setFlow] = useState<"structured" | "reference">(
     () => (localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured"),
   );
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [status, setStatus] = useState("Plate is idle.");
+  const [structuredRuns, setStructuredRuns] = useState<Run[]>(() => savedSession.structuredRuns);
+  const [referenceRuns, setReferenceRuns] = useState<Run[]>(() => savedSession.referenceRuns);
+  const [status, setStatus] = useState(savedSession.status || "Plate is idle.");
+  const [logLines, setLogLines] = useState<TerminalLine[]>(() => savedSession.logLines);
   const [busy, setBusy] = useState(false);
-  const [deviceId, setDeviceId] = useState("");
-  const [agentId, setAgentId] = useState("");
+  const [deviceId, setDeviceId] = useState(restoredPair?.deviceId || "");
+  const [agentId, setAgentId] = useState(restoredPair?.agentId || "");
   const [assets, setAssets] = useState<ProductAsset[]>([]);
   const [pickedProducts, setPickedProducts] = useState<Set<string>>(new Set());
   const [assetBusy, setAssetBusy] = useState(false);
@@ -139,17 +157,20 @@ export function StudioPage() {
   const [shareBg, setShareBg] = useState(false);
   const [reuseBg, setReuseBg] = useState("");
   const [reusePattern, setReusePattern] = useState("");
-  const [copyJobId, setCopyJobId] = useState("");
-  const [activeRunId, setActiveRunId] = useState("");
+  const [copyJobId, setCopyJobId] = useState(() => savedSession.copyJobId);
+  const [activeRunId, setActiveRunId] = useState(() => savedSession.activeRunId);
   const [viewer, setViewer] = useState("");
   const [plateTick, setPlateTick] = useState(0);
   const [configMeta, setConfigMeta] = useState<EffectiveConfig | null>(null);
   const [orgId, setOrgId] = useState(() => readStudioOrg());
   const [sources, setSources] = useState<ConfigSource[]>([]);
   const [pickedRuns, setPickedRuns] = useState<Set<string>>(new Set());
-  const [openRunId, setOpenRunId] = useState("");
+  const [openRunByFlow, setOpenRunByFlow] = useState({
+    structured: localStorage.getItem("adFactoryCopyPipeline") || "",
+    reference: localStorage.getItem("adFactoryReferencePipeline") || "",
+  });
   const [runPage, setRunPage] = useState(0);
-  const [paired, setPaired] = useState(false);
+  const [paired, setPaired] = useState(() => Boolean(restoredPair?.deviceId));
   const [deskTick, setDeskTick] = useState(0);
   const [batchBusy, setBatchBusy] = useState("");
   const [imageEngine, setImageEngine] = useState(() => (
@@ -164,7 +185,75 @@ export function StudioPage() {
   const [downloadPrompt, setDownloadPrompt] = useState(false);
   const newestRunRef = useRef("");
   const runsPanelRef = useRef<HTMLDivElement>(null);
+  const logIdRef = useRef(savedSession.logId);
+  const lastPollLineRef = useRef<Record<string, string>>({});
+  const pollIdsRef = useRef<string[]>([]);
+  const runs = flow === "reference" ? referenceRuns : structuredRuns;
+  const openRunId = openRunByFlow[flow];
 
+  function appendLog(text: string, level: TerminalLine["level"] = "info") {
+    logIdRef.current += 1;
+    const id = logIdRef.current;
+    setLogLines((prev) => [...prev, { id, at: Date.now(), level, text }].slice(-80));
+    setStatus(text);
+  }
+
+  function setFlowOpenRun(target: FlowKind, id: string) {
+    setOpenRunByFlow((prev) => ({ ...prev, [target]: id }));
+    if (target === "structured" && id) localStorage.setItem("adFactoryCopyPipeline", id);
+    if (target === "reference" && id) localStorage.setItem("adFactoryReferencePipeline", id);
+  }
+
+  function writeRunList(target: FlowKind, rows: Run[], allowEmpty = false) {
+    const filtered = filterRunsByFlow(rows, target);
+    const setter = target === "reference" ? setReferenceRuns : setStructuredRuns;
+    setter((prev) => {
+      if (!filtered.length && prev.length && !allowEmpty) return prev;
+      return filtered;
+    });
+    if (filtered.length || allowEmpty) {
+      primeCache(`/api/runs?flow=${target}`, { runs: filtered });
+    }
+  }
+
+  async function loadFlowRuns(target: FlowKind, allowEmpty = true) {
+    const url = `/api/runs?flow=${target}`;
+    const data = await fetchJSON<{ runs?: Run[] }>(url, { noCache: true });
+    let next = data.runs || [];
+    const remembered = target === "reference" ? savedSession.referenceRuns : savedSession.structuredRuns;
+    if (remembered.length) next = mergeRunLists(next, remembered);
+    if (paired && deviceId) {
+      try {
+        const local = await localDataPlane.listRuns(deviceId);
+        const mapped = local.map((item) => ({
+          run_id: item.run_id,
+          display_batch: item.display_batch,
+          flow_type: item.flow_type,
+          created_at: item.created_at,
+          status: item.status || "queued",
+          prompt_count: item.prompt_count || 0,
+          image_count: item.image_count || 0,
+        }));
+        next = mergeRunLists(next, filterRunsByFlow(mapped, target));
+      } catch {
+        /* local inventory is optional */
+      }
+    }
+    writeRunList(target, next, allowEmpty && !remembered.length);
+    return next;
+  }
+
+  useEffect(() => {
+    writeStudioSession({
+      structuredRuns,
+      referenceRuns,
+      copyJobId,
+      activeRunId,
+      logLines,
+      logId: logIdRef.current,
+      status,
+    });
+  }, [structuredRuns, referenceRuns, copyJobId, activeRunId, logLines, status]);
   useEffect(() => {
     localStorage.setItem("adFactoryFlowMode", flow);
   }, [flow]);
@@ -213,6 +302,26 @@ export function StudioPage() {
     if (!ready) return;
     setOrgId(readStudioOrg(user.user_id));
   }, [ready, user.user_id]);
+
+  useEffect(() => {
+    if (!studioVisible || !user.authenticated || !user.user_id) return;
+    const owners = [
+      ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
+      { ownerType: "user" as const, ownerId: user.user_id },
+    ];
+    const restored = localDataPlane.restoreStoredSession(owners);
+    if (restored) {
+      setDeviceId(restored.deviceId);
+      setAgentId(restored.agentId);
+      setPaired(true);
+    }
+    void localDataPlane.discover()
+      .then((info) => {
+        const liveId = String(info.device_id || restored?.deviceId || "");
+        if (liveId) setDeviceId(liveId);
+      })
+      .catch(() => undefined);
+  }, [studioVisible, user.authenticated, user.user_id, orgId]);
 
   function selectOrg(next: string) {
     setOrgId(next);
@@ -314,6 +423,8 @@ export function StudioPage() {
         ? `/api/defaults?org_id=${encodeURIComponent(orgId)}`
         : "/api/defaults";
       const runUrl = `/api/runs?flow=${flow}`;
+      const structuredUrl = "/api/runs?flow=structured";
+      const referenceUrl = "/api/runs?flow=reference";
       const effectiveUrl = orgId !== "personal"
         ? `/api/config/effective?org_id=${encodeURIComponent(orgId)}`
         : "/api/config/effective";
@@ -337,12 +448,16 @@ export function StudioPage() {
       const cachedDefaults = peekCache<StudioPayload>(defaultsUrl) || peekCache<StudioPayload>("/api/public/studio");
       const cachedPersonas = peekCache<{ personas?: Persona[] }>(personaUrl);
       const cachedRuns = peekCache<{ runs?: Run[] }>(runUrl);
+      const cachedStructured = peekCache<{ runs?: Run[] }>(structuredUrl);
+      const cachedReference = peekCache<{ runs?: Run[] }>(referenceUrl);
       const cachedEffective = peekCache<EffectiveConfig>(effectiveUrl);
       if (cachedDefaults || cachedPersonas?.personas?.length) {
         applyPersonas(cachedDefaults || null, cachedPersonas?.personas);
         setLoading(false);
       }
-      if (cachedRuns?.runs) setRuns(cachedRuns.runs);
+      if (cachedStructured?.runs) writeRunList("structured", cachedStructured.runs);
+      if (cachedReference?.runs) writeRunList("reference", cachedReference.runs);
+      if (cachedRuns?.runs) writeRunList(flow, cachedRuns.runs);
       if (cachedEffective) {
         setConfigMeta(cachedEffective);
         if (cachedEffective.config) {
@@ -371,14 +486,16 @@ export function StudioPage() {
 
       try {
         if (user.authenticated) {
-          const [defaults, personasData, runData] = await Promise.all([
+          const [defaults, personasData] = await Promise.all([
             fetchJSON<StudioPayload>(defaultsUrl),
             fetchJSON<{ personas?: Persona[] }>(personaUrl).catch(() => ({ personas: [] })),
-            fetchJSON<{ runs?: Run[] }>(runUrl),
           ]);
           if (cancelled) return;
           applyPersonas(defaults, personasData.personas);
-          setRuns(runData.runs || []);
+          await Promise.all([
+            loadFlowRuns("structured", false),
+            loadFlowRuns("reference", false),
+          ]);
           setStatus((prev) => (prev.startsWith("Error: 401") ? "Plate is idle." : prev));
           setLoading(false);
           void fetchJSON<EffectiveConfig>(effectiveUrl)
@@ -398,7 +515,6 @@ export function StudioPage() {
           setStudio(data);
           setPersonas(data.personas || []);
           setConfigMeta({ can_edit: false, source: "generic", mode: "generic" });
-          setRuns([]);
         }
       } catch (err) {
         if (!cancelled) setStatus(String(err));
@@ -479,12 +595,12 @@ export function StudioPage() {
         if (cancelled) return;
         failures = 0;
         if (["completed", "failed", "canceled"].includes(String(job.status || ""))) {
-          const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
+          await loadFlowRuns("structured", true);
           if (cancelled) return;
-          setRuns(data.runs || []);
-          setOpenRunId(activeRunId);
+          setFlowOpenRun("structured", activeRunId);
           setRunPage(0);
           setDeskTick((value) => value + 1);
+          appendLog(`Structured copy ${job.status} for ${activeRunId}.`, job.status === "failed" ? "error" : "info");
           return;
         }
       } catch {
@@ -501,7 +617,52 @@ export function StudioPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [copyJobId, activeRunId, flow]);
+  }, [copyJobId, activeRunId]);
+
+  useEffect(() => {
+    pollIdsRef.current = [...structuredRuns, ...referenceRuns]
+      .filter(isActiveRun)
+      .map((run) => run.run_id || "")
+      .filter(Boolean);
+  }, [structuredRuns, referenceRuns]);
+
+  useEffect(() => {
+    if (!studioVisible) return;
+    let cancelled = false;
+    let timer = 0;
+    async function tick() {
+      const ids = pollIdsRef.current;
+      for (const id of ids) {
+        try {
+          const live = await fetchJSON<Run>(`/api/runs/${encodeURIComponent(id)}`, { noCache: true });
+          if (cancelled) return;
+          const target: FlowKind = isReferenceRun(live) ? "reference" : "structured";
+          const setter = target === "reference" ? setReferenceRuns : setStructuredRuns;
+          setter((prev) => prev.map((row) => (row.run_id === id ? { ...row, ...live } : row)));
+          const err = imageFailureDetail(live) || copyFailureDetail(live);
+          const key = `${displayRunStatus(live)}:${err}`;
+          if (lastPollLineRef.current[id] === key) continue;
+          lastPollLineRef.current[id] = key;
+          appendLog(
+            err
+              ? `${live.display_batch || id}: ${displayRunStatus(live)} — ${err}`
+              : `${live.display_batch || id}: ${displayRunStatus(live)}`,
+            err ? "error" : "info",
+          );
+        } catch {
+          /* keep last known row */
+        }
+      }
+      timer = window.setTimeout(() => {
+        void tick();
+      }, 4000);
+    }
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [studioVisible]);
   const hypVars = studio?.hypothesis?.variables || {};
   const hypOptions = hypVars[hypType]?.options || [];
 
@@ -667,16 +828,17 @@ export function StudioPage() {
       });
       localStorage.setItem("adFactoryCopyPipeline", envelope.run_id);
       setActiveRunId(envelope.run_id);
-      setOpenRunId(envelope.run_id);
+      setFlowOpenRun("structured", envelope.run_id);
       setRunPage(0);
       setCopyJobId(queued.copy_job_id || "");
-      setRuns((prev) => {
+      setStructuredRuns((prev) => {
         if (prev.some((run) => run.run_id === envelope.run_id)) return prev;
         return [
           {
             run_id: envelope.run_id,
             display_batch: envelope.display_batch || envelope.run_id,
             created_at: Date.now() / 1000,
+            flow_type: "structured",
             prompt_count: 0,
             image_count: 0,
             status: "running",
@@ -686,16 +848,15 @@ export function StudioPage() {
         ];
       });
       invalidateRuns();
-      setStatus(`Plate ${envelope.display_batch || envelope.run_id} is on press.`);
-      const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
-      setRuns(data.runs || []);
-      setOpenRunId(envelope.run_id);
+      appendLog(`Plate ${envelope.display_batch || envelope.run_id} is on press.`);
+      await loadFlowRuns("structured", true);
+      setFlowOpenRun("structured", envelope.run_id);
       setRunPage(0);
       requestAnimationFrame(() => {
         runsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     } catch (err) {
-      setStatus(String(err));
+      appendLog(String(err), "error");
     } finally {
       setBusy(false);
     }
@@ -730,8 +891,8 @@ export function StudioPage() {
 
   function openRunRow(run: Run) {
     const id = run.run_id || "";
-    setOpenRunId(id);
-    setActiveRunId(id);
+    setFlowOpenRun(isReferenceRun(run) ? "reference" : "structured", id);
+    if (!isReferenceRun(run)) setActiveRunId(id);
   }
 
   async function pairLocalAgent() {
@@ -757,7 +918,7 @@ export function StudioPage() {
           setDeviceId(id);
           setAgentId(nextAgent);
           setPaired(true);
-          setStatus(`Paired ${id.slice(0, 8)}. Local files are available in this tab.`);
+          appendLog(`Paired ${id.slice(0, 8)}. Local files are available in this tab.`);
           return { ok: true, deviceId: id, agentId: nextAgent };
         } catch (err) {
           lastError = err;
@@ -794,9 +955,8 @@ export function StudioPage() {
       }
       invalidateRuns();
       const label = mode === "both" ? "4:5 + 9:16" : "4:5";
-      setStatus(`Queued ${label} for ${ids.length} batch${ids.length === 1 ? "" : "es"}.`);
-      const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
-      setRuns(data.runs || []);
+      appendLog(`Queued ${label} for ${ids.length} batch${ids.length === 1 ? "" : "es"}.`);
+      await loadFlowRuns(flow, true);
     } catch (err) {
       setStatus(String(err));
     } finally {
@@ -832,7 +992,7 @@ export function StudioPage() {
 
   async function cancelSelected() {
     const ids = [...pickedRuns];
-    if (!ids.length && activeRunId) ids.push(activeRunId);
+    if (!ids.length && openRunId) ids.push(openRunId);
     if (!ids.length) {
       setStatus("Select a run to cancel.");
       return;
@@ -845,9 +1005,8 @@ export function StudioPage() {
         canceled += 1;
       }
       invalidateRuns();
-      setStatus(`Cancel requested for ${canceled} run${canceled === 1 ? "" : "s"}.`);
-      const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
-      setRuns(data.runs || []);
+      appendLog(`Cancel requested for ${canceled} run${canceled === 1 ? "" : "s"}.`, "warning");
+      await loadFlowRuns(flow, true);
       setDeskTick((value) => value + 1);
     } catch (err) {
       setStatus(String(err));
@@ -964,6 +1123,7 @@ export function StudioPage() {
               <p className="hint" style={{ margin: "14px 0 18px" }}>
                 {paired ? `Paired ${deviceId.slice(0, 8)} · ` : deviceId ? `Agent ${deviceId.slice(0, 8)} reachable · ` : ""}{status}
               </p>
+              <RunTerminal lines={logLines} />
               <label className="hint">
                 Hypothesis
                 <select className="field" value={hypType} onChange={(e) => { setHypType(e.target.value); setHypVariant(""); }}>
@@ -1214,6 +1374,8 @@ export function StudioPage() {
       ) : (
         <Tile span="side" kicker="02 · Reference desk" title="Context">
           {loading ? <SkeletonLines lines={8} /> : <ReferenceDesk />}
+          <p className="hint" style={{ margin: "14px 0 0" }}>{status}</p>
+          <RunTerminal lines={logLines} />
         </Tile>
       )}
 
@@ -1296,7 +1458,7 @@ export function StudioPage() {
           </Button>
           <Button
             variant="ghost"
-            disabled={Boolean(batchBusy) || (!pickedRuns.size && !activeRunId)}
+            disabled={Boolean(batchBusy) || (!pickedRuns.size && !openRunId)}
             onClick={() => void cancelSelected()}
           >
             {batchBusy === "cancel" ? "Cancelling…" : "Cancel run"}
@@ -1315,7 +1477,7 @@ export function StudioPage() {
           </Button>
           <Button variant="ghost" onClick={async () => {
             const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
-            setRuns(data.runs || []);
+            writeRunList(flow, data.runs || [], true);
             setDeskTick((value) => value + 1);
           }}>Refresh</Button>
           <Button
@@ -1330,7 +1492,8 @@ export function StudioPage() {
                   body: JSON.stringify({ run_ids: [...pickedRuns] }),
                 });
                 clearCache("/api/runs");
-                setRuns((prev) => prev.filter((run) => !pickedRuns.has(run.run_id || "")));
+                const setter = flow === "reference" ? setReferenceRuns : setStructuredRuns;
+                setter((prev) => prev.filter((run) => !pickedRuns.has(run.run_id || "")));
                 setPickedRuns(new Set());
               } catch (err) {
                 setStatus(String(err));
@@ -1352,7 +1515,8 @@ export function StudioPage() {
                   body: JSON.stringify({ confirm: "PURGE" }),
                 });
                 invalidateRuns();
-                setRuns([]);
+                setStructuredRuns([]);
+                setReferenceRuns([]);
               } catch (err) {
                 setStatus(String(err));
               }
@@ -1402,6 +1566,8 @@ export function StudioPage() {
                 <span>{displayRunStatus(run)}</span>
                 <span>{run.prompt_count ?? 0} prompts</span>
                 <span>{run.image_count ?? 0} images</span>
+                {imageFailureDetail(run) ? <span>Image failed: {imageFailureDetail(run)}</span> : null}
+                {copyFailureDetail(run) ? <span>Copy failed: {copyFailureDetail(run)}</span> : null}
               </article>
             ))}
           </div>
@@ -1420,11 +1586,11 @@ export function StudioPage() {
               productAssetIds={[...pickedProducts]}
               refreshToken={deskTick}
               onPair={pairLocalAgent}
-              onClose={() => setOpenRunId("")}
-              onStatus={setStatus}
+              onClose={() => setFlowOpenRun(flow, "")}
+              onStatus={appendLog}
               onRefresh={async () => {
                 const data = await fetchJSON<{ runs?: Run[] }>(`/api/runs?flow=${flow}`, { noCache: true });
-                setRuns(data.runs || []);
+                writeRunList(flow, data.runs || [], true);
               }}
             />
           ) : null}
@@ -1459,7 +1625,6 @@ export function StudioPage() {
     </Bento>
   );
 
-  if (flow !== "reference") return studioBody;
   return (
     <ReferenceFlow
       authenticated={user.authenticated}
@@ -1474,8 +1639,10 @@ export function StudioPage() {
       setSelectedConcept={setSelectedConcept}
       studio={studio}
       status={status}
-      setStatus={setStatus}
-      onRuns={setRuns}
+      setStatus={(msg) => appendLog(msg)}
+      onRuns={(rows) => writeRunList("reference", rows, true)}
+      onOpenRun={(id) => setFlowOpenRun("reference", id)}
+      onStubRun={(run) => setReferenceRuns((prev) => mergeRunLists([run], prev))}
       canEditFiles={canEditFiles}
       configVersion={configMeta?.version}
       configOwnerType={configMeta?.owner_type}

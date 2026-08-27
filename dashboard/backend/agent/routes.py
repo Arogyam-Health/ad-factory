@@ -392,6 +392,10 @@ def queue_structured_image_generation(
                 "status": "queued",
                 "updated_at": time.time(),
                 "image_job_id": job["job_id"],
+                "image_generation": {
+                    "status": "queued",
+                    "job_id": job["job_id"],
+                },
             }
         },
     )
@@ -458,6 +462,10 @@ def queue_reference_generation(
                 "status": "queued",
                 "updated_at": time.time(),
                 "reference_job_id": job["job_id"],
+                "image_generation": {
+                    "status": "queued",
+                    "job_id": job["job_id"],
+                },
             }
         },
     )

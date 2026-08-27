@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchJSON, invalidateRuns } from "@/lib/api";
 import { localDataPlane } from "@/lib/local-data-plane.js";
 import { exactOnImageCopyLines, replaceExactOnImageCopy } from "@/lib/prompt-copy.js";
-import { copyFailureDetail, displayRunStatus } from "@/lib/run-status";
+import { copyFailureDetail, displayRunStatus, imageFailureDetail } from "@/lib/run-status";
 import type { Run } from "@/lib/types";
 import { Button } from "@/components/Button";
 import { ListPager, usePageWindow } from "@/components/ListPager";
@@ -311,6 +311,11 @@ export function RunWorkspace({
       {copyFailureDetail(run) ? (
         <p className="hint" style={{ marginBottom: 10 }}>
           Copy failed: {copyFailureDetail(run)}
+        </p>
+      ) : null}
+      {imageFailureDetail(run) ? (
+        <p className="hint" style={{ marginBottom: 10 }}>
+          Image failed: {imageFailureDetail(run)}
         </p>
       ) : null}
       <p className="hint" style={{ marginBottom: 10 }}>

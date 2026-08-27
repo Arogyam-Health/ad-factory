@@ -39,6 +39,15 @@ export class LocalDataPlaneClient {
   revisionStatus(revisionId: string, deviceId?: string): Promise<{ status?: string; error?: string }>;
   deleteOutput(outputId: string, deviceId?: string): Promise<unknown>;
   downloadRun(runId: string, deviceId?: string, opts?: { includeRaw?: boolean }): Promise<Blob>;
+  listRuns(deviceId?: string): Promise<Array<{
+    run_id?: string;
+    display_batch?: string;
+    flow_type?: string;
+    created_at?: number;
+    status?: string;
+    prompt_count?: number;
+    image_count?: number;
+  }>>;
   deleteRun?(runId: string, deviceId?: string): Promise<unknown>;
   clearSessions(): void;
 }

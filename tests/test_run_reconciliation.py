@@ -565,6 +565,52 @@ class RunReconciliationTests(unittest.TestCase):
         self.assertEqual(query["run_id"], "run-1")
         self.assertEqual(update["$set"]["status"], "purge_failed")
 
+    def test_failed_execute_run_marks_run_image_generation(self) -> None:
+        from dashboard.backend.agent.service import fail_job
+        from dashboard.backend.db.collections import COLL_AGENT_JOBS, COLL_RUNS
+
+        db = MagicMock()
+        jobs = MagicMock()
+        runs = MagicMock()
+        db.__getitem__.side_effect = lambda name: {
+            COLL_AGENT_JOBS: jobs,
+            COLL_RUNS: runs,
+        }[name]
+        jobs.find_one.return_value = {
+            "job_type": "execute_run",
+            "run_id": "run-image-1",
+        }
+
+        with (
+            patch(
+                "dashboard.backend.agent.service._terminal_job_update",
+                return_value=True,
+            ),
+            patch("dashboard.backend.agent.service.get_sync_db", return_value=db),
+        ):
+            self.assertTrue(
+                fail_job(
+                    "job-image-1",
+                    "agent-1",
+                    "dev_" + "a" * 32,
+                    1,
+                    "evt-fail",
+                    "local_execution_failed",
+                    "ChatGPT image script was not found next to the local agent",
+                )
+            )
+
+        runs.update_one.assert_called_once()
+        query, update = runs.update_one.call_args.args
+        self.assertEqual(query["run_id"], "run-image-1")
+        self.assertEqual(update["$set"]["status"], "failed")
+        self.assertEqual(update["$set"]["image_generation"]["status"], "failed")
+        self.assertEqual(
+            update["$set"]["image_generation"]["last_error"],
+            "ChatGPT image script was not found next to the local agent",
+        )
+        self.assertEqual(update["$set"]["image_generation"]["job_id"], "job-image-1")
+
     def test_list_runs_honors_flow_query(self) -> None:
         from dashboard.backend.db.collections import COLL_RUNS
         from dashboard.backend.routes.runs import list_runs

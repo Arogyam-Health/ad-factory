@@ -297,6 +297,10 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("Optional instruction for only this reference image", reference)
         self.assertIn("SwipeLibrary", reference)
         self.assertIn("persona-board", reference)
+        self.assertIn("persona-card-head", reference)
+        self.assertIn("overflow-y: scroll", _read("styles", "global.css"))
+        self.assertIn("adFactoryStudioSession", _read("lib", "studio-session.ts"))
+        self.assertIn("readStudioSession", studio)
         self.assertIn("scroll-snap-type: x mandatory", _read("styles", "global.css"))
         self.assertIn("displayRunStatus", studio)
         self.assertIn("copyFailureDetail", workspace)
@@ -347,6 +351,17 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("openRunRow", studio)
         self.assertIn("scrollbar-color", _read("styles", "global.css"))
         self.assertIn("effectiveUrl", studio)
+        self.assertIn("RunTerminal", studio)
+        self.assertIn("{ noCache: true }", studio)
+        self.assertIn("structuredRuns", studio)
+        self.assertIn("referenceRuns", studio)
+        self.assertIn("desk-pane-hidden", _read("App.tsx"))
+        self.assertIn("Select at least one persona.", reference)
+        self.assertIn("Select at least one reference image.", reference)
+        self.assertIn("Select at least one product image.", reference)
+        self.assertNotIn("Edit persona seed", reference)
+        self.assertIn("imageFailureDetail", workspace)
+        self.assertIn("imageFailureDetail", _read("lib", "run-status.ts"))
 
     def test_copy_provider_errors_are_sticky_and_fallback_is_logged(self) -> None:
         jobs = (

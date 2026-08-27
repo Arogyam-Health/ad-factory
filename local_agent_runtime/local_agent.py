@@ -85,6 +85,34 @@ WS_CLIENT: AgentWebSocketClient | None = None
 LAST_API_ERROR = ""
 _API_SESSIONS = threading.local()
 ACTIVE_JOB_FENCES: dict[str, int] = {}
+MAX_LOCAL_JOB_SLOTS = 3
+ACTIVE_JOB_THREADS: dict[str, threading.Thread] = {}
+_JOB_SLOT_LOCK = threading.Lock()
+
+
+def _prune_job_slots() -> int:
+    with _JOB_SLOT_LOCK:
+        finished = [job_id for job_id, thread in ACTIVE_JOB_THREADS.items() if not thread.is_alive()]
+        for job_id in finished:
+            ACTIVE_JOB_THREADS.pop(job_id, None)
+        return len(ACTIVE_JOB_THREADS)
+
+
+def _dispatch_job(job: dict[str, Any]) -> None:
+    job_id = str(job.get("job_id") or "")
+    if not job_id:
+        return
+    with _JOB_SLOT_LOCK:
+        current = ACTIVE_JOB_THREADS.get(job_id)
+        if current is not None and current.is_alive():
+            return
+        live = sum(1 for thread in ACTIVE_JOB_THREADS.values() if thread.is_alive())
+        if live >= MAX_LOCAL_JOB_SLOTS:
+            print(f"  [agent] Local slots full ({live}/{MAX_LOCAL_JOB_SLOTS}); leaving {job_id} queued", flush=True)
+            return
+        thread = threading.Thread(target=execute_job, args=(job,), name=f"job-{job_id}", daemon=True)
+        ACTIVE_JOB_THREADS[job_id] = thread
+        thread.start()
 _CONTROL_PLANE_PROJECTION_FIELDS = {
     "job_id",
     "run_id",
@@ -450,6 +478,24 @@ def report_job_terminal(
     return False
 
 
+def _safe_job_error(exc: BaseException | str) -> str:
+    text = " ".join(str(exc).split())
+    if not text:
+        return "Local browser automation failed"
+    if "://" in text or text.startswith(("/", "\\")):
+        return "Local browser automation failed"
+    if re.search(r"(?:[A-Za-z]:)?[/\\][\w.-]+", text):
+        allowed = (
+            "was not found next to the local agent",
+            "exited with an error",
+            "timed out",
+            "Canceled by user",
+        )
+        if not any(token in text for token in allowed):
+            return "Local browser automation failed"
+    return text[:512]
+
+
 def _report_local_generation(job_id: str, projection: dict[str, Any], fallback_error: str) -> None:
     status = str(projection.get("status") or "")
     if status == "completed":
@@ -463,10 +509,12 @@ def _report_local_generation(job_id: str, projection: dict[str, Any], fallback_e
             error_message="Canceled by user",
         )
         return
+    raw_message = str(projection.get("error_message") or projection.get("last_error") or "")
     report_job_terminal(
         job_id,
         "fail",
         error_code=str(projection.get("error_code") or fallback_error),
+        error_message=_safe_job_error(raw_message) if raw_message else "",
     )
 
 
@@ -871,7 +919,12 @@ def execute_job(job: dict[str, Any]) -> None:
 
     except Exception as e:
         print(f"  [agent] Job {job_id} failed: {type(e).__name__}")
-        report_job_terminal(job_id, "fail", error_code="local_execution_failed")
+        report_job_terminal(
+            job_id,
+            "fail",
+            error_code="local_execution_failed",
+            error_message=_safe_job_error(e),
+        )
 
 
 def _run_script_job(job_id: str, script_name: str, payload: dict[str, Any]) -> None:
@@ -1583,8 +1636,10 @@ def register_and_run(args: argparse.Namespace) -> None:
                 print("[agent] Render API connection restored.", flush=True)
                 connection_was_down = False
             if jobs:
+                _prune_job_slots()
                 for job in jobs:
-                    execute_job(job)
+                    if isinstance(job, dict):
+                        _dispatch_job(job)
         except Exception as e:
             print(f"[agent] Poll error: {e}")
 

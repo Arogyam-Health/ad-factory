@@ -5,8 +5,8 @@ import { localDataPlane } from "@/lib/local-data-plane.js";
 import type { Persona, Run, StudioPayload } from "@/lib/types";
 import { Button } from "@/components/Button";
 import { FileField } from "@/components/FileField";
-import { FileViewer } from "@/components/FileViewer";
 import { LazyAsset } from "@/pages/studio/LazyAsset";
+import { imageFailureDetail } from "@/lib/run-status";
 
 type Asset = { resource_id: string; url?: string; filename?: string; version?: number };
 
@@ -25,6 +25,8 @@ type ReferenceProps = {
   status: string;
   setStatus: (value: string) => void;
   onRuns: (runs: Run[]) => void;
+  onOpenRun?: (runId: string) => void;
+  onStubRun?: (run: Run) => void;
   canEditFiles?: boolean;
   configVersion?: number;
   configOwnerType?: string;
@@ -47,8 +49,6 @@ type ReferenceApi = ReferenceProps & {
   jobId: string;
   runId: string;
   jobCount: number;
-  viewer: string;
-  setViewer: (value: string) => void;
   toggleRef: (id: string) => void;
   toggleProduct: (id: string) => void;
   uploadKind: (kind: "reference_image" | "product_image", files: FileList | null) => Promise<void>;
@@ -165,9 +165,8 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
   const [engine, setEngine] = useState("chatgpt");
   const [make916, setMake916] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [viewer, setViewer] = useState("");
   const [jobId, setJobId] = useState("");
-  const [runId, setRunId] = useState("");
+  const [runId, setRunId] = useState(() => localStorage.getItem("adFactoryReferencePipeline") || "");
 
   const languageCount = catalogLanguageModes(props.studio).find((item) => item.id === props.language)?.languages?.length || 1;
   const jobCount = props.selected.size * Math.max(pickedRefs.size, 0) * languageCount;
@@ -187,6 +186,36 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
       cancelled = true;
     };
   }, [props.deviceId, props.setStatus]);
+
+  useEffect(() => {
+    if (!runId) return;
+    let cancelled = false;
+    let timer = 0;
+    async function poll() {
+      try {
+        const live = await fetchJSON<Run>(`/api/runs/${encodeURIComponent(runId)}`, { noCache: true });
+        if (cancelled) return;
+        const status = String(live.status || live.image_generation?.status || "");
+        const err = imageFailureDetail(live);
+        if (err) props.setStatus(`${live.display_batch || runId} failed: ${err}`);
+        if (["completed", "failed", "canceled"].includes(status)) {
+          const data = await fetchJSON<{ runs?: Run[] }>("/api/runs?flow=reference", { noCache: true });
+          if (!cancelled) props.onRuns(data.runs || []);
+          return;
+        }
+      } catch {
+        /* keep polling */
+      }
+      timer = window.setTimeout(() => {
+        void poll();
+      }, 4000);
+    }
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [runId]);
 
   async function refreshKind(kind: "reference_image" | "product_image") {
     const items = await localDataPlane.listAssets({ kind, deviceId: props.deviceId });
@@ -210,8 +239,6 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
     jobId,
     runId,
     jobCount,
-    viewer,
-    setViewer,
     toggleRef(id) {
       setPickedRefs((prev) => {
         const next = new Set(prev);
@@ -240,16 +267,32 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
         props.setStatus("Sign in before sending a reference plate.");
         return;
       }
-      if (!props.selected.size || !pickedRefs.size || !pickedProducts.size) {
-        props.setStatus("Pick personas, reference images, and product assets.");
+      if (!props.selected.size) {
+        props.setStatus("Select at least one persona.");
+        return;
+      }
+      if (!pickedRefs.size) {
+        props.setStatus("Select at least one reference image.");
+        return;
+      }
+      if (!pickedProducts.size) {
+        props.setStatus("Select at least one product image.");
         return;
       }
       const starting = asConfigText(props.studio?.config?.reference_starting_prompt);
       const productDoc = asConfigText(props.studio?.config?.reference_product_master_doc);
       const personasText = asConfigText(props.studio?.config?.persona_seeds);
       const conversion = asConfigText(props.studio?.config?.conversion_916_prompt);
-      if (!starting.trim() || !productDoc.trim() || !personasText.trim()) {
-        props.setStatus("Generic/reference files are empty. Open Config and fill the reference docs.");
+      if (!starting.trim()) {
+        props.setStatus("Reference starting prompt is empty. Open Config and fill it.");
+        return;
+      }
+      if (!productDoc.trim()) {
+        props.setStatus("Reference product document is empty. Open Config and fill it.");
+        return;
+      }
+      if (!personasText.trim()) {
+        props.setStatus("Persona seeds are empty. Open Config and fill them.");
         return;
       }
       setBusy(true);
@@ -339,6 +382,18 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
         });
         setRunId(envelope.run_id);
         setJobId(queued.job_id || "");
+        localStorage.setItem("adFactoryReferencePipeline", envelope.run_id);
+        props.onOpenRun?.(envelope.run_id);
+        props.onStubRun?.({
+          run_id: envelope.run_id,
+          display_batch: envelope.display_batch || envelope.run_id,
+          flow_type: "reference",
+          created_at: Date.now() / 1000,
+          prompt_count: 0,
+          image_count: 0,
+          status: "queued",
+          image_generation: { status: "queued", job_id: queued.job_id || "" },
+        });
         invalidateRuns();
         const data = await fetchJSON<{ runs?: Run[] }>("/api/runs?flow=reference", { noCache: true });
         props.onRuns(data.runs || []);
@@ -378,7 +433,6 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
     jobId,
     runId,
     jobCount,
-    viewer,
   ]);
 
   return <ReferenceCtx.Provider value={value}>{children}</ReferenceCtx.Provider>;
@@ -438,8 +492,10 @@ export function ReferenceCompose() {
               className={`persona-card${selected.has(persona.number) ? " active" : ""}`}
               onClick={() => togglePersona(persona.number)}
             >
-              <span className="persona-num">P{String(persona.number).padStart(2, "0")}</span>
-              <span>{persona.name}</span>
+              <span className="persona-card-head">
+                <span className="persona-num">P{String(persona.number).padStart(2, "0")}</span>
+                <span>{persona.name}</span>
+              </span>
             </button>
           ))}
           {!personas.length ? <p className="hint">No personas on this plate yet.</p> : null}
@@ -597,20 +653,6 @@ export function ReferenceDesk() {
           </article>
         ))}
       </SwipeLibrary>
-      <div className="action-row" style={{ margin: "14px 0" }}>
-        <Button variant="ghost" onClick={() => ctx.setViewer("persona_seeds")}>
-          {ctx.canEditFiles ? "Edit persona seed" : "View persona seed"}
-        </Button>
-        <Button variant="ghost" onClick={() => ctx.setViewer("reference_starting_prompt")}>
-          {ctx.canEditFiles ? "Edit starting prompt" : "Reference starting prompt"}
-        </Button>
-        <Button variant="ghost" onClick={() => ctx.setViewer("reference_product_master_doc")}>
-          {ctx.canEditFiles ? "Edit product document" : "Product document"}
-        </Button>
-        <Button variant="ghost" onClick={() => ctx.setViewer("conversion_916_prompt")}>
-          {ctx.canEditFiles ? "Edit 9:16 conversion" : "9:16 conversion"}
-        </Button>
-      </div>
       <ConceptSelect value={ctx.selectedConcept} onChange={ctx.setSelectedConcept} studio={ctx.studio} />
       <div className="action-row">
         <label className="toolbar-field">
@@ -631,18 +673,6 @@ export function ReferenceDesk() {
           Cancel run
         </Button>
       </div>
-      {ctx.viewer ? (
-        <FileViewer
-          configKey={ctx.viewer}
-          value={ctx.studio?.config?.[ctx.viewer]}
-          canEdit={Boolean(ctx.canEditFiles)}
-          version={ctx.configVersion}
-          ownerType={ctx.configOwnerType}
-          orgId={ctx.configOrgId}
-          onClose={() => ctx.setViewer("")}
-          onSaved={ctx.onConfigSaved}
-        />
-      ) : null}
     </>
   );
 }

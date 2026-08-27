@@ -73,30 +73,6 @@ def wsl_to_windows_path(path: str) -> str:
     return path
 
 
-_PERSONA_SEEDS_CACHE: dict[int, str] | None = None
-
-
-def _load_persona_slug_map() -> dict[int, str]:
-    global _PERSONA_SEEDS_CACHE
-    if _PERSONA_SEEDS_CACHE is not None:
-        return _PERSONA_SEEDS_CACHE
-    seeds_path = Path(__file__).resolve().parent.parent / "persona_seeds.json"
-    result: dict[int, str] = {}
-    if seeds_path.exists():
-        try:
-            data = json.loads(seeds_path.read_text(encoding="utf-8"))
-            for entry in data:
-                pn = int(entry.get("persona_number", 0))
-                name = str(entry.get("persona_name", "")).strip()
-                if pn < 1 or not name:
-                    continue
-                result[pn] = persona_name_to_slug(name)
-        except Exception:
-            pass
-    _PERSONA_SEEDS_CACHE = result
-    return result
-
-
 def persona_name_to_slug(name: str) -> str:
     s = name.strip().lower()
     s = re.sub(r"[+\-]+", " ", s)
@@ -106,18 +82,28 @@ def persona_name_to_slug(name: str) -> str:
 
 
 def persona_slug(persona_number: int) -> str:
-    mapping = _load_persona_slug_map()
-    if persona_number in mapping:
-        return mapping[persona_number]
     return f"P{int(persona_number):02d}"
 
 
 def persona_number_from_slug(slug: str) -> int | None:
-    mapping = _load_persona_slug_map()
-    for pn, s in mapping.items():
-        if s == slug:
-            return pn
-    return None
+    match = re.fullmatch(r"p(\d+)", str(slug or "").strip(), flags=re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _persona_from_sidecar(path: Path, fallback: str) -> str:
+    sidecar = path.with_suffix(".json")
+    if not sidecar.exists():
+        return fallback
+    try:
+        meta = json.loads(sidecar.read_text(encoding="utf-8"))
+    except Exception:
+        return fallback
+    name = str(meta.get("persona_name") or meta.get("persona") or "").strip()
+    if name:
+        return persona_name_to_slug(name)
+    return fallback
 
 
 def _detect_windows_user() -> str:
@@ -327,7 +313,7 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
     Canonical form:  ``<FMT>_<persona_slug>_<LANG>_<angle>[_A<NN>].txt``
     e.g. ``BA_always_hungry_EN_pain_point.txt``,
          ``HERO_stress_snacker_HI_desired_outcome_A01.txt``
-    The persona slug is looked up in persona_seeds.json to recover the persona number.
+    The persona slug comes from the prompt filename or the prompt sidecar persona name.
     """
     stem = re.sub(r"^run_[a-f0-9]{12}__", "", path.stem, flags=re.IGNORECASE)
     patterns = [
@@ -340,12 +326,7 @@ def _parse_prompt_name(path: Path) -> tuple[str, str, str, str, str]:
         if m:
             fmt = m.group("fmt").upper()
             slug = m.group("slug").lower()
-            # Prefer the canonical slug from persona_seeds.json (so a typo in
-            # the prompt filename is corrected to the canonical persona name).
-            # Fall back to the raw slug from the filename if the lookup fails,
-            # so the generated image filename still matches the prompt stem.
-            pn = persona_number_from_slug(slug)
-            persona = persona_slug(pn) if pn is not None else slug
+            persona = _persona_from_sidecar(path, slug)
             lang = m.group("lang").upper() if "lang" in m.groupdict() and m.group("lang") else "XX"
             variant = m.group("variant").upper() if "variant" in m.groupdict() and m.group("variant") else ""
             angle = m.group("angle") if "angle" in m.groupdict() and m.group("angle") else (m.group("angle2") if "angle2" in m.groupdict() and m.group("angle2") else "")
@@ -972,13 +953,7 @@ def click_new_chat_safely(page: Page) -> bool:
 
 
 def open_prompt_tab(context: BrowserContext, page: Page, job_index: int, first_tab_mode: str) -> Page:
-    if EXTENSION_CDP_MODE:
-        print("  [tab] Reusing extension-controlled browser tab.")
-        try:
-            page.bring_to_front()
-        except Exception:
-            pass
-        return page
+    from local_agent_runtime.browser import open_cdp_page
 
     use_current = False
     if job_index == 1 and first_tab_mode == "reuse-blank":
@@ -992,9 +967,7 @@ def open_prompt_tab(context: BrowserContext, page: Page, job_index: int, first_t
         return page
 
     print("  [tab] Opening a new tab for this prompt.")
-    new_page = context.new_page()
-    new_page.bring_to_front()
-    return new_page
+    return open_cdp_page(context, new_window=False)
 
 
 def navigate_to_fresh_chat(page: Page, manual_login_timeout: int, strict_login: bool) -> None:
@@ -3226,7 +3199,8 @@ def run() -> None:
 
             if not context.pages and args.extension_cdp:
                 raise RuntimeError("Extension CDP proxy connected, but Playwright did not receive any page targets from the extension")
-            page = context.pages[0] if context.pages else context.new_page()
+            from local_agent_runtime.browser import open_cdp_page
+            page = open_cdp_page(context, new_window=True)
             page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
 
             for index, job in enumerate(jobs, start=1):

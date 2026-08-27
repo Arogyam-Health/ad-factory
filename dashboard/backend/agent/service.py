@@ -1197,4 +1197,22 @@ def fail_job(
                     }
                 },
             )
+        elif job and job.get("job_type") == "execute_run" and job.get("run_id"):
+            now = time.time()
+            last_error = str(error_message or error_code or "Local browser automation failed")
+            db[COLL_RUNS].update_one(
+                {"run_id": job.get("run_id")},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "updated_at": now,
+                        "image_generation": {
+                            "status": "failed",
+                            "error_code": error_code or "local_execution_failed",
+                            "last_error": last_error[:512],
+                            "job_id": job_id,
+                        },
+                    }
+                },
+            )
     return failed

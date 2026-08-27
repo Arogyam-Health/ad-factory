@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Shell } from "@/components/Shell";
 import { StudioPage } from "@/pages/Studio";
 import { ConfigPage } from "@/pages/Config";
@@ -9,35 +9,41 @@ import { AdminPage } from "@/pages/Admin";
 import { InvitePage } from "@/pages/Invite";
 import { GuidePage } from "@/pages/Guide";
 
+function Desk() {
+  const { pathname } = useLocation();
+  const onStudio = pathname === "/";
+  return (
+    <Shell>
+      <div className={onStudio ? "desk-pane" : "desk-pane desk-pane-hidden"} aria-hidden={!onStudio}>
+        <StudioPage />
+      </div>
+      <Routes>
+        <Route path="/" element={null} />
+        <Route path="/config" element={<ConfigPage />} />
+        <Route path="/config.html" element={<Navigate to="/config" replace />} />
+        <Route path="/guide" element={<GuidePage />} />
+        <Route path="/guide.html" element={<Navigate to="/guide" replace />} />
+        <Route path="/docs/:docName" element={<GuidePage />} />
+        <Route path="/STRUCTURED_COPY_SYSTEM.md" element={<GuidePage />} />
+        <Route path="/OPERATOR_PLATE_GUIDE.md" element={<Navigate to="/guide" replace />} />
+        <Route path="/organizations" element={<OrganizationsPage />} />
+        <Route path="/organizations.html" element={<Navigate to="/organizations" replace />} />
+        <Route path="/traces" element={<TracesPage />} />
+        <Route path="/traces.html" element={<Navigate to="/traces" replace />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile.html" element={<Navigate to="/profile" replace />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin.html" element={<Navigate to="/admin" replace />} />
+      </Routes>
+    </Shell>
+  );
+}
+
 export function App() {
   return (
     <Routes>
       <Route path="/invite/:token" element={<InvitePage />} />
-      <Route
-        path="*"
-        element={
-          <Shell>
-            <Routes>
-              <Route path="/" element={<StudioPage />} />
-              <Route path="/config" element={<ConfigPage />} />
-              <Route path="/config.html" element={<Navigate to="/config" replace />} />
-              <Route path="/guide" element={<GuidePage />} />
-              <Route path="/guide.html" element={<Navigate to="/guide" replace />} />
-              <Route path="/docs/:docName" element={<GuidePage />} />
-              <Route path="/STRUCTURED_COPY_SYSTEM.md" element={<GuidePage />} />
-              <Route path="/OPERATOR_PLATE_GUIDE.md" element={<Navigate to="/guide" replace />} />
-              <Route path="/organizations" element={<OrganizationsPage />} />
-              <Route path="/organizations.html" element={<Navigate to="/organizations" replace />} />
-              <Route path="/traces" element={<TracesPage />} />
-              <Route path="/traces.html" element={<Navigate to="/traces" replace />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/profile.html" element={<Navigate to="/profile" replace />} />
-              <Route path="/admin" element={<AdminPage />} />
-              <Route path="/admin.html" element={<Navigate to="/admin" replace />} />
-            </Routes>
-          </Shell>
-        }
-      />
+      <Route path="*" element={<Desk />} />
     </Routes>
   );
 }

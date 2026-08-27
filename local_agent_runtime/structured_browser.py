@@ -4,11 +4,13 @@ import hashlib
 import json
 import mimetypes
 import os
+import queue
 import re
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -146,7 +148,7 @@ class LocalScriptBrowser:
         project_root: Path | None = None,
         cancel_check: Callable[[], bool] | None = None,
     ) -> None:
-        self.project_root = project_root or Path(__file__).resolve().parents[1]
+        self.project_root = project_root or Path(__file__).resolve().parent
         self.cancel_check = cancel_check or (lambda: False)
 
     def generate(
@@ -159,9 +161,12 @@ class LocalScriptBrowser:
         upload_manifest_path: Path,
         output_dir: Path,
     ) -> bytes:
-        script = self.project_root / "scripts" / (
+        label = "Gemini" if engine == "gemini" else "ChatGPT"
+        script = self.project_root / (
             "gemini_web_automation.py" if engine == "gemini" else "chatgpt_web_sutomation.py"
         )
+        if not script.is_file():
+            raise RuntimeError(f"{label} image script was not found next to the local agent")
         output_dir.mkdir(parents=True, exist_ok=True)
         result_manifest = output_dir / "result.json"
         command = [
@@ -185,7 +190,27 @@ class LocalScriptBrowser:
         ]
         if engine == "chatgpt":
             command.extend(["--cdp-url", os.getenv("AGENT_CDP_URL", "http://127.0.0.1:9222")])
-        proc = subprocess.Popen(command, cwd=self.project_root, start_new_session=True)
+        proc = subprocess.Popen(
+            command,
+            cwd=str(self.project_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            start_new_session=True,
+        )
+        stdout_queue: queue.Queue[str | None] = queue.Queue()
+
+        def _read_stdout() -> None:
+            try:
+                for line in proc.stdout or []:
+                    stdout_queue.put(line)
+            finally:
+                stdout_queue.put(None)
+
+        reader = threading.Thread(target=_read_stdout, daemon=True)
+        reader.start()
         deadline = time.time() + 900
         try:
             while True:
@@ -196,15 +221,21 @@ class LocalScriptBrowser:
                     _terminate_process_tree(proc)
                     raise RuntimeError("Local browser automation timed out")
                 try:
-                    proc.wait(timeout=0.5)
-                    break
-                except subprocess.TimeoutExpired:
+                    line = stdout_queue.get(timeout=0.5)
+                except queue.Empty:
+                    if proc.poll() is not None and stdout_queue.empty():
+                        break
                     continue
+                if line is None:
+                    break
+                clean = line.rstrip()
+                if clean:
+                    print(clean, flush=True)
         finally:
             if proc.poll() is None:
                 _terminate_process_tree(proc)
         if proc.returncode:
-            raise RuntimeError("Local browser automation failed")
+            raise RuntimeError(f"{label} image script exited with an error")
         result = json.loads(result_manifest.read_text(encoding="utf-8"))
         output_path = Path(str(result.get("output_path") or "")).resolve()
         output_path.relative_to(output_dir.resolve())

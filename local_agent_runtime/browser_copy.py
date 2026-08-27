@@ -84,7 +84,8 @@ def _attach_cdp(engine: str) -> dict[str, Any]:
             )
         except Exception:
             pass
-        page = context.new_page()
+        from local_agent_runtime.browser import open_cdp_page
+        page = open_cdp_page(context, new_window=True)
         return {
             "engine": engine,
             "playwright": playwright,

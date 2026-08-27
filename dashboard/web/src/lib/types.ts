@@ -44,6 +44,7 @@ export type Run = {
   display_batch?: string;
   created_at?: number;
   flow?: string;
+  flow_type?: string;
   device_id?: string;
   agent_id?: string;
   copy_generation?: {
@@ -53,7 +54,12 @@ export type Run = {
     error_code?: string;
     error_detail?: string;
   };
-  image_generation?: { status?: string };
+  image_generation?: {
+    status?: string;
+    last_error?: string;
+    error_code?: string;
+    job_id?: string;
+  };
 };
 
 export type ProviderSafe = {
