@@ -136,9 +136,50 @@ def remember_job_page(job_pages: list, page):
     return page
 
 
+def _job_target_ids(context) -> list[str]:
+    if context is None:
+        return []
+    ids = getattr(context, "_ad_factory_job_target_ids", None)
+    if not isinstance(ids, list):
+        ids = []
+        try:
+            setattr(context, "_ad_factory_job_target_ids", ids)
+        except Exception:
+            return []
+    return ids
+
+
+def _remember_job_target(context, target_id: str) -> None:
+    if not target_id or context is None:
+        return
+    ids = _job_target_ids(context)
+    if target_id not in ids:
+        ids.append(target_id)
+
+
+def _forget_job_target(context, target_id: str) -> None:
+    if not target_id or context is None:
+        return
+    ids = _job_target_ids(context)
+    try:
+        while target_id in ids:
+            ids.remove(target_id)
+    except Exception:
+        pass
+
+
+def _target_id_from_info(info) -> str:
+    if not isinstance(info, dict):
+        return ""
+    nested = info.get("targetInfo")
+    if isinstance(nested, dict) and nested.get("targetId"):
+        return str(nested["targetId"])
+    return str(info.get("targetId") or "")
+
+
 def _page_target_id(page) -> str:
-    stored = str(getattr(page, "_ad_factory_target_id", "") or "")
-    if stored:
+    stored = getattr(page, "_ad_factory_target_id", "")
+    if isinstance(stored, str) and stored:
         return stored
     context = getattr(page, "context", None)
     if context is None:
@@ -148,12 +189,69 @@ def _page_target_id(page) -> str:
         info = session.send("Target.getTargetInfo")
     except Exception:
         return ""
-    if not isinstance(info, dict):
-        return ""
-    nested = info.get("targetInfo")
-    if isinstance(nested, dict) and nested.get("targetId"):
-        return str(nested["targetId"])
-    return str(info.get("targetId") or "")
+    return _target_id_from_info(info)
+
+
+def _page_list(context) -> list:
+    if context is None:
+        return []
+    pages = getattr(context, "pages", None)
+    if isinstance(pages, list):
+        return pages
+    if isinstance(pages, tuple):
+        return list(pages)
+    return []
+
+
+def _existing_page(context):
+    pages = _page_list(context)
+    return pages[0] if pages else None
+
+
+def _cdp_session(context, page=None):
+    """CDP session for this context. Never opens a new Chrome window to get one."""
+    if context is None:
+        return None
+    seed = page if page is not None else _existing_page(context)
+    if seed is not None:
+        try:
+            return context.new_cdp_session(seed)
+        except Exception:
+            pass
+    browser = getattr(context, "browser", None)
+    if browser is None:
+        return None
+    try:
+        return browser.new_browser_cdp_session()
+    except Exception:
+        return None
+
+
+def _close_target_id(context, target_id: str) -> None:
+    if not target_id or context is None:
+        return
+    try:
+        session = _cdp_session(context)
+        if session is not None:
+            session.send("Target.closeTarget", {"targetId": target_id})
+    except Exception:
+        pass
+    _forget_job_target(context, target_id)
+
+
+def _wait_for_adopted_page(context, target_id: str, timeout: float):
+    import time
+
+    if not target_id or context is None:
+        return None
+    deadline = time.time() + max(0.0, timeout)
+    while True:
+        for page in _page_list(context):
+            if _page_target_id(page) == target_id:
+                return page
+        if time.time() >= deadline:
+            return None
+        time.sleep(0.1)
 
 
 def close_cdp_page(page) -> None:
@@ -164,22 +262,10 @@ def close_cdp_page(page) -> None:
     target_id = _page_target_id(page)
     try:
         page.close()
-        return
     except Exception:
         pass
-    if not target_id or context is None:
-        return
-    try:
-        pages = list(getattr(context, "pages", []) or [])
-        seed = next((candidate for candidate in pages if candidate is not page), None)
-        if seed is None and pages:
-            seed = pages[0]
-        if seed is None:
-            return
-        session = context.new_cdp_session(seed)
-        session.send("Target.closeTarget", {"targetId": target_id})
-    except Exception:
-        pass
+    if target_id:
+        _close_target_id(context, target_id)
 
 
 def close_job_pages(job_pages: list | None) -> None:
@@ -187,9 +273,16 @@ def close_job_pages(job_pages: list | None) -> None:
         close_cdp_page(page)
 
 
+def close_job_targets(context) -> None:
+    """Close Chrome targets this job created that Playwright never adopted."""
+    for target_id in list(_job_target_ids(context)):
+        _close_target_id(context, target_id)
+
+
 def release_browser(playwright, context, job_pages: list | None = None) -> None:
     """Detach Playwright. On CDP, close only job pages; never kill Chrome."""
     close_job_pages(job_pages)
+    close_job_targets(context)
     if context is not None and not is_cdp_attached(context):
         try:
             context.close()
@@ -219,43 +312,31 @@ def install_job_signal_handlers() -> None:
             continue
 
 
-def open_cdp_page(context, *, new_window: bool = False):
-    """Open a tab or window on the already-logged-in CDP Chrome profile.
+def open_cdp_page(context, *, new_window: bool = False, timeout: float = 8.0):
+    """Open one tab or window on the already-logged-in CDP Chrome profile.
 
-    Uses the default browser context so ChatGPT/Gemini cookies stay shared.
-    Falls back to a new tab if a separate window cannot be created.
+    Creates exactly one Chrome target. If Playwright never attaches to it,
+    that target is closed and no second window is opened.
     """
-    import time
-
-    if new_window:
-        try:
-            before = {id(page) for page in list(context.pages)}
-            seed = context.pages[0] if context.pages else context.new_page()
-            session = context.new_cdp_session(seed)
-            created = session.send(
-                "Target.createTarget", {"url": "about:blank", "newWindow": True}
-            )
-            created_id = ""
-            if isinstance(created, dict):
-                created_id = str(created.get("targetId") or "")
-            deadline = time.time() + 5
-            while time.time() < deadline:
-                for page in context.pages:
-                    if id(page) not in before:
-                        if created_id:
-                            try:
-                                page._ad_factory_target_id = created_id
-                            except Exception:
-                                pass
-                        try:
-                            page.bring_to_front()
-                        except Exception:
-                            pass
-                        return page
-                time.sleep(0.1)
-        except Exception as exc:
-            print(f"  [tab] New window unavailable ({type(exc).__name__}); opening a tab instead.")
-    page = context.new_page()
+    session = _cdp_session(context)
+    if session is None:
+        raise RuntimeError("Chrome CDP is not available to open a job window.")
+    created = session.send(
+        "Target.createTarget",
+        {"url": "about:blank", "newWindow": bool(new_window)},
+    )
+    created_id = _target_id_from_info(created)
+    if not created_id:
+        raise RuntimeError("Chrome did not return a target for the job window.")
+    _remember_job_target(context, created_id)
+    page = _wait_for_adopted_page(context, created_id, timeout)
+    if page is None:
+        _close_target_id(context, created_id)
+        raise RuntimeError("Chrome opened a job window but Playwright did not attach to it.")
+    try:
+        page._ad_factory_target_id = created_id
+    except Exception:
+        pass
     try:
         page.bring_to_front()
     except Exception:

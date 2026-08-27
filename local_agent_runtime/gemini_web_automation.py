@@ -40,8 +40,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from local_agent_runtime.browser import (
+    close_cdp_page,
     install_job_signal_handlers,
     mark_cdp_attached,
+    open_cdp_page,
     release_browser,
     remember_job_page,
     resolve_browser_executable,
@@ -604,8 +606,6 @@ def build_browser_context(args: argparse.Namespace, download_dir: Path):
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         ctx.set_default_timeout(30000)
         grant_gemini_permissions(ctx)
-        if not ctx.pages:
-            ctx.new_page().goto("about:blank")
         mark_cdp_attached(ctx)
         return p, ctx
     except Exception:
@@ -3724,7 +3724,14 @@ def run() -> None:
                         log_progress("error", f"Job {idx} attempt {attempt}: {exc}")
                         if attempt < attempts:
                             try:
-                                page = remember_job_page(job_pages, context.new_page())
+                                close_cdp_page(page)
+                            except Exception:
+                                pass
+                            try:
+                                page = remember_job_page(
+                                    job_pages,
+                                    open_cdp_page(context, new_window=True),
+                                )
                             except Exception:
                                 pass
                             continue

@@ -734,8 +734,6 @@ def build_browser_context(args: argparse.Namespace, download_dir: Path):
             deadline = time.time() + 5
             while not context.pages and time.time() < deadline:
                 time.sleep(0.25)
-        elif not context.pages:
-            context.new_page().goto("about:blank")
         mark_cdp_attached(context)
         return p, context
 

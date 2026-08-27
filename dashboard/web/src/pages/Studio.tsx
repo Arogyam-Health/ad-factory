@@ -1119,8 +1119,10 @@ export function StudioPage() {
     try {
       for (const id of ids) {
         const run = runs.find((item) => item.run_id === id);
+        const label = String(run?.display_batch || "").trim();
+        if (!label || label.toLowerCase().startsWith("run_")) continue;
         const blob = await localDataPlane.downloadRun(id, live.deviceId, { includeRaw });
-        triggerDownload(blob, `${run?.display_batch || id}.zip`);
+        triggerDownload(blob, `${label}.zip`);
       }
       setDeskTick((value) => value + 1);
       setStatus(`Downloaded ${ids.length} batch${ids.length === 1 ? "" : "es"} (${includeRaw ? "cropped + raw" : "cropped only"}).`);

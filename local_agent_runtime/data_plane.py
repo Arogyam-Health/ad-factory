@@ -59,6 +59,16 @@ IMAGE_SIGNATURES = {
 }
 
 
+def run_zip_filename(display_batch: Any) -> str:
+    """Plate label only. Never name a download after the raw run_id."""
+    label = Path(str(display_batch or "").strip()).name
+    if (not label) or label.lower().startswith("run_"):
+        label = "batch"
+    if not label.lower().endswith(".zip"):
+        label = f"{label}.zip"
+    return label
+
+
 @dataclass
 class PairingChallenge:
     digest: str
@@ -310,13 +320,15 @@ class LocalDataPlane:
         media_type: str,
         *,
         filename: str | None = None,
+        download: bool = True,
     ) -> None:
         handler.send_response(status)
         handler.send_header("Content-Type", media_type)
         handler.send_header("Content-Length", str(len(body)))
         if filename:
+            kind = "attachment" if download else "inline"
             handler.send_header(
-                "Content-Disposition", f'attachment; filename="{Path(filename).name}"'
+                "Content-Disposition", f'{kind}; filename="{Path(filename).name}"'
             )
         self._cors(handler)
         handler.end_headers()
@@ -2386,12 +2398,15 @@ class LocalDataPlane:
         self, handler: Any, owner_key: str, run_id: str, *, include_raw: bool = False
     ) -> None:
         self._session(handler, "content:read")
+        run = self._run(owner_key, run_id)
+        label = run_zip_filename((run or {}).get("display_batch"))
         self._bytes(
             handler,
             200,
             build_output_zip(self.state, owner_key, run_id, include_raw=include_raw),
             "application/zip",
-            filename=f"{run_id}.zip",
+            filename=label,
+            download=False,
         )
 
     def _backup_route(self, handler: Any, path: str) -> None:

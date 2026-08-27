@@ -367,6 +367,8 @@ class FrontendControlPlaneContractTests(unittest.TestCase):
         self.assertIn("Select batches", studio)
         self.assertIn("Download batches", studio)
         self.assertIn("DownloadKindDialog", studio)
+        self.assertIn('startsWith("run_")', studio)
+        self.assertNotIn("${run?.display_batch || id}.zip", studio)
         self.assertIn("includeRaw", studio)
         self.assertIn("Cropped + raw", _read("components", "DownloadKindDialog.tsx"))
         self.assertIn("DownloadKindDialog", gallery)

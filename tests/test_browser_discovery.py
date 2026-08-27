@@ -74,6 +74,20 @@ class BrowserDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(found_which, "/usr/bin/google-chrome")
 
+    def test_run_zip_uses_plate_label_not_run_id(self) -> None:
+        from local_agent_runtime.data_plane import run_zip_filename
+
+        self.assertEqual(run_zip_filename("ref_v1"), "ref_v1.zip")
+        self.assertEqual(run_zip_filename("v3"), "v3.zip")
+        self.assertEqual(run_zip_filename("run_abc123"), "batch.zip")
+        self.assertEqual(run_zip_filename(""), "batch.zip")
+        plane = (Path(__file__).resolve().parents[1] / "local_agent_runtime" / "data_plane.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('filename=f"{run_id}.zip"', plane)
+        self.assertIn("run_zip_filename", plane)
+        self.assertIn("download=False", plane)
+
     def test_gemini_default_upload_dir_is_not_a_personal_path(self) -> None:
         root = Path(__file__).resolve().parents[1]
         gemini = (root / "local_agent_runtime" / "gemini_web_automation.py").read_text(encoding="utf-8")
@@ -88,6 +102,10 @@ class BrowserDiscoveryTests(unittest.TestCase):
         self.assertIn("release_browser", gemini)
         self.assertIn("release_browser", chatgpt)
         self.assertIn("close_cdp_page", (root / "local_agent_runtime" / "browser.py").read_text(encoding="utf-8"))
+        self.assertIn("close_job_targets", (root / "local_agent_runtime" / "browser.py").read_text(encoding="utf-8"))
+        self.assertNotIn("context.new_page()", gemini)
+        chatgpt_cdp = chatgpt.split("connect_over_cdp", 1)[1].split("launch_persistent_context", 1)[0]
+        self.assertNotIn("new_page()", chatgpt_cdp)
         self.assertNotIn("def _browser_candidates", agent)
         self.assertIn("LOCAL_DASHBOARD_ORIGINS", agent)
         self.assertIn("http://127.0.0.1:4090", agent)
@@ -260,6 +278,119 @@ class CloseCdpPageTests(unittest.TestCase):
 
         page.close.assert_called_once()
         context.close.assert_called_once()
+        playwright.stop.assert_called_once()
+
+    def test_close_cdp_page_always_closes_target(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import close_cdp_page
+
+        context = MagicMock()
+        page = MagicMock()
+        page.context = context
+        page._ad_factory_target_id = "tid-1"
+        context.pages = [page]
+        context.close = MagicMock()
+        session = MagicMock()
+        context.new_cdp_session.return_value = session
+
+        close_cdp_page(page)
+
+        page.close.assert_called_once()
+        session.send.assert_any_call("Target.closeTarget", {"targetId": "tid-1"})
+        context.close.assert_not_called()
+
+    def test_open_cdp_page_does_not_call_new_page_after_create_target(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import open_cdp_page
+
+        context = MagicMock()
+        seed = MagicMock(name="seed")
+        created = MagicMock(name="created")
+        seed.context = context
+        created.context = context
+        pages = [seed]
+        context.pages = pages
+        context.new_page = MagicMock(side_effect=AssertionError("new_page should not be called"))
+
+        def new_cdp_session(page):
+            session = MagicMock()
+
+            def send(method, params=None):
+                if method == "Target.createTarget":
+                    if created not in pages:
+                        pages.append(created)
+                    return {"targetId": "tid-new"}
+                if method == "Target.getTargetInfo":
+                    if page is created:
+                        return {"targetId": "tid-new"}
+                    return {"targetId": "tid-seed"}
+                return {}
+
+            session.send.side_effect = send
+            return session
+
+        context.new_cdp_session.side_effect = new_cdp_session
+        page = open_cdp_page(context, new_window=True, timeout=1)
+        self.assertIs(page, created)
+        context.new_page.assert_not_called()
+        self.assertEqual(created._ad_factory_target_id, "tid-new")
+
+    def test_open_cdp_page_closes_orphan_if_not_adopted(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import open_cdp_page
+
+        context = MagicMock()
+        seed = MagicMock(name="seed")
+        seed.context = context
+        context.pages = [seed]
+        context.new_page = MagicMock(side_effect=AssertionError("new_page should not be called"))
+        calls: list[tuple] = []
+
+        def new_cdp_session(page):
+            session = MagicMock()
+
+            def send(method, params=None):
+                calls.append((method, params))
+                if method == "Target.createTarget":
+                    return {"targetId": "tid-orphan"}
+                if method == "Target.getTargetInfo":
+                    return {"targetId": "tid-seed"}
+                return {}
+
+            session.send.side_effect = send
+            return session
+
+        context.new_cdp_session.side_effect = new_cdp_session
+        with self.assertRaises(RuntimeError):
+            open_cdp_page(context, new_window=True, timeout=0.2)
+        context.new_page.assert_not_called()
+        self.assertIn(("Target.closeTarget", {"targetId": "tid-orphan"}), calls)
+
+    def test_release_browser_closes_orphan_targets(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import mark_cdp_attached, release_browser
+
+        context = MagicMock()
+        mark_cdp_attached(context)
+        context._ad_factory_job_target_ids = ["orphan-1"]
+        seed = MagicMock()
+        seed.context = context
+        context.pages = [seed]
+        session = MagicMock()
+        context.new_cdp_session.return_value = session
+        browser = MagicMock()
+        context.browser = browser
+        playwright = MagicMock()
+
+        release_browser(playwright, context, [])
+
+        session.send.assert_any_call("Target.closeTarget", {"targetId": "orphan-1"})
+        context.close.assert_not_called()
+        browser.close.assert_not_called()
         playwright.stop.assert_called_once()
 
 

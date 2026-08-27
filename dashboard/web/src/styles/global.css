@@ -2162,21 +2162,21 @@ input[type="number"].field::-webkit-inner-spin-button {
   overflow-x: hidden;
   overflow-y: auto;
   padding: 12px 14px;
-  background: color-mix(in srgb, var(--ink) 86%, var(--canvas));
-  color: #d7d2c4;
+  background: #000;
+  color: #fff;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
-  border: 1px solid var(--rule-strong);
+  border: 1px solid #333;
 }
 
 .run-terminal-line.warning {
-  color: #e6d08a;
+  color: #ffe08a;
 }
 
 .run-terminal-line.error {
-  color: #e8b4b4;
+  color: #ff8b8b;
 }
 
 .run-terminal-time {
