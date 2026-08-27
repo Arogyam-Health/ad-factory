@@ -196,6 +196,7 @@ console.log(JSON.stringify(simplified));
         self.assertIn("--api-base pointing at this site", client)
         self.assertNotIn("The selected run belongs to a different local agent", client)
         self.assertIn("ensurePaired({", studio)
+        self.assertIn("{ silent: true }", studio)
         self.assertIn("localDataPlane.discover()", studio)
         self.assertIn("restoreStoredSession", studio)
         self.assertIn("restoreStoredSession(preferredOwners", client)

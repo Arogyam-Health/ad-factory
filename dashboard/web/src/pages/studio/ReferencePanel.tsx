@@ -14,6 +14,7 @@ type ReferenceProps = {
   authenticated: boolean;
   userId: string;
   orgId?: string;
+  paired?: boolean;
   deviceId: string;
   personas: Persona[];
   selected: Set<number>;
@@ -184,8 +185,11 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
   const languageCount = catalogLanguageModes(props.studio).find((item) => item.id === props.language)?.languages?.length || 1;
   const jobCount = props.selected.size * Math.max(pickedRefs.size, 0) * languageCount;
 
+  const setStatusRef = useRef(props.setStatus);
+  setStatusRef.current = props.setStatus;
+
   useEffect(() => {
-    if (!props.deviceId) return;
+    if (!props.deviceId || !localDataPlane.session(props.deviceId)) return;
     let cancelled = false;
     Promise.all([
       localDataPlane.listAssets({ kind: "reference_image", deviceId: props.deviceId }),
@@ -194,11 +198,13 @@ export function ReferenceFlow({ children, ...props }: ReferenceProps & { childre
       if (cancelled) return;
       setRefs(refItems.slice(0, 48));
       setProducts(productItems.slice(0, 48));
-    }).catch((err) => props.setStatus(String(err)));
+    }).catch((err) => {
+      if (!cancelled) setStatusRef.current(String(err));
+    });
     return () => {
       cancelled = true;
     };
-  }, [props.deviceId, props.setStatus]);
+  }, [props.deviceId, props.paired]);
 
   useEffect(() => {
     if (!runId) return;

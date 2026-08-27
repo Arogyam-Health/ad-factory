@@ -26,6 +26,16 @@ function ownerKeyOf(ownerType, ownerId) {
   return `${ownerType || "user"}:${ownerId || ""}`;
 }
 
+function splitOwnerKey(owner) {
+  const raw = String(owner || "");
+  const split = raw.indexOf(":");
+  if (split < 1) return null;
+  const ownerType = raw.slice(0, split);
+  const ownerId = raw.slice(split + 1);
+  if ((ownerType !== "user" && ownerType !== "org") || !ownerId) return null;
+  return { ownerType, ownerId };
+}
+
 function storageGet(key) {
   try {
     const local = window.localStorage?.getItem(key);
@@ -204,6 +214,7 @@ export class LocalDataPlaneClient {
   constructor(baseUrl = LOCAL_API_ORIGIN) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this._pairedOwner = "";
+    this._repairPromise = null;
   }
 
   async discover() {
@@ -414,10 +425,30 @@ export class LocalDataPlaneClient {
     return { info, agent, session };
   }
 
+  async _repairSession(deviceId = "") {
+    if (this._repairPromise) return this._repairPromise;
+    const owner = splitOwnerKey(this._pairedOwner || this.activeOwnerKey(deviceId));
+    if (!owner) return null;
+    this._repairPromise = this.ensurePaired({
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      deviceId,
+    })
+      .then((next) => next.session || null)
+      .catch(() => null)
+      .finally(() => {
+        this._repairPromise = null;
+      });
+    return this._repairPromise;
+  }
+
   async authorizedFetch(path, options = {}, deviceId) {
     const liveDeviceId = this._liveDeviceId || deviceId;
     let session = this.session(liveDeviceId, this._pairedOwner)
       || this.session(deviceId, this._pairedOwner);
+    if (!session?.access_token) {
+      session = await this._repairSession(liveDeviceId || deviceId);
+    }
     if (!session?.access_token) throw new Error("Local pairing session is required");
     const send = (accessToken) => {
       const headers = new Headers(options.headers || {});

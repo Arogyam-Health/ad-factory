@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { fetchJSON, peekCache, invalidateRuns, clearCache, primeCache } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -191,12 +191,17 @@ export function StudioPage() {
   const runs = flow === "reference" ? referenceRuns : structuredRuns;
   const openRunId = openRunByFlow[flow];
 
-  function appendLog(text: string, level: TerminalLine["level"] = "info") {
-    logIdRef.current += 1;
-    const id = logIdRef.current;
-    setLogLines((prev) => [...prev, { id, at: Date.now(), level, text }].slice(-80));
-    setStatus(text);
-  }
+  const appendLog = useCallback((text: string, level: TerminalLine["level"] = "info") => {
+    const next = String(text || "").trim();
+    if (!next) return;
+    setLogLines((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.text === next && last.level === level) return prev;
+      logIdRef.current += 1;
+      return [...prev, { id: logIdRef.current, at: Date.now(), level, text: next }].slice(-80);
+    });
+    setStatus((prev) => (prev === next ? prev : next));
+  }, []);
 
   function setFlowOpenRun(target: FlowKind, id: string) {
     setOpenRunByFlow((prev) => ({ ...prev, [target]: id }));
@@ -271,7 +276,7 @@ export function StudioPage() {
     localStorage.setItem(PICKED_PRODUCTS_KEY, JSON.stringify([...pickedProducts]));
   }, [pickedProducts, assets.length]);
   useEffect(() => {
-    if (!paired || !deviceId) return;
+    if (!paired || !deviceId || !localDataPlane.session(deviceId)) return;
     let cancelled = false;
     setAssetBusy(true);
     void localDataPlane.listAssets({ kind: "product_image", deviceId })
@@ -303,24 +308,24 @@ export function StudioPage() {
     setOrgId(readStudioOrg(user.user_id));
   }, [ready, user.user_id]);
 
+  const pairRef = useRef<(opts?: { silent?: boolean }) => Promise<{ ok: boolean; deviceId: string; agentId: string }>>(
+    async () => ({ ok: false, deviceId: "", agentId: "" }),
+  );
+
   useEffect(() => {
     if (!studioVisible || !user.authenticated || !user.user_id) return;
-    const owners = [
-      ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
-      { ownerType: "user" as const, ownerId: user.user_id },
-    ];
-    const restored = localDataPlane.restoreStoredSession(owners);
-    if (restored) {
-      setDeviceId(restored.deviceId);
-      setAgentId(restored.agentId);
-      setPaired(true);
+    let cancelled = false;
+    let timer = 0;
+    async function connect() {
+      const live = await pairRef.current({ silent: true });
+      if (cancelled) return;
+      if (!live.ok) timer = window.setTimeout(connect, 15000);
     }
-    void localDataPlane.discover()
-      .then((info) => {
-        const liveId = String(info.device_id || restored?.deviceId || "");
-        if (liveId) setDeviceId(liveId);
-      })
-      .catch(() => undefined);
+    void connect();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [studioVisible, user.authenticated, user.user_id, orgId]);
 
   function selectOrg(next: string) {
@@ -775,7 +780,9 @@ export function StudioPage() {
     try {
       const isBrowser = provider === "browser";
       if (isBrowser) {
-        const live = paired ? { ok: true } : await pairLocalAgent();
+        const live = localDataPlane.session(deviceId)
+          ? { ok: true, deviceId, agentId }
+          : await pairLocalAgent();
         if (!live.ok) return;
       } else {
         const providerName = provider === "google" ? "google_gemini" : "opencode";
@@ -895,20 +902,28 @@ export function StudioPage() {
     if (!isReferenceRun(run)) setActiveRunId(id);
   }
 
-  async function pairLocalAgent() {
+  async function pairLocalAgent(opts?: { silent?: boolean }) {
+    const silent = Boolean(opts?.silent);
     if (!user.authenticated || !user.user_id) {
-      setStatus("Sign in before pairing the local agent.");
+      if (!silent) setStatus("Sign in before pairing the local agent.");
       return { ok: false, deviceId: "", agentId: "" };
     }
-    setStatus("Pairing this tab with the local agent…");
+    const owners = [
+      ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
+      { ownerType: "user" as const, ownerId: user.user_id },
+    ];
+    const restored = localDataPlane.restoreStoredSession(owners);
+    if (restored?.deviceId && localDataPlane.session(restored.deviceId)) {
+      setDeviceId(restored.deviceId);
+      setAgentId(restored.agentId);
+      setPaired(true);
+      return { ok: true, deviceId: restored.deviceId, agentId: restored.agentId };
+    }
+    if (!silent) setStatus("Pairing this tab with the local agent…");
     try {
       const info = await localDataPlane.discover();
-      const liveId = info.device_id || "";
+      const liveId = info.device_id || restored?.deviceId || "";
       if (liveId) setDeviceId(liveId);
-      const owners = [
-        ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
-        { ownerType: "user" as const, ownerId: user.user_id },
-      ];
       let lastError: unknown;
       for (const owner of owners) {
         try {
@@ -925,14 +940,15 @@ export function StudioPage() {
         }
       }
       setPaired(false);
-      setStatus(pairingStatus(lastError));
+      if (!silent) setStatus(pairingStatus(lastError));
       return { ok: false, deviceId: "", agentId: "" };
     } catch (err) {
       setPaired(false);
-      setStatus(pairingStatus(err));
+      if (!silent) setStatus(pairingStatus(err));
       return { ok: false, deviceId: "", agentId: "" };
     }
   }
+  pairRef.current = pairLocalAgent;
 
   async function generateSelected(mode: "45" | "both") {
     const ids = [...pickedRuns];
@@ -944,7 +960,7 @@ export function StudioPage() {
       setStatus("Select at least one input image to send to the image model.");
       return;
     }
-    const live = paired
+    const live = localDataPlane.session(deviceId)
       ? { ok: true, deviceId, agentId }
       : await pairLocalAgent();
     if (!live.ok) return;
@@ -970,7 +986,7 @@ export function StudioPage() {
       setStatus("Select batches first.");
       return;
     }
-    const live = paired && deviceId
+    const live = localDataPlane.session(deviceId)
       ? { ok: true, deviceId, agentId }
       : await pairLocalAgent();
     if (!live.ok || !live.deviceId) return;
@@ -1630,6 +1646,7 @@ export function StudioPage() {
       authenticated={user.authenticated}
       userId={user.user_id}
       orgId={orgId}
+      paired={paired}
       deviceId={deviceId}
       personas={personas}
       selected={selected}
@@ -1640,7 +1657,7 @@ export function StudioPage() {
       setSelectedConcept={setSelectedConcept}
       studio={studio}
       status={status}
-      setStatus={(msg) => appendLog(msg)}
+      setStatus={appendLog}
       onRuns={(rows) => writeRunList("reference", rows, true)}
       onOpenRun={(id) => setFlowOpenRun("reference", id)}
       onStubRun={(run) => setReferenceRuns((prev) => mergeRunLists([run], prev))}
