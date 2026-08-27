@@ -18,6 +18,7 @@ import { BatchSelect } from "@/pages/studio/BatchSelect";
 import { LazyAsset } from "@/pages/studio/LazyAsset";
 import { copyFailureDetail, displayRunStatus, imageFailureDetail } from "@/lib/run-status";
 import { filterRunsByFlow, isActiveRun, isReferenceRun, mergeRunLists } from "@/lib/run-flow";
+import { clampInt, readStudioBatch, writeStudioBatch } from "@/lib/studio-batch";
 import { readStudioSession, writeStudioSession } from "@/lib/studio-session";
 import { DownloadKindDialog } from "@/components/DownloadKindDialog";
 
@@ -113,6 +114,7 @@ export function StudioPage() {
   const studioVisible = pathname === "/";
   const restoredPair = useMemo(() => restorePairing(), []);
   const savedSession = useMemo(() => readStudioSession(), []);
+  const savedBatch = useMemo(() => readStudioBatch(), []);
   const [loading, setLoading] = useState(() => !(
     peekCache<StudioPayload>("/api/defaults")
     || peekCache<StudioPayload>("/api/public/studio")
@@ -152,11 +154,11 @@ export function StudioPage() {
   const [googleSaved, setGoogleSaved] = useState(false);
   const [googleHint, setGoogleHint] = useState("Google API key");
   const [savingKey, setSavingKey] = useState(false);
-  const [multiplier, setMultiplier] = useState(1);
-  const [batchSize, setBatchSize] = useState(10);
-  const [shareBg, setShareBg] = useState(false);
-  const [reuseBg, setReuseBg] = useState("");
-  const [reusePattern, setReusePattern] = useState("");
+  const [multiplier, setMultiplier] = useState(() => savedBatch.multiplier);
+  const [batchSize, setBatchSize] = useState(() => savedBatch.batchSize);
+  const [shareBg, setShareBg] = useState(() => savedBatch.shareBg);
+  const [reuseBg, setReuseBg] = useState(() => savedBatch.reuseBg);
+  const [reusePattern, setReusePattern] = useState(() => savedBatch.reusePattern);
   const [copyJobId, setCopyJobId] = useState(() => savedSession.copyJobId);
   const [activeRunId, setActiveRunId] = useState(() => savedSession.activeRunId);
   const [viewer, setViewer] = useState("");
@@ -271,6 +273,9 @@ export function StudioPage() {
   useEffect(() => {
     localStorage.setItem("adFactorySelectedConcept", selectedConcept);
   }, [selectedConcept]);
+  useEffect(() => {
+    writeStudioBatch({ multiplier, batchSize, shareBg, reuseBg, reusePattern });
+  }, [multiplier, batchSize, shareBg, reuseBg, reusePattern]);
   useEffect(() => {
     if (!assets.length && !pickedProducts.size) return;
     localStorage.setItem(PICKED_PRODUCTS_KEY, JSON.stringify([...pickedProducts]));
@@ -445,7 +450,6 @@ export function StudioPage() {
             config: prev?.config || defaults.config,
             personas: nextPersonas.length ? nextPersonas : defaults.personas,
           }));
-          if (defaults.batch_size) setBatchSize(defaults.batch_size);
         }
         return nextPersonas;
       }
@@ -539,6 +543,17 @@ export function StudioPage() {
     () => [...runs].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0)),
     [runs],
   );
+  const reusableRuns = useMemo(() => {
+    const rows = sortedRuns.filter((run) => run.run_id && Number(run.prompt_count || 0) > 0);
+    const extra = [reuseBg, reusePattern].filter(
+      (id) => id && !rows.some((run) => run.run_id === id),
+    );
+    if (!extra.length) return rows;
+    const remembered = extra.map((id) => (
+      sortedRuns.find((run) => run.run_id === id) || { run_id: id, display_batch: id }
+    ));
+    return [...rows, ...remembered];
+  }, [sortedRuns, reuseBg, reusePattern]);
   const openRun = sortedRuns.find((run) => run.run_id === openRunId)
     || (openRunId
       ? {
@@ -1240,11 +1255,27 @@ export function StudioPage() {
               <PressDrawer title="Batch" wide>
                 <label className="hint">
                   Ad multiplier
-                  <input className="field" type="number" min={1} max={20} value={multiplier} onChange={(e) => setMultiplier(Number(e.target.value) || 1)} />
+                  <input
+                    className="field"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={multiplier}
+                    onChange={(e) => setMultiplier(clampInt(Number(e.target.value), 1, 20, 1))}
+                    onWheel={(event) => event.currentTarget.blur()}
+                  />
                 </label>
                 <label className="hint">
                   Ads per LLM call
-                  <input className="field" type="number" min={1} max={500} value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value) || 10)} />
+                  <input
+                    className="field"
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={batchSize}
+                    onChange={(e) => setBatchSize(clampInt(Number(e.target.value), 1, 500, 10))}
+                    onWheel={(event) => event.currentTarget.blur()}
+                  />
                 </label>
                 <label className="toggle-row">
                   <input type="checkbox" checked={shareBg} onChange={(e) => setShareBg(e.target.checked)} />
@@ -1254,14 +1285,14 @@ export function StudioPage() {
                   Reuse backgrounds from run
                   <select className="field" value={reuseBg} onChange={(e) => setReuseBg(e.target.value)}>
                     <option value="">None</option>
-                    {sortedRuns.map((run) => <option key={run.run_id} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
+                    {reusableRuns.map((run) => <option key={run.run_id} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
                   </select>
                 </label>
                 <label className="hint">
                   Reuse visual patterns from run
                   <select className="field" value={reusePattern} onChange={(e) => setReusePattern(e.target.value)}>
                     <option value="">None</option>
-                    {sortedRuns.map((run) => <option key={`p-${run.run_id}`} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
+                    {reusableRuns.map((run) => <option key={`p-${run.run_id}`} value={run.run_id}>{run.display_batch || run.run_id}</option>)}
                   </select>
                 </label>
               </PressDrawer>

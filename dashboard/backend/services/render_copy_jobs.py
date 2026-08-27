@@ -363,6 +363,19 @@ def _reuse_lock_keys(
     ]
 
 
+def _coerce_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    text = str(value or "").strip()
+    if text.lstrip("-").isdigit():
+        return int(text)
+    return None
+
+
 def collect_copy_reuse_locks(user_id: str, settings: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Read previous-run prompt metadata from Mongo for background/pattern reuse."""
     background_run = str(settings.get("reuse_backgrounds_from_run_id") or "").strip()
@@ -384,13 +397,18 @@ def collect_copy_reuse_locks(user_id: str, settings: dict[str, Any]) -> dict[str
             )
         )
 
+    def persona_number(prompt: dict[str, Any]) -> int | None:
+        number = _coerce_int(prompt.get("persona_number"))
+        if number is None or number < 1:
+            return None
+        return number
+
     for prompt in prompts_for(str(settings.get("reuse_backgrounds_from_run_id") or "")):
         fmt = str(prompt.get("format") or "").strip().upper()
-        persona_no = prompt.get("persona_number")
-        persona_no = int(persona_no) if isinstance(persona_no, int) else None
+        persona_no = persona_number(prompt)
         slot = str(prompt.get("background_id") or "").strip()
-        seed = prompt.get("background_seed")
-        if not fmt or not slot or not isinstance(seed, int):
+        seed = _coerce_int(prompt.get("background_seed"))
+        if not fmt or not slot or seed is None:
             continue
         lock = {
             "background_slot": slot,
@@ -407,8 +425,7 @@ def collect_copy_reuse_locks(user_id: str, settings: dict[str, Any]) -> dict[str
 
     for prompt in prompts_for(str(settings.get("reuse_visual_patterns_from_run_id") or "")):
         fmt = str(prompt.get("format") or "").strip().upper()
-        persona_no = prompt.get("persona_number")
-        persona_no = int(persona_no) if isinstance(persona_no, int) else None
+        persona_no = persona_number(prompt)
         archetype = str(prompt.get("visual_archetype") or "").strip()
         if not fmt or not archetype:
             continue

@@ -290,6 +290,91 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                 }
             )
 
+    def test_batch_controls_plan_chunks_and_reuse_locks(self) -> None:
+        from dashboard.backend.db.collections import COLL_PROMPTS
+        from dashboard.backend.services import render_copy_jobs
+        from dashboard.backend.services.render_copy_jobs import collect_copy_reuse_locks
+        from dashboard.backend.services.render_structured_copy import (
+            _apply_visual_pattern_reuse,
+            _chunk_items,
+            _lookup_background_lock,
+            _planned_ads,
+        )
+
+        planned = _planned_ads(
+            {
+                "selected_personas": [1, 2],
+                "global_formats": ["HERO"],
+                "multiplier": 2,
+                "share_background_across_personas": True,
+            },
+            {
+                "persona_seeds": json.dumps(
+                    [
+                        {"persona_number": 1, "persona_name": "One"},
+                        {"persona_number": 2, "persona_name": "Two"},
+                    ]
+                )
+            },
+        )
+        self.assertEqual(len(planned), 4)
+        self.assertEqual({item["background_group_key"] for item in planned}, {"HERO"})
+        self.assertTrue(all(item["share_background_across_personas"] for item in planned))
+        self.assertEqual([item["creative_index"] for item in planned], [1, 2, 1, 2])
+        self.assertEqual(len(_chunk_items(planned, 3)), 2)
+
+        class Prompts:
+            def __init__(self, docs: list[dict]) -> None:
+                self.docs = docs
+
+            def find(self, query, projection=None):
+                return [
+                    doc
+                    for doc in self.docs
+                    if all(doc.get(key) == value for key, value in query.items())
+                ]
+
+        with patch.object(
+            render_copy_jobs,
+            "get_sync_db",
+            return_value={
+                COLL_PROMPTS: Prompts(
+                    [
+                        {
+                            "run_id": "run_src",
+                            "user_id": "user-1",
+                            "format": "HERO",
+                            "persona_number": "3",
+                            "visual_archetype": "hero_center",
+                            "background_id": "hero_slot",
+                            "background_seed": 42.0,
+                        }
+                    ]
+                )
+            },
+        ):
+            locks = collect_copy_reuse_locks(
+                "user-1",
+                {
+                    "reuse_backgrounds_from_run_id": "run_src",
+                    "reuse_visual_patterns_from_run_id": "run_src",
+                },
+            )
+        self.assertEqual(locks["background"]["HERO::P03"]["background_slot"], "hero_slot")
+        self.assertEqual(locks["background"]["HERO::P03"]["background_seed"], 42)
+        reused = _apply_visual_pattern_reuse(
+            [{"format": "HERO", "persona": {"number": 3, "name": "A"}}],
+            locks["visual"],
+            share_across_personas=False,
+        )
+        self.assertEqual(reused[0]["visual_archetype"], "hero_center")
+        self.assertEqual(
+            _lookup_background_lock(
+                locks["background"], "HERO", 3, "hero_center", False
+            )["background_seed"],
+            42,
+        )
+
     def test_planner_honors_forced_archetype_and_hypothesis_variant(self) -> None:
         from dashboard.backend.services.render_structured_copy import (
             _planned_ads,

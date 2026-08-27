@@ -400,7 +400,7 @@ p {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
 }
 
 .tile-wide,
@@ -436,7 +436,7 @@ p {
   max-height: calc(118px * 2 + 8px);
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
 }
 
 .tile-business {
@@ -611,7 +611,7 @@ p {
   max-height: none;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
   padding: 10px;
   border: 1px solid var(--rule);
   background: var(--surface-0);
@@ -1701,6 +1701,11 @@ input[type="number"].field::-webkit-inner-spin-button {
 .press-drawer-body > label,
 .press-drawer-body > .hint {
   min-width: 0;
+}
+
+.press-drawer-body > label.hint {
+  display: flex;
+  flex-direction: column;
 }
 
 .press-drawer-body .field,

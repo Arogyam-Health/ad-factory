@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
+import { attachScrollChain } from "@/lib/scroll-chain";
 import { useTheme } from "@/lib/theme";
 import { prefetchRoute } from "@/lib/prefetch";
 import { Button } from "@/components/Button";
@@ -35,6 +36,8 @@ export function Shell({ children }: { children: ReactNode }) {
       ? { eyebrow: "Copy desk", title: "Docs" }
       : TITLES["/"]);
   const name = user.display_name || user.email || "Guest";
+
+  useEffect(() => attachScrollChain(), []);
 
   return (
     <div className="app">
