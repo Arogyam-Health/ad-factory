@@ -103,6 +103,27 @@ function PatternSelect({
   );
 }
 
+function inferLogLevel(text: string): TerminalLine["level"] {
+  const t = text.toLowerCase();
+  if (
+    t.startsWith("error")
+    || t.includes(" failed")
+    || t.includes("failed:")
+    || t.includes("fail:")
+    || /\b(401|403|404|409|500|502)\b/.test(t)
+  ) return "error";
+  if (
+    t.includes("cancel")
+    || t.includes("pick at least")
+    || t.startsWith("select ")
+    || t.includes("sign in")
+    || t.includes("empty")
+    || t.includes("not paired")
+    || t.includes("cannot read")
+  ) return "warning";
+  return "info";
+}
+
 function pairingStatus(err?: unknown) {
   const host = window.location.hostname;
   const onPublicSite = host.endsWith(".onrender.com") || (host !== "localhost" && host !== "127.0.0.1");
@@ -162,8 +183,11 @@ export function StudioPage() {
   );
   const [structuredRuns, setStructuredRuns] = useState<Run[]>(() => savedSession.structuredRuns);
   const [referenceRuns, setReferenceRuns] = useState<Run[]>(() => savedSession.referenceRuns);
-  const [status, setStatus] = useState(savedSession.status || "Plate is idle.");
-  const [logLines, setLogLines] = useState<TerminalLine[]>(() => savedSession.logLines);
+  const [status, setStatusState] = useState(savedSession.status || "Plate is idle.");
+  const [logLinesByFlow, setLogLinesByFlow] = useState({
+    structured: savedSession.structuredLogLines,
+    reference: savedSession.referenceLogLines,
+  });
   const [busy, setBusy] = useState(false);
   const [deviceId, setDeviceId] = useState(restoredPair?.deviceId || "");
   const [agentId, setAgentId] = useState(restoredPair?.agentId || "");
@@ -219,20 +243,44 @@ export function StudioPage() {
   const logIdRef = useRef(savedSession.logId);
   const lastPollLineRef = useRef<Record<string, string>>({});
   const pollIdsRef = useRef<string[]>([]);
+  const flowRef = useRef(flow);
+  flowRef.current = flow;
   const runs = flow === "reference" ? referenceRuns : structuredRuns;
   const openRunId = openRunByFlow[flow];
 
-  const appendLog = useCallback((text: string, level: TerminalLine["level"] = "info") => {
+  const appendLog = useCallback((text: string, level?: TerminalLine["level"], target?: FlowKind) => {
     const next = String(text || "").trim();
     if (!next) return;
-    setLogLines((prev) => {
-      const last = prev[prev.length - 1];
-      if (last?.text === next && last.level === level) return prev;
+    const resolved = level || inferLogLevel(next);
+    const dest = target || flowRef.current;
+    setLogLinesByFlow((prev) => {
+      const list = prev[dest];
+      const last = list[list.length - 1];
+      if (last?.text === next && last.level === resolved) return prev;
       logIdRef.current += 1;
-      return [...prev, { id: logIdRef.current, at: Date.now(), level, text: next }].slice(-80);
+      return {
+        ...prev,
+        [dest]: [...list, { id: logIdRef.current, at: Date.now(), level: resolved, text: next }].slice(-80),
+      };
     });
-    setStatus((prev) => (prev === next ? prev : next));
+    setStatusState((prev) => (prev === next ? prev : next));
   }, []);
+
+  const appendStructuredLog = useCallback((text: string, level?: TerminalLine["level"]) => {
+    appendLog(text, level, "structured");
+  }, [appendLog]);
+
+  const appendReferenceLog = useCallback((text: string, level?: TerminalLine["level"]) => {
+    appendLog(text, level, "reference");
+  }, [appendLog]);
+
+  const setStatus = useCallback((value: string | ((prev: string) => string)) => {
+    if (typeof value === "function") {
+      setStatusState(value);
+      return;
+    }
+    appendLog(value);
+  }, [appendLog]);
 
   function setFlowOpenRun(target: FlowKind, id: string) {
     setOpenRunByFlow((prev) => ({ ...prev, [target]: id }));
@@ -293,11 +341,12 @@ export function StudioPage() {
       referenceRuns,
       copyJobId,
       activeRunId,
-      logLines,
+      structuredLogLines: logLinesByFlow.structured,
+      referenceLogLines: logLinesByFlow.reference,
       logId: logIdRef.current,
       status,
     });
-  }, [structuredRuns, referenceRuns, copyJobId, activeRunId, logLines, status]);
+  }, [structuredRuns, referenceRuns, copyJobId, activeRunId, logLinesByFlow, status]);
   useEffect(() => {
     localStorage.setItem("adFactoryFlowMode", flow);
   }, [flow]);
@@ -658,7 +707,7 @@ export function StudioPage() {
           setFlowOpenRun("structured", activeRunId);
           setRunPage(0);
           setDeskTick((value) => value + 1);
-          appendLog(`Structured copy ${job.status} for ${activeRunId}.`, job.status === "failed" ? "error" : "info");
+          appendStructuredLog(`Structured copy ${job.status} for ${activeRunId}.`, job.status === "failed" ? "error" : "info");
           return;
         }
       } catch {
@@ -706,6 +755,7 @@ export function StudioPage() {
               ? `${live.display_batch || id}: ${displayRunStatus(live)} — ${err}`
               : `${live.display_batch || id}: ${displayRunStatus(live)}`,
             err ? "error" : "info",
+            target,
           );
         } catch {
           /* keep last known row */
@@ -930,7 +980,7 @@ export function StudioPage() {
         ];
       });
       invalidateRuns();
-      appendLog(`Plate ${envelope.display_batch || envelope.run_id} is on press.`);
+      appendStructuredLog(`Plate ${envelope.display_batch || envelope.run_id} is on press.`);
       await loadFlowRuns("structured", true);
       setFlowOpenRun("structured", envelope.run_id);
       setRunPage(0);
@@ -938,7 +988,7 @@ export function StudioPage() {
         runsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     } catch (err) {
-      appendLog(String(err), "error");
+      appendStructuredLog(String(err), "error");
     } finally {
       setBusy(false);
     }
@@ -1228,9 +1278,8 @@ export function StudioPage() {
                 {selectedCount} persona{selectedCount === 1 ? "" : "s"} · {[...new Set([...selected].flatMap((n) => formatsForPersona(n)))].join(" / ") || "no formats"} · {language}
               </p>
               <p className="hint">
-                {paired ? `Paired ${deviceId.slice(0, 8)} · ` : deviceId ? `Agent ${deviceId.slice(0, 8)} reachable · ` : ""}{status}
+                {paired ? `Paired ${deviceId.slice(0, 8)}` : deviceId ? `Agent ${deviceId.slice(0, 8)} reachable` : "Local agent not paired"}
               </p>
-              <RunTerminal lines={logLines} />
               <PressDrawer title="Job">
                 <label className="hint">
                   Hypothesis
@@ -1517,6 +1566,7 @@ export function StudioPage() {
                 </div>
                 {copyJobId ? <p className="hint">Copy job {copyJobId}</p> : null}
               </PressDrawer>
+              <RunTerminal lines={logLinesByFlow.structured} />
             </div>
           )}
         </Tile>
@@ -1524,8 +1574,7 @@ export function StudioPage() {
         <Tile span="side" kicker="02 · Reference desk" title="Context">
           <div className="desk-scroll">
             {loading ? <SkeletonLines lines={8} /> : <ReferenceDesk />}
-            <p className="hint" style={{ margin: "14px 0 0" }}>{status}</p>
-            <RunTerminal lines={logLines} />
+            <RunTerminal lines={logLinesByFlow.reference} />
           </div>
         </Tile>
       )}
@@ -1533,9 +1582,6 @@ export function StudioPage() {
 
       <div className="desk-row">
       <Tile span="half" kicker="03 · Copy desk" title="Plate files">
-        {orgSources.length ? (
-          <OrgConfigChips orgId={orgId} sources={orgSources} onSelect={selectOrg} />
-        ) : null}
         <p className="hint" style={{ marginBottom: 12 }}>
           {canEditFiles
             ? "Open a file to edit it. Save writes to the selected Mongo config, same as the Config desk. "
@@ -1806,7 +1852,7 @@ export function StudioPage() {
       setSelectedConcept={setSelectedConcept}
       studio={studio}
       status={status}
-      setStatus={appendLog}
+      setStatus={appendReferenceLog}
       onRuns={(rows) => writeRunList("reference", rows, true)}
       onOpenRun={(id) => setFlowOpenRun("reference", id)}
       onStubRun={(run) => setReferenceRuns((prev) => mergeRunLists([run], prev))}

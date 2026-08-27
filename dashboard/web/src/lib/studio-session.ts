@@ -8,7 +8,8 @@ export type StudioSession = {
   referenceRuns: Run[];
   copyJobId: string;
   activeRunId: string;
-  logLines: TerminalLine[];
+  structuredLogLines: TerminalLine[];
+  referenceLogLines: TerminalLine[];
   logId: number;
   status: string;
 };
@@ -18,23 +19,29 @@ const emptySession: StudioSession = {
   referenceRuns: [],
   copyJobId: "",
   activeRunId: "",
-  logLines: [],
+  structuredLogLines: [],
+  referenceLogLines: [],
   logId: 0,
   status: "Plate is idle.",
 };
+
+function readLogLines(value: unknown): TerminalLine[] {
+  return Array.isArray(value) ? value.slice(-80) as TerminalLine[] : [];
+}
 
 export function readStudioSession(): StudioSession {
   if (typeof sessionStorage === "undefined") return emptySession;
   try {
     const raw = sessionStorage.getItem(STUDIO_SESSION_KEY);
     if (!raw) return emptySession;
-    const parsed = JSON.parse(raw) as Partial<StudioSession>;
+    const parsed = JSON.parse(raw) as Partial<StudioSession> & { logLines?: unknown };
     return {
       structuredRuns: Array.isArray(parsed.structuredRuns) ? parsed.structuredRuns : [],
       referenceRuns: Array.isArray(parsed.referenceRuns) ? parsed.referenceRuns : [],
       copyJobId: String(parsed.copyJobId || ""),
       activeRunId: String(parsed.activeRunId || ""),
-      logLines: Array.isArray(parsed.logLines) ? parsed.logLines.slice(-80) : [],
+      structuredLogLines: readLogLines(parsed.structuredLogLines ?? parsed.logLines),
+      referenceLogLines: readLogLines(parsed.referenceLogLines),
       logId: Number(parsed.logId || 0),
       status: String(parsed.status || emptySession.status),
     };

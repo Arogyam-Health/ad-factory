@@ -154,6 +154,13 @@ export function RunWorkspace({
     return () => window.clearTimeout(timer);
   }, [run.prompt_count, prompts.length]);
 
+  const copyErr = copyFailureDetail(run);
+  const imageErr = imageFailureDetail(run);
+  useEffect(() => {
+    if (copyErr) onStatus(`Copy failed: ${copyErr}`);
+    if (imageErr) onStatus(`Image failed: ${imageErr}`);
+  }, [copyErr, imageErr, onStatus]);
+
   async function queueImages(mode: "45" | "both" | "916") {
     if (!runId) return;
     let liveDevice = deviceId || run.device_id || "";
@@ -308,16 +315,6 @@ export function RunWorkspace({
           {busy === "cancel" ? "Cancelling…" : "Cancel run"}
         </Button>
       </div>
-      {copyFailureDetail(run) ? (
-        <p className="hint" style={{ marginBottom: 10 }}>
-          Copy failed: {copyFailureDetail(run)}
-        </p>
-      ) : null}
-      {imageFailureDetail(run) ? (
-        <p className="hint" style={{ marginBottom: 10 }}>
-          Image failed: {imageFailureDetail(run)}
-        </p>
-      ) : null}
       <p className="hint" style={{ marginBottom: 10 }}>
         {prompts.length
           ? prompts.length < listedCount

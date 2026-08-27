@@ -527,7 +527,6 @@ export function ReferenceDesk() {
   const ctx = useReference();
   return (
     <div className="press-stack">
-      <p className="hint">{ctx.status}</p>
       <PressDrawer title="References" wide>
         <label className="hint">Reference library</label>
         <FileField
