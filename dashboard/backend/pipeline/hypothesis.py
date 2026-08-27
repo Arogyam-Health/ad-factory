@@ -359,6 +359,10 @@ def resolve_format_plan(config: dict[str, Any]) -> list[dict[str, Any]]:
     all_formats = [fmt for fmt in (config.get("global_formats") or []) if fmt in FORMATS]
     format_map = config.get("formats_by_persona") or {}
     archetype_map = config.get("visual_archetypes_by_format") or {}
+    persona_archetype_map = config.get("visual_archetypes_by_persona") or {}
+    persona_archetype_map = (
+        persona_archetype_map if isinstance(persona_archetype_map, dict) else {}
+    )
     share_bg_across_personas = bool(config.get("share_background_across_personas"))
     try:
         multiplier = max(1, min(20, int(config.get("multiplier") or 1)))
@@ -373,7 +377,13 @@ def resolve_format_plan(config: dict[str, Any]) -> list[dict[str, Any]]:
         if not formats:
             formats = ["HERO"]
         for fmt in formats:
-            forced_archetype = str(archetype_map.get(fmt) or "").strip()
+            persona_archetypes = persona_archetype_map.get(str(persona_num))
+            persona_archetypes = (
+                persona_archetypes if isinstance(persona_archetypes, dict) else {}
+            )
+            forced_archetype = str(
+                persona_archetypes.get(fmt) or archetype_map.get(fmt) or ""
+            ).strip()
             background_group_key = fmt if share_bg_across_personas else f"{fmt}::P{persona_num:02d}"
             for creative_index in range(1, multiplier + 1):
                 item = {

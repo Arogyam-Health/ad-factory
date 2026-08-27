@@ -123,6 +123,23 @@ def allocate_render_copy_run(
     }
 
 
+def _parse_archetype_map(raw: Any, *, limit: int, error: str) -> dict[str, str]:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict) or len(raw) > limit:
+        raise ValueError(error)
+    parsed: dict[str, str] = {}
+    for fmt, archetype_id in raw.items():
+        if not is_format_id(fmt):
+            raise ValueError(error)
+        ident = str(archetype_id or "").strip()
+        if len(ident) > 80:
+            raise ValueError(error)
+        if ident:
+            parsed[normalize_format_id(fmt)] = ident
+    return parsed
+
+
 def validate_copy_settings(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("Structured copy settings must be an object")
@@ -142,6 +159,7 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
         "hypothesis",
         "selected_concept",
         "visual_archetypes_by_format",
+        "visual_archetypes_by_persona",
     }
     if set(raw) - allowed:
         raise ValueError("Structured copy settings contain unsupported fields")
@@ -218,18 +236,23 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
     archetypes = raw.get("visual_archetypes_by_format")
     if archetypes is None:
         archetypes = {}
-    if not isinstance(archetypes, dict) or len(archetypes) > 8:
-        raise ValueError("Visual archetypes by format are invalid")
-    visual_archetypes_by_format = {}
-    for fmt, archetype_id in archetypes.items():
-        if not is_format_id(fmt):
-            raise ValueError("Visual archetypes by format are invalid")
-        normalized = normalize_format_id(fmt)
-        ident = str(archetype_id or "").strip()
-        if len(ident) > 80:
-            raise ValueError("Visual archetypes by format are invalid")
-        if ident:
-            visual_archetypes_by_format[normalized] = ident
+    visual_archetypes_by_format = _parse_archetype_map(
+        archetypes, limit=8, error="Visual archetypes by format are invalid"
+    )
+    raw_persona_archetypes = raw.get("visual_archetypes_by_persona")
+    if raw_persona_archetypes is None:
+        raw_persona_archetypes = {}
+    if not isinstance(raw_persona_archetypes, dict) or len(raw_persona_archetypes) > 50:
+        raise ValueError("Per-persona visual archetypes are invalid")
+    visual_archetypes_by_persona: dict[str, dict[str, str]] = {}
+    for persona_key, mapping in raw_persona_archetypes.items():
+        if not str(persona_key).isdigit():
+            raise ValueError("Per-persona visual archetypes are invalid")
+        parsed = _parse_archetype_map(
+            mapping, limit=8, error="Per-persona visual archetypes are invalid"
+        )
+        if parsed:
+            visual_archetypes_by_persona[str(int(persona_key))] = parsed
     return {
         "selected_personas": personas,
         "global_formats": [normalize_format_id(value) for value in formats],
@@ -249,6 +272,7 @@ def validate_copy_settings(raw: Any) -> dict[str, Any]:
         "hypothesis": {"type": hyp_type, "variant": hyp_variant},
         "selected_concept": selected_concept,
         "visual_archetypes_by_format": visual_archetypes_by_format,
+        "visual_archetypes_by_persona": visual_archetypes_by_persona,
     }
 
 
@@ -504,6 +528,7 @@ def _complete_job(job: dict[str, Any], result: dict[str, Any]) -> None:
         "reuse_visual_patterns_from_run_id",
         "hypothesis",
         "visual_archetypes_by_format",
+        "visual_archetypes_by_persona",
     ):
         if key in settings:
             projection[key] = settings[key]

@@ -23,6 +23,21 @@ export function mergeRunLists(primary: Run[], extra: Run[] = []): Run[] {
   return [...byId.values()].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
 }
 
+export function overlayLocalRunStats(server: Run[], local: Run[] = []): Run[] {
+  if (!local.length) return server;
+  const byId = new Map(local.map((run) => [run.run_id || "", run]));
+  return server.map((run) => {
+    const extra = byId.get(run.run_id || "");
+    if (!extra) return run;
+    return {
+      ...run,
+      display_batch: run.display_batch || extra.display_batch,
+      prompt_count: Number(extra.prompt_count || 0) || run.prompt_count,
+      image_count: Number(extra.image_count || 0) || run.image_count,
+    };
+  });
+}
+
 export function isActiveRun(run: Run): boolean {
   const status = String(run.status || "");
   const image = String(run.image_generation?.status || "");

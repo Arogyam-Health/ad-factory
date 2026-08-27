@@ -4,7 +4,7 @@ import { fetchJSON, peekCache, invalidateRuns, clearCache, primeCache } from "@/
 import { useAuth } from "@/lib/auth";
 import { catalogConcepts, catalogLanguageModes, CONFIG_SECTIONS, KEY_HINTS, KEY_LABELS, readStudioOrg, summarizeConfigValue, writeStudioOrg } from "@/lib/config-keys";
 import { localDataPlane } from "@/lib/local-data-plane.js";
-import type { ConfigSource, EffectiveConfig, FormatOption, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
+import type { ConfigSource, EffectiveConfig, FormatOption, FormatPattern, OpencodeCatalog, Persona, ProviderSafe, Run, StudioPayload } from "@/lib/types";
 import { Bento, PressDrawer, Tile } from "@/components/Tile";
 import { Button } from "@/components/Button";
 import { ListPager } from "@/components/ListPager";
@@ -17,7 +17,7 @@ import { RunWorkspace } from "@/pages/studio/RunWorkspace";
 import { BatchSelect } from "@/pages/studio/BatchSelect";
 import { LazyAsset } from "@/pages/studio/LazyAsset";
 import { copyFailureDetail, displayRunStatus, imageFailureDetail } from "@/lib/run-status";
-import { filterRunsByFlow, isActiveRun, isReferenceRun, mergeRunLists } from "@/lib/run-flow";
+import { filterRunsByFlow, isActiveRun, isReferenceRun, mergeRunLists, overlayLocalRunStats } from "@/lib/run-flow";
 import { clampInt, readStudioBatch, writeStudioBatch } from "@/lib/studio-batch";
 import { readStudioSession, writeStudioSession } from "@/lib/studio-session";
 import { DownloadKindDialog } from "@/components/DownloadKindDialog";
@@ -74,6 +74,38 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function PatternSelect({
+  fmt,
+  value,
+  options,
+  onChange,
+  compact,
+}: {
+  fmt: string;
+  value: string;
+  options: FormatPattern[];
+  onChange: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <label className={compact ? "hint persona-pattern" : "hint"}>
+      {fmt} pattern
+      <select
+        className="field"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <option value="">Auto rotate</option>
+        <option value="llm_decide">Leave it to the image model</option>
+        {options.map((item) => (
+          <option key={item.id} value={item.id}>{item.label || item.id}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function pairingStatus(err?: unknown) {
   const host = window.location.hostname;
   const onPublicSite = host.endsWith(".onrender.com") || (host !== "localhost" && host !== "127.0.0.1");
@@ -127,6 +159,7 @@ export function StudioPage() {
   const [formats, setFormats] = useState<Set<string>>(new Set(["HERO"]));
   const [personaFormats, setPersonaFormats] = useState<Record<number, string[]>>({});
   const [patterns, setPatterns] = useState<Record<string, string>>({});
+  const [personaPatterns, setPersonaPatterns] = useState<Record<number, Record<string, string>>>({});
   const [language, setLanguage] = useState("EN");
   const [flow, setFlow] = useState<"structured" | "reference">(
     () => (localStorage.getItem("adFactoryFlowMode") === "reference" ? "reference" : "structured"),
@@ -207,8 +240,18 @@ export function StudioPage() {
 
   function setFlowOpenRun(target: FlowKind, id: string) {
     setOpenRunByFlow((prev) => ({ ...prev, [target]: id }));
-    if (target === "structured" && id) localStorage.setItem("adFactoryCopyPipeline", id);
-    if (target === "reference" && id) localStorage.setItem("adFactoryReferencePipeline", id);
+    if (target === "structured") {
+      if (id) localStorage.setItem("adFactoryCopyPipeline", id);
+      else localStorage.removeItem("adFactoryCopyPipeline");
+    }
+    if (target === "reference") {
+      if (id) localStorage.setItem("adFactoryReferencePipeline", id);
+      else localStorage.removeItem("adFactoryReferencePipeline");
+    }
+    if (!id && target === "structured") {
+      setActiveRunId("");
+      setCopyJobId("");
+    }
   }
 
   function writeRunList(target: FlowKind, rows: Run[], allowEmpty = false) {
@@ -227,8 +270,6 @@ export function StudioPage() {
     const url = `/api/runs?flow=${target}`;
     const data = await fetchJSON<{ runs?: Run[] }>(url, { noCache: true });
     let next = data.runs || [];
-    const remembered = target === "reference" ? savedSession.referenceRuns : savedSession.structuredRuns;
-    if (remembered.length) next = mergeRunLists(next, remembered);
     if (paired && deviceId) {
       try {
         const local = await localDataPlane.listRuns(deviceId);
@@ -237,16 +278,16 @@ export function StudioPage() {
           display_batch: item.display_batch,
           flow_type: item.flow_type,
           created_at: item.created_at,
-          status: item.status || "queued",
+          status: item.status || "",
           prompt_count: item.prompt_count || 0,
           image_count: item.image_count || 0,
         }));
-        next = mergeRunLists(next, filterRunsByFlow(mapped, target));
+        next = overlayLocalRunStats(next, filterRunsByFlow(mapped, target));
       } catch {
         /* local inventory is optional */
       }
     }
-    writeRunList(target, next, allowEmpty && !remembered.length);
+    writeRunList(target, next, allowEmpty);
     return next;
   }
 
@@ -554,17 +595,11 @@ export function StudioPage() {
     ));
     return [...rows, ...remembered];
   }, [sortedRuns, reuseBg, reusePattern]);
-  const openRun = sortedRuns.find((run) => run.run_id === openRunId)
-    || (openRunId
-      ? {
-          run_id: openRunId,
-          display_batch: openRunId,
-          prompt_count: 0,
-          image_count: 0,
-          status: "running",
-          copy_generation: { status: "queued" },
-        }
-      : null);
+  const openRun = sortedRuns.find((run) => run.run_id === openRunId) || null;
+  useEffect(() => {
+    if (loading || !openRunId || openRun) return;
+    setFlowOpenRun(flow, "");
+  }, [loading, openRunId, openRun, flow]);
   const runPages = Math.max(1, Math.ceil(sortedRuns.length / RUNS_PER_PAGE));
   const safeRunPage = Math.min(runPage, runPages - 1);
   const pageRuns = sortedRuns.slice(safeRunPage * RUNS_PER_PAGE, safeRunPage * RUNS_PER_PAGE + RUNS_PER_PAGE);
@@ -706,6 +741,31 @@ export function StudioPage() {
     return [];
   }
 
+  function patternForPersona(n: number, fmt: string) {
+    const local = personaPatterns[n]?.[fmt];
+    if (local != null) return local;
+    return patterns[fmt] || "";
+  }
+
+  function setFormatPattern(fmt: string, value: string) {
+    setPatterns((prev) => ({ ...prev, [fmt]: value }));
+    if (!selected.size) return;
+    setPersonaPatterns((current) => {
+      const updated = { ...current };
+      for (const number of selected) {
+        updated[number] = { ...current[number], [fmt]: value };
+      }
+      return updated;
+    });
+  }
+
+  function setPersonaPattern(n: number, fmt: string, value: string) {
+    setPersonaPatterns((current) => ({
+      ...current,
+      [n]: { ...current[n], [fmt]: value },
+    }));
+  }
+
   function togglePersona(n: number) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -763,6 +823,25 @@ export function StudioPage() {
     }
   }
 
+  function dropRunsFromUi(ids: Set<string>) {
+    if (!ids.size) return;
+    setStructuredRuns((prev) => prev.filter((run) => !ids.has(run.run_id || "")));
+    setReferenceRuns((prev) => prev.filter((run) => !ids.has(run.run_id || "")));
+    setPickedRuns((prev) => {
+      const next = new Set([...prev].filter((id) => !ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    if (ids.has(openRunByFlow.structured)) setFlowOpenRun("structured", "");
+    if (ids.has(openRunByFlow.reference)) setFlowOpenRun("reference", "");
+  }
+
+  async function deleteLocalRuns(ids: string[]) {
+    if (!ids.length || !deviceId || !paired) return;
+    await Promise.all(
+      ids.map((id) => localDataPlane.deleteRun?.(id, deviceId).catch(() => undefined)),
+    );
+  }
+
   function togglePersonaFormat(n: number, fmt: string) {
     setPersonaFormats((current) => {
       const existing = new Set(current[n] ?? formatList);
@@ -778,12 +857,19 @@ export function StudioPage() {
       return;
     }
     const formatsByPersona: Record<string, string[]> = {};
+    const archetypesByPersona: Record<string, Record<string, string>> = {};
     const usedFormats = new Set<string>();
     for (const n of selected) {
       const list = formatsForPersona(n);
       if (!list.length) continue;
       formatsByPersona[String(n)] = list;
-      for (const fmt of list) usedFormats.add(fmt);
+      const row: Record<string, string> = {};
+      for (const fmt of list) {
+        usedFormats.add(fmt);
+        const archetype = patternForPersona(n, fmt);
+        if (archetype) row[fmt] = archetype;
+      }
+      if (Object.keys(row).length) archetypesByPersona[String(n)] = row;
     }
     const globalForRequest = formatList.length ? formatList : [...usedFormats];
     if (!selectedCount || !globalForRequest.length) {
@@ -841,6 +927,7 @@ export function StudioPage() {
             hypothesis: { type: hypType, variant: hypVariant },
             selected_concept: selectedConcept,
             visual_archetypes_by_format: patterns,
+            visual_archetypes_by_persona: archetypesByPersona,
             language_mode: language,
             provider: providerName,
             model: modelName,
@@ -1032,10 +1119,21 @@ export function StudioPage() {
     try {
       let canceled = 0;
       for (const id of ids) {
-        await fetchJSON(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+        try {
+          await fetchJSON(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+        } catch (err) {
+          if (!String(err).includes("404")) throw err;
+        }
         canceled += 1;
       }
       invalidateRuns();
+      const canceledIds = new Set(ids);
+      setStructuredRuns((prev) => prev.map((run) => (
+        canceledIds.has(run.run_id || "") ? { ...run, status: "canceled" } : run
+      )));
+      setReferenceRuns((prev) => prev.map((run) => (
+        canceledIds.has(run.run_id || "") ? { ...run, status: "canceled" } : run
+      )));
       appendLog(`Cancel requested for ${canceled} run${canceled === 1 ? "" : "s"}.`, "warning");
       await loadFlowRuns(flow, true);
       setDeskTick((value) => value + 1);
@@ -1091,16 +1189,13 @@ export function StudioPage() {
             {formatList.length ? (
               <div className="pattern-grid">
                 {formatList.map((fmt) => (
-                  <label key={fmt} className="hint">
-                    {fmt} pattern
-                    <select className="field" value={patterns[fmt] || ""} onChange={(e) => setPatterns((prev) => ({ ...prev, [fmt]: e.target.value }))}>
-                      <option value="">Auto rotate</option>
-                      <option value="llm_decide">Leave it to the image model</option>
-                      {(studio?.format_patterns?.[fmt] || []).map((item) => (
-                        <option key={item.id} value={item.id}>{item.label || item.id}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <PatternSelect
+                    key={fmt}
+                    fmt={fmt}
+                    value={patterns[fmt] || ""}
+                    options={studio?.format_patterns?.[fmt] || []}
+                    onChange={(value) => setFormatPattern(fmt, value)}
+                  />
                 ))}
               </div>
             ) : null}
@@ -1139,6 +1234,24 @@ export function StudioPage() {
                             </button>
                           ))}
                         </div>
+                        {personaFormatSet.size ? (
+                          <div
+                            className="persona-patterns"
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
+                            {formatOptions.filter((fmt) => personaFormatSet.has(fmt.id)).map((fmt) => (
+                              <PatternSelect
+                                key={fmt.id}
+                                fmt={fmt.id}
+                                compact
+                                value={patternForPersona(persona.number, fmt.id)}
+                                options={studio?.format_patterns?.[fmt.id] || []}
+                                onChange={(value) => setPersonaPattern(persona.number, fmt.id, value)}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -1430,10 +1543,16 @@ export function StudioPage() {
                     onClick={async () => {
                       try {
                         await fetchJSON(`/api/runs/${encodeURIComponent(activeRunId)}/cancel`, { method: "POST" });
-                        setStatus(`Cancel requested for ${activeRunId}.`);
                       } catch (err) {
-                        setStatus(String(err));
+                        if (!String(err).includes("404")) {
+                          setStatus(String(err));
+                          return;
+                        }
                       }
+                      setStructuredRuns((prev) => prev.map((run) => (
+                        run.run_id === activeRunId ? { ...run, status: "canceled" } : run
+                      )));
+                      setStatus(`Cancel requested for ${activeRunId}.`);
                     }}
                   >
                     Cancel
@@ -1564,15 +1683,17 @@ export function StudioPage() {
             onClick={async () => {
               if (!window.confirm("Delete selected runs?")) return;
               try {
+                const ids = [...pickedRuns];
                 await fetchJSON("/api/runs/bulk-delete", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ run_ids: [...pickedRuns] }),
+                  body: JSON.stringify({ run_ids: ids }),
                 });
+                await deleteLocalRuns(ids);
                 clearCache("/api/runs");
-                const setter = flow === "reference" ? setReferenceRuns : setStructuredRuns;
-                setter((prev) => prev.filter((run) => !pickedRuns.has(run.run_id || "")));
-                setPickedRuns(new Set());
+                invalidateRuns();
+                dropRunsFromUi(new Set(ids));
+                await loadFlowRuns(flow, true);
               } catch (err) {
                 setStatus(String(err));
               }
@@ -1592,9 +1713,18 @@ export function StudioPage() {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ confirm: "PURGE" }),
                 });
+                if (paired && deviceId) {
+                  const local = await localDataPlane.listRuns(deviceId).catch(() => []);
+                  await deleteLocalRuns(local.map((item) => String(item.run_id || "")).filter(Boolean));
+                }
                 invalidateRuns();
+                clearCache("/api/runs");
                 setStructuredRuns([]);
                 setReferenceRuns([]);
+                setPickedRuns(new Set());
+                setFlowOpenRun("structured", "");
+                setFlowOpenRun("reference", "");
+                await loadFlowRuns(flow, true);
               } catch (err) {
                 setStatus(String(err));
               }

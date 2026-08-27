@@ -1593,6 +1593,7 @@ def test_local_agent_responsiveness_contract() -> int:
         and "/structured-copy" in studio_tsx
         and "/api/runs/execute\"" not in studio_tsx
         and "visual_archetypes_by_format" in studio_tsx
+        and "visual_archetypes_by_persona" in studio_tsx
         and "hypothesis:" in studio_tsx
         and "selected_concept" in studio_tsx
         and "batch_size" in studio_tsx,

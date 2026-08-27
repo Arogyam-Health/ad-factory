@@ -246,6 +246,7 @@ class RenderStructuredPipelineTests(unittest.TestCase):
                 "hypothesis": {"type": "concept_angle", "variant": "pain_point"},
                 "selected_concept": "Concept/IG_Stories",
                 "visual_archetypes_by_format": {"HERO": "hero_center_stage"},
+                "visual_archetypes_by_persona": {"3": {"HERO": "hero_close"}},
                 "language_mode": "EN",
                 "provider": "opencode",
                 "model": "opencode/big-pickle",
@@ -263,6 +264,10 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(
             settings["visual_archetypes_by_format"],
             {"HERO": "hero_center_stage"},
+        )
+        self.assertEqual(
+            settings["visual_archetypes_by_persona"],
+            {"3": {"HERO": "hero_close"}},
         )
         story = validate_copy_settings(
             {
@@ -398,6 +403,27 @@ class RenderStructuredPipelineTests(unittest.TestCase):
         self.assertEqual(planned[0]["concept_angle"], "pain_point")
         self.assertEqual(planned[0]["visual_archetype"], "hero_center_stage")
         self.assertEqual(planned[0]["hypothesis"]["variant"], "pain_point")
+
+        per_persona = _planned_ads(
+            {
+                "selected_personas": [3, 4],
+                "global_formats": ["HERO"],
+                "multiplier": 1,
+                "visual_archetypes_by_format": {"HERO": "hero_center_stage"},
+                "visual_archetypes_by_persona": {"3": {"HERO": "hero_close"}},
+            },
+            {
+                "persona_seeds": json.dumps(
+                    [
+                        {"persona_number": 3, "persona_name": "Stress Snacker"},
+                        {"persona_number": 4, "persona_name": "Stuck Scale"},
+                    ]
+                )
+            },
+        )
+        by_persona = {item["persona"]["number"]: item["visual_archetype"] for item in per_persona}
+        self.assertEqual(by_persona[3], "hero_close")
+        self.assertEqual(by_persona[4], "hero_center_stage")
 
         def generate(request: dict, repair: bool = False) -> dict:
             return {

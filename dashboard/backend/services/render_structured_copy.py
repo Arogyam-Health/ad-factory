@@ -336,6 +336,10 @@ def _planned_ads(
     personas = _persona_map(effective_config)
     archetype_map = settings.get("visual_archetypes_by_format")
     archetype_map = archetype_map if isinstance(archetype_map, dict) else {}
+    per_persona_archetypes = settings.get("visual_archetypes_by_persona")
+    per_persona_archetypes = (
+        per_persona_archetypes if isinstance(per_persona_archetypes, dict) else {}
+    )
     share_background = bool(settings.get("share_background_across_personas"))
     hypothesis = _hypothesis_from_settings(settings)
     creative_concept = resolve_selected_concept(
@@ -349,7 +353,15 @@ def _planned_ads(
         formats = formats if isinstance(formats, list) and formats else global_formats
         for fmt in formats:
             normalized_format = normalize_format_id(fmt)
-            forced_archetype = str(archetype_map.get(normalized_format) or "").strip()
+            persona_archetypes = per_persona_archetypes.get(str(number))
+            persona_archetypes = (
+                persona_archetypes if isinstance(persona_archetypes, dict) else {}
+            )
+            forced_archetype = str(
+                persona_archetypes.get(normalized_format)
+                or archetype_map.get(normalized_format)
+                or ""
+            ).strip()
             background_group_key = (
                 normalized_format
                 if share_background
