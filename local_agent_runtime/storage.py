@@ -284,8 +284,18 @@ class ContentStore:
                 os.link(temporary, target)
             except FileExistsError:
                 pass
+            except OSError:
+                # Windows cross-drive / permission fallback: hardlink unavailable
+                try:
+                    os.replace(temporary, target)
+                    return ContentObject(sha256=sha256, path=target, bytes=size)
+                except OSError:
+                    raise
             finally:
                 temporary.unlink(missing_ok=True)
+        # If target already existed or was just linked/replaced, ensure it exists
+        if not target.exists():
+            raise OSError(f"Content blob not materialized at {target}")
         return ContentObject(sha256=sha256, path=target, bytes=size)
 
 

@@ -1078,12 +1078,14 @@ def _run_script_job(job_id: str, script_name: str, payload: dict[str, Any]) -> N
                {"progress_code": "starting", "fence": ACTIVE_JOB_FENCES.get(job_id, 0)}, token=AGENT_TOKEN)
 
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        popen_kwargs2: dict[str, object] = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+        }
+        if os.name == "nt":
+            popen_kwargs2["creationflags"] = _chrome_creationflags()
+        proc = subprocess.Popen(cmd, **popen_kwargs2)  # type: ignore[arg-type]
         for line in iter(proc.stdout.readline, ""):
             if line:
                 api_request("POST", f"/api/agents/jobs/{job_id}/progress",
@@ -1448,14 +1450,16 @@ def _run_claimed_revision(revision: dict[str, Any]) -> None:
             upload_manifest=manifest_path,
         )
         output_dir.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(
-            command,
-            cwd=str(ROOT),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=1900,
-        )
+        run_kwargs: dict[str, object] = {
+            "cwd": str(ROOT),
+            "text": True,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "timeout": 1900,
+        }
+        if os.name == "nt":
+            run_kwargs["creationflags"] = _chrome_creationflags()
+        result = subprocess.run(command, **run_kwargs)  # type: ignore[arg-type]
         log_path = _write_revision_log(revision_id, command, result)
         if result.returncode != 0:
             raise RuntimeError(

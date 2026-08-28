@@ -334,7 +334,14 @@ def restore_local_data(paths: AgentPaths, source: Path) -> dict[str, Any]:
         with zipfile.ZipFile(source) as archive:
             manifest = json.loads(archive.read("backup-manifest.json"))
             for name, expected_hash in manifest["files"].items():
-                if name.startswith("/") or ".." in Path(name).parts:
+                if (
+                    name.startswith("/")
+                    or name.startswith("\\")
+                    or ".." in Path(name).parts
+                    or Path(name).is_absolute()
+                    or bool(re.match(r"^[A-Za-z]:[\\/]", name))
+                    or bool(re.match(r"^\\\\", name))
+                ):
                     raise ValueError("Backup contains an unsafe path")
                 body = archive.read(name)
                 if hashlib.sha256(body).hexdigest() != expected_hash:

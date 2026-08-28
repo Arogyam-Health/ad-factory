@@ -603,6 +603,8 @@ class ProviderRelayTests(unittest.TestCase):
             duration_ms=8,
             error_detail="also down",
         )
+        # New fallback logic iterates through all free models (4) with provider filter bypass,
+        # so provide enough failures to exhaust the catalog.
         with (
             patch.object(render_copy_jobs, "_claim_next_job", return_value=job),
             patch.object(
@@ -613,7 +615,7 @@ class ProviderRelayTests(unittest.TestCase):
             patch.object(
                 render_copy_jobs,
                 "generate_structured_prompt_bundle",
-                side_effect=[first, second],
+                side_effect=[first, second, second, second, second],
             ),
             patch.object(render_copy_jobs, "resolve_effective_config", return_value={}),
             patch.object(render_copy_jobs, "collect_copy_reuse_locks", return_value={}),

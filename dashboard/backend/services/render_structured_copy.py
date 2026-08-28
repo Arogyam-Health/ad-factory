@@ -1540,6 +1540,7 @@ def provider_generate_callable(
     *,
     trace_callback: TraceCallback | None = None,
     transport: ProviderTransport | None = None,
+    provider_options: dict[str, Any] | None = None,
 ) -> GenerateCallable:
     api_key = str(config.get("api_key") or "")
     if not api_key:
@@ -1623,7 +1624,7 @@ def provider_generate_callable(
                 if not api_url.startswith(("http://", "https://")):
                     raise ValueError("OpenCode API URL is invalid")
                 endpoint = f"{api_url}/chat/completions"
-                request_body = {
+                request_body: dict[str, Any] = {
                     "model": api_model,
                     "messages": [
                         {
@@ -1636,6 +1637,16 @@ def provider_generate_callable(
                     "response_format": {"type": "json_object"},
                     "temperature": 0.3 if repair else 0.7,
                 }
+                # Free keys are often pinned to a single provider (e.g. tencent) in Console.
+                # Fallback models like xiaomi/mimo-v2.5 require other providers.
+                # Allow caller to clear the `provider.only` filter.
+                if provider == "opencode" and provider_options:
+                    # OpenCode respects explicit `provider` on the request; `only: null`
+                    # clears the Console-level whitelist.
+                    request_body["provider"] = dict(provider_options)
+                elif provider == "opencode" and provider_options is not None:
+                    # Explicit empty dict also clears filtering when caller passes {}
+                    request_body["provider"] = {}
 
             if transport is not None:
                 relayed = transport(

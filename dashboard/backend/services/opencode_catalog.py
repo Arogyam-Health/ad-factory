@@ -28,6 +28,12 @@ def next_free_opencode_model(current: str = "") -> str:
     return PREFERRED_FREE_OPENCODE_MODELS[0] if PREFERRED_FREE_OPENCODE_MODELS else ""
 
 
+def iter_free_opencode_models(current: str = "") -> list[str]:
+    """Yield fallback models in preference order, excluding the current model."""
+    current = (current or "").strip()
+    return [model for model in PREFERRED_FREE_OPENCODE_MODELS if model != current]
+
+
 def list_opencode_models(
     api_url: str | None = None, api_key: str | None = None
 ) -> list[str]:

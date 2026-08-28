@@ -190,16 +190,19 @@ class LocalScriptBrowser:
         ]
         if engine == "chatgpt":
             command.extend(["--cdp-url", os.getenv("AGENT_CDP_URL", "http://127.0.0.1:9222")])
-        proc = subprocess.Popen(
-            command,
-            cwd=str(self.project_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            start_new_session=True,
-        )
+        popen_kwargs: dict[str, object] = {
+            "cwd": str(self.project_root),
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+        }
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+        else:
+            popen_kwargs["start_new_session"] = True
+        proc = subprocess.Popen(command, **popen_kwargs)  # type: ignore[arg-type]
         stdout_queue: queue.Queue[str | None] = queue.Queue()
 
         def _read_stdout() -> None:

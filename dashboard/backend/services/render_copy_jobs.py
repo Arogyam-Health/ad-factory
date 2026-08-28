@@ -27,7 +27,10 @@ from dashboard.backend.services.prompt_delivery import (
     encrypt_prompt_bundle,
 )
 from dashboard.backend.services.llm_trace import record_recent_llm_trace
-from dashboard.backend.services.opencode_catalog import next_free_opencode_model
+from dashboard.backend.services.opencode_catalog import (
+    iter_free_opencode_models,
+    next_free_opencode_model,
+)
 from dashboard.backend.services.provider_config import (
     get_materialized_provider_config,
 )
@@ -971,7 +974,13 @@ def process_next_render_copy_job() -> bool:
                 error_detail=relay_exc.code,
             ) from relay_exc
 
-    def invoke(provider_name: str, provider_model: str, config: dict[str, str]) -> dict[str, Any]:
+    def invoke(
+        provider_name: str,
+        provider_model: str,
+        config: dict[str, str],
+        *,
+        provider_options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return generate_structured_prompt_bundle(
             run_id=str(job["run_id"]),
             run_number=int(job["run_number"]),
@@ -995,6 +1004,7 @@ def process_next_render_copy_job() -> bool:
                     org_id=_copy_trace_org_id(job),
                     event=event,
                 ),
+                provider_options=provider_options,
             ),
         )
 
@@ -1100,10 +1110,12 @@ def process_next_render_copy_job() -> bool:
                 exc,
                 provider_config or {},
             )
-        fallback_model = next_free_opencode_model(
+        # Iterate through free fallback catalog to survive provider-filter mismatches
+        # (e.g. Console `provider.only=tencent` rejects xiaomi/mimo → try next).
+        fallback_models = iter_free_opencode_models(
             str(exc.model or settings.get("model") or "")
         )
-        if job.get("fallback_attempted") or not fallback_model:
+        if job.get("fallback_attempted") or not fallback_models:
             _fail_job(
                 job,
                 error_code=exc.code,
@@ -1116,14 +1128,6 @@ def process_next_render_copy_job() -> bool:
                 last_error=str(exc.error_detail or exc.code),
             )
             return True
-        last_error = (
-            f"Provider error: {exc.error_detail or exc.code}. "
-            f"Falling back to {fallback_model}."
-        )
-        job["last_error"] = last_error
-        job["fallback_model"] = fallback_model
-        job["fallback_attempted"] = True
-        _persist_copy_last_error(job, last_error, fallback_model)
         fallback_config = get_materialized_provider_config(
             str(job["user_id"]),
             "opencode",
@@ -1136,40 +1140,98 @@ def process_next_render_copy_job() -> bool:
                 model=exc.model,
                 duration_ms=exc.duration_ms,
                 http_status=exc.http_status,
-                error_detail=f"{last_error} No OpenCode credentials for fallback.",
+                error_detail=f"Provider error: {exc.error_detail or exc.code}. No OpenCode credentials for fallback.",
                 trace_persistence_error=trace_error,
-                last_error=f"{last_error} No OpenCode credentials for fallback.",
+                last_error=f"Provider error: {exc.error_detail or exc.code}. No OpenCode credentials for fallback.",
             )
             return True
-        try:
-            return finish(invoke("opencode", fallback_model, fallback_config))
-        except ProviderCallError as fallback_exc:
-            if fallback_exc.code in _TRANSIENT_RELAY_ERRORS:
-                _defer_job_for_local_agent(job, fallback_exc.code)
-                return True
-            fallback_trace = fallback_exc.trace_persistence_error
-            if not fallback_exc.trace_persisted:
-                fallback_trace = _record_provider_failure_trace(
-                    job,
-                    fallback_exc,
-                    fallback_config,
-                )
-            combined = (
-                f"{last_error} Fallback also failed: "
-                f"{fallback_exc.error_detail or fallback_exc.code}."
+        # Clear Console-level `provider.only` whitelist on fallback attempts.
+        fallback_provider_options: dict[str, Any] = {"allow_fallback": True}
+        last_error = ""
+        combined = ""
+        last_exc: ProviderCallError | None = None
+        for idx, fallback_model in enumerate(fallback_models):
+            last_error = (
+                f"Provider error: {exc.error_detail or exc.code}. "
+                f"Falling back to {fallback_model}."
             )
+            if idx == 0:
+                job["last_error"] = last_error
+                job["fallback_model"] = fallback_model
+                job["fallback_attempted"] = True
+                _persist_copy_last_error(job, last_error, fallback_model)
+            else:
+                # chain subsequent attempts
+                last_error = f"{combined} Falling back to {fallback_model}."
+                job["last_error"] = last_error
+                job["fallback_model"] = fallback_model
+                _persist_copy_last_error(job, last_error, fallback_model)
+            try:
+                return finish(
+                    invoke(
+                        "opencode",
+                        fallback_model,
+                        fallback_config,
+                        provider_options=fallback_provider_options,
+                    )
+                )
+            except ProviderCallError as fallback_exc:
+                last_exc = fallback_exc
+                if fallback_exc.code in _TRANSIENT_RELAY_ERRORS:
+                    _defer_job_for_local_agent(job, fallback_exc.code)
+                    return True
+                fallback_trace = fallback_exc.trace_persistence_error
+                if not fallback_exc.trace_persisted:
+                    fallback_trace = _record_provider_failure_trace(
+                        job,
+                        fallback_exc,
+                        fallback_config,
+                    )
+                combined = (
+                    f"{last_error} Fallback also failed: "
+                    f"{fallback_exc.error_detail or fallback_exc.code}."
+                )
+                # If we have more models, continue to next fallback
+                if idx < len(fallback_models) - 1:
+                    continue
+                _fail_job(
+                    job,
+                    error_code=fallback_exc.code,
+                    provider=fallback_exc.provider,
+                    model=fallback_exc.model,
+                    duration_ms=fallback_exc.duration_ms,
+                    http_status=fallback_exc.http_status,
+                    error_detail=combined,
+                    trace_persistence_error=fallback_trace or trace_error,
+                    last_error=combined,
+                )
+                return True
+        # All fallbacks exhausted
+        if last_exc is not None:
             _fail_job(
                 job,
-                error_code=fallback_exc.code,
-                provider=fallback_exc.provider,
-                model=fallback_exc.model,
-                duration_ms=fallback_exc.duration_ms,
-                http_status=fallback_exc.http_status,
-                error_detail=combined,
-                trace_persistence_error=fallback_trace or trace_error,
-                last_error=combined,
+                error_code=last_exc.code,
+                provider=last_exc.provider,
+                model=last_exc.model,
+                duration_ms=last_exc.duration_ms,
+                http_status=last_exc.http_status,
+                error_detail=combined or last_exc.error_detail,
+                trace_persistence_error=trace_error,
+                last_error=combined or str(last_exc.error_detail or last_exc.code),
             )
-            return True
+        else:
+            _fail_job(
+                job,
+                error_code=exc.code,
+                provider=exc.provider,
+                model=exc.model,
+                duration_ms=exc.duration_ms,
+                http_status=exc.http_status,
+                error_detail=exc.error_detail,
+                trace_persistence_error=trace_error,
+                last_error=str(exc.error_detail or exc.code),
+            )
+        return True
     except ValueError as exc:
         _fail_job(
             job,
@@ -1191,10 +1253,10 @@ def process_next_render_copy_job() -> bool:
                 last_error=detail,
             )
             return True
-        fallback_model = next_free_opencode_model(
+        fallback_models = iter_free_opencode_models(
             str(settings.get("model") or "")
         )
-        if job.get("fallback_attempted") or not fallback_model:
+        if job.get("fallback_attempted") or not fallback_models:
             _fail_job(
                 job,
                 error_code="copy_generation_failed",
@@ -1204,13 +1266,6 @@ def process_next_render_copy_job() -> bool:
                 last_error=detail,
             )
             return True
-        last_error = (
-            f"Provider error: {detail}. Falling back to {fallback_model}."
-        )
-        job["last_error"] = last_error
-        job["fallback_model"] = fallback_model
-        job["fallback_attempted"] = True
-        _persist_copy_last_error(job, last_error, fallback_model)
         fallback_config = get_materialized_provider_config(
             str(job["user_id"]),
             "opencode",
@@ -1221,45 +1276,67 @@ def process_next_render_copy_job() -> bool:
                 error_code="copy_generation_failed",
                 provider=str(settings.get("provider") or ""),
                 model=str(settings.get("model") or ""),
-                error_detail=f"{last_error} No OpenCode credentials for fallback.",
-                last_error=f"{last_error} No OpenCode credentials for fallback.",
+                error_detail=f"Provider error: {detail}. No OpenCode credentials for fallback.",
+                last_error=f"Provider error: {detail}. No OpenCode credentials for fallback.",
             )
             return True
-        try:
-            return finish(invoke("opencode", fallback_model, fallback_config))
-        except ProviderCallError as fallback_exc:
-            if fallback_exc.code in _TRANSIENT_RELAY_ERRORS:
-                _defer_job_for_local_agent(job, fallback_exc.code)
+        fallback_provider_options: dict[str, Any] = {"allow_fallback": True}
+        last_error = ""
+        combined = ""
+        for idx, fallback_model in enumerate(fallback_models):
+            last_error = f"Provider error: {detail}. Falling back to {fallback_model}."
+            if idx > 0:
+                last_error = f"{combined} Falling back to {fallback_model}."
+            job["last_error"] = last_error
+            job["fallback_model"] = fallback_model
+            job["fallback_attempted"] = True if idx == 0 else True
+            _persist_copy_last_error(job, last_error, fallback_model)
+            try:
+                return finish(
+                    invoke(
+                        "opencode",
+                        fallback_model,
+                        fallback_config,
+                        provider_options=fallback_provider_options,
+                    )
+                )
+            except ProviderCallError as fallback_exc:
+                if fallback_exc.code in _TRANSIENT_RELAY_ERRORS:
+                    _defer_job_for_local_agent(job, fallback_exc.code)
+                    return True
+                combined = (
+                    f"{last_error} Fallback also failed: "
+                    f"{fallback_exc.error_detail or fallback_exc.code}."
+                )
+                if idx < len(fallback_models) - 1:
+                    continue
+                _fail_job(
+                    job,
+                    error_code=fallback_exc.code,
+                    provider=fallback_exc.provider,
+                    model=fallback_exc.model,
+                    duration_ms=fallback_exc.duration_ms,
+                    http_status=fallback_exc.http_status,
+                    error_detail=combined,
+                    last_error=combined,
+                )
                 return True
-            combined = (
-                f"{last_error} Fallback also failed: "
-                f"{fallback_exc.error_detail or fallback_exc.code}."
-            )
-            _fail_job(
-                job,
-                error_code=fallback_exc.code,
-                provider=fallback_exc.provider,
-                model=fallback_exc.model,
-                duration_ms=fallback_exc.duration_ms,
-                http_status=fallback_exc.http_status,
-                error_detail=combined,
-                last_error=combined,
-            )
-            return True
-        except Exception as fallback_exc:
-            combined = (
-                f"{last_error} Fallback also failed: "
-                f"{type(fallback_exc).__name__}: {fallback_exc}."
-            )
-            _fail_job(
-                job,
-                error_code="copy_generation_failed",
-                provider="opencode",
-                model=fallback_model,
-                error_detail=combined,
-                last_error=combined,
-            )
-            return True
+            except Exception as fallback_exc:
+                combined = (
+                    f"{last_error} Fallback also failed: "
+                    f"{type(fallback_exc).__name__}: {fallback_exc}."
+                )
+                if idx < len(fallback_models) - 1:
+                    continue
+                _fail_job(
+                    job,
+                    error_code="copy_generation_failed",
+                    provider="opencode",
+                    model=fallback_model,
+                    error_detail=combined,
+                    last_error=combined,
+                )
+                return True
     return True
 
 
