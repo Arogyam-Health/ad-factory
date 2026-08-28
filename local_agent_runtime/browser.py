@@ -8,6 +8,11 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 
+def job_uses_new_window() -> bool:
+    """Windows CDP often dies on Target.createTarget(newWindow=true)."""
+    return os.name != "nt"
+
+
 def _first_env(environ: Mapping[str, str], *keys: str) -> str:
     for key in keys:
         value = str(environ.get(key) or "").strip()
@@ -203,8 +208,29 @@ def _page_list(context) -> list:
     return []
 
 
+def _iter_contexts(context) -> list:
+    """CDP newWindow targets often land in a sibling Playwright context."""
+    seen: list = []
+    browser = getattr(context, "browser", None) if context is not None else None
+    raw = getattr(browser, "contexts", None) if browser is not None else None
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if item is not None and item not in seen:
+                seen.append(item)
+    if context is not None and context not in seen:
+        seen.insert(0, context)
+    return seen
+
+
+def _known_pages(context) -> list:
+    pages: list = []
+    for item in _iter_contexts(context):
+        pages.extend(_page_list(item))
+    return pages
+
+
 def _existing_page(context):
-    pages = _page_list(context)
+    pages = _known_pages(context)
     return pages[0] if pages else None
 
 
@@ -214,10 +240,17 @@ def _cdp_session(context, page=None):
         return None
     seed = page if page is not None else _existing_page(context)
     if seed is not None:
-        try:
-            return context.new_cdp_session(seed)
-        except Exception:
-            pass
+        owners = []
+        if context is not None:
+            owners.append(context)
+        seed_owner = getattr(seed, "context", None)
+        if seed_owner is not None and seed_owner not in owners:
+            owners.append(seed_owner)
+        for owner in owners:
+            try:
+                return owner.new_cdp_session(seed)
+            except Exception:
+                continue
     browser = getattr(context, "browser", None)
     if browser is None:
         return None
@@ -246,7 +279,7 @@ def _wait_for_adopted_page(context, target_id: str, timeout: float):
         return None
     deadline = time.time() + max(0.0, timeout)
     while True:
-        for page in _page_list(context):
+        for page in _known_pages(context):
             if _page_target_id(page) == target_id:
                 return page
         if time.time() >= deadline:
@@ -259,6 +292,10 @@ def close_cdp_page(page) -> None:
     if page is None:
         return
     context = getattr(page, "context", None)
+    if is_cdp_attached(context):
+        known = _known_pages(context)
+        if len(known) == 1 and page in known:
+            return
     target_id = _page_target_id(page)
     try:
         page.close()
@@ -312,27 +349,26 @@ def install_job_signal_handlers() -> None:
             continue
 
 
-def open_cdp_page(context, *, new_window: bool = False, timeout: float = 8.0):
-    """Open one tab or window on the already-logged-in CDP Chrome profile.
-
-    Creates exactly one Chrome target. If Playwright never attaches to it,
-    that target is closed and no second window is opened.
-    """
+def _open_cdp_target(context, *, new_window: bool, timeout: float):
     session = _cdp_session(context)
     if session is None:
-        raise RuntimeError("Chrome CDP is not available to open a job window.")
-    created = session.send(
-        "Target.createTarget",
-        {"url": "about:blank", "newWindow": bool(new_window)},
-    )
+        return None
+    try:
+        created = session.send(
+            "Target.createTarget",
+            {"url": "about:blank", "newWindow": bool(new_window)},
+        )
+    except Exception as exc:
+        print(f"  [browser] createTarget(newWindow={bool(new_window)}) failed: {exc}")
+        return None
     created_id = _target_id_from_info(created)
     if not created_id:
-        raise RuntimeError("Chrome did not return a target for the job window.")
+        return None
     _remember_job_target(context, created_id)
     page = _wait_for_adopted_page(context, created_id, timeout)
     if page is None:
         _close_target_id(context, created_id)
-        raise RuntimeError("Chrome opened a job window but Playwright did not attach to it.")
+        return None
     try:
         page._ad_factory_target_id = created_id
     except Exception:
@@ -341,4 +377,33 @@ def open_cdp_page(context, *, new_window: bool = False, timeout: float = 8.0):
         page.bring_to_front()
     except Exception:
         pass
+    return page
+
+
+def open_cdp_page(context, *, new_window: bool | None = None, timeout: float = 20.0):
+    """Open one tab or window on the already-logged-in CDP Chrome profile.
+
+    Creates one Chrome target. If a new window is not adopted (common on
+    Windows), that target is closed and the same call retries as a tab.
+    Never uses Playwright new_page() on the shared CDP profile.
+    """
+    if new_window is None:
+        new_window = job_uses_new_window()
+    if _cdp_session(context) is None:
+        raise RuntimeError(
+            "Chrome CDP is not available. Leave the agent Chrome window open "
+            "and signed in to ChatGPT."
+        )
+    page = None
+    if new_window:
+        page = _open_cdp_target(context, new_window=True, timeout=timeout)
+        if page is None:
+            print("  [browser] Job window was not attached; opening a tab instead.")
+    if page is None:
+        page = _open_cdp_target(context, new_window=False, timeout=timeout)
+    if page is None:
+        raise RuntimeError(
+            "Chrome debug connection was lost (no browser is open). "
+            "Leave the agent Chrome window open. Do not close it after a generation."
+        )
     return page

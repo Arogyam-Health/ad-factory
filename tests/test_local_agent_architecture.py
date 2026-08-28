@@ -515,6 +515,9 @@ class AgentAuthTests(unittest.TestCase):
             'api_request("POST", "/api/agents/heartbeat"',
             source,
         )
+        self.assertIn('name="agent-heartbeat"', source)
+        self.assertIn("_run_claimed_revision", source)
+        self.assertIn("_heartbeat_forever", source)
         self.assertNotIn("if not WS_CLIENT.connected and now - last_heartbeat", source)
 
 

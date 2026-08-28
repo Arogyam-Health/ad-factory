@@ -3591,8 +3591,8 @@ def run() -> None:
         job_pages: list = []
         results: list[dict[str, Any]] = []
         try:
-            from local_agent_runtime.browser import open_cdp_page
-            page = remember_job_page(job_pages, open_cdp_page(context, new_window=True))
+            from local_agent_runtime.browser import job_uses_new_window, open_cdp_page
+            page = remember_job_page(job_pages, open_cdp_page(context, new_window=job_uses_new_window()))
 
             log_progress("browser_ready", f"Browser launched, headless={args.headless}")
             print(f"\nBrowser launched in {'HEADLESS' if args.headless else 'VISIBLE'} mode.")
@@ -3730,7 +3730,7 @@ def run() -> None:
                             try:
                                 page = remember_job_page(
                                     job_pages,
-                                    open_cdp_page(context, new_window=True),
+                                    open_cdp_page(context, new_window=job_uses_new_window()),
                                 )
                             except Exception:
                                 pass

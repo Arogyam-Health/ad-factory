@@ -88,6 +88,8 @@ ACTIVE_JOB_FENCES: dict[str, int] = {}
 MAX_LOCAL_JOB_SLOTS = 3
 ACTIVE_JOB_THREADS: dict[str, threading.Thread] = {}
 _JOB_SLOT_LOCK = threading.Lock()
+_REVISION_LOCK = threading.Lock()
+_REVISION_THREAD: threading.Thread | None = None
 
 
 def _prune_job_slots() -> int:
@@ -98,9 +100,21 @@ def _prune_job_slots() -> int:
         return len(ACTIVE_JOB_THREADS)
 
 
+def _live_job_count() -> int:
+    return _prune_job_slots()
+
+
+def _revision_running() -> bool:
+    with _REVISION_LOCK:
+        return _REVISION_THREAD is not None and _REVISION_THREAD.is_alive()
+
+
 def _dispatch_job(job: dict[str, Any]) -> None:
     job_id = str(job.get("job_id") or "")
     if not job_id:
+        return
+    if _revision_running():
+        print(f"  [agent] Revision in progress; leaving {job_id} queued", flush=True)
         return
     with _JOB_SLOT_LOCK:
         current = ACTIVE_JOB_THREADS.get(job_id)
@@ -757,31 +771,149 @@ def _prepare_916_conversion_prompts(
     return created
 
 
-def launch_browser_cdp(browser: str, port: int = 9222, profile_dir: Path | None = None) -> None:
-    if check_cdp().get("available"):
-        return
-    profile_dir = profile_dir or (AGENT_PATHS.browser / f"{browser.lower()}-profile")
-    profile_dir.mkdir(parents=True, exist_ok=True)
+def _chrome_creationflags() -> int:
+    if os.name != "nt":
+        return 0
+    return int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
+
+
+def _pids_using_profile(profile_dir: Path) -> list[int]:
+    marker = os.path.normcase(str(profile_dir.resolve()))
+    if len(marker) < 20:
+        return []
+    pids: list[int] = []
+    try:
+        if os.name == "nt":
+            escaped = marker.replace("'", "''")
+            script = (
+                "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | "
+                "Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains('"
+                + escaped.lower()
+                + "') } | ForEach-Object { $_.ProcessId }"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            lines = (result.stdout or "").splitlines()
+        else:
+            result = subprocess.run(
+                ["ps", "-eo", "pid=,args="],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            lines = (result.stdout or "").splitlines()
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    for line in lines:
+        raw = line.strip()
+        if not raw:
+            continue
+        if os.name == "nt" and raw.isdigit():
+            pids.append(int(raw))
+            continue
+        parts = raw.split(None, 1)
+        if len(parts) != 2 or not parts[0].isdigit():
+            continue
+        args = parts[1]
+        lower = args.lower()
+        if os.path.normcase(args).find(marker) < 0:
+            continue
+        if "python" in lower:
+            continue
+        if not any(name in lower for name in ("chrome", "chromium", "msedge")):
+            continue
+        pids.append(int(parts[0]))
+    return pids
+
+
+def _stop_profile_chrome(profile_dir: Path) -> int:
+    killed = 0
+    for pid in _pids_using_profile(profile_dir):
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True,
+                    timeout=10,
+                )
+            else:
+                os.kill(pid, signal.SIGTERM)
+            killed += 1
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+    return killed
+
+
+def _spawn_chrome(exe: str, port: int, profile_dir: Path) -> None:
     args = [
+        exe,
         f"--remote-debugging-port={port}",
+        "--remote-debugging-address=127.0.0.1",
         f"--user-data-dir={profile_dir}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--disable-session-crashed-bubble",
         "https://chatgpt.com/",
     ]
+    kwargs: dict[str, Any] = {
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    flags = _chrome_creationflags()
+    if flags:
+        kwargs["creationflags"] = flags
+    subprocess.Popen(args, **kwargs)
+
+
+def launch_browser_cdp(browser: str, port: int = 9222, profile_dir: Path | None = None) -> None:
+    profile_dir = profile_dir or (AGENT_PATHS.browser / f"{browser.lower()}-profile")
+    profile_dir.mkdir(parents=True, exist_ok=True)
     exe = resolve_browser_executable(browser) or _prompt_browser_path(browser)
-    if exe:
+    if not exe:
+        print(f"[agent] Start {browser} manually with --remote-debugging-port={port} then re-run.")
+        return
+    misses = 0
+    while True:
+        if check_cdp().get("available"):
+            misses = 0
+            time.sleep(5)
+            continue
+        misses += 1
+        if misses < 3:
+            time.sleep(5)
+            continue
+        misses = 0
+        print(f"[agent] Chrome debug port is down; launching agent {browser}...")
         try:
-            subprocess.Popen([exe, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for _ in range(30):
-                time.sleep(1)
-                if check_cdp().get("available"):
-                    print(f"[agent] Launched {browser} with CDP on 127.0.0.1:{port}")
-                    return
-            print(f"[agent] {browser} launched but CDP not reachable on port {port} after 30s.")
+            _spawn_chrome(exe, port, profile_dir)
         except Exception as exc:
             print(f"[agent] Failed to launch {browser}: {exc}")
-    print(f"[agent] Start {browser} manually with --remote-debugging-port={port} then re-run.")
+            time.sleep(10)
+            continue
+        for _ in range(30):
+            time.sleep(1)
+            if check_cdp().get("available"):
+                print(
+                    f"[agent] Launched {browser} with CDP on 127.0.0.1:{port}. "
+                    "Sign in to ChatGPT in that window and leave it open."
+                )
+                break
+        else:
+            print(
+                f"[agent] {browser} launched but CDP is not on port {port}. "
+                "Closing leftover agent Chrome only, then retrying."
+            )
+            _stop_profile_chrome(profile_dir)
+            time.sleep(3)
+            try:
+                _spawn_chrome(exe, port, profile_dir)
+            except Exception as exc:
+                print(f"[agent] Failed to relaunch {browser}: {exc}")
+            time.sleep(10)
 
 
 def execute_job(job: dict[str, Any]) -> None:
@@ -1245,12 +1377,9 @@ def _write_revision_log(
     return log_path
 
 
-def _execute_next_output_revision() -> bool:
+def _run_claimed_revision(revision: dict[str, Any]) -> None:
     if AGENT_STATE is None:
-        return False
-    revision = AGENT_STATE.claim_next_output_revision()
-    if revision is None:
-        return False
+        return
     revision_id = str(revision["revision_id"])
     work_root = AGENT_PATHS.staging / "revisions" / revision_id
     try:
@@ -1278,8 +1407,16 @@ def _execute_next_output_revision() -> bool:
             int(revision["prompt_resource_version"]),
         )
         engine = str(revision["engine"]).lower()
-        if engine == "chatgpt" and not check_cdp().get("available"):
-            raise RuntimeError(f"No local Chrome CDP browser is available at {AGENT_CDP_URL}")
+        if engine in {"chatgpt", "gemini"}:
+            for _ in range(25):
+                if check_cdp().get("available"):
+                    break
+                time.sleep(1)
+            else:
+                raise RuntimeError(
+                    f"No local Chrome CDP browser is available at {AGENT_CDP_URL}. "
+                    "Leave the agent Chrome window open."
+                )
         prompt_dir = work_root / "prompts"
         output_dir = work_root / "output"
         prompt_dir.mkdir(parents=True, exist_ok=True)
@@ -1354,7 +1491,44 @@ def _execute_next_output_revision() -> bool:
     except Exception as exc:
         AGENT_STATE.fail_output_revision(revision_id, str(exc))
         print(f"  [agent] Output revision {revision_id} failed: {exc}", flush=True)
-    return True
+
+
+def _execute_next_output_revision() -> bool:
+    global _REVISION_THREAD
+    if AGENT_STATE is None:
+        return False
+    if _live_job_count() > 0:
+        return False
+    with _REVISION_LOCK:
+        if _REVISION_THREAD is not None and _REVISION_THREAD.is_alive():
+            return False
+        revision = AGENT_STATE.claim_next_output_revision()
+        if revision is None:
+            return False
+        _REVISION_THREAD = threading.Thread(
+            target=_run_claimed_revision,
+            args=(revision,),
+            name=f"revision-{revision['revision_id']}",
+            daemon=True,
+        )
+        _REVISION_THREAD.start()
+    return False
+
+
+def _heartbeat_forever() -> None:
+    while True:
+        try:
+            if AGENT_TOKEN:
+                api_request(
+                    "POST",
+                    "/api/agents/heartbeat",
+                    token=AGENT_TOKEN,
+                    timeout=20,
+                    quiet=True,
+                )
+        except Exception:
+            pass
+        time.sleep(20)
 
 
 def _configure_runtime(args: argparse.Namespace) -> None:
@@ -1600,6 +1774,7 @@ def register_and_run(args: argparse.Namespace) -> None:
         provider_handler=handle_provider_payload,
     )
     WS_CLIENT.start()
+    threading.Thread(target=_heartbeat_forever, name="agent-heartbeat", daemon=True).start()
 
     last_heartbeat = 0.0
     last_connection_warning = 0.0
@@ -1609,8 +1784,7 @@ def register_and_run(args: argparse.Namespace) -> None:
     while True:
         try:
             signaled = JOB_SIGNAL.wait(1.0)
-            if _execute_next_output_revision():
-                continue
+            _execute_next_output_revision()
             now = time.time()
             sync_pairing_approvals(fetch_remote=now >= next_pairing_poll)
             if now >= next_pairing_poll:

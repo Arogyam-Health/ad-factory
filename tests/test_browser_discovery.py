@@ -300,6 +300,25 @@ class CloseCdpPageTests(unittest.TestCase):
         session.send.assert_any_call("Target.closeTarget", {"targetId": "tid-1"})
         context.close.assert_not_called()
 
+    def test_close_cdp_page_keeps_last_cdp_window(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import close_cdp_page, mark_cdp_attached
+
+        context = MagicMock()
+        mark_cdp_attached(context)
+        page = MagicMock()
+        page.context = context
+        page._ad_factory_target_id = "tid-keep"
+        context.pages = [page]
+        session = MagicMock()
+        context.new_cdp_session.return_value = session
+
+        close_cdp_page(page)
+
+        page.close.assert_not_called()
+        session.send.assert_not_called()
+
     def test_open_cdp_page_does_not_call_new_page_after_create_target(self) -> None:
         from unittest.mock import MagicMock
 
@@ -368,6 +387,90 @@ class CloseCdpPageTests(unittest.TestCase):
             open_cdp_page(context, new_window=True, timeout=0.2)
         context.new_page.assert_not_called()
         self.assertIn(("Target.closeTarget", {"targetId": "tid-orphan"}), calls)
+
+    def test_open_cdp_page_adopts_page_from_other_context(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import open_cdp_page
+
+        context = MagicMock()
+        other = MagicMock()
+        seed = MagicMock(name="seed")
+        created = MagicMock(name="created")
+        seed.context = context
+        created.context = other
+        context.pages = [seed]
+        other.pages = []
+        browser = MagicMock()
+        browser.contexts = [context, other]
+        context.browser = browser
+        other.browser = browser
+        context.new_page = MagicMock(side_effect=AssertionError("new_page should not be called"))
+        other.new_page = MagicMock(side_effect=AssertionError("new_page should not be called"))
+
+        def new_cdp_session(page):
+            session = MagicMock()
+
+            def send(method, params=None):
+                if method == "Target.createTarget":
+                    if created not in other.pages:
+                        other.pages.append(created)
+                    return {"targetId": "tid-new"}
+                if method == "Target.getTargetInfo":
+                    if page is created:
+                        return {"targetId": "tid-new"}
+                    return {"targetId": "tid-seed"}
+                return {}
+
+            session.send.side_effect = send
+            return session
+
+        context.new_cdp_session.side_effect = new_cdp_session
+        other.new_cdp_session.side_effect = new_cdp_session
+        page = open_cdp_page(context, new_window=True, timeout=1)
+        self.assertIs(page, created)
+        context.new_page.assert_not_called()
+        self.assertEqual(created._ad_factory_target_id, "tid-new")
+
+    def test_open_cdp_page_retries_as_tab_when_create_target_raises(self) -> None:
+        from unittest.mock import MagicMock
+
+        from local_agent_runtime.browser import open_cdp_page
+
+        context = MagicMock()
+        seed = MagicMock(name="seed")
+        created = MagicMock(name="created")
+        seed.context = context
+        created.context = context
+        pages = [seed]
+        context.pages = pages
+        context.new_page = MagicMock(side_effect=AssertionError("new_page should not be called"))
+
+        def new_cdp_session(page):
+            session = MagicMock()
+
+            def send(method, params=None):
+                if method == "Target.createTarget":
+                    if params and params.get("newWindow"):
+                        raise RuntimeError(
+                            "Target.createTarget: Failed to open new tab - no browser is open"
+                        )
+                    if created not in pages:
+                        pages.append(created)
+                    return {"targetId": "tid-tab"}
+                if method == "Target.getTargetInfo":
+                    if page is created:
+                        return {"targetId": "tid-tab"}
+                    return {"targetId": "tid-seed"}
+                return {}
+
+            session.send.side_effect = send
+            return session
+
+        context.new_cdp_session.side_effect = new_cdp_session
+        page = open_cdp_page(context, new_window=True, timeout=1)
+        self.assertIs(page, created)
+        context.new_page.assert_not_called()
 
     def test_release_browser_closes_orphan_targets(self) -> None:
         from unittest.mock import MagicMock

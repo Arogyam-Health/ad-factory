@@ -556,29 +556,8 @@ export class LocalDataPlaneClient {
     return payload.items || [];
   }
 
-  async listRunsAcrossOwners(deviceId, owners = []) {
-    const previous = this._pairedOwner;
-    const byId = new Map();
-    const keys = [
-      ...owners.map((item) => ownerKeyOf(item.ownerType || item.owner_type, item.ownerId || item.owner_id)),
-      ...this.storedOwnerKeys(deviceId),
-    ].filter((owner, index, list) => owner && list.indexOf(owner) === index);
-    try {
-      for (const owner of keys) {
-        if (!this.session(deviceId, owner)?.access_token) continue;
-        this._pairedOwner = owner;
-        try {
-          for (const item of await this.listRuns(deviceId, owner)) {
-            if (item?.run_id) byId.set(item.run_id, item);
-          }
-        } catch {
-          /* skip owners without a live session */
-        }
-      }
-    } finally {
-      this._pairedOwner = previous;
-    }
-    return [...byId.values()];
+  async listRunsAcrossOwners(deviceId, _owners = []) {
+    return this.listRuns(deviceId);
   }
 
   async deleteRun(runId, deviceId, ownerKey = "") {
@@ -818,19 +797,20 @@ export class LocalDataPlaneClient {
     return payload.items || [];
   }
 
-  async promptContent(promptId, deviceId, version) {
+  async promptContent(promptId, deviceId, version, ownerKey = "") {
     return cachedText("prompt", promptId, version, async () => {
       const response = await this.authorizedFetch(
         `/v1/prompts/${encodeURIComponent(promptId)}/content`,
         { method: "GET" },
         deviceId,
+        ownerKey,
       );
       if (!response.ok) await readJson(response);
       return response.text();
     });
   }
 
-  async putPrompt(promptId, runId, content, expectedVersion, deviceId) {
+  async putPrompt(promptId, runId, content, expectedVersion, deviceId, ownerKey = "") {
     const requestOperationId = operationId("prompt");
     return readJson(await this.authorizedFetch(
       `/v1/prompts/${encodeURIComponent(promptId)}`,
@@ -845,6 +825,7 @@ export class LocalDataPlaneClient {
         }),
       },
       deviceId,
+      ownerKey,
     ));
   }
 

@@ -58,12 +58,6 @@ function mergeOutputs(local: OutputRow[], meta: OutputRow[]) {
   return [...byKey.values()];
 }
 
-function runOwnerKey(run: Run) {
-  const ownerType = run.owner_type === "org" || run.owner_type === "user" ? run.owner_type : "";
-  const ownerId = String(run.owner_id || "");
-  return ownerType && ownerId ? `${ownerType}:${ownerId}` : "";
-}
-
 function deskPromptStatus(status?: string) {
   const raw = String(status || "ready").trim();
   return !raw || raw === "available_local" ? "ready" : raw;
@@ -74,7 +68,6 @@ export function RunWorkspace({
   deviceId,
   agentId,
   paired,
-  plateOwner = "",
   productAssetIds = [],
   refreshToken = 0,
   onPair,
@@ -86,7 +79,6 @@ export function RunWorkspace({
   deviceId: string;
   agentId: string;
   paired: boolean;
-  plateOwner?: string;
   productAssetIds?: string[];
   refreshToken?: number;
   onPair: () => Promise<{ ok: boolean; deviceId: string; agentId: string }>;
@@ -114,37 +106,11 @@ export function RunWorkspace({
   useEffect(() => {
     let cancelled = false;
     async function loadLocalInventory(localDevice: string) {
-      const owners = [
-        runOwnerKey(run),
-        plateOwner,
-        ...localDataPlane.storedOwnerKeys(localDevice),
-      ].filter((owner, index, list) => owner && list.indexOf(owner) === index);
-      let localPrompts: PromptRow[] = [];
-      let localOutputs: OutputRow[] = [];
-      let matchedOwner = "";
-      for (const owner of owners) {
-        const parts = String(owner).split(":");
-        const ownerType = parts[0];
-        const ownerId = parts.slice(1).join(":");
-        if ((ownerType !== "org" && ownerType !== "user") || !ownerId) continue;
-        if (!localDataPlane.session(localDevice, owner)?.access_token) {
-          try {
-            await localDataPlane.ensurePaired({ ownerType, ownerId, deviceId: localDevice, agentId });
-          } catch {
-            continue;
-          }
-        }
-        const [promptsForOwner, outputsForOwner] = await Promise.all([
-          localDataPlane.listPrompts(runId, localDevice, owner).catch(() => []),
-          localDataPlane.listOutputs(runId, localDevice, owner).catch(() => []),
-        ]);
-        if (!promptsForOwner.length && !outputsForOwner.length) continue;
-        localPrompts = promptsForOwner;
-        localOutputs = outputsForOwner;
-        matchedOwner = owner;
-        break;
-      }
-      return { localPrompts, localOutputs, matchedOwner };
+      const [localPrompts, localOutputs] = await Promise.all([
+        localDataPlane.listPrompts(runId, localDevice).catch(() => []),
+        localDataPlane.listOutputs(runId, localDevice).catch(() => []),
+      ]);
+      return { localPrompts, localOutputs };
     }
     async function load() {
       const [metaPrompts, metaImages] = await Promise.all([
@@ -157,12 +123,12 @@ export function RunWorkspace({
       const localDevice = deviceId || run.device_id || "";
       if (localDevice && paired) {
         try {
-          const { localPrompts, localOutputs, matchedOwner } = await loadLocalInventory(localDevice);
+          const inventory = await loadLocalInventory(localDevice);
           if (cancelled) return;
-          if (localPrompts.length) {
+          if (inventory.localPrompts.length) {
             nextPrompts = mergePromptRows(
               nextPrompts,
-              localPrompts.map((item) => ({
+              inventory.localPrompts.map((item) => ({
                 ...item,
                 persona: item.persona || item.persona_name || item.display_name,
                 version: item.resource_version || item.version || 0,
@@ -170,7 +136,7 @@ export function RunWorkspace({
               })),
             );
           }
-          nextOutputs = mergeOutputs(localOutputs, metaImages.images || []);
+          nextOutputs = mergeOutputs(inventory.localOutputs, metaImages.images || []);
           nextOutputs = await Promise.all(
             nextOutputs.map(async (item) => {
               const version = item.current_version || item.version || item.resource_version;
@@ -178,13 +144,13 @@ export function RunWorkspace({
               return {
                 ...item,
                 url: id
-                  ? await localDataPlane.outputObjectUrl(id, localDevice, version, matchedOwner).catch(() => "")
+                  ? await localDataPlane.outputObjectUrl(id, localDevice, version).catch(() => "")
                   : "",
               };
             }),
           );
         } catch {
-          /* keep metadata rows; local bytes are optional until the matching owner session is live */
+          /* keep metadata rows; local bytes are optional until this tab is paired */
         }
       }
       if (!cancelled) {
@@ -196,20 +162,21 @@ export function RunWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [runId, deviceId, agentId, run.device_id, run.owner_type, run.owner_id, plateOwner, paired, busy, reloadToken, refreshToken]);
+  }, [runId, deviceId, agentId, run.device_id, paired, busy, reloadToken, refreshToken]);
 
   useEffect(() => {
     const missingPrompts = (run.prompt_count || 0) > prompts.length;
     const missingImages = (run.image_count || 0) > outputs.length;
-    if (!missingPrompts && !missingImages) {
+    const waitingOnJob = Boolean(busy);
+    if (!missingPrompts && !missingImages && !waitingOnJob) {
       missTries.current = 0;
       return;
     }
-    if (missTries.current >= 12) return;
+    if (missTries.current >= 150) return;
     missTries.current += 1;
     const timer = window.setTimeout(() => setReloadToken((value) => value + 1), 2500);
     return () => window.clearTimeout(timer);
-  }, [run.prompt_count, run.image_count, prompts.length, outputs.length, runId]);
+  }, [run.prompt_count, run.image_count, prompts.length, outputs.length, runId, busy]);
 
   const copyErr = copyFailureDetail(run);
   const imageErr = imageFailureDetail(run);
@@ -273,7 +240,6 @@ export function RunWorkspace({
 
   async function openCopyEditor(prompt: PromptRow) {
     const id = prompt.prompt_id || "";
-    const localDevice = deviceId || run.device_id || "";
     setCopyError("");
     if (editingId === id) {
       setEditingId("");

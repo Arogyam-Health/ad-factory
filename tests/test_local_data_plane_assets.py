@@ -488,6 +488,66 @@ class LocalDataPlaneAssetTests(unittest.TestCase):
         ) as response:
             self.assertEqual(json.loads(response.read())["status"], "deleted")
 
+    def test_paired_session_sees_and_revises_runs_stored_under_another_owner(self) -> None:
+        state = self.server.state
+        org_owner = "org:org_other"
+        state.create_run(
+            run_id="run-org-shared",
+            owner_key=org_owner,
+            device_id=self.server.data_plane.device_id,
+            workspace_id="workspace-org",
+            run_number=9,
+            flow_type="reference",
+            operation_id="seed-org-run",
+        )
+        source = self.server.config.paths.staging / "org-output.png"
+        source.write_bytes(PNG)
+        resource = state.put_resource(
+            source=source,
+            owner_key=org_owner,
+            kind="output_image",
+            logical_key="outputs/org-one",
+            operation_id="seed-org-output-resource",
+            media_type="image/png",
+        )
+        state.create_output(
+            output_id="org-output-1",
+            run_id="run-org-shared",
+            prompt_id="prompt-org",
+            item_id="item-org",
+            aspect_ratio="4:5",
+            resource_id=resource.resource_id,
+            resource_version=resource.version,
+            operation_id="seed-org-output",
+        )
+        with self.open("GET", "/v1/runs") as response:
+            listed = json.loads(response.read())["items"]
+        self.assertIn("run-org-shared", [item["run_id"] for item in listed])
+        self.assertNotIn("owner_key", json.dumps(listed))
+        with self.open("GET", "/v1/runs/run-org-shared/outputs") as response:
+            outputs = json.loads(response.read())["items"]
+        self.assertEqual(outputs[0]["output_id"], "org-output-1")
+        with self.open("GET", "/v1/outputs/org-output-1") as response:
+            self.assertEqual(json.loads(response.read())["current_version"], 1)
+        with self.open("GET", "/v1/outputs/org-output-1/content") as response:
+            self.assertEqual(response.read(), PNG)
+        with self.open(
+            "POST",
+            "/v1/outputs/org-output-1/revisions",
+            payload={
+                "operation_id": "org-output-revision",
+                "comment": "make the bg dark",
+            },
+        ) as response:
+            queued = json.loads(response.read())
+        self.assertEqual(response.status, 202)
+        self.assertEqual(queued["status"], "queued")
+        self.assertTrue(str(queued.get("revision_id") or "").startswith("rev_"))
+        with self.open("GET", f"/v1/revisions/{queued['revision_id']}") as response:
+            status = json.loads(response.read())
+        self.assertEqual(status["status"], "queued")
+        self.assertEqual(status["output_id"], "org-output-1")
+
 
 if __name__ == "__main__":
     unittest.main()

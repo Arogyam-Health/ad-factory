@@ -21,18 +21,31 @@ _CHATGPT_EXTRACT_JS = r"""
         const s = getComputedStyle(el);
         return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
     }
+    function textOf(el) {
+        return ((el && (el.innerText || el.textContent)) || '').trim();
+    }
+    function codeText(root) {
+        const nodes = Array.from(root.querySelectorAll(
+            '#code-block-viewer .cm-content, .cm-editor .cm-content, pre code, pre[data-start]'
+        ));
+        for (const node of nodes) {
+            const text = textOf(node);
+            if (text.includes('{') && text.includes('}')) return text;
+        }
+        return '';
+    }
     const exact = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'))
         .filter(visible);
-    if (exact.length) {
-        const el = exact[exact.length - 1];
-        return (el.innerText || el.textContent || '').trim();
-    }
-    const turns = Array.from(document.querySelectorAll('[data-testid^="conversation-turn-"]'))
-        .filter(visible)
-        .filter((el) => !!el.querySelector('[data-message-author-role="assistant"]'));
-    if (!turns.length) return '';
-    const el = turns[turns.length - 1];
-    return (el.innerText || el.textContent || '').trim();
+    const el = exact.length
+        ? exact[exact.length - 1]
+        : (() => {
+            const turns = Array.from(document.querySelectorAll('[data-testid^="conversation-turn-"]'))
+                .filter(visible)
+                .filter((node) => !!node.querySelector('[data-message-author-role="assistant"]'));
+            return turns.length ? turns[turns.length - 1] : null;
+        })();
+    if (!el) return '';
+    return codeText(el) || textOf(el);
 }
 """
 _GEMINI_EXTRACT_JS = r"""
@@ -84,9 +97,9 @@ def _attach_cdp(engine: str) -> dict[str, Any]:
             )
         except Exception:
             pass
-        from local_agent_runtime.browser import mark_cdp_attached, open_cdp_page
+        from local_agent_runtime.browser import job_uses_new_window, mark_cdp_attached, open_cdp_page
         mark_cdp_attached(context)
-        page = open_cdp_page(context, new_window=True)
+        page = open_cdp_page(context, new_window=job_uses_new_window())
         return {
             "engine": engine,
             "playwright": playwright,

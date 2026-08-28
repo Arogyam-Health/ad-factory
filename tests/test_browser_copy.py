@@ -108,6 +108,52 @@ class ParseBrowserCopyJsonTests(unittest.TestCase):
         self.assertEqual(parsed["product_truths"], ["ignored"])
         self.assertEqual(parsed["ads"][0]["copy"]["EN"]["headline"], "A & B")
 
+    def test_parses_chatgpt_json_code_viewer(self) -> None:
+        raw = (
+            "JSON\n"
+            "{\n"
+            '  "ads": [\n'
+            "    {\n"
+            '      "copy": {\n'
+            '        "EN": {\n'
+            '          "headline": "If hunger keeps ruining your plan, start here.",\n'
+            '          "support_line": "The morning routine is simple.",\n'
+            '          "cta": "Start your 15-day guided course"\n'
+            "        }\n"
+            "      }\n"
+            "    }\n"
+            "  ]\n"
+            "}\n"
+        )
+        parsed = parse_browser_copy_json(raw)
+        self.assertEqual(
+            parsed["ads"][0]["copy"]["EN"]["headline"],
+            "If hunger keeps ruining your plan, start here.",
+        )
+
+    def test_parses_chatgpt_json_code_viewer_html(self) -> None:
+        raw = """
+        <div data-message-author-role="assistant">
+          <div>JSON</div>
+          <div id="code-block-viewer" class="cm-editor">
+            <pre class="cm-content"><code><span>{
+  "ads": [{ "copy": { "EN": { "headline": "If hunger keeps ruining your plan, start here." } } }]
+}</span></code></pre>
+          </div>
+        </div>
+        """
+        parsed = parse_browser_copy_json(raw)
+        self.assertEqual(
+            parsed["ads"][0]["copy"]["EN"]["headline"],
+            "If hunger keeps ruining your plan, start here.",
+        )
+
+    def test_chatgpt_extract_prefers_json_code_viewer(self) -> None:
+        from local_agent_runtime import browser_copy
+
+        self.assertIn("code-block-viewer", browser_copy._CHATGPT_EXTRACT_JS)
+        self.assertIn("cm-content", browser_copy._CHATGPT_EXTRACT_JS)
+
 
 class BrowserAssemblerTests(unittest.TestCase):
     def test_warmup_includes_product_doc_and_starting_prompt(self) -> None:

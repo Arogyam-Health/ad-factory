@@ -39,8 +39,8 @@ export class LocalDataPlaneClient {
   ): Promise<{ resource_id: string; version?: number }>;
   listOutputs(runId: string, deviceId?: string, ownerKey?: string): Promise<{ output_id?: string; resource_id?: string; version?: number; current_version?: number; filename?: string; display_name?: string; aspect_ratio?: string }[]>;
   listPrompts(runId: string, deviceId?: string, ownerKey?: string): Promise<{ prompt_id?: string; version?: number; resource_version?: number; format?: string; persona?: string; persona_name?: string; display_name?: string; language?: string; status?: string }[]>;
-  promptContent(promptId: string, deviceId?: string, version?: number): Promise<string>;
-  putPrompt(promptId: string, runId: string, content: string, expectedVersion: number, deviceId?: string): Promise<{ version?: number }>;
+  promptContent(promptId: string, deviceId?: string, version?: number, ownerKey?: string): Promise<string>;
+  putPrompt(promptId: string, runId: string, content: string, expectedVersion: number, deviceId?: string, ownerKey?: string): Promise<{ version?: number }>;
   outputObjectUrl(outputId: string, deviceId?: string, version?: number, ownerKey?: string): Promise<string>;
   outputRawBlob(outputId: string, deviceId?: string): Promise<Blob>;
   outputAction(outputId: string, action: string, deviceId?: string, payload?: Record<string, unknown>): Promise<{ revision_id?: string; status?: string }>;

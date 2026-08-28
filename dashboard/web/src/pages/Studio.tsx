@@ -312,20 +312,7 @@ export function StudioPage() {
     let next = data.runs || [];
     if (paired && deviceId) {
       try {
-        const owners = [
-          ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
-          ...(user.user_id ? [{ ownerType: "user" as const, ownerId: user.user_id }] : []),
-        ];
-        for (const owner of owners) {
-          const key = `${owner.ownerType}:${owner.ownerId}`;
-          if (localDataPlane.session(deviceId, key)?.access_token) continue;
-          try {
-            await localDataPlane.ensurePaired({ ...owner, deviceId, agentId });
-          } catch {
-            /* inventory for this owner is optional */
-          }
-        }
-        const local = await localDataPlane.listRunsAcrossOwners(deviceId, owners);
+        const local = await localDataPlane.listRuns(deviceId);
         const mapped = local.map((item) => ({
           run_id: item.run_id,
           display_batch: item.display_batch,
@@ -334,8 +321,6 @@ export function StudioPage() {
           status: item.status || "",
           prompt_count: item.prompt_count || 0,
           image_count: item.image_count || 0,
-          owner_type: item.owner_type,
-          owner_id: item.owner_id,
           device_id: item.device_id,
         }));
         next = overlayLocalRunStats(mergeRunLists(next, mapped), mapped);
@@ -881,13 +866,8 @@ export function StudioPage() {
 
   async function deleteLocalRuns(ids: string[]) {
     if (!ids.length || !deviceId || !paired) return;
-    const rows = [...structuredRuns, ...referenceRuns];
     await Promise.all(
-      ids.map((id) => {
-        const run = rows.find((item) => item.run_id === id);
-        const owner = run?.owner_type && run?.owner_id ? `${run.owner_type}:${run.owner_id}` : "";
-        return localDataPlane.deleteRun?.(id, deviceId, owner).catch(() => undefined);
-      }),
+      ids.map((id) => localDataPlane.deleteRun?.(id, deviceId).catch(() => undefined)),
     );
   }
 
@@ -1752,11 +1732,7 @@ export function StudioPage() {
                   body: JSON.stringify({ confirm: "PURGE" }),
                 });
                 if (paired && deviceId) {
-                  const owners = [
-                    ...(orgId && orgId !== "personal" ? [{ ownerType: "org" as const, ownerId: orgId }] : []),
-                    ...(user.user_id ? [{ ownerType: "user" as const, ownerId: user.user_id }] : []),
-                  ];
-                  const local = await localDataPlane.listRunsAcrossOwners(deviceId, owners).catch(() => []);
+                  const local = await localDataPlane.listRuns(deviceId).catch(() => []);
                   await deleteLocalRuns(local.map((item) => String(item.run_id || "")).filter(Boolean));
                 }
                 invalidateRuns();
@@ -1833,7 +1809,6 @@ export function StudioPage() {
               deviceId={deviceId}
               agentId={agentId}
               paired={paired}
-              plateOwner={orgId && orgId !== "personal" ? `org:${orgId}` : (user.user_id ? `user:${user.user_id}` : "")}
               productAssetIds={[...pickedProducts]}
               refreshToken={deskTick}
               onPair={pairLocalAgent}

@@ -50,11 +50,21 @@ async function waitForRevision(
   deviceId: string,
   onTick: (status: string) => void,
 ) {
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    const data = await localDataPlane.revisionStatus(revisionId, deviceId);
-    const status = String(data.status || "");
-    onTick(status);
-    if (status === "completed" || status === "error") return data;
+  let fetchFails = 0;
+  for (let attempt = 0; attempt < 450; attempt += 1) {
+    try {
+      const data = await localDataPlane.revisionStatus(revisionId, deviceId);
+      fetchFails = 0;
+      const status = String(data.status || "");
+      onTick(status);
+      if (status === "completed" || status === "error") return data;
+    } catch (err) {
+      fetchFails += 1;
+      onTick("waiting");
+      if (fetchFails >= 8) {
+        return { status: "error", error: String(err) };
+      }
+    }
     await new Promise((resolve) => window.setTimeout(resolve, 2000));
   }
   return { status: "error", error: "Timed out waiting for revision" };

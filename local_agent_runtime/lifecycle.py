@@ -82,6 +82,7 @@ def prompt_download_filename(
 def _prompt_rows(
     state: AgentState, owner_key: str, run_id: str
 ) -> list[dict[str, Any]]:
+    del owner_key
     with state._connect() as conn:
         rows = conn.execute(
             """
@@ -93,10 +94,10 @@ def _prompt_rows(
             JOIN resources r ON r.resource_id = re.resource_id
             JOIN resource_versions rv
               ON rv.resource_id = re.resource_id AND rv.version = re.resource_version
-            WHERE re.run_id = ? AND run.owner_key = ? AND r.kind = 'prompt'
+            WHERE re.run_id = ? AND r.kind = 'prompt'
             ORDER BY re.position
             """,
-            (run_id, owner_key),
+            (run_id,),
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -229,10 +230,10 @@ def build_output_zip(
               ON raw_rv.resource_id = raw.resource_id
              AND raw_rv.version = raw.current_version
             LEFT JOIN objects raw_obj ON raw_obj.sha256 = raw_rv.object_sha256
-            WHERE out.run_id = ? AND run.owner_key = ? AND out.status = 'available'
+            WHERE out.run_id = ? AND out.status = 'available'
             ORDER BY out.output_id
             """,
-            (run_id, owner_key),
+            (run_id,),
         ).fetchall()
     result = io.BytesIO()
     with zipfile.ZipFile(result, "w", compression=zipfile.ZIP_DEFLATED) as archive:

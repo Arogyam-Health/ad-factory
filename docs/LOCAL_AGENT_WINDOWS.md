@@ -137,6 +137,39 @@ already exists.
 Sign in to ChatGPT and/or Gemini in the Chrome window the agent opens. Keep it
 open. Pair the Render dashboard in a normal tab on this same PC.
 
+You do **not** need to close your normal Chrome (Gmail, dashboard, etc.). The
+agent uses its own profile under `%USERPROFILE%\ad-factory-agent`. You **do**
+need to quit leftover **agent** Chrome windows from a previous run, and you
+must not start a second local agent on this PC.
+
+If Chrome does not open, or jobs fail with `Playwright did not attach`, or
+Chrome vanishes after one image:
+
+1. `Ctrl+C` the agent in PowerShell.
+2. Close every Chrome window the agent opened (the debugging one, not your
+   everyday Chrome). If an agent Chrome is stuck:
+   ```bat
+   taskkill /F /IM chrome.exe
+   ```
+   That also closes your personal Chrome. Reopen those tabs after.
+3. Confirm nothing is still bound to the debug port:
+   ```bat
+   netstat -ano | findstr :9222
+   ```
+   If a line remains, Task Manager → Details → end that PID, or reboot.
+4. Start the agent again. Wait until it prints `CDP status: {'available': True`.
+5. In **that** Chrome window, stay signed in to ChatGPT. Leave it open.
+   Generate from the dashboard on this same PC.
+
+Do **not** close the agent Chrome window after a generation or revision.
+That window is the debug browser. Closing it is what produces
+`Failed to open new tab - no browser is open` and makes the dashboard say
+the agent is offline.
+
+Images live on this PC. After a revision, leave the batch open; the desk
+keeps polling. If the thumbnail is missing, click **Show local images**
+or reopen the batch. Do not generate from a phone or another computer.
+
 If Windows Firewall asks, allow Python on private networks. Ports `9222` and
 `8765` must stay on localhost.
 

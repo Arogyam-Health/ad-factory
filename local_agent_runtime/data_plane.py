@@ -990,8 +990,11 @@ class LocalDataPlane:
         version: int | None = None,
     ) -> dict[str, Any] | None:
         with self.state._connect() as conn:
-            conditions = ["r.owner_key = ?", "r.deleted_at IS NULL"]
-            values: list[Any] = [owner_key]
+            conditions = ["r.deleted_at IS NULL"]
+            values: list[Any] = []
+            if owner_key:
+                conditions.append("r.owner_key = ?")
+                values.append(owner_key)
             if resource_id is not None:
                 conditions.append("r.resource_id = ?")
                 values.append(resource_id)
@@ -1005,7 +1008,7 @@ class LocalDataPlane:
             parameters = ([version] if version is not None else []) + values
             row = conn.execute(
                 f"""
-                SELECT r.resource_id, r.kind, r.logical_key, r.current_version, r.status,
+                SELECT r.resource_id, r.owner_key, r.kind, r.logical_key, r.current_version, r.status,
                        r.created_at, r.updated_at, rv.version, rv.object_sha256,
                        rv.content_hash, rv.metadata_json, o.relative_path, o.bytes, o.media_type
                 FROM resources r
@@ -1443,14 +1446,16 @@ class LocalDataPlane:
         return parsed
 
     def _run(self, owner_key: str, run_id: str) -> dict[str, Any] | None:
+        del owner_key
         with self.state._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM runs WHERE run_id = ? AND owner_key = ?",
-                (run_id, owner_key),
+                "SELECT * FROM runs WHERE run_id = ?",
+                (run_id,),
             ).fetchone()
         return dict(row) if row else None
 
     def _run_counts(self, owner_key: str, run_ids: list[str]) -> dict[str, tuple[int, int]]:
+        del owner_key
         counts = {run_id: (0, 0) for run_id in run_ids if run_id}
         if not counts:
             return counts
@@ -1463,23 +1468,20 @@ class LocalDataPlane:
                 FROM run_entries re
                 JOIN resources r ON r.resource_id = re.resource_id
                 WHERE re.run_id IN ({placeholders})
-                  AND r.owner_key = ?
                   AND r.kind = 'prompt'
                 GROUP BY re.run_id
                 """,
-                (*ids, owner_key),
+                ids,
             ).fetchall()
             output_rows = conn.execute(
                 f"""
                 SELECT o.run_id AS run_id, COUNT(*) AS n
                 FROM outputs o
-                JOIN runs r ON r.run_id = o.run_id
                 WHERE o.run_id IN ({placeholders})
-                  AND r.owner_key = ?
                   AND IFNULL(o.status, '') != 'deleted'
                 GROUP BY o.run_id
                 """,
-                (*ids, owner_key),
+                ids,
             ).fetchall()
         prompts = {str(row["run_id"]): int(row["n"]) for row in prompt_rows}
         images = {str(row["run_id"]): int(row["n"]) for row in output_rows}
@@ -1514,12 +1516,8 @@ class LocalDataPlane:
             payload["owner_type"] = kind
             payload["owner_id"] = ident
         run_id = str(run.get("run_id") or "")
-        owner_key = str(run.get("owner_key") or "")
         if counts is None:
-            if run_id and owner_key:
-                counts = self._run_counts(owner_key, [run_id]).get(run_id, (0, 0))
-            else:
-                counts = (0, 0)
+            counts = self._run_counts("", [run_id]).get(run_id, (0, 0)) if run_id else (0, 0)
         payload["prompt_count"] = int(counts[0])
         payload["image_count"] = int(counts[1])
         return payload
@@ -1550,16 +1548,16 @@ class LocalDataPlane:
                 return
             if handler.command == "GET":
                 session = self._session(handler, "manifest:read")
+                del session
                 with self.state._connect() as conn:
                     rows = [
                         dict(row)
                         for row in conn.execute(
-                            "SELECT * FROM runs WHERE owner_key = ? ORDER BY run_number DESC",
-                            (session.owner_key,),
+                            "SELECT * FROM runs ORDER BY run_number DESC"
                         ).fetchall()
                     ]
                 counted = self._run_counts(
-                    session.owner_key,
+                    "",
                     [str(row.get("run_id") or "") for row in rows],
                 )
                 self._json(
@@ -1604,7 +1602,7 @@ class LocalDataPlane:
                 run_id,
                 operation_id=self._operation_id(handler),
                 purge_resources=True,
-                owner_key=session.owner_key,
+                owner_key=str(run.get("owner_key") or session.owner_key),
             )
             self._json(handler, 200, receipt)
             return
@@ -1616,7 +1614,7 @@ class LocalDataPlane:
             self._json(handler, 200, manifest)
             return
         if action == "prompts" and handler.command == "GET":
-            self._run_prompts(handler, session.owner_key, run_id)
+            self._run_prompts(handler, str(run.get("owner_key") or ""), run_id)
             return
         if action in {"execute", "generations"} and handler.command == "POST":
             payload = self._json_body(handler)
@@ -1652,13 +1650,13 @@ class LocalDataPlane:
             )
             return
         if action == "outputs" and handler.command == "GET":
-            self._list_outputs(handler, session.owner_key, run_id)
+            self._list_outputs(handler, str(run.get("owner_key") or ""), run_id)
             return
         if action == "prompt-imports" and handler.command == "POST":
-            self._prompt_import(handler, session.owner_key, run_id)
+            self._prompt_import(handler, str(run.get("owner_key") or session.owner_key), run_id)
             return
         if action == "prompt-export" and handler.command == "GET":
-            self._prompt_export(handler, session.owner_key, run_id)
+            self._prompt_export(handler, str(run.get("owner_key") or session.owner_key), run_id)
             return
         if action == "download" and handler.command == "GET":
             query = urllib.parse.parse_qs(urllib.parse.urlparse(handler.path).query)
@@ -1667,7 +1665,12 @@ class LocalDataPlane:
                 "true",
                 "yes",
             }
-            self._run_download(handler, session.owner_key, run_id, include_raw=include_raw)
+            self._run_download(
+                handler,
+                str(run.get("owner_key") or session.owner_key),
+                run_id,
+                include_raw=include_raw,
+            )
             return
         raise APIError(404, "not_found", "Endpoint not found")
 
@@ -1676,12 +1679,8 @@ class LocalDataPlane:
         prompt_id, separator, action = suffix.partition("/")
         prompt_id = self._safe_logical_key(prompt_id)
         if separator and action == "versions" and handler.command == "GET":
-            session = self._session(handler, "manifest:read")
-            record = self._resource_record(
-                session.owner_key, kind="prompt", logical_key=prompt_id
-            )
-            if record is None:
-                raise APIError(404, "prompt_not_found", "Prompt not found")
+            self._session(handler, "manifest:read")
+            record = self._resource_record("", kind="prompt", logical_key=prompt_id)
             self._json(
                 handler,
                 200,
@@ -1700,23 +1699,19 @@ class LocalDataPlane:
             )
             return
         if separator and action == "content" and handler.command == "GET":
-            session = self._session(handler, "content:read")
-            record = self._resource_record(
-                session.owner_key, kind="prompt", logical_key=prompt_id
-            )
+            self._session(handler, "content:read")
+            record = self._resource_record("", kind="prompt", logical_key=prompt_id)
             if record is None:
                 raise APIError(404, "prompt_not_found", "Prompt not found")
             self._send_file(handler, record)
             return
         if not separator and handler.command == "DELETE":
             session = self._session(handler, "delete")
-            record = self._resource_record(
-                session.owner_key, kind="prompt", logical_key=prompt_id
-            )
+            record = self._resource_record("", kind="prompt", logical_key=prompt_id)
             if record is not None:
                 metadata = json.loads(record.get("metadata_json") or "{}")
                 self._delete_resource(
-                    session.owner_key,
+                    str(record.get("owner_key") or session.owner_key),
                     str(record["resource_id"]),
                     self._operation_id(handler),
                 )
@@ -1748,20 +1743,22 @@ class LocalDataPlane:
             session = self._session(handler, "prompts:write")
             payload = self._json_body(handler, self.service.config.max_upload_bytes)
             run_id = self._safe_logical_key(str(payload.get("run_id") or ""))
-            if self._run(session.owner_key, run_id) is None:
+            run = self._run(session.owner_key, run_id)
+            if run is None:
                 raise APIError(404, "run_not_found", "Run not found")
             content = payload.get("content")
             if not isinstance(content, str):
                 raise APIError(400, "content_required", "Prompt content is required")
-            existing = self._resource_record(
-                session.owner_key, kind="prompt", logical_key=prompt_id
+            existing = self._resource_record("", kind="prompt", logical_key=prompt_id)
+            storage_owner = str(
+                (existing or {}).get("owner_key") or run.get("owner_key") or session.owner_key
             )
             path_tmp = self.service.config.paths.staging / f".prompt-{uuid.uuid4().hex}.tmp"
             path_tmp.write_text(content, encoding="utf-8")
             try:
                 version = self.state.put_resource(
                     source=path_tmp,
-                    owner_key=session.owner_key,
+                    owner_key=storage_owner,
                     kind="prompt",
                     logical_key=prompt_id,
                     resource_id=existing["resource_id"] if existing else None,
@@ -1833,10 +1830,10 @@ class LocalDataPlane:
                 JOIN resource_versions rv
                   ON rv.resource_id = re.resource_id
                  AND rv.version = re.resource_version
-                WHERE re.run_id = ? AND r.owner_key = ? AND r.kind = 'prompt'
+                WHERE re.run_id = ? AND r.kind = 'prompt'
                 ORDER BY re.position
                 """,
-                (run_id, owner_key),
+                (run_id,),
             ).fetchall()
         items = []
         for row in rows:
@@ -1954,6 +1951,7 @@ class LocalDataPlane:
         output = self._output(session.owner_key, output_id)
         if output is None:
             raise APIError(404, "output_not_found", "Output not found")
+        storage_owner = str(output.get("storage_owner") or session.owner_key)
         if not separator and handler.command == "GET":
             self._json(handler, 200, self._safe_output(output))
             return
@@ -1965,7 +1963,7 @@ class LocalDataPlane:
             self._json(handler, 200, result)
             return
         if action == "content" and handler.command in {"GET", "HEAD"}:
-            record = self._output_resource(session.owner_key, output_id)
+            record = self._output_resource(storage_owner, output_id)
             if record is None:
                 raise APIError(404, "content_not_found", "Output content not found")
             self._send_file(
@@ -1975,7 +1973,7 @@ class LocalDataPlane:
             )
             return
         if action == "raw" and handler.command in {"GET", "HEAD"}:
-            record = self._output_raw_resource(session.owner_key, output_id)
+            record = self._output_raw_resource(storage_owner, output_id)
             if record is None:
                 raise APIError(404, "raw_not_found", "Raw output is not available")
             name = Path(self._output_attachment_name(output))
@@ -2114,18 +2112,20 @@ class LocalDataPlane:
         raise APIError(404, "not_found", "Endpoint not found")
 
     def _output(self, owner_key: str, output_id: str) -> dict[str, Any] | None:
+        del owner_key
         with self.state._connect() as conn:
             row = conn.execute(
                 """
-                SELECT o.* FROM outputs o JOIN runs r ON r.run_id = o.run_id
-                WHERE o.output_id = ? AND r.owner_key = ?
+                SELECT o.*, r.owner_key AS storage_owner
+                FROM outputs o JOIN runs r ON r.run_id = o.run_id
+                WHERE o.output_id = ?
                 """,
-                (output_id, owner_key),
+                (output_id,),
             ).fetchone()
         return dict(row) if row else None
 
     def _revision_status(self, handler: Any, revision_id: str) -> None:
-        session = self._session(handler, "manifest:read")
+        self._session(handler, "manifest:read")
         revision_id = self._safe_logical_key(revision_id)
         with self.state._connect() as conn:
             row = conn.execute(
@@ -2136,9 +2136,9 @@ class LocalDataPlane:
                 FROM revisions rev
                 JOIN outputs out ON out.output_id = rev.output_id
                 JOIN runs run ON run.run_id = out.run_id
-                WHERE rev.revision_id = ? AND run.owner_key = ?
+                WHERE rev.revision_id = ?
                 """,
-                (revision_id, session.owner_key),
+                (revision_id,),
             ).fetchone()
         if row is None:
             raise APIError(404, "revision_not_found", "Revision not found")
@@ -2267,6 +2267,7 @@ class LocalDataPlane:
         if output is None:
             return None
         selected = int(version or output["current_version"])
+        storage_owner = str(output.get("storage_owner") or owner_key)
         with self.state._connect() as conn:
             row = conn.execute(
                 "SELECT resource_id, resource_version FROM output_versions "
@@ -2275,7 +2276,7 @@ class LocalDataPlane:
             ).fetchone()
         return (
             self._resource_record(
-                owner_key,
+                storage_owner,
                 resource_id=str(row["resource_id"]),
                 version=int(row["resource_version"]),
             )
@@ -2290,8 +2291,9 @@ class LocalDataPlane:
         if output is None:
             return None
         selected = int(version or output["current_version"])
+        storage_owner = str(output.get("storage_owner") or owner_key)
         return self._resource_record(
-            owner_key,
+            storage_owner,
             kind="output_raw",
             logical_key=f"{output_id}:raw:v{selected}",
         )
@@ -2299,26 +2301,26 @@ class LocalDataPlane:
     def _set_output_status(
         self, owner_key: str, output_id: str, status: str, operation_id: str
     ) -> None:
+        output = self._output(owner_key, output_id)
+        storage_owner = str((output or {}).get("storage_owner") or owner_key)
         with self.state._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            prior = self.state._operation_result(conn, owner_key, operation_id)
+            prior = self.state._operation_result(conn, storage_owner, operation_id)
             if prior is not None:
                 conn.commit()
                 return
             cursor = conn.execute(
                 """
                 UPDATE outputs SET status = ?, updated_at = ?
-                WHERE output_id = ? AND EXISTS (
-                    SELECT 1 FROM runs WHERE runs.run_id = outputs.run_id AND owner_key = ?
-                )
+                WHERE output_id = ?
                 """,
-                (status, time.time(), output_id, owner_key),
+                (status, time.time(), output_id),
             )
             if not cursor.rowcount:
                 raise APIError(404, "output_not_found", "Output not found")
             self.state._record_change(
                 conn,
-                owner_key=owner_key,
+                owner_key=storage_owner,
                 resource_type="output",
                 resource_id=output_id,
                 version=None,
@@ -2326,7 +2328,7 @@ class LocalDataPlane:
             )
             self.state._save_operation(
                 conn,
-                owner_key,
+                storage_owner,
                 operation_id,
                 "output_status",
                 {"output_id": output_id, "status": status},
@@ -2338,17 +2340,25 @@ class LocalDataPlane:
     ) -> None:
         with self.state._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            prior = self.state._operation_result(conn, owner_key, operation_id)
+            storage_owner = owner_key
+            prior = self.state._operation_result(conn, storage_owner, operation_id)
             if prior is not None:
                 conn.commit()
                 return
             output = conn.execute(
                 """
-                SELECT o.output_id FROM outputs o JOIN runs r ON r.run_id = o.run_id
-                WHERE o.output_id = ? AND r.owner_key = ?
+                SELECT o.output_id, r.owner_key AS storage_owner
+                FROM outputs o JOIN runs r ON r.run_id = o.run_id
+                WHERE o.output_id = ?
                 """,
-                (output_id, owner_key),
+                (output_id,),
             ).fetchone()
+            if output is not None:
+                storage_owner = str(output["storage_owner"] or owner_key)
+                prior = self.state._operation_result(conn, storage_owner, operation_id)
+                if prior is not None:
+                    conn.commit()
+                    return
             target = conn.execute(
                 "SELECT 1 FROM output_versions WHERE output_id = ? AND version = ?",
                 (output_id, version),
@@ -2362,7 +2372,7 @@ class LocalDataPlane:
             )
             self.state._record_change(
                 conn,
-                owner_key=owner_key,
+                owner_key=storage_owner,
                 resource_type="output",
                 resource_id=output_id,
                 version=version,
@@ -2370,7 +2380,7 @@ class LocalDataPlane:
             )
             self.state._save_operation(
                 conn,
-                owner_key,
+                storage_owner,
                 operation_id,
                 "activate_output",
                 {"output_id": output_id, "version": version},
@@ -2380,6 +2390,7 @@ class LocalDataPlane:
     def _build_run_zip(
         self, owner_key: str, run_id: str, *, prompts_only: bool = False
     ) -> Path:
+        del owner_key
         descriptor, name = tempfile.mkstemp(
             prefix=".download-", suffix=".zip", dir=self.service.config.paths.staging
         )
@@ -2396,10 +2407,10 @@ class LocalDataPlane:
                 JOIN resource_versions rv
                   ON rv.resource_id = re.resource_id AND rv.version = re.resource_version
                 JOIN objects o ON o.sha256 = rv.object_sha256
-                WHERE re.run_id = ? AND r.owner_key = ?
+                WHERE re.run_id = ?
                 ORDER BY re.position
                 """,
-                (run_id, owner_key),
+                (run_id,),
             ).fetchall()
             output_rows = [] if prompts_only else conn.execute(
                 """
@@ -2421,10 +2432,10 @@ class LocalDataPlane:
                   ON rv.resource_id = ov.resource_id AND rv.version = ov.resource_version
                 JOIN objects obj ON obj.sha256 = rv.object_sha256
                 JOIN runs run ON run.run_id = out.run_id
-                WHERE out.run_id = ? AND run.owner_key = ?
+                WHERE out.run_id = ?
                 ORDER BY out.output_id
                 """,
-                (run_id, owner_key),
+                (run_id,),
             ).fetchall()
         with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for row in rows:

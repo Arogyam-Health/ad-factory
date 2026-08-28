@@ -3206,8 +3206,8 @@ def run() -> None:
 
             if not context.pages and args.extension_cdp:
                 raise RuntimeError("Extension CDP proxy connected, but Playwright did not receive any page targets from the extension")
-            from local_agent_runtime.browser import open_cdp_page
-            page = remember_job_page(job_pages, open_cdp_page(context, new_window=True))
+            from local_agent_runtime.browser import job_uses_new_window, open_cdp_page
+            page = remember_job_page(job_pages, open_cdp_page(context, new_window=job_uses_new_window()))
             page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
 
             for index, job in enumerate(jobs, start=1):
