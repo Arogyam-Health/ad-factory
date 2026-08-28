@@ -305,6 +305,25 @@ def close_cdp_page(page) -> None:
         _close_target_id(context, target_id)
 
 
+def ensure_keepalive_window(context) -> None:
+    """Ensure the shared CDP Chrome never ends up with zero tabs/windows.
+
+    The agent Chrome is the only place the operator stays logged in to ChatGPT/Gemini.
+    Closing the last tab would make the window disappear and break the next job's
+    CDP attach. On Windows `Target.createTarget(newWindow=false)` would then fail
+    with `no browser is open`.
+    """
+    if context is None or not is_cdp_attached(context):
+        return
+    try:
+        if _known_pages(context):
+            return
+        # No pages left — reopen the keepalive ChatGPT tab
+        _open_cdp_target(context, new_window=False, timeout=10)
+    except Exception:
+        pass
+
+
 def close_job_pages(job_pages: list | None) -> None:
     for page in list(job_pages or []):
         close_cdp_page(page)
@@ -320,6 +339,7 @@ def release_browser(playwright, context, job_pages: list | None = None) -> None:
     """Detach Playwright. On CDP, close only job pages; never kill Chrome."""
     close_job_pages(job_pages)
     close_job_targets(context)
+    ensure_keepalive_window(context)
     if context is not None and not is_cdp_attached(context):
         try:
             context.close()

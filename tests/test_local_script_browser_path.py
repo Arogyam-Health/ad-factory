@@ -28,9 +28,9 @@ class LocalScriptBrowserPathTests(unittest.TestCase):
         self.assertNotIn("persona_seeds.json", source)
         self.assertIn("_persona_from_sidecar", source)
 
-    def test_agent_dispatches_up_to_three_local_jobs(self) -> None:
+    def test_agent_dispatches_up_to_five_local_jobs(self) -> None:
         source = (ROOT / "local_agent_runtime" / "local_agent.py").read_text(encoding="utf-8")
-        self.assertIn("MAX_LOCAL_JOB_SLOTS = 3", source)
+        self.assertIn("MAX_LOCAL_JOB_SLOTS = 5", source)
         self.assertIn("def _dispatch_job(", source)
         self.assertIn("_dispatch_job(job)", source)
         self.assertIn("leaving {job_id} queued", source)
