@@ -160,6 +160,8 @@ class LocalScriptBrowser:
         prompt_path: Path,
         upload_manifest_path: Path,
         output_dir: Path,
+        run_id: str = "",
+        job_id: str = "",
     ) -> bytes:
         label = "Gemini" if engine == "gemini" else "ChatGPT"
         script = self.project_root / (
@@ -188,6 +190,12 @@ class LocalScriptBrowser:
             "--result-manifest",
             str(result_manifest),
         ]
+        if run_id:
+            command.extend(["--run-id", run_id])
+            # Keep the per-run tab open for next image in same run
+            command.append("--keep-run-tab")
+        if job_id:
+            command.extend(["--job-id", job_id])
         if engine == "chatgpt":
             command.extend(["--cdp-url", os.getenv("AGENT_CDP_URL", "http://127.0.0.1:9222")])
         popen_kwargs: dict[str, object] = {
@@ -417,6 +425,43 @@ class StructuredBrowserExecutor:
             "conversion_prompt",
             required_kind="config_file",
         )
+
+    def _starting_prompt_text(
+        self,
+        context: dict[str, Any],
+        settings: dict[str, Any],
+    ) -> str:
+        # Structured image Starting Prompt (global product rules, e.g. OBESITY KILLER KIT)
+        # Try settings first, then versioned resource, then latest config.
+        direct = str(settings.get("starting_prompt") or "").strip()
+        if direct:
+            return direct
+        # Versioned resource if present (mirrors reference's starting_prompt handling)
+        ref = settings.get("starting_prompt")
+        if isinstance(ref, dict) and ref.get("resource_id"):
+            try:
+                res = self._resource(
+                    str(context["owner_key"]),
+                    str(ref.get("resource_id") or ""),
+                    int(ref.get("version") or 0),
+                    "starting_prompt",
+                    required_kind="config_file",
+                )
+                return res.path.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+        # Check context entries for role starting_prompt
+        for entry in context.get("entries", []):
+            if entry.get("role") == "starting_prompt" and entry.get("local_path"):
+                try:
+                    return Path(entry["local_path"]).read_text(encoding="utf-8").strip()
+                except Exception:
+                    continue
+        # Fallback to latest config (owner_key's starting_prompt)
+        try:
+            return self.state._latest_config_text(str(context["owner_key"]), "starting_prompt").strip()
+        except Exception:
+            return ""
 
     @staticmethod
     def _prompts(context: dict[str, Any], selected_prompt_id: str) -> list[dict[str, Any]]:
@@ -731,6 +776,19 @@ class StructuredBrowserExecutor:
                     source_output_id = None
                     uploads = product_uploads
                     prompt_content = Path(prompt["local_path"]).read_bytes()
+                    # Ensure global product rules (Starting Prompt) are present for image model.
+                    # Cloud now prepends starting_prompt for new runs; keep local fallback for old runs.
+                    try:
+                        _starter_45 = self._starting_prompt_text(context, settings)
+                    except Exception:
+                        _starter_45 = ""
+                    if _starter_45:
+                        try:
+                            _decoded_45 = prompt_content.decode("utf-8", errors="ignore")
+                        except Exception:
+                            _decoded_45 = ""
+                        if _starter_45.strip() not in _decoded_45[:3000]:
+                            prompt_content = f"{_starter_45.strip()}\n\n{_decoded_45.lstrip()}".encode("utf-8")
                     if aspect_ratio == "9:16":
                         source = self._existing_output(run_id, prompt_id, "4:5")
                         if source is None:
@@ -782,9 +840,15 @@ class StructuredBrowserExecutor:
                             )
                         context_lines.append("target_aspect_ratio=9:16")
                         bounded_context = "\n".join(context_lines)
-                        prompt_content = (
-                            conversion_body + "\n\n" + bounded_context + "\n"
-                        ).encode("utf-8")
+                        # Global product rules must be outermost, even for 9:16 conversion
+                        if _starter_45:
+                            prompt_content = f"{_starter_45.strip()}\n\n{conversion_body}\n\n{bounded_context}\n".encode(
+                                "utf-8"
+                            )
+                        else:
+                            prompt_content = (
+                                conversion_body + "\n\n" + bounded_context + "\n"
+                            ).encode("utf-8")
                     prompt_path, manifest_path, output_dir, _ = self._materialize(
                         job_id=job_id,
                         run_id=run_id,
@@ -806,6 +870,8 @@ class StructuredBrowserExecutor:
                                 prompt_path=prompt_path,
                                 upload_manifest_path=manifest_path,
                                 output_dir=output_dir,
+                                run_id=run_id,
+                                job_id=job_id,
                             )
                             if isinstance(generated, tuple):
                                 content = generated[0]
@@ -922,3 +988,10 @@ class StructuredBrowserExecutor:
             return failed
         finally:
             shutil.rmtree(job_staging, ignore_errors=True)
+            # Close dedicated tab for this run (keepalive will ensure one empty tab remains)
+            try:
+                from .browser import close_run_tab_via_cdp
+
+                close_run_tab_via_cdp(run_id)
+            except Exception:
+                pass

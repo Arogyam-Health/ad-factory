@@ -939,6 +939,7 @@ def _prompts_from_copy_batch(
     background_locks: dict[str, Any],
     catalog: dict[str, list[dict[str, Any]]],
     llm_prompt: str,
+    starting_prompt: str = "",
 ) -> list[dict[str, Any]]:
     backgrounds = _resolve_backgrounds(effective_config)
     templates = _json_config(
@@ -1060,6 +1061,10 @@ def _prompts_from_copy_batch(
                     else None
                 ),
             )
+            # Prepend global product rules for image model (Starting Prompt)
+            starter = str(starting_prompt or "").strip()
+            if starter:
+                text = f"{starter}\n\n{text}"
             prompt_id = "prm_" + hashlib.sha256(
                 f"{run_id}:{ad_index}:{language}".encode("utf-8")
             ).hexdigest()[:24]
@@ -1125,6 +1130,7 @@ def generate_structured_prompt_bundle(
     if not product_document:
         raise ValueError("Product Master Doc is empty")
     starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
+    image_starting_prompt = str(effective_config.get("starting_prompt") or "").strip()
     catalog = _archetype_catalog(effective_config)
     llm_prompt = str(effective_config.get("visual_archetype_llm_prompt") or "").strip()
     batch_size = max(1, min(int(settings.get("batch_size") or 10), 500))
@@ -1178,6 +1184,8 @@ def generate_structured_prompt_bundle(
         normalized_ads.extend(copy_batch["ads"])
     copy_batch = {"default_aspect_ratio": "4:5", "ads": normalized_ads}
 
+    # Image prompts must start with global product rules (Starting Prompt)
+    image_starting_prompt = str(effective_config.get("starting_prompt") or "").strip()
     prompts = _prompts_from_copy_batch(
         copy_batch=copy_batch,
         languages=languages,
@@ -1188,6 +1196,7 @@ def generate_structured_prompt_bundle(
         background_locks=background_locks,
         catalog=catalog,
         llm_prompt=llm_prompt,
+        starting_prompt=image_starting_prompt,
     )
     return {
         "run_id": run_id,
@@ -1389,6 +1398,7 @@ def generate_browser_structured_prompt_bundle(
     if not product_document:
         raise ValueError("Product Master Doc is empty")
     starting_prompt = str(effective_config.get("copy_starting_prompt") or "").strip()
+    image_starting_prompt = str(effective_config.get("starting_prompt") or "").strip()
     catalog = _archetype_catalog(effective_config)
     llm_prompt = str(effective_config.get("visual_archetype_llm_prompt") or "").strip()
     batch_size = max(1, min(int(settings.get("batch_size") or 10), 500))
@@ -1504,6 +1514,7 @@ def generate_browser_structured_prompt_bundle(
             pass
 
     copy_batch = {"default_aspect_ratio": "4:5", "ads": normalized_ads}
+    image_starting_prompt = str(effective_config.get("starting_prompt") or "").strip()
     prompts = _prompts_from_copy_batch(
         copy_batch=copy_batch,
         languages=languages,
@@ -1514,6 +1525,7 @@ def generate_browser_structured_prompt_bundle(
         background_locks=background_locks,
         catalog=catalog,
         llm_prompt=llm_prompt,
+        starting_prompt=image_starting_prompt,
     )
     return {
         "run_id": run_id,

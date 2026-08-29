@@ -712,3 +712,10 @@ class ReferenceWorkflowExecutor(StructuredBrowserExecutor):
             )
             self.state.update_job_status(job_id, "failed")
             return failed
+        finally:
+            try:
+                from .browser import close_run_tab_via_cdp
+
+                close_run_tab_via_cdp(run_id)
+            except Exception:
+                pass

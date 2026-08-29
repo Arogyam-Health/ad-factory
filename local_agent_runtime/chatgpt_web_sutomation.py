@@ -45,9 +45,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from local_agent_runtime.browser import (
+    get_or_create_run_tab,
     install_job_signal_handlers,
     mark_cdp_attached,
     release_browser,
+    release_run_tab,
     remember_job_page,
     resolve_browser_executable,
 )
@@ -298,6 +300,9 @@ def parse_args() -> argparse.Namespace:
         default="4:5",
         help="Target aspect ratio for output images (determines PIL crop target)",
     )
+    parser.add_argument("--run-id", default="", help="Run ID for per-run tab affinity (one tab per run)")
+    parser.add_argument("--job-id", default="", help="Job ID for tracking")
+    parser.add_argument("--keep-run-tab", action="store_true", help="Keep the run's tab open for next image in same run (per-run tab pool)")
     return parser.parse_args()
 
 
@@ -3206,9 +3211,16 @@ def run() -> None:
 
             if not context.pages and args.extension_cdp:
                 raise RuntimeError("Extension CDP proxy connected, but Playwright did not receive any page targets from the extension")
-            from local_agent_runtime.browser import job_uses_new_window, open_cdp_page
-            page = remember_job_page(job_pages, open_cdp_page(context, new_window=job_uses_new_window()))
-            page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
+            from local_agent_runtime.browser import get_or_create_run_tab, job_uses_new_window, open_cdp_page
+
+            # Per-run tab: one dedicated tab per run_id, reused for all images in that run
+            # Keep one empty keepalive tab always (browser.py ensures it)
+            if args.run_id:
+                # Don't create initial page here; run tab will be created per-job
+                page = None  # type: ignore[assignment]
+            else:
+                page = remember_job_page(job_pages, open_cdp_page(context, new_window=job_uses_new_window()))
+                page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
 
             for index, job in enumerate(jobs, start=1):
                 print(f"\n=== [{index}/{len(jobs)}] {job.job_key} :: {job.prompt_path.name} ===")
@@ -3226,11 +3238,19 @@ def run() -> None:
                 while attempt <= max(1, args.max_attempts):
                     page_for_job: Page | None = None
                     try:
-                        page_for_job = remember_job_page(
-                            job_pages,
-                            open_prompt_tab(context, page, index if attempt == 1 else 999999, args.first_tab_mode),
-                        )
-                        page = page_for_job
+                        if args.run_id:
+                            # Per-run tab reuse: one tab per run, kept open for next image
+                            page_for_job = get_or_create_run_tab(context, args.run_id)
+                            # Bring to front and tag, but don't add to job_pages if keep flag (parent will close)
+                            if not args.keep_run_tab:
+                                remember_job_page(job_pages, page_for_job)
+                            page = page_for_job
+                        else:
+                            page_for_job = remember_job_page(
+                                job_pages,
+                                open_prompt_tab(context, page, index if attempt == 1 else 999999, args.first_tab_mode),
+                            )
+                            page = page_for_job
                         navigate_to_fresh_chat(
                             page_for_job,
                             manual_login_timeout=args.manual_login_timeout,

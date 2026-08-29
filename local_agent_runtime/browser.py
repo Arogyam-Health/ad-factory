@@ -173,6 +173,180 @@ def _forget_job_target(context, target_id: str) -> None:
         pass
 
 
+def _run_tab_pool(context) -> dict:
+    if context is None:
+        return {}
+    pool = getattr(context, "_ad_factory_run_tabs", None)
+    if not isinstance(pool, dict):
+        pool = {}
+        try:
+            setattr(context, "_ad_factory_run_tabs", pool)
+        except Exception:
+            return {}
+    return pool
+
+
+def _run_tab_file_path(run_id: str) -> Path | None:
+    """File-based pool for cross-process tab reuse (one tab per run_id)."""
+    try:
+        from local_agent_runtime.storage import resolve_data_root
+
+        root = resolve_data_root()
+        # Browser tabs live under <data_root>/browser/run_tabs
+        base = root / "browser" / "run_tabs"
+        base.mkdir(parents=True, exist_ok=True)
+        # Sanitize run_id for filesystem
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in run_id)[:64]
+        if not safe:
+            return None
+        return base / f"{safe}.json"
+    except Exception:
+        return None
+
+
+def _save_run_target(run_id: str, target_id: str) -> None:
+    try:
+        path = _run_tab_file_path(run_id)
+        if path is None or not target_id:
+            return
+        path.write_text(f'{{"targetId": "{target_id}"}}', encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _load_run_target(run_id: str) -> str:
+    try:
+        path = _run_tab_file_path(run_id)
+        if path is None or not path.is_file():
+            return ""
+        data = path.read_text(encoding="utf-8")
+        # Very small JSON, avoid full parse overhead
+        import json as _json
+
+        obj = _json.loads(data)
+        return str(obj.get("targetId") or "")
+    except Exception:
+        return ""
+
+
+def _clear_run_target(run_id: str) -> None:
+    try:
+        path = _run_tab_file_path(run_id)
+        if path is not None and path.is_file():
+            path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def close_run_tab_via_cdp(run_id: str, cdp_url: str = "http://127.0.0.1:9222") -> None:
+    """Close the dedicated tab for run_id via CDP HTTP (parent process, no Playwright)."""
+    target_id = _load_run_target(run_id)
+    if not target_id:
+        _clear_run_target(run_id)
+        return
+    try:
+        import urllib.request
+
+        # Chrome DevTools HTTP API: /json/close/<targetId>
+        url = f"{cdp_url.rstrip('/')}/json/close/{target_id}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            resp.read()
+    except Exception:
+        pass
+    _clear_run_target(run_id)
+    # Ensure keepalive remains
+    try:
+        import urllib.request as _ur
+        import json as _js
+
+        with _ur.urlopen(f"{cdp_url.rstrip('/')}/json", timeout=2) as r:
+            data = _js.loads(r.read())
+            if not data:
+                # No tabs left, reopen keepalive via CDP create
+                _ur.urlopen(f"{cdp_url.rstrip('/')}/json/new?about:blank", timeout=2).read()
+    except Exception:
+        pass
+
+
+def get_or_create_run_tab(context, run_id: str, timeout: float = 20.0):
+    """One dedicated Chrome tab per run_id, reused for all images in that run."""
+    if not run_id or context is None:
+        return open_cdp_page(context, new_window=False, timeout=timeout)
+    pool = _run_tab_pool(context)
+    existing = pool.get(run_id)
+    if existing is not None and existing in _known_pages(context):
+        try:
+            existing.bring_to_front()
+        except Exception:
+            pass
+        return existing
+    # Check in-memory pages tagged with this run_id
+    for page in _known_pages(context):
+        try:
+            if getattr(page, "_ad_factory_run_id", "") == run_id:
+                pool[run_id] = page
+                try:
+                    page.bring_to_front()
+                except Exception:
+                    pass
+                return page
+        except Exception:
+            continue
+    # Check file-based pool for cross-process reuse
+    target_id = _load_run_target(run_id)
+    if target_id:
+        for page in _known_pages(context):
+            try:
+                if _page_target_id(page) == target_id:
+                    # Re-adopt existing Chrome target
+                    try:
+                        page._ad_factory_run_id = run_id  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+                    pool[run_id] = page
+                    try:
+                        page.bring_to_front()
+                    except Exception:
+                        pass
+                    return page
+            except Exception:
+                continue
+        # File target stale — clear
+        _clear_run_target(run_id)
+    page = open_cdp_page(context, new_window=False, timeout=timeout)
+    try:
+        page._ad_factory_run_id = run_id  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    pool[run_id] = page
+    # Persist for next subprocess of same run
+    try:
+        tid = _page_target_id(page)
+        if tid:
+            _save_run_target(run_id, tid)
+    except Exception:
+        pass
+    return page
+
+
+def release_run_tab(context, run_id: str) -> None:
+    if not run_id or context is None:
+        return
+    pool = _run_tab_pool(context)
+    page = pool.pop(run_id, None)
+    if page is not None:
+        # Mark as not keepalive so it can be closed even if last tab (keepalive will reopen)
+        try:
+            if getattr(page, "_ad_factory_keepalive", False):
+                setattr(page, "_ad_factory_keepalive", False)
+        except Exception:
+            pass
+        close_cdp_page(page)
+    _clear_run_target(run_id)
+    ensure_keepalive_window(context)
+
+
 def _target_id_from_info(info) -> str:
     if not isinstance(info, dict):
         return ""
@@ -294,7 +468,12 @@ def close_cdp_page(page) -> None:
     context = getattr(page, "context", None)
     if is_cdp_attached(context):
         known = _known_pages(context)
-        if len(known) == 1 and page in known:
+        # Never close the keepalive empty tab when it's the last one.
+        # Run tabs (with _ad_factory_run_id) may be closed even when last, because
+        # ensure_keepalive will reopen an empty tab.
+        is_keepalive = bool(getattr(page, "_ad_factory_keepalive", False))
+        is_run_tab = bool(getattr(page, "_ad_factory_run_id", ""))
+        if len(known) == 1 and page in known and (is_keepalive or not is_run_tab):
             return
     target_id = _page_target_id(page)
     try:
@@ -318,8 +497,14 @@ def ensure_keepalive_window(context) -> None:
     try:
         if _known_pages(context):
             return
-        # No pages left — reopen the keepalive ChatGPT tab
-        _open_cdp_target(context, new_window=False, timeout=10)
+        # No pages left — reopen the keepalive empty tab
+        page = _open_cdp_target(context, new_window=False, timeout=10)
+        if page is not None:
+            try:
+                page._ad_factory_keepalive = True  # type: ignore[attr-defined]
+                page._ad_factory_run_id = ""  # type: ignore[attr-defined]
+            except Exception:
+                pass
     except Exception:
         pass
 

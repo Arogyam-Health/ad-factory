@@ -506,6 +506,7 @@ class StructuredCopyExecutor:
                 for key in (
                     *COPY_SYSTEM_KEYS,
                     "copy_starting_prompt",
+                    "starting_prompt",
                     "copy_prompt_templates",
                     "persona_seeds",
                     "concept",
@@ -645,6 +646,14 @@ class StructuredCopyExecutor:
                             else None
                         ),
                     )
+                    # Prepend global product rules (Starting Prompt) for image model
+                    _starter = str(
+                        settings.get("starting_prompt")
+                        or effective_config.get("starting_prompt")
+                        or ""
+                    ).strip()
+                    if _starter:
+                        prompt_text = f"{_starter}\n\n{prompt_text}"
                     prompt_id = "prm_" + hashlib.sha256(
                         f"{run_id}:{ad_index}:{language}".encode()
                     ).hexdigest()[:24]

@@ -41,6 +41,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from local_agent_runtime.browser import (
     close_cdp_page,
+    get_or_create_run_tab,
     install_job_signal_handlers,
     mark_cdp_attached,
     open_cdp_page,
@@ -219,6 +220,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Continue to the next prompt after a job failure. Default is fail-fast so problems do not silently skip prompts.",
     )
+    parser.add_argument("--run-id", default="", help="Run ID for per-run tab affinity")
+    parser.add_argument("--job-id", default="", help="Job ID for tracking")
+    parser.add_argument("--keep-run-tab", action="store_true", help="Keep the run's tab open for next image in same run")
+    parser.add_argument("--cdp-url", default="", help="CDP URL for connecting to existing Chrome")
     return parser.parse_args()
 
 
@@ -3591,8 +3596,12 @@ def run() -> None:
         job_pages: list = []
         results: list[dict[str, Any]] = []
         try:
-            from local_agent_runtime.browser import job_uses_new_window, open_cdp_page
-            page = remember_job_page(job_pages, open_cdp_page(context, new_window=job_uses_new_window()))
+            from local_agent_runtime.browser import get_or_create_run_tab, job_uses_new_window, open_cdp_page
+
+            if getattr(args, "run_id", ""):
+                page = None  # type: ignore[assignment]
+            else:
+                page = remember_job_page(job_pages, open_cdp_page(context, new_window=job_uses_new_window()))
 
             log_progress("browser_ready", f"Browser launched, headless={args.headless}")
             print(f"\nBrowser launched in {'HEADLESS' if args.headless else 'VISIBLE'} mode.")
@@ -3626,11 +3635,17 @@ def run() -> None:
                     if attempts > 1:
                         print(f"  Attempt {attempt}/{attempts}")
                     try:
-                        log_progress("opening_tab", f"Job {idx}: opening tab, attempt {attempt}")
-                        page = remember_job_page(
-                            job_pages,
-                            open_prompt_tab(context, page, idx if attempt == 1 else 999999, args.first_tab_mode, browser_download_dir),
-                        )
+                        if getattr(args, "run_id", ""):
+                            log_progress("opening_tab", f"Job {idx}: reusing run tab {args.run_id}")
+                            page = get_or_create_run_tab(context, args.run_id)
+                            if not getattr(args, "keep_run_tab", False):
+                                remember_job_page(job_pages, page)
+                        else:
+                            log_progress("opening_tab", f"Job {idx}: opening tab, attempt {attempt}")
+                            page = remember_job_page(
+                                job_pages,
+                                open_prompt_tab(context, page, idx if attempt == 1 else 999999, args.first_tab_mode, browser_download_dir),
+                            )
                         log_progress("navigating", f"Job {idx}: navigating to Gemini")
                         navigate_to_fresh_chat(
                             page,
