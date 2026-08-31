@@ -1,5 +1,7 @@
 # Structured copy system
 
+> **For the complete skeleton of every prompt in the system — Structured Copy LLM, Structured Image 4:5/9:16, Reference Image 4:5/9:16, and Browser automation (ChatGPT/Gemini) — including the prompt-assembler config (`prompt_assembler_templates.json`), per-file → prompt-key map, per-block source file, edit recipes, and cross-file invariants, see [`docs/COMPLETE_PROMPT_SKELETON.md`](COMPLETE_PROMPT_SKELETON.md). This file is the short operator guide; the complete doc is the build reference.**
+
 This is the operator guide for the live Structured copy request. Edit the split JSON files, save them in Studio or Config, and the next run sends those layers to the copy LLM. Empty fields are omitted. Generation still runs.
 
 The live assembler is `dashboard/backend/services/render_structured_copy.py`. It reads `dashboard/backend/copy_system/` through `dashboard/backend/services/copy_system.py`. Image prompts are assembled by `dashboard/backend/services/generate_ads.py` using `prompt_assembler_templates.json` in that same copy_system folder. `copy_prompt_templates.json` is used only for `visual_archetypes` after copy exists. Old copy-LLM blocks in a stored file (`system_prompt_*`, CTA maps, template copy, and similar) are stripped on read and save. `copy_starting_prompt` is sent as `starting_prompt` when non-empty.
