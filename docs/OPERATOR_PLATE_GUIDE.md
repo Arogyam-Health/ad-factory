@@ -9,7 +9,8 @@ This page is the product intro and the how-to. Dedicated docs live on GitHub:
 - [Local agent setup](/docs/LOCAL_AGENT_README.md)
 - [Developer cloud notes](/docs/DEVELOPER_CLOUD_MIGRATION.md)
 - [Structured copy request](/docs/STRUCTURED_COPY_SYSTEM.md)
-- [Complete prompt skeleton (copy + image 4:5/9:16 + reference + browser)](/docs/COMPLETE_PROMPT_SKELETON.md)
+- [Complete prompt skeleton](/docs/COMPLETE_PROMPT_SKELETON.md)
+- [Config edit guide — every file, every button, every flow](/docs/CONFIG_EDIT_GUIDE.md)
 - [Editable fields map](/docs/DASHBOARD_EDITABLE_FIELDS.md)
 
 ## Product

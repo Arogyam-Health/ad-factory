@@ -15,6 +15,8 @@ The in-dashboard **Guide** page (`/guide`) renders
 | Operator plate guide | [docs/OPERATOR_PLATE_GUIDE.md](https://github.com/Vinay-003/ad-factory/blob/render-setup/docs/OPERATOR_PLATE_GUIDE.md) | Product intro, editor, files, runs, local agent |
 | Editable fields | [DASHBOARD_EDITABLE_FIELDS.md](https://github.com/Vinay-003/ad-factory/blob/render-setup/DASHBOARD_EDITABLE_FIELDS.md) | Which Studio / Config card maps to which key |
 | Structured copy system | [docs/STRUCTURED_COPY_SYSTEM.md](https://github.com/Vinay-003/ad-factory/blob/render-setup/docs/STRUCTURED_COPY_SYSTEM.md) | Live copy-LLM request shape |
+| Complete prompt skeleton | [docs/COMPLETE_PROMPT_SKELETON.md](https://github.com/Vinay-003/ad-factory/blob/render-setup/docs/COMPLETE_PROMPT_SKELETON.md) | Every prompt (copy 4:5/9:16, reference, browser) with file→key map |
+| Config edit guide | [docs/CONFIG_EDIT_GUIDE.md](https://github.com/Vinay-003/ad-factory/blob/render-setup/docs/CONFIG_EDIT_GUIDE.md) | How to edit every plate file, buttons, permissions, languages, and all 7 flows |
 
 ## Local agent setup
 
