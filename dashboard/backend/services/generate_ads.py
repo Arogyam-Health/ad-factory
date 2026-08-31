@@ -644,35 +644,49 @@ def persona_prompt_values(
     lang: str,
     templates: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    fields = assembler_dict(templates).get("persona_prompt_fields")
-    fields = fields if isinstance(fields, dict) else {}
-    spec = fields.get(lang) if isinstance(fields.get(lang), dict) else None
-    suffix = str(lang or "").strip().lower()
-    if not isinstance(spec, dict):
-        spec = DEFAULT_PERSONA_PROMPT_FIELDS.get(lang) or {
-            "required": lang.upper() == "EN",
-            "pain": [f"pain_{suffix}"] if suffix else ["pain_en"],
-            "desire": [f"desire_{suffix}"] if suffix else ["desire_en"],
-            "friction": [f"friction_{suffix}"] if suffix else ["friction_en"],
-            "proof": [f"proof_needed_{suffix}"] if suffix else ["proof_needed_en"],
-            "tone": [f"tone_cue_{suffix}"] if suffix else ["tone_cue_en"],
-        }
-    required = bool(spec.get("required"))
+    # Transparent: return every original key, plus legacy aliases for template compat
     ctx = "ads[].persona"
-    values = {
-        "persona_name": require_str(persona, "name", ctx),
-        "persona_number": require_int(persona, "number", ctx),
+    values: dict[str, Any] = {}
+    for key, value in persona.items():
+        values[str(key)] = value
+    if "persona_name" not in values and "name" in values:
+        values["persona_name"] = str(values["name"])
+    elif "persona_name" not in values:
+        values["persona_name"] = require_str(persona, "name", ctx)
+    if "persona_number" not in values and "number" in values:
+        try:
+            values["persona_number"] = int(values["number"])
+        except Exception:
+            values["persona_number"] = values["number"]
+    elif "persona_number" not in values:
+        values["persona_number"] = require_int(persona, "number", ctx)
+    if "number" not in values and "persona_number" in values:
+        values["number"] = values["persona_number"]
+    if "name" not in values and "persona_name" in values:
+        values["name"] = str(values["persona_name"])
+    # Legacy aliases for old persona_lines template (pain/desire etc.)
+    # Map original core_pattern etc. to legacy keys if not already present, with fallbacks for minimal test personas
+    from dashboard.backend.services.copy_system import persona_fallbacks as _persona_fallbacks
+
+    fallback_en = _persona_fallbacks(None, "EN")
+    legacy = {
+        "pain": persona.get("core_pattern") or persona.get("pain_en") or persona.get("pain") or fallback_en.get("pain_en") or "The current routine is difficult to sustain.",
+        "desire": persona.get("relevant_ok_kit_role") or persona.get("desire_en") or persona.get("desire") or fallback_en.get("desire_en") or "A practical routine that fits daily life.",
+        "friction": persona.get("why_it_failed") or persona.get("friction_en") or persona.get("friction") or fallback_en.get("friction_en") or "Past approaches felt difficult to maintain.",
+        "proof": persona.get("guardrail") or persona.get("proof_needed_en") or persona.get("proof") or fallback_en.get("proof_needed_en") or "Use verified product facts only.",
+        "tone": persona.get("tone_cue_en") or persona.get("tone_cue") or persona.get("tone") or fallback_en.get("tone_cue_en") or "Practical, empathetic, and confidence-building.",
+        "pain_en": persona.get("core_pattern") or persona.get("pain_en") or fallback_en.get("pain_en") or "",
+        "desire_en": persona.get("relevant_ok_kit_role") or persona.get("desire_en") or fallback_en.get("desire_en") or "",
+        "friction_en": persona.get("why_it_failed") or persona.get("friction_en") or fallback_en.get("friction_en") or "",
+        "proof_needed_en": persona.get("guardrail") or persona.get("proof_needed_en") or fallback_en.get("proof_needed_en") or "",
+        "tone_cue_en": persona.get("tone_cue_en") or persona.get("tone_cue") or fallback_en.get("tone_cue_en") or "",
     }
-    for logical in ("pain", "desire", "friction", "proof", "tone"):
-        keys = spec.get(logical)
-        if not isinstance(keys, list) or not keys:
-            fallback = (DEFAULT_PERSONA_PROMPT_FIELDS.get(lang) or {}).get(logical)
-            keys = list(fallback) if fallback else [f"{logical}_{suffix}"]
-        keys = [str(item).strip() for item in keys if str(item).strip()]
-        value = _pick_first(persona, keys)
-        if required and not value:
-            raise RuntimeError(f"Missing or empty string '{keys[0]}' in {ctx}")
-        values[logical] = value
+    for k, v in legacy.items():
+        if k not in values:
+            # Always ensure legacy keys exist for template, even if empty, to avoid KeyError
+            values[k] = str(v).strip()
+        elif not str(values[k]).strip() and str(v).strip():
+            values[k] = str(v).strip()
     return values
 
 
@@ -802,18 +816,32 @@ def render_prompt(
     lines.extend(layout_lines)
     lines.append("")
     lines.append(str(S["persona_header"]))
+    # Transparent: pass every persona field as-is to template, plus legacy aliases
+    _persona_fill: dict[str, Any] = {}
+    for k, v in persona.items():
+        # Convert list/dict to string for template
+        if isinstance(v, list):
+            _persona_fill[str(k)] = ", ".join(str(x) for x in v)
+        elif isinstance(v, dict):
+            _persona_fill[str(k)] = json.dumps(v, ensure_ascii=False)
+        else:
+            _persona_fill[str(k)] = str(v) if v is not None else ""
+    # Legacy aliases for old templates
+    _persona_fill.setdefault("persona_name", persona_name)
+    _persona_fill.setdefault("persona_number", persona_number)
+    _persona_fill.setdefault("pain", pain)
+    _persona_fill.setdefault("desire", desire)
+    _persona_fill.setdefault("friction", friction)
+    _persona_fill.setdefault("proof", proof)
+    _persona_fill.setdefault("tone", tone)
+    _persona_fill.setdefault("concept_angle", concept["concept_angle"])
+    # Also map common Indian persona keys to legacy names if needed
+    for _k in ("core_pattern", "primary_tags", "common_indian_moments", "failed_attempts", "why_it_failed", "relevant_ok_kit_role", "guardrail", "headline_anchor_rule"):
+        if _k in persona and _k not in _persona_fill:
+            _v = persona[_k]
+            _persona_fill[_k] = ", ".join(str(x) for x in _v) if isinstance(_v, list) else str(_v)
     for line in S["persona_lines"]:
-        lines.append(_fill(
-            str(line),
-            persona_name=persona_name,
-            persona_number=persona_number,
-            pain=pain,
-            desire=desire,
-            friction=friction,
-            proof=proof,
-            tone=tone,
-            concept_angle=concept["concept_angle"],
-        ))
+        lines.append(_fill(str(line), **_persona_fill))
     lines.append(str(S["concept_path_note"]))
     if isinstance(creative_concept, dict):
         concept_label = str(

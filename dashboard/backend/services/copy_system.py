@@ -216,25 +216,15 @@ def format_catalog(config: dict[str, Any] | None) -> list[dict[str, str]]:
 def format_layer(config: dict[str, Any] | None, fmt: str) -> dict[str, Any]:
     ident = str(fmt or "").strip().upper()
     entry = _format_entries(config).get(ident)
-    payload: dict[str, Any] = {"id": ident}
+    # Transparent: return every field from config as-is, plus id
     if isinstance(entry, dict):
-        description = _text(entry.get("description"))
-        skeleton = _text(entry.get("skeleton"))
-        fields = [
-            _text(item)
-            for item in (entry.get("output_fields") or [])
-            if _text(item)
-        ]
-        if description:
-            payload["description"] = description
-        if skeleton:
-            payload["skeleton"] = skeleton
-        if fields:
-            payload["output_fields"] = fields
-        label = _text(entry.get("label"))
-        if label:
-            payload["label"] = label
-    return compact(payload) or {"id": ident}
+        payload: dict[str, Any] = {"id": ident}
+        for key, value in entry.items():
+            payload[str(key)] = value
+        # Ensure id is correct
+        payload["id"] = ident
+        return payload
+    return {"id": ident}
 
 
 def _language_entries(config: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -318,18 +308,13 @@ def language_layers(
         if not ident:
             continue
         entry = entries.get(ident) or {}
-        rules = [
-            _text(item)
-            for item in (entry.get("rules") or [])
-            if _text(item)
-        ]
+        # Transparent: send every field from language config as-is
         payload: dict[str, Any] = {"id": ident}
-        label = _text(entry.get("label"))
-        if label:
-            payload["label"] = label
-        if rules:
-            payload["rules"] = rules
-        layers.append(compact(payload) or {"id": ident})
+        if isinstance(entry, dict):
+            for key, value in entry.items():
+                payload[str(key)] = value
+        payload["id"] = ident
+        layers.append(payload)
     return layers
 
 
@@ -481,25 +466,22 @@ def hypothesis_layer(
     if not ident or ident in {"none", ""}:
         return None
     key = HYPOTHESIS_FILES.get(ident)
+    # Transparent: send every field from config as-is
     payload: dict[str, Any] = {"type": ident}
     if variant:
         payload["style"] = variant
     if not key:
-        return compact(payload)
+        return payload
     raw = _file(config, key)
-    meta = raw.get("_meta") if isinstance(raw.get("_meta"), dict) else {}
-    if _text(meta.get("label")):
-        payload["type_label"] = _text(meta.get("label"))
-    if _text(meta.get("instruction")):
-        payload["instruction"] = _text(meta.get("instruction"))
-    style_entry = raw.get(variant) if variant else None
-    if isinstance(style_entry, dict):
-        if _text(style_entry.get("label")):
-            payload["label"] = _text(style_entry.get("label"))
-        if _text(style_entry.get("instruction")):
-            payload["instruction"] = _text(style_entry.get("instruction"))
-        if _text(style_entry.get("definition")):
-            payload["definition"] = _text(style_entry.get("definition"))
-        if _text(style_entry.get("skeleton")):
-            payload["skeleton"] = _text(style_entry.get("skeleton"))
-    return compact(payload)
+    if isinstance(raw, dict):
+        meta = raw.get("_meta") if isinstance(raw.get("_meta"), dict) else {}
+        if isinstance(meta, dict):
+            for mk, mv in meta.items():
+                if str(mk).strip():
+                    payload[str(mk)] = mv
+        style_entry = raw.get(variant) if variant else None
+        if isinstance(style_entry, dict):
+            for sk, sv in style_entry.items():
+                if str(sk).strip():
+                    payload[str(sk)] = sv
+    return payload

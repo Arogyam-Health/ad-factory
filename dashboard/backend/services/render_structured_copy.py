@@ -138,34 +138,40 @@ def _persona(
     source: dict[str, Any],
     effective_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    aliases = persona_source_map(effective_config)
-    fallbacks = persona_fallbacks(effective_config, "EN")
-    name = pick_persona_field(source, aliases.get("name") or ["persona_name", "name"])
-    payload = {
-        "number": number,
-        "name": name or f"Persona {number}",
-        "pain_en": pick_persona_field(source, aliases.get("pain_en") or ["pain_en"])
-        or fallbacks.get("pain_en")
-        or "",
-        "desire_en": pick_persona_field(source, aliases.get("desire_en") or ["desire_en"])
-        or fallbacks.get("desire_en")
-        or "",
-        "friction_en": pick_persona_field(source, aliases.get("friction_en") or ["friction_en"])
-        or fallbacks.get("friction_en")
-        or "",
-        "proof_needed_en": pick_persona_field(
-            source, aliases.get("proof_needed_en") or ["proof_needed_en"]
-        )
-        or fallbacks.get("proof_needed_en")
-        or "",
-        "tone_cue_en": pick_persona_field(source, aliases.get("tone_cue_en") or ["tone_cue_en"])
-        or fallbacks.get("tone_cue_en")
-        or "",
+    # Transparent: return persona exactly as stored, plus legacy aliases for backward compat
+    payload: dict[str, Any] = {}
+    for key, value in source.items():
+        payload[str(key)] = value
+    if "number" not in payload and "persona_number" in payload:
+        try:
+            payload["number"] = int(payload["persona_number"])
+        except Exception:
+            payload["number"] = number
+    elif "number" not in payload:
+        payload["number"] = number
+    if "name" not in payload and "persona_name" in payload:
+        payload["name"] = str(payload["persona_name"])
+    elif "name" not in payload:
+        payload["name"] = f"Persona {number}"
+    if "persona_number" not in payload:
+        payload["persona_number"] = number
+    if "persona_name" not in payload:
+        payload["persona_name"] = payload["name"]
+    # Backward compat: also provide legacy pain/desire etc. derived from original keys
+    # Mapping from FALLBACK_PERSONA_SOURCE_MAP
+    legacy_map = {
+        "pain_en": ["core_pattern", "pain_en"],
+        "desire_en": ["relevant_ok_kit_role", "desire_en"],
+        "friction_en": ["why_it_failed", "friction_en"],
+        "proof_needed_en": ["guardrail", "proof_needed_en"],
+        "tone_cue_en": ["tone_cue_en", "tone"],
     }
-    for key in extra_persona_language_keys(effective_config):
-        value = str(source.get(key) or "").strip()
-        if value:
-            payload[key] = value
+    for dest, src_keys in legacy_map.items():
+        if dest not in payload or not str(payload[dest]).strip():
+            for sk in src_keys:
+                if sk in payload and str(payload[sk]).strip():
+                    payload[dest] = str(payload[sk]).strip()
+                    break
     return payload
 
 
@@ -174,16 +180,34 @@ def _persona_for_llm(
     languages: tuple[str, ...],
     effective_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "number": persona.get("number"),
-        "name": persona.get("name"),
+    # Transparent: send every original key, plus legacy aliases for image prompt compat
+    payload: dict[str, Any] = {}
+    for key, value in persona.items():
+        payload[str(key)] = value
+    if "number" not in payload and "persona_number" in payload:
+        try:
+            payload["number"] = int(payload["persona_number"])
+        except Exception:
+            pass
+    if "name" not in payload and "persona_name" in payload:
+        payload["name"] = str(payload["persona_name"])
+    # Ensure legacy aliases are present for generate_ads.render_prompt which still expects them
+    legacy_alias = {
+        "pain_en": persona.get("core_pattern") or persona.get("pain_en") or "",
+        "desire_en": persona.get("relevant_ok_kit_role") or persona.get("desire_en") or "",
+        "friction_en": persona.get("why_it_failed") or persona.get("friction_en") or "",
+        "proof_needed_en": persona.get("guardrail") or persona.get("proof_needed_en") or "",
+        "tone_cue_en": persona.get("tone_cue_en") or persona.get("tone") or "",
+        "pain": persona.get("core_pattern") or persona.get("pain_en") or persona.get("pain") or "",
+        "desire": persona.get("relevant_ok_kit_role") or persona.get("desire_en") or persona.get("desire") or "",
+        "friction": persona.get("why_it_failed") or persona.get("friction_en") or persona.get("friction") or "",
+        "proof": persona.get("guardrail") or persona.get("proof_needed_en") or persona.get("proof") or "",
+        "tone": persona.get("tone_cue_en") or persona.get("tone") or "",
     }
-    for lang in languages:
-        for dest, source in language_persona_map(effective_config, lang).items():
-            value = str(persona.get(source) or "").strip()
-            if value:
-                payload[dest] = value
-    return compact(payload) or {"number": persona.get("number"), "name": persona.get("name")}
+    for k, v in legacy_alias.items():
+        if k not in payload and str(v).strip():
+            payload[k] = str(v).strip()
+    return payload
 
 
 def _hypothesis_from_settings(settings: dict[str, Any]) -> dict[str, Any]:
