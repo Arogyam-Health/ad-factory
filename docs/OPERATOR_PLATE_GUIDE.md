@@ -9,6 +9,7 @@ This page is the product intro and the how-to. Dedicated docs live on GitHub:
 - [Local agent setup](/docs/LOCAL_AGENT_README.md)
 - [Developer cloud notes](/docs/DEVELOPER_CLOUD_MIGRATION.md)
 - [Structured copy request](/docs/STRUCTURED_COPY_SYSTEM.md)
+- [Complete prompt skeleton (copy + image 4:5/9:16 + reference + browser)](/docs/COMPLETE_PROMPT_SKELETON.md)
 - [Editable fields map](/docs/DASHBOARD_EDITABLE_FIELDS.md)
 
 ## Product
@@ -209,6 +210,15 @@ On personal or org save:
 - The save notice looks like: `Added default visual archetypes for STORY. Edit Copy Prompt Templates and make them meaningful.`
 
 Those stubs are placeholders. Edit layout and direction lines. Background slots are not auto-created; if no variant lists the new format, the run uses the full background pool.
+
+## Complete prompt skeletons (copy + image + browser)
+
+For the full, line-by-line skeleton of every prompt the system sends — **Structured Copy LLM**, **Structured Image 4:5**, **Structured Image 9:16 (conversion)**, **Reference Image 4:5/9:16**, and **Browser automation (ChatGPT/Gemini tab)** — including which file supplies each block, which code assembles it, how to edit each file, and cross-file invariants, see:
+
+- **[Complete prompt skeleton](/docs/COMPLETE_PROMPT_SKELETON.md)** — single source for every prompt, every file, every edit rule. Detailed enough for a new editor with no prior context. Also at [GitHub: docs/COMPLETE_PROMPT_SKELETON.md](https://github.com/Vinay-003/ad-factory/blob/render-setup/docs/COMPLETE_PROMPT_SKELETON.md).
+- Short operator guide for copy layers: [Structured copy request](/docs/STRUCTURED_COPY_SYSTEM.md)
+
+The complete doc shows for each flow: the exact prompt text skeleton, `ad_formats`/`ad_languages`/`ad_hooks`...`ad_support_shapes` → `hypothesis`, `persona_seeds` → `PERSONA INPUT BLOCK` (now transparent, every key as-is), `concept` → `creative_concept`, `prompt_assembler_templates.json` → `PRODUCT LOCK`/`PROOF BAR`/`OUTPUT SPEC`/`TYPOGRAPHY`/`SAFE-ZONE`, `starting_prompt` global product rules (image only, now prepended to every image prompt `4:5` and `9:16`), `background_variant` + seeded sentence, and browser per-run tab pool (`browser.py:272` one tab per `run_id`, 5 parallel, queue 6th, keepalive `about:blank`).
 
 ## Local agent
 
